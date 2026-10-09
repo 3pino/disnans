@@ -44,20 +44,10 @@ pub struct Reaction {
     pub user_ids: Vec<Id>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-#[ts(export)]
-pub enum ThreadKind {
-    Normal,
-    /// 近況。
-    Status,
-}
-
 /// スレッドの情報。スレッドの ID は起点のメッセージの ID と同じ。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ThreadInfo {
-    pub kind: ThreadKind,
     pub reply_count: u32,
     pub last_reply_at: Option<Timestamp>,
 }
@@ -113,15 +103,15 @@ pub enum ClientEvent {
         body: String,
         /// 事前に `POST /api/files` でアップロードした添付ファイルの ID。
         attachment_ids: Vec<Id>,
-        /// 指定すると、このメッセージを起点にスレッドを作る（近況の投稿など）。
-        start_thread: Option<ThreadKind>,
+        /// `true` なら、このメッセージを起点にスレッドを作る。
+        start_thread: bool,
     },
     #[serde(rename = "message.edit")]
     MessageEdit { message_id: Id, body: String },
     #[serde(rename = "message.delete")]
     MessageDelete { message_id: Id },
     #[serde(rename = "thread.create")]
-    ThreadCreate { root_message_id: Id, kind: ThreadKind },
+    ThreadCreate { root_message_id: Id },
     #[serde(rename = "reaction.add")]
     ReactionAdd { message_id: Id, emoji: String },
     #[serde(rename = "reaction.remove")]

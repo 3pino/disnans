@@ -2,7 +2,6 @@ import type { ApiError } from './protocol/ApiError';
 import type { Attachment } from './protocol/Attachment';
 import type { Message } from './protocol/Message';
 import type { Thread } from './protocol/Thread';
-import type { ThreadKind } from './protocol/ThreadKind';
 import type { UpdateMe } from './protocol/UpdateMe';
 import type { User } from './protocol/User';
 import { apiUrl, authHeaders } from './config';
@@ -65,7 +64,7 @@ export const api = {
       'GET',
       '/api/messages' + qs({ thread_id: opts.threadId, before: opts.before, limit: opts.limit }),
     ),
-  threads: (kind?: ThreadKind) => request<Thread[]>('GET', '/api/threads' + qs({ kind })),
+  threads: () => request<Thread[]>('GET', '/api/threads'),
   thread: (id: string) => request<Thread>('GET', `/api/threads/${encodeURIComponent(id)}`),
 };
 

@@ -171,6 +171,6 @@ pub fn send(body: &str) -> ClientEvent {
         thread_id: None,
         body: body.into(),
         attachment_ids: vec![],
-        start_thread: None,
+        start_thread: false,
     }
 }

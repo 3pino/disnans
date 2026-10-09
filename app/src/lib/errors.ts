@@ -13,7 +13,6 @@ const MESSAGES: Record<string, string> = {
   invalid_attachment: '添付ファイルが見つかりません。もう一度アップロードしてください',
   invalid_emoji: 'この絵文字は使えません',
   invalid_display_name: '表示名は1〜32文字にしてください',
-  invalid_kind: '不正なスレッドの種類です',
   invalid_upload: 'アップロードに失敗しました',
   missing_file: 'ファイルがありません',
 };

@@ -3,7 +3,7 @@
 //! WebSocket の `ClientEvent` から呼ばれる。DB を書き換えたあと、結果を全員に配信し、
 //! 必要なら通知を送る。
 
-use disnans_shared::{Id, ServerEvent, ThreadKind, User};
+use disnans_shared::{Id, ServerEvent, User};
 
 use crate::db;
 use crate::error::{AppError, AppResult};
@@ -30,7 +30,8 @@ pub struct SendMessage {
     pub thread_id: Option<Id>,
     pub body: String,
     pub attachment_ids: Vec<Id>,
-    pub start_thread: Option<ThreadKind>,
+    /// `true` なら、このメッセージを起点にスレッドを作る。
+    pub start_thread: bool,
 }
 
 pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage) -> AppResult<()> {
@@ -41,7 +42,7 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
     let _guard = state.write_lock().await;
 
     if let Some(thread_id) = &req.thread_id {
-        if req.start_thread.is_some() {
+        if req.start_thread {
             return Err(nested_thread());
         }
         if !messages::thread_exists(&state.pool, thread_id).await? {
@@ -73,8 +74,8 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
             format!("添付できないファイルです（{file_id}）"),
         ));
     }
-    if let Some(kind) = req.start_thread {
-        messages::insert_thread(&mut tx, &row.id, kind, row.created_at).await?;
+    if req.start_thread {
+        messages::insert_thread(&mut tx, &row.id, row.created_at).await?;
     }
     tx.commit().await?;
 
@@ -95,7 +96,7 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
         None => state.hub.broadcast(&created(None)),
     }
 
-    if req.start_thread.is_some() {
+    if req.start_thread {
         broadcast_thread(state, &message.id).await?;
     }
     if let Some(thread_id) = &message.thread_id {
@@ -169,11 +170,7 @@ pub async fn delete_message(
 }
 
 /// 既存のメッセージを起点にスレッドを作る。スレッドの中の返信からは作れない（ネストしない）。
-pub async fn create_thread(
-    state: &AppState,
-    root_message_id: &str,
-    kind: ThreadKind,
-) -> AppResult<()> {
+pub async fn create_thread(state: &AppState, root_message_id: &str) -> AppResult<()> {
     let _guard = state.write_lock().await;
     let row = find_message(state, root_message_id).await?;
     if row.thread_id.is_some() {
@@ -188,7 +185,7 @@ pub async fn create_thread(
     }
 
     let mut conn = state.pool.acquire().await?;
-    messages::insert_thread(&mut conn, root_message_id, kind, db::now_ms()).await?;
+    messages::insert_thread(&mut conn, root_message_id, db::now_ms()).await?;
     drop(conn);
 
     if let Some(message) = messages::get(&state.pool, root_message_id).await? {

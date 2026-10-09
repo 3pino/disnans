@@ -10,9 +10,12 @@ pub fn run() {
             .plugin(tauri_plugin_updater::Builder::new().build())
             .plugin(tauri_plugin_process::init());
     }
+    // Android: システムバーのアイコンの明暗をアプリのテーマに合わせる
     #[cfg(target_os = "android")]
     {
-        builder = builder.plugin(tauri_plugin_apk_updater::init());
+        builder = builder
+            .plugin(tauri_plugin_apk_updater::init())
+            .plugin(tauri_plugin_system_bars::init());
     }
 
     builder

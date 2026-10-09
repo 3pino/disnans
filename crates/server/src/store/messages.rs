@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use disnans_shared::{Attachment, Message, Reaction, Thread, ThreadInfo, ThreadKind};
+use disnans_shared::{Attachment, Message, Reaction, Thread, ThreadInfo};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use super::{files, json_ids};
@@ -23,7 +23,6 @@ pub struct MessageRow {
 #[derive(sqlx::FromRow)]
 struct ThreadRow {
     id: String,
-    kind: String,
     reply_count: i64,
     last_reply_at: Option<i64>,
 }
@@ -33,21 +32,6 @@ struct ReactionRow {
     message_id: String,
     emoji: String,
     user_id: String,
-}
-
-pub fn kind_to_str(kind: ThreadKind) -> &'static str {
-    match kind {
-        ThreadKind::Normal => "normal",
-        ThreadKind::Status => "status",
-    }
-}
-
-pub fn kind_from_str(s: &str) -> Option<ThreadKind> {
-    match s {
-        "normal" => Some(ThreadKind::Normal),
-        "status" => Some(ThreadKind::Status),
-        _ => None,
-    }
 }
 
 const COLUMNS: &str = "id, author_id, thread_id, body, created_at, edited_at";
@@ -165,7 +149,7 @@ async fn thread_infos_for(
     ids_json: &str,
 ) -> sqlx::Result<HashMap<String, ThreadInfo>> {
     let rows: Vec<ThreadRow> = sqlx::query_as(
-        "SELECT t.id, t.kind,
+        "SELECT t.id,
                 (SELECT COUNT(*) FROM messages r WHERE r.thread_id = t.id) AS reply_count,
                 (SELECT MAX(r.created_at) FROM messages r WHERE r.thread_id = t.id) AS last_reply_at
          FROM threads t
@@ -177,16 +161,14 @@ async fn thread_infos_for(
 
     Ok(rows
         .into_iter()
-        .filter_map(|row| {
-            let kind = kind_from_str(&row.kind)?;
-            Some((
+        .map(|row| {
+            (
                 row.id,
                 ThreadInfo {
-                    kind,
                     reply_count: row.reply_count as u32,
                     last_reply_at: row.last_reply_at,
                 },
-            ))
+            )
         })
         .collect())
 }
@@ -207,18 +189,11 @@ pub async fn get_thread(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Thre
 ///
 /// ID（ULID）は作成時刻の順に並ぶので、最新の返信の ID（なければ起点の ID）で並べる。
 /// 同じミリ秒の投稿でも順番がぶれない。
-pub async fn list_threads(
-    pool: &SqlitePool,
-    kind: Option<ThreadKind>,
-) -> sqlx::Result<Vec<Thread>> {
-    let kind = kind.map(kind_to_str);
+pub async fn list_threads(pool: &SqlitePool) -> sqlx::Result<Vec<Thread>> {
     let ids: Vec<String> = sqlx::query_scalar(
         "SELECT t.id FROM threads t
-         WHERE (? IS NULL OR t.kind = ?)
          ORDER BY COALESCE((SELECT MAX(r.id) FROM messages r WHERE r.thread_id = t.id), t.id) DESC",
     )
-    .bind(kind)
-    .bind(kind)
     .fetch_all(pool)
     .await?;
     Ok(load(pool, &ids)
@@ -262,12 +237,10 @@ pub async fn insert(conn: &mut SqliteConnection, row: &MessageRow) -> sqlx::Resu
 pub async fn insert_thread(
     conn: &mut SqliteConnection,
     id: &str,
-    kind: ThreadKind,
     now: i64,
 ) -> sqlx::Result<()> {
-    sqlx::query("INSERT INTO threads (id, kind, created_at) VALUES (?, ?, ?)")
+    sqlx::query("INSERT INTO threads (id, created_at) VALUES (?, ?)")
         .bind(id)
-        .bind(kind_to_str(kind))
         .bind(now)
         .execute(conn)
         .await?;

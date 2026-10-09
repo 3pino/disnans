@@ -24,7 +24,7 @@
 | PATCH | `/api/me` | 表示名の変更（body: `UpdateMe`） | `User` |
 | GET | `/api/users` | メンバー一覧 | `User[]` |
 | GET | `/api/messages?thread_id=&before=&limit=` | メッセージ履歴 | `Message[]` |
-| GET | `/api/threads?kind=` | スレッド一覧 | `Thread[]` |
+| GET | `/api/threads` | スレッド一覧 | `Thread[]` |
 | GET | `/api/threads/{id}` | スレッド1件 | `Thread` |
 | POST | `/api/files` | ファイルのアップロード（multipart、フィールド名 `file`） | `Attachment` |
 | GET | `/api/files/{id}` | ファイル本体 | バイナリ |
@@ -36,7 +36,7 @@
 - `before`（メッセージ ID）より古いものを、新しい順に最大 `limit` 件（既定 50、最大 200）取り、**古い順に並べて**返す
 
 ### スレッド一覧
-- `kind` は `normal` / `status`。省略時はすべて
+- スレッドに種類はない。クエリ文字列は受け取らない（付いていても無視する）
 - 最後に動きがあった順（`last_reply_at`、なければ起点の `created_at`）の降順
 
 ### ファイル
@@ -56,5 +56,6 @@
 - `notify` は対象者にだけ送る
   - メンションされた（`<@user_id>`）
   - 自分が起点のスレッド、または自分が返信したスレッドに、他人が返信した
+- スレッドは `thread.create`（既存のメッセージを起点にする）か、`message.send` の `start_thread: true`（送信と同時に起点にする）で作る。スレッドの中の返信からは作れない
 - 編集・削除は本人のメッセージだけ。スレッドの起点を削除すると、スレッドの返信もすべて削除する
 - 失敗したら、送信者に `error` を返す

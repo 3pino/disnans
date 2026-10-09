@@ -248,7 +248,7 @@ disnans/
 
 ```jsonc
 // クライアント → サーバー（抜粋）
-{ "type": "message.send", "client_id": "tmp-123", "thread_id": null, "body": "**hi**", "attachment_ids": [], "start_thread": null }
+{ "type": "message.send", "client_id": "tmp-123", "thread_id": null, "body": "**hi**", "attachment_ids": [], "start_thread": false }
 { "type": "reaction.add", "message_id": "01J...", "emoji": "👍" }
 
 // サーバー → クライアント（抜粋）

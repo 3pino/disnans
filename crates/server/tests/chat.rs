@@ -5,7 +5,7 @@ mod common;
 use std::time::Duration;
 
 use common::{TestServer, send};
-use disnans_shared::{ApiError, ClientEvent, Message, ServerEvent, Thread, ThreadKind, User};
+use disnans_shared::{ApiError, ClientEvent, Message, ServerEvent, Thread, User};
 
 const ALICE: &str = "alice@test";
 const BOB: &str = "bob@test";
@@ -207,7 +207,6 @@ async fn threads_cannot_nest() {
     // スレッドを作る: 起点の message.updated と thread.updated が全員に届く
     bob.send(ClientEvent::ThreadCreate {
         root_message_id: root.id.clone(),
-        kind: ThreadKind::Normal,
     })
     .await;
     for client in [&mut alice, &mut bob] {
@@ -219,13 +218,11 @@ async fn threads_cannot_nest() {
             panic!()
         };
         assert_eq!(thread.root.id, root.id);
-        assert_eq!(thread.info.kind, ThreadKind::Normal);
     }
 
     // 2回目は作れない
     bob.send(ClientEvent::ThreadCreate {
         root_message_id: root.id.clone(),
-        kind: ThreadKind::Normal,
     })
     .await;
     assert_eq!(bob.expect_error().await.1, "thread_exists");
@@ -237,7 +234,7 @@ async fn threads_cannot_nest() {
             thread_id: Some(root.id.clone()),
             body: "返信".into(),
             attachment_ids: vec![],
-            start_thread: None,
+            start_thread: false,
         })
         .await;
     assert_eq!(reply.thread_id.as_deref(), Some(root.id.as_str()));
@@ -271,7 +268,6 @@ async fn threads_cannot_nest() {
     alice
         .send(ClientEvent::ThreadCreate {
             root_message_id: reply.id.clone(),
-            kind: ThreadKind::Normal,
         })
         .await;
     assert_eq!(alice.expect_error().await.1, "nested_thread");
@@ -283,7 +279,7 @@ async fn threads_cannot_nest() {
             thread_id: Some(root.id.clone()),
             body: "nested".into(),
             attachment_ids: vec![],
-            start_thread: Some(ThreadKind::Normal),
+            start_thread: true,
         })
         .await;
     assert_eq!(
@@ -298,22 +294,22 @@ async fn threads_cannot_nest() {
             thread_id: Some(reply.id.clone()),
             body: "x".into(),
             attachment_ids: vec![],
-            start_thread: None,
+            start_thread: false,
         })
         .await;
     assert_eq!(alice.expect_error().await.1, "thread_not_found");
 
-    // 近況（送信と同時にスレッドを作る）
+    // 送信と同時にスレッドを作る
     let status = alice
         .post_with(ClientEvent::MessageSend {
             client_id: "s".into(),
             thread_id: None,
             body: "今日のごはん".into(),
             attachment_ids: vec![],
-            start_thread: Some(ThreadKind::Status),
+            start_thread: true,
         })
         .await;
-    assert_eq!(status.thread.as_ref().unwrap().kind, ThreadKind::Status);
+    assert_eq!(status.thread.as_ref().unwrap().reply_count, 0);
     let ServerEvent::ThreadUpdated { thread } = alice.recv().await else {
         panic!()
     };
@@ -325,18 +321,16 @@ async fn threads_cannot_nest() {
         all.iter().map(|t| t.root.id.as_str()).collect::<Vec<_>>(),
         [status.id.as_str(), root.id.as_str()]
     );
-    let statuses: Vec<Thread> = server.get_json(ALICE, "/api/threads?kind=status").await;
-    assert_eq!(statuses.len(), 1);
-    assert_eq!(statuses[0].info.kind, ThreadKind::Status);
-    let normal: Vec<Thread> = server.get_json(ALICE, "/api/threads?kind=normal").await;
-    assert_eq!(normal.len(), 1);
-    assert_eq!(normal[0].info.reply_count, 1);
+    assert_eq!(all[1].info.reply_count, 1);
+    // 古いクライアントの kind などのクエリは無視する
     let res = server
         .get(ALICE, "/api/threads?kind=nope")
         .send()
         .await
         .unwrap();
-    assert_eq!(res.status(), 400);
+    assert_eq!(res.status(), 200);
+    let ignored: Vec<Thread> = res.json().await.unwrap();
+    assert_eq!(ignored.len(), 2);
 
     // スレッドに返信すると、一覧の先頭に来る
     bob.post_with(ClientEvent::MessageSend {
@@ -344,7 +338,7 @@ async fn threads_cannot_nest() {
         thread_id: Some(root.id.clone()),
         body: "もう一つ".into(),
         attachment_ids: vec![],
-        start_thread: None,
+        start_thread: false,
     })
     .await;
     let all: Vec<Thread> = server.get_json(ALICE, "/api/threads").await;

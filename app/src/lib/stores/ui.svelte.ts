@@ -1,4 +1,5 @@
 import { getItem, setItem } from '../storage';
+import { syncSystemBars } from '../systemBars';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
@@ -11,6 +12,7 @@ export type ConfirmRequest = { title: string; body?: string; okLabel: string; da
 
 const THEME_KEY = 'disnans.theme';
 const MOBILE_QUERY = '(max-width: 767px)';
+const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 class Ui {
   theme = $state<ThemePref>((getItem(THEME_KEY) as ThemePref | null) ?? 'system');
@@ -32,6 +34,8 @@ class Ui {
     this.isMobile = mq.matches;
     mq.addEventListener('change', (e) => (this.isMobile = e.matches));
     setInterval(() => (this.now = Date.now()), 30_000);
+    // 「自動」のときはシステムの切り替えにも追従する
+    window.matchMedia(DARK_QUERY).addEventListener('change', () => this.applyTheme());
     this.applyTheme();
   }
 
@@ -45,6 +49,8 @@ class Ui {
     const el = document.documentElement;
     if (this.theme === 'system') el.removeAttribute('data-theme');
     else el.setAttribute('data-theme', this.theme);
+    const dark = this.theme === 'system' ? window.matchMedia(DARK_QUERY).matches : this.theme === 'dark';
+    syncSystemBars(dark);
   }
 
   openThread(id: string): void {

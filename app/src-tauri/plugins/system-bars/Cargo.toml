@@ -1,0 +1,13 @@
+[package]
+name = "tauri-plugin-system-bars"
+version = "0.1.0"
+description = "Android でステータスバー・ナビゲーションバーのアイコンの明暗をアプリのテーマに合わせる"
+edition = "2021"
+publish = false
+links = "tauri-plugin-system-bars"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

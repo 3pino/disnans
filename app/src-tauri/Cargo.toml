@@ -27,3 +27,4 @@ tauri-plugin-updater = "2"
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-apk-updater = { path = "plugins/apk-updater" }
+tauri-plugin-system-bars = { path = "plugins/system-bars" }

@@ -226,7 +226,7 @@ async fn attachments_follow_their_message() {
             thread_id: None,
             body: String::new(),
             attachment_ids: vec![bobs.id.clone()],
-            start_thread: None,
+            start_thread: false,
         })
         .await;
     assert_eq!(alice.expect_error().await.1, "invalid_attachment");
@@ -238,7 +238,7 @@ async fn attachments_follow_their_message() {
             thread_id: None,
             body: String::new(),
             attachment_ids: vec![b.id.clone(), a.id.clone()],
-            start_thread: Some(disnans_shared::ThreadKind::Normal),
+            start_thread: true,
         })
         .await;
     assert_eq!(
@@ -256,7 +256,7 @@ async fn attachments_follow_their_message() {
             thread_id: None,
             body: "again".into(),
             attachment_ids: vec![a.id.clone()],
-            start_thread: None,
+            start_thread: false,
         })
         .await;
     assert_eq!(alice.expect_error().await.1, "invalid_attachment");
@@ -268,7 +268,7 @@ async fn attachments_follow_their_message() {
             thread_id: Some(root.id.clone()),
             body: "file".into(),
             attachment_ids: vec![bobs.id.clone()],
-            start_thread: None,
+            start_thread: false,
         })
         .await;
     assert_eq!(reply.attachments.len(), 1);

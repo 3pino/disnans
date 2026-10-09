@@ -150,10 +150,9 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
         ClientEvent::MessageDelete { message_id } => {
             chat::delete_message(state, actor, &message_id).await
         }
-        ClientEvent::ThreadCreate {
-            root_message_id,
-            kind,
-        } => chat::create_thread(state, &root_message_id, kind).await,
+        ClientEvent::ThreadCreate { root_message_id } => {
+            chat::create_thread(state, &root_message_id).await
+        }
         ClientEvent::ReactionAdd { message_id, emoji } => {
             chat::add_reaction(state, actor, &message_id, &emoji).await
         }

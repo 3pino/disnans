@@ -10,7 +10,7 @@ export type PendingMessage = Message & {
   failed: boolean;
   /** 再送用 */
   attachment_ids: string[];
-  start_thread: 'normal' | null;
+  start_thread: boolean;
 };
 
 const PAGE = 50;

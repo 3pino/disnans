@@ -100,8 +100,8 @@ class Client {
     threadId: string | null;
     body: string;
     attachments: Attachment[];
-    // 近況（status）は使わない。スレッドはすべて同じ扱い
-    startThread?: 'normal' | null;
+    /** このメッセージを起点にスレッドを作る */
+    startThread?: boolean;
   }): void {
     const me = this.me;
     if (!me) return;
@@ -113,7 +113,7 @@ class Client {
       thread_id: opts.threadId,
       body: opts.body,
       attachment_ids: ids,
-      start_thread: opts.startThread ?? null,
+      start_thread: opts.startThread ?? false,
     };
     const tl = this.timeline(opts.threadId);
     tl.addPending({
@@ -130,7 +130,7 @@ class Client {
       sent: false,
       failed: false,
       attachment_ids: ids,
-      start_thread: opts.startThread ?? null,
+      start_thread: opts.startThread ?? false,
     });
     const sent = this.send(ev);
     const p = tl.pending.find((x) => x.client_id === clientId);
@@ -174,7 +174,7 @@ class Client {
   /** メッセージからスレッドを開く（なければ作る） */
   openThreadFrom(msg: Message): void {
     if (!msg.thread) {
-      this.send({ type: 'thread.create', root_message_id: msg.id, kind: 'normal' });
+      this.send({ type: 'thread.create', root_message_id: msg.id });
     }
     ui.openThread(msg.id);
   }
