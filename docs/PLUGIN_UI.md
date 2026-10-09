@@ -2,7 +2,6 @@
 
 `disnans.ui` は、本体と**同じ見た目**の部品を DOM 要素として作る関数の集まりです。
 見た目の正は本体のグローバルの CSS クラス（`app/src/app.css`）で、本体の Svelte の部品（`app/src/components/ui/`）と
-`disnans.ui` は、どちらも同じクラスを付けた同じ DOM を作ります。ライト・ダークのテーマにも自動で合います。
 
 作り方の全体は [PLUGINS.md](PLUGINS.md)、型は `packages/plugin-sdk/index.d.ts`（`Disnans.Ui`）を参照してください。
 
@@ -42,7 +41,6 @@ const { ui } = disnans;
 2. `addIcon` で登録したアイコン（どのプラグインが登録したものでも）
 3. [Lucide](https://lucide.dev/icons) のアイコン（サイトに出ている名前。例: `dice-5`, `message-circle`, `settings`）
 
-- どれも 24×24 の線のアイコン（`stroke="currentColor"`、線の太さ 2、角は丸）として描くので、並べても見た目がそろいます。色は文字色（`color`）になります
 - Lucide のアイコンは、初めて使うときに読み込みます。読み込むまでの一瞬は空で、読み込めたら自動で描かれます
 - 見つからない名前は空のアイコンになり、コンソールに警告が出ます
 
@@ -81,8 +79,7 @@ onload() {
 ui.icon(name: IconName, opts?: { size?: number; class?: string; label?: string }): SVGSVGElement
 ```
 
-アイコンの `<svg class="icon">` を作ります。`size` の既定は 24（px）。`label` を渡すと読み上げ用の名前（`role="img"`）、
-省くと飾り（`aria-hidden`）になります。
+アイコンの `<svg class="icon">` を作ります。`size` の既定は 24（px）。`label` を渡すと読み上げ用の名前（`role="img"`）、省くと飾り（`aria-hidden`）になります。
 
 ```js
 const el = ui.icon('dice-5', { size: 18 });
@@ -96,7 +93,7 @@ ui.button(opts: {
   text?: string;          // ボタンの文字
   icon?: IconName;        // 文字の左のアイコン。text がなければアイコンだけのボタン
   label?: string;         // 読み上げ用の名前（アイコンだけのときは必須）
-  variant?: 'default' | 'primary' | 'danger';
+  variant?: 'default' | 'primary' | 'danger' | 'ghost';
   onClick?: () => void;
   disabled?: boolean;
 }): HTMLButtonElement
@@ -108,7 +105,10 @@ ui.button(opts: {
 ui.button({ text: '振る', variant: 'primary', onClick: () => this.roll() });  // 文字だけ
 ui.button({ text: 'もう一度', icon: 'rotate-ccw', onClick: () => {} });        // アイコン + 文字
 ui.button({ icon: 'send', label: '送信', variant: 'primary', onClick: () => {} }); // アイコンだけ（正方形の .btn-icon-only）
+ui.button({ icon: 'settings', label: '設定', variant: 'ghost', onClick: () => {} }); // 枠のないボタン
 ```
+
+- `variant: 'ghost'` は枠も背景もないボタンです。ホバー・フォーカス・押している間だけ背景に色が付きます
 
 - `disabled` はあとから `el.disabled = true` でも変えられます
 - 枠のない小さなアイコンのボタンは、`<button class="icon-btn">` に `ui.icon(...)` を入れて作れます
@@ -239,13 +239,14 @@ ui.toast(text: string, kind?: 'info' | 'error'): void
 ### ui.confirm
 
 ```ts
-ui.confirm(opts: { title: string; body?: string; okLabel?: string; danger?: boolean }): Promise<boolean>
+ui.confirm(opts: { title: string; body?: string; okLabel?: string; ngLabel?: string; danger?: boolean }): Promise<boolean>
 ```
 
 確認ダイアログを出し、OK なら `true` を返します。`danger` で OK ボタンが赤になります。
+ボタンの文字は `okLabel`（既定は「OK」）と `ngLabel`（取り消すほう。既定は「キャンセル」）で変えられます。
 
 ```js
-const ok = await ui.confirm({ title: 'やり直しますか？', okLabel: 'やり直す', danger: true });
+const ok = await ui.confirm({ title: 'やり直しますか？', okLabel: 'やり直す', ngLabel: 'やめる', danger: true });
 ```
 
 ---
@@ -258,7 +259,7 @@ const ok = await ui.confirm({ title: 'やり直しますか？', okLabel: 'や�
 | クラス | 内容 | 作る関数 |
 |---|---|---|
 | `.icon` | アイコンの `<svg>` | `ui.icon` |
-| `.btn`（`.primary` / `.danger` / `.btn-icon-only`） | ボタン。`.btn-icon-only` はアイコンだけの正方形 | `ui.button` |
+| `.btn`（`.primary` / `.danger` / `.ghost` / `.btn-icon-only`） | ボタン。`.ghost` は枠のないボタン、`.btn-icon-only` はアイコンだけの正方形 | `ui.button` |
 | `.icon-btn`（`.active`） | 枠のない、アイコンだけの小さなボタン | — |
 | `.toggle` / `.toggle-thumb`（`.toggle-on`） | トグルスイッチ | `ui.toggle` |
 | `.input` | 1行の入力欄 | `ui.input` |

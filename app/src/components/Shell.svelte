@@ -1,15 +1,24 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import Sidebar from './Sidebar.svelte';
   import ChatView from './ChatView.svelte';
   import ThreadPanel from './ThreadPanel.svelte';
   import PluginPanel from './PluginPanel.svelte';
   import SettingsView from './SettingsView.svelte';
+  import PluginSettingsPage from './PluginSettingsPage.svelte';
   import ConnectionBanner from './ConnectionBanner.svelte';
   import NavBar from './NavBar.svelte';
+  import CommandPalette from './CommandPalette.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { commandHost } from '../lib/commandHost.svelte';
 
   const panelOpen = $derived(ui.panel !== null);
   const showChat = $derived(ui.isMobile ? ui.tab === 'chat' : ui.tab !== 'settings');
+
+  // 設定（ショートカットなど）の読み込み・本体のコマンドの登録・ショートカットの受け付けを始める
+  onMount(() => commandHost.start());
+  // モバイルではパネルがチャットを覆う
+  const chatVisible = $derived(showChat && !(ui.isMobile && panelOpen));
 </script>
 
 {#snippet mainEmpty()}
@@ -27,11 +36,17 @@
   <main id="main-chat" class="shell-main-chat" class:shell-main-chat-hidden={!showChat}>
     <header class="top-bar"></header>
     <ConnectionBanner />
-    <ChatView threadId={null} placeholder="メッセージを送信" empty={mainEmpty} />
+    <ChatView threadId={null} placeholder="メッセージを送信" empty={mainEmpty} active={chatVisible} />
   </main>
 
   {#if ui.tab === 'settings'}
-    <div class="shell-settings"><SettingsView /></div>
+    <div class="shell-settings">
+      <!-- プラグインの設定画面は一覧の代わりに出す。一覧は隠すだけにして、戻ったときに元の位置へ戻せるようにする -->
+      {#if ui.pluginSettings}
+        <PluginSettingsPage id={ui.pluginSettings} />
+      {/if}
+      <div class="shell-settings-list" hidden={!!ui.pluginSettings}><SettingsView /></div>
+    </div>
   {/if}
 
   {#if ui.isMobile && ui.tab === 'threads'}
@@ -54,6 +69,10 @@
   {/if}
 </div>
 
+{#if commandHost.paletteOpen}
+  <CommandPalette onclose={() => (commandHost.paletteOpen = false)} />
+{/if}
+
 <style>
   .shell {
     display: grid;
@@ -69,6 +88,9 @@
   .shell-settings {
     min-width: 0;
     min-height: 0;
+  }
+  .shell-settings-list {
+    height: 100%;
   }
   .shell-main-chat {
     display: flex;

@@ -1,4 +1,4 @@
-//! `/api/me`、`/api/users`、`/api/avatars`。
+//! `/api/me`、`/api/me/prefs`、`/api/users`、`/api/avatars`。
 
 use axum::Json;
 use axum::extract::{Multipart, Path, State};
@@ -12,10 +12,13 @@ use crate::avatars;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::state::SharedState;
-use crate::store::users;
+use crate::store::{prefs, users};
 
 /// 表示名の最大文字数。
 const MAX_DISPLAY_NAME_CHARS: usize = 32;
+
+/// 設定（`/api/me/prefs`）の JSON の最大バイト数。
+pub const MAX_PREFS_BYTES: usize = 64 * 1024;
 
 pub async fn me(CurrentUser(user): CurrentUser) -> Json<User> {
     Json(user)
@@ -42,6 +45,52 @@ pub async fn update_me(
         .hub
         .broadcast(&ServerEvent::UserUpdated { user: user.clone() });
     Ok(Json(user))
+}
+
+/// 自分の設定。まだ保存していなければ空のオブジェクト。
+pub async fn get_prefs(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+) -> AppResult<Json<serde_json::Value>> {
+    let saved = prefs::get(&state.pool, &user.id).await?;
+    // 壊れたものが入っていても、空として扱う（次の保存で直る）
+    let value = saved
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    Ok(Json(value))
+}
+
+/// 自分の設定をまるごと置き換え、自分のすべての接続（ほかの端末）に `prefs.updated` を送る。
+pub async fn put_prefs(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Json(value): Json<serde_json::Value>,
+) -> AppResult<Json<serde_json::Value>> {
+    if !value.is_object() {
+        return Err(AppError::bad_request(
+            "invalid_prefs",
+            "設定は JSON のオブジェクトにしてください",
+        ));
+    }
+    let json = serde_json::to_string(&value).map_err(AppError::internal)?;
+    if json.len() > MAX_PREFS_BYTES {
+        return Err(AppError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "prefs_too_large",
+            format!("設定は {} KB までです", MAX_PREFS_BYTES / 1024),
+        ));
+    }
+
+    let _guard = state.write_lock().await;
+    prefs::set(&state.pool, &user.id, &json).await?;
+    state.hub.send_to_user(
+        &user.id,
+        &ServerEvent::PrefsUpdated {
+            prefs: value.clone(),
+        },
+    );
+    Ok(Json(value))
 }
 
 pub async fn list(State(state): State<SharedState>) -> AppResult<Json<Vec<User>>> {

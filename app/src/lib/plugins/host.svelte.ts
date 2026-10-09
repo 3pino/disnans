@@ -1,8 +1,8 @@
 import { api } from '../api';
-import { isAndroid } from '../config';
 import { getItem, setItem } from '../storage';
 import { registerSlashCommand } from '../slashCommands.svelte';
 import { registerComposerAction } from '../composerActions';
+import { registerCommand } from '../commands.svelte';
 import type { MessageCard } from '../protocol/MessageCard';
 import type { PluginInfo } from '../protocol/PluginInfo';
 import type { PluginKind } from '../protocol/PluginKind';
@@ -11,7 +11,6 @@ import type { ServerEvent } from '../protocol/ServerEvent';
 import { client } from '../stores/client.svelte';
 import { ui } from '../stores/ui.svelte';
 import { devFolderSupported, readDevPlugin, scanDevFolder } from './dev';
-import { matchHotkey } from './hotkey';
 import { manifestOf, parsePackageManifest, PLUGIN_FILES } from './manifest';
 import { THEME_STYLE_SELECTOR, themeHost } from './themes.svelte';
 import { PluginBase, PluginRuntime, type ViewHandle } from './runtime';
@@ -178,6 +177,7 @@ class PluginHost {
     send: (ev) => void client.send(ev),
     registerSlashCommand,
     registerComposerAction,
+    registerCommand,
     openPanel: (plugin, view, sessionId) => ui.openPluginView(plugin, view, sessionId),
     closePanel: (plugin) => {
       if (ui.panel?.kind === 'plugin' && ui.panel.plugin === plugin) ui.closePanel();
@@ -204,8 +204,8 @@ class PluginHost {
     });
     (window as unknown as { disnans: Disnans.Host }).disnans = host;
 
+    // ショートカット（addCommand）は lib/commandHost.svelte.ts がまとめて受け付ける
     client.subscribe((ev) => this.onEvent(ev));
-    window.addEventListener('keydown', (e) => this.onKeydown(e));
     // すでに hello を受け取っていたら（HMR など）そのまま始める
     if (client.ready) this.onHello();
   }
@@ -250,20 +250,6 @@ class PluginHost {
         const p = ui.panel;
         if (p?.kind === 'plugin' && dropped.has(p.sessionId)) ui.closePanel();
         break;
-      }
-    }
-  }
-
-  private onKeydown(e: KeyboardEvent): void {
-    // ショートカットはデスクトップだけ
-    if (ui.isMobile || isAndroid() || e.repeat || e.isComposing) return;
-    for (const l of this.loaded.values()) {
-      for (const { cmd, hotkey } of l.runtime.commands) {
-        if (hotkey && matchHotkey(hotkey, e)) {
-          e.preventDefault();
-          l.runtime.runCommand(cmd);
-          return;
-        }
       }
     }
   }

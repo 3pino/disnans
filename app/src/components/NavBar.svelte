@@ -2,7 +2,7 @@
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import Settings from '@lucide/svelte/icons/settings';
   import UiNavBar, { type NavBarItem } from './ui/NavBar.svelte';
-  import { threads } from '../lib/stores/threads.svelte';
+  import { unread } from '../lib/stores/unread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 
   // モバイルでは画面の下、デスクトップではサイドバーの下に出す。見た目は ui/NavBar（.nav-bar）。
@@ -14,8 +14,8 @@
 
   const items = $derived<NavBarItem[]>([
     // Chat はアプリのロゴ（disnans-logo）
-    { id: 'chat', label: 'Chat', icon: 'disnans-logo' },
-    ...(withThreads ? [{ id: 'threads', label: 'Threads', icon: MessagesSquare, badge: threads.totalUnread }] : []),
+    { id: 'chat', label: 'Chat', icon: 'disnans-logo', badge: unread.main },
+    ...(withThreads ? [{ id: 'threads', label: 'Threads', icon: MessagesSquare, badge: unread.threadTotal }] : []),
     { id: 'settings', label: 'Settings', icon: Settings },
   ]);
 

@@ -9,12 +9,6 @@ function activity(t: Thread): number {
 class Threads {
   list = $state<Thread[]>([]);
   loaded = $state(false);
-  /** スレッド ID → 未読の返信数（このセッション内だけ） */
-  unread = $state<Record<string, number>>({});
-
-  get totalUnread(): number {
-    return Object.values(this.unread).reduce((a, b) => a + b, 0);
-  }
 
   async load(): Promise<void> {
     try {
@@ -38,21 +32,12 @@ class Threads {
 
   remove(id: string): void {
     this.list = this.list.filter((t) => t.root.id !== id);
-    this.clearUnread(id);
   }
 
   /** 起点のメッセージが更新されたとき */
   updateRoot(msg: Message): void {
     const t = this.get(msg.id);
     if (t) t.root = msg;
-  }
-
-  bumpUnread(id: string): void {
-    this.unread[id] = (this.unread[id] ?? 0) + 1;
-  }
-
-  clearUnread(id: string): void {
-    if (id in this.unread) delete this.unread[id];
   }
 }
 

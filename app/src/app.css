@@ -218,9 +218,28 @@ a {
 .btn.danger:hover {
   filter: brightness(1.06);
 }
+/* 枠のないボタン。ふだんは背景も枠もなく、ホバー・フォーカス・押している間だけ背景に色を付ける */
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+.btn.ghost:hover,
+.btn.ghost:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+.btn.ghost:active {
+  background: var(--surface-2);
+  color: var(--text);
+}
 .btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+.btn.ghost:disabled {
+  background: transparent;
+  color: var(--text-muted);
 }
 /* アイコンだけのボタン（入力欄の送信ボタンのような、正方形のボタン） */
 .btn.btn-icon-only {
@@ -263,6 +282,21 @@ a {
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
+}
+
+/* キーボードのキー（ショートカットの表示） */
+.kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .spin {

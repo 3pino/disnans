@@ -1,5 +1,5 @@
 /**
- * disnans プラグインの型定義（ホスト API バージョン 1）。
+ * disnans プラグインの型定義（ホスト API バージョン 2）。
  *
  * プラグインの main.js は ES モジュールで、`Plugin` を継承したクラスを `export default` する。
  * ホスト API はグローバルの `disnans` から取る（`import` は使わない）。
@@ -56,7 +56,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 1） */
+      /** ホスト API のバージョン（いまは 2） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -95,11 +95,14 @@ declare global {
       /** 外すときに呼ばれる。add* / register* で登録したものは自動で片付くので、それ以外の後始末だけ書く */
       onunload(): void;
 
-      /** 入力欄の `/name` コマンドを足す（補完に出る） */
+      /** 入力欄の `/name` コマンドを足す（補完に出る）。新しく書くなら addCommand の slash を使う */
       addSlashCommand(cmd: SlashCommand): void;
       /** 入力欄の「＋」メニューに項目を足す */
       addComposerAction(action: ComposerAction): void;
-      /** キーボードショートカット（デスクトップ） */
+      /**
+       * コマンドを足す（API v2）。コマンドパレット・設定のショートカットの一覧に出て、
+       * hotkey（既定のショートカット）・slash（入力欄の `/name`）からも実行できる
+       */
       addCommand(cmd: Command): void;
       /** 設定画面にプラグインの欄を出す */
       addSettingTab(tab: SettingTab): void;
@@ -195,11 +198,39 @@ declare global {
     };
 
     type Command = {
+      /** プラグインの中で一意な ID。利用者のショートカットの設定は `<プラグイン ID>:<id>` で保存される */
       id: string;
+      /** 表示名（コマンドパレット・設定のショートカットの一覧に出る） */
       name: string;
-      /** 例: "Mod+Shift+D"（Mod は Ctrl。macOS では Cmd） */
+      /** アイコン（省略するとプラグインのアイコン） */
+      icon?: IconName;
+      /**
+       * 既定のショートカット。例: "Mod+Shift+D"（Mod は Ctrl。macOS では Cmd）。
+       * 利用者は設定で変えたり外したりできる。デスクトップだけ（Android では効かない）
+       */
       hotkey?: string;
-      run(): void | Promise<void>;
+      /** 入力欄の `/name` としても使えるようにする（英小文字・数字・ハイフン）。省略するとスラッシュコマンドにしない */
+      slash?: string;
+      /** スラッシュコマンドの補完に出す説明（省略すると name） */
+      description?: string;
+      /** スラッシュコマンドの引数の書き方のヒント（例: "[個数]d[面数]"） */
+      args?: string;
+      /** スラッシュコマンドの引数の候補を出す（任意） */
+      suggestArgs?: (input: string) => Suggestion[];
+      /**
+       * 実行したときに呼ばれる。例外を投げる（Promise が reject される）と、本体がエラーのトーストを出す。
+       * ctx は API v2 から（v1 の本体では引数なしで呼ばれる）
+       */
+      run(ctx: CommandContext): void | Promise<void>;
+    };
+
+    type CommandContext = {
+      /** スラッシュコマンドならコマンド名のあとの文字列（前後の空白は除く）。ショートカット・パレットからは空文字列 */
+      args: string;
+      /** スラッシュコマンドなら入力したスレッド、ショートカット・パレットなら開いているスレッドの ID。メインチャットなら null */
+      threadId: string | null;
+      /** どこから実行したか */
+      via: 'hotkey' | 'palette' | 'slash';
     };
 
     // ---- 設定 ----
@@ -283,7 +314,8 @@ declare global {
     // 詳しくは docs/PLUGIN_UI.md。見た目は本体のグローバルの CSS クラスで、本体の部品と同じ DOM を作る
 
     type ButtonOptions = {
-      variant?: 'default' | 'primary' | 'danger';
+      /** ghost は枠も背景もなく、ホバーで背景に色を付ける（`.btn.ghost`） */
+      variant?: 'default' | 'primary' | 'danger' | 'ghost';
       onClick?: () => void;
       disabled?: boolean;
     } & (
@@ -361,8 +393,8 @@ declare global {
       ): HTMLElement;
       /** トースト */
       toast(text: string, kind?: 'info' | 'error'): void;
-      /** 確認ダイアログ。OK なら true */
-      confirm(opts: { title: string; body?: string; okLabel?: string; danger?: boolean }): Promise<boolean>;
+      /** 確認ダイアログ。OK なら true。okLabel の既定は「OK」、ngLabel（取り消すボタン）の既定は「キャンセル」 */
+      confirm(opts: { title: string; body?: string; okLabel?: string; ngLabel?: string; danger?: boolean }): Promise<boolean>;
     }
   }
 }

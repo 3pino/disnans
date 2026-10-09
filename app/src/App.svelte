@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import Setup from './components/Setup.svelte';
   import Shell from './components/Shell.svelte';
   import ConfirmDialog from './components/ConfirmDialog.svelte';
@@ -10,6 +10,7 @@
   import { ui } from './lib/stores/ui.svelte';
   import { notifications } from './lib/stores/notifications.svelte';
   import { pluginHost } from './lib/plugins/host.svelte';
+  import { startBackNav } from './lib/backNav';
 
   let setup = $state(needsServerSetup());
 
@@ -48,16 +49,21 @@
     return () => document.removeEventListener('click', onClick);
   });
 
-  // モバイルで戻る操作（Android の戻るボタン）でパネルを閉じる
+  // 戻る操作（Android の戻るボタン）で、パネル → プラグインの設定画面 → チャット以外のタブ の順に閉じる。
+  // チャットで何も開いていなければ、履歴が尽きてアプリが裏に回る。モバイルの表示か Android のときだけ使う
   $effect(() => {
-    if (!ui.panel || !ui.isMobile) return;
-    history.pushState({ panel: true }, '');
-    const onPop = () => ui.closePanel();
-    window.addEventListener('popstate', onPop);
-    return () => {
-      window.removeEventListener('popstate', onPop);
-      if (history.state?.panel) history.back();
-    };
+    if (!ui.isMobile && !isAndroid()) return;
+    const nav = startBackNav(() => ui.backLayers());
+    $effect(() => {
+      void ui.backLayers().length;
+      untrack(() => nav.sync());
+    });
+    return () => nav.stop();
+  });
+
+  // 設定のタブを離れたら、プラグインの設定画面は閉じる
+  $effect(() => {
+    if (ui.tab !== 'settings' && ui.pluginSettings) ui.closePluginSettings();
   });
 </script>
 

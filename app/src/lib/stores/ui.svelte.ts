@@ -11,7 +11,15 @@ export type Panel =
 
 export type Toast = { id: number; text: string; kind: 'info' | 'error'; action?: { label: string; run: () => void } };
 
-export type ConfirmRequest = { title: string; body?: string; okLabel: string; danger?: boolean; resolve: (ok: boolean) => void };
+export type ConfirmRequest = {
+  title: string;
+  body?: string;
+  okLabel: string;
+  /** 取り消すボタンの文字（省くと「キャンセル」） */
+  ngLabel?: string;
+  danger?: boolean;
+  resolve: (ok: boolean) => void;
+};
 
 const THEME_KEY = 'disnans.theme';
 const HIDE_NAV_BAR_KEY = 'disnans.hideNavigationBar';
@@ -26,6 +34,8 @@ class Ui {
   /** モバイルのボトムナビ。デスクトップでは chat と settings だけを使う */
   tab = $state<'chat' | 'threads' | 'settings'>('chat');
   panel = $state<Panel>(null);
+  /** 設定で開いているプラグインの設定画面（プラグインの ID）。設定のタブでだけ使う */
+  pluginSettings = $state<string | null>(null);
   lightbox = $state<{ src: string; alt: string; downloadUrl: string } | null>(null);
   toasts = $state<Toast[]>([]);
   confirmReq = $state<ConfirmRequest | null>(null);
@@ -77,9 +87,37 @@ class Ui {
     this.panel = { kind: 'plugin', plugin, view, sessionId };
   }
 
+  /** 設定を開く。設定を開いているときにもう一度押したら、プラグインの設定画面から一覧に戻る */
   openSettings(): void {
     this.tab = 'settings';
+    this.pluginSettings = null;
     if (!this.isMobile) this.panel = null;
+  }
+
+  /** 設定の中で、プラグインの設定画面を開く */
+  openPluginSettings(id: string): void {
+    this.tab = 'settings';
+    this.pluginSettings = id;
+  }
+
+  closePluginSettings(): void {
+    this.pluginSettings = null;
+  }
+
+  /**
+   * 戻る操作で閉じられるもの（下から順）。Android の戻るボタンは、これを上から1つずつ閉じる。
+   * チャット以外のタブ → プラグインの設定画面 → パネル。チャットで何も開いていなければ空
+   */
+  backLayers(): (() => void)[] {
+    const layers: (() => void)[] = [];
+    if (this.tab !== 'chat')
+      layers.push(() => {
+        this.tab = 'chat';
+        this.pluginSettings = null;
+      });
+    if (this.tab === 'settings' && this.pluginSettings) layers.push(() => this.closePluginSettings());
+    if (this.panel) layers.push(() => this.closePanel());
+    return layers;
   }
 
   closePanel(): void {

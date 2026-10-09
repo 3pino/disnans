@@ -11,6 +11,7 @@ import { Timeline } from './timeline.svelte';
 import { threads } from './threads.svelte';
 import { ui } from './ui.svelte';
 import { notifications } from './notifications.svelte';
+import { page, unread } from './unread.svelte';
 import { errorText } from '../errors';
 
 type Listener = (ev: ServerEvent) => void;
@@ -37,6 +38,7 @@ class Client {
 
   start(): void {
     if (this.socket) return;
+    page.init();
     this.socket = new Socket({
       url: wsUrl,
       onEvent: (ev) => this.dispatch(ev),
@@ -215,16 +217,16 @@ class Client {
         // 再接続時は、読み込み済みの履歴を取り直す
         for (const t of this.timelines.values()) if (t.loaded || t.error) void t.load();
         void threads.load();
+        unread.me = ev.me.id;
+        void unread.load();
         break;
       }
       case 'message.created': {
         const m = ev.message;
         this.timeline(m.thread_id).upsert(m, ev.client_id);
         if (m.thread) threads.upsert({ root: m, info: m.thread });
-        if (m.thread_id && m.author_id !== this.me?.id) {
-          const open = ui.panel?.kind === 'thread' && ui.panel.id === m.thread_id;
-          if (!open || document.visibilityState !== 'visible') threads.bumpUnread(m.thread_id);
-        }
+        // 自分のものは数えない。見ている場所なら、MessageList がすぐに既読にする
+        unread.onMessage(m);
         break;
       }
       case 'message.updated': {
@@ -234,14 +236,13 @@ class Client {
         break;
       }
       case 'message.deleted': {
-        this.timeline(ev.thread_id).remove(ev.message_id);
-        // 未読に数えた返信が消えた可能性があるので、1つ減らす（概算）
-        if (ev.thread_id && (threads.unread[ev.thread_id] ?? 0) > 0) {
-          threads.unread[ev.thread_id]--;
-          if (threads.unread[ev.thread_id] === 0) threads.clearUnread(ev.thread_id);
-        }
+        const tl = this.peekTimeline(ev.thread_id);
+        // 未読に数えていたものなら減らす（読み込んでいなければ投稿者が分からないので、他人のものとみなす）
+        unread.onDeleted(ev.message_id, ev.thread_id, tl?.find(ev.message_id)?.author_id);
+        tl?.remove(ev.message_id);
         if (threads.get(ev.message_id) || this.timelines.has(ev.message_id)) {
           threads.remove(ev.message_id);
+          unread.removeScope(ev.message_id);
           this.timelines.delete(ev.message_id);
           if (ui.panel?.kind === 'thread' && ui.panel.id === ev.message_id) ui.closePanel();
         }
@@ -284,6 +285,12 @@ class Client {
       case 'session.updated':
       case 'session.event':
         // プラグインのホスト（lib/plugins/host.svelte.ts）が subscribe で受け取る
+        break;
+      case 'prefs.updated':
+        // 設定（lib/stores/prefs.svelte.ts）が subscribe で受け取る
+        break;
+      case 'read.updated':
+        unread.applyRemote(ev.marker);
         break;
       case 'pong':
         break;

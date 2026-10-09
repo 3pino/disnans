@@ -10,7 +10,15 @@
     placeholder,
     header,
     empty,
-  }: { threadId: string | null; placeholder: string; header?: Snippet; empty?: Snippet } = $props();
+    active = false,
+  }: {
+    threadId: string | null;
+    placeholder: string;
+    header?: Snippet;
+    empty?: Snippet;
+    /** 画面に見えている（見えていて一番下までスクロールしていれば既読にする） */
+    active?: boolean;
+  } = $props();
 
   const timeline = $derived(client.timeline(threadId));
   let composer: Composer | undefined = $state();
@@ -47,7 +55,7 @@
     if (files.length) composer?.addFiles(files);
   }}
 >
-  <MessageList {timeline} inThread={threadId !== null} {header} {empty} />
+  <MessageList {timeline} inThread={threadId !== null} {header} {empty} {active} />
   <Composer bind:this={composer} {threadId} {placeholder} />
 
   {#if dragDepth > 0}

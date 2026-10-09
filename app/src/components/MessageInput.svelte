@@ -11,11 +11,12 @@
   import { commandHint, slashProvider } from '../lib/suggest/slash';
   import { slashCommands } from '../lib/slashCommands.svelte';
   import { isAndroid } from '../lib/config';
+  import { prefs } from '../lib/stores/prefs.svelte';
+  import { enterComboOf, insertNewline, insertsNewlineByDefault } from '../lib/enterKeys';
 
   let {
     initial = '',
     placeholder = '',
-    enterSends = true,
     maxHeight = 240,
     onsubmit,
     oncancel,
@@ -26,7 +27,6 @@
   }: {
     initial?: string;
     placeholder?: string;
-    enterSends?: boolean;
     maxHeight?: number;
     onsubmit?: () => void;
     oncancel?: () => void;
@@ -129,9 +129,20 @@
     if (e.isComposing || e.keyCode === 229) return;
     // 候補が出ているときは、上下・Enter・Tab・Esc を候補の操作に使う
     if (suggest && suggestList?.keydown(e)) return;
-    if (e.key === 'Enter' && enterSends && !e.shiftKey) {
-      e.preventDefault();
-      onsubmit?.();
+    // Enter の組み合わせごとの動作（送信・改行・なし）は設定（prefs.enterKeys）で決める
+    const combo = enterComboOf(e);
+    if (combo) {
+      const action = prefs.enterKeys[combo];
+      if (action === 'send') {
+        e.preventDefault();
+        onsubmit?.();
+      } else if (action === 'none') {
+        e.preventDefault();
+      } else if (!insertsNewlineByDefault(combo) && ta) {
+        // Ctrl+Enter・Alt+Enter はブラウザーが改行を入れないので、自分で入れる
+        e.preventDefault();
+        insertNewline(ta);
+      }
       return;
     }
     if (e.key === 'Escape' && oncancel) {
@@ -211,7 +222,7 @@
       // 候補を選ぶために外したときは、続けて出す候補を消さない
       if (!picking) setTimeout(() => (suggest = null), 150);
     }}
-    enterkeyhint={enterSends ? 'send' : 'enter'}
+    enterkeyhint={prefs.enterKeys.enter === 'send' ? 'send' : 'enter'}
   ></textarea>
 </div>
 

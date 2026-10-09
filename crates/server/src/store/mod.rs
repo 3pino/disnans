@@ -5,6 +5,8 @@
 pub mod files;
 pub mod messages;
 pub mod plugins;
+pub mod prefs;
+pub mod reads;
 pub mod sessions;
 pub mod users;
 

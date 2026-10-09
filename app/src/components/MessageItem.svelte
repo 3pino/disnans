@@ -21,7 +21,9 @@
   import type { PendingMessage } from '../lib/stores/timeline.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
-  import { threads } from '../lib/stores/threads.svelte';
+  import { prefs } from '../lib/stores/prefs.svelte';
+  import { enterComboLabel, sendCombos } from '../lib/enterKeys';
+  import { unread as unreadStore } from '../lib/stores/unread.svelte';
   import { formatFull, formatStamp, formatTime, relative } from '../lib/format';
   import { QUICK_REACTIONS } from '../lib/emoji';
   import { extractMentions } from '../lib/markdown';
@@ -43,7 +45,8 @@
   const mentionsMe = $derived(!!client.me && extractMentions(message.body).includes(client.me.id));
   const editing = $derived(ui.editing === message.id && !pending && !message.card);
   const canThread = $derived(!inThread && !pending && message.thread_id === null);
-  const unread = $derived(threads.unread[message.id] ?? 0);
+  /** このメッセージが起点のスレッドの未読数 */
+  const unread = $derived(message.thread ? unreadStore.count(message.id) : 0);
   /** プラグインのカードは本文を編集できない（削除はできる） */
   const canEdit = $derived(isMine && !message.card);
 
@@ -158,7 +161,6 @@
         <MessageInput
           bind:this={editor}
           initial={message.body}
-          enterSends={!ui.isMobile}
           onsubmit={saveEdit}
           oncancel={() => (ui.editing = null)}
         />
@@ -168,8 +170,11 @@
           <Button onclick={() => (ui.editing = null)}>キャンセル</Button>
           <Button variant="primary" onclick={saveEdit}>保存</Button>
         {:else}
-          Esc で<button type="button" class="message-link-button" onclick={() => (ui.editing = null)}>キャンセル</button>・Enter
-          で<button type="button" class="message-link-button" onclick={saveEdit}>保存</button>
+          {@const saveKey = sendCombos(prefs.enterKeys)[0]}
+          <!-- 保存のキーは設定（入力欄のキー）の「送信」。なければボタンだけ -->
+          Esc で<button type="button" class="message-link-button" onclick={() => (ui.editing = null)}>キャンセル</button>・{saveKey
+            ? `${enterComboLabel(saveKey)} で`
+            : ''}<button type="button" class="message-link-button" onclick={saveEdit}>保存</button>
         {/if}
       </div>
     {:else}

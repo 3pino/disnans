@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import Settings2 from '@lucide/svelte/icons/settings-2';
+  import Settings from '@lucide/svelte/icons/settings';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import FolderSearch from '@lucide/svelte/icons/folder-search';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
@@ -11,7 +12,6 @@
   import StatusLine from './ui/StatusLine.svelte';
   import TextInput from './ui/TextInput.svelte';
   import Toggle from './ui/Toggle.svelte';
-  import PluginSettingTab from './PluginSettingTab.svelte';
   import { pluginHost, type PluginEntry } from '../lib/plugins/host.svelte';
   import { devFolderSupported } from '../lib/plugins/dev';
   import { isTauri } from '../lib/config';
@@ -19,7 +19,8 @@
   import type { PluginVisibility } from '../lib/protocol/PluginVisibility';
 
   // 設定の「プラグイン」セクション: 配布済み・開発中の一覧、開発用フォルダ（PC 版）、ファイルを選んで配布（ブラウザー版）
-  // テーマの一覧は「外観」（ThemeSettings）。開発用フォルダとファイルを選んでの配布は、テーマにも使う
+  // テーマの一覧は「外観」（ThemeSettings）。開発用フォルダとファイルを選んでの配布は、テーマにも使う。
+  // 設定タブを登録したプラグインは、トグルの右の歯車から別の画面（PluginSettingsPage）で設定を開く
 
   const entries = $derived(pluginHost.entries);
   const devSupported = devFolderSupported();
@@ -30,8 +31,8 @@
   let devDir = $state(pluginHost.devDir);
   /** 配布・削除の最中の ID */
   let busy = $state<string | null>(null);
-  /** 設定タブを開いている ID */
-  let openSettings = $state<string | null>(null);
+  /** 設定画面を開いたときの、一覧のスクロール位置と歯車のボタン（戻ったときに元へ戻す） */
+  let returnTo: { scroller: Element | null; top: number; button: HTMLElement } | null = null;
   let fileInput: HTMLInputElement | undefined = $state();
   /** ファイルを選んで配布するときの範囲（選ぶ前にメニューで決める） */
   let pickVisibility: PluginVisibility = 'public';
@@ -101,6 +102,24 @@
     fileInput?.click();
   }
 
+  function openSettings(e: PluginEntry, ev: MouseEvent) {
+    const button = ev.currentTarget as HTMLElement;
+    const scroller = button.closest('.scroll');
+    returnTo = { scroller, top: scroller?.scrollTop ?? 0, button };
+    ui.openPluginSettings(e.id);
+  }
+
+  // 設定画面から一覧に戻ったら、スクロール位置と歯車のボタンへのフォーカスを戻す
+  $effect(() => {
+    if (ui.pluginSettings !== null || !returnTo) return;
+    const r = returnTo;
+    returnTo = null;
+    void tick().then(() => {
+      if (r.scroller) r.scroller.scrollTop = r.top;
+      if (r.button.isConnected) r.button.focus({ preventScroll: true });
+    });
+  });
+
   function saveDevDir(ev: SubmitEvent) {
     ev.preventDefault();
     pluginHost.setDevDir(devDir);
@@ -134,7 +153,19 @@
     <div class="plugin-settings-item" class:plugin-settings-item-off={!e.enabled}>
       <SettingRow name={nameOf(e)} description={m?.description || undefined} icon={e.icon} class="plugin-settings-row">
         {#snippet control()}
-          <Toggle checked={e.enabled} label="{nameOf(e)} を有効にする" onchange={(on) => pluginHost.setEnabled(e.id, on)} />
+          <div class="plugin-settings-controls">
+            <Toggle checked={e.enabled} label="{nameOf(e)} を有効にする" onchange={(on) => pluginHost.setEnabled(e.id, on)} />
+            {#if e.hasSettings}
+              <Button
+                variant="ghost"
+                icon={Settings}
+                label="{nameOf(e)} の設定"
+                title="設定"
+                class="plugin-settings-open"
+                onclick={(ev) => openSettings(e, ev)}
+              />
+            {/if}
+          </div>
         {/snippet}
       </SettingRow>
       <div class="muted plugin-settings-meta">
@@ -154,13 +185,8 @@
         <p class="plugin-settings-error">{e.error}</p>
       {/if}
 
-      {#if e.dev || e.server || e.hasSettings}
+      {#if e.dev || e.server}
         <div class="plugin-settings-actions">
-          {#if e.hasSettings}
-            <Button onclick={() => (openSettings = openSettings === e.id ? null : e.id)}>
-              <Settings2 size={15} />{openSettings === e.id ? '設定を閉じる' : '設定'}
-            </Button>
-          {/if}
           {#if e.dev}
             <PublishButton disabled={busy !== null || !e.dev.manifest || !!e.dev.error} onpublish={(v) => publish(e, v)} />
           {/if}
@@ -169,14 +195,6 @@
               <Trash2 size={15} />削除
             </Button>
           {/if}
-        </div>
-      {/if}
-
-      {#if openSettings === e.id && e.hasSettings}
-        <div class="plugin-settings-tabs">
-          {#each pluginHost.settingTabs(e.id) as tab, i (i)}
-            <PluginSettingTab {tab} name={nameOf(e)} />
-          {/each}
         </div>
       {/if}
     </div>
@@ -266,11 +284,11 @@
     gap: 8px;
     margin-top: 8px;
   }
-  .plugin-settings-tabs {
-    margin-top: 10px;
-    padding: 12px;
-    border-radius: var(--radius-sm);
-    background: var(--surface);
+  /* トグルと、その右の歯車（設定画面を開く） */
+  .plugin-settings-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
   .plugin-settings-dev,
   .plugin-settings-upload {

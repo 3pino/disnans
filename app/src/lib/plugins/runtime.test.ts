@@ -4,7 +4,7 @@ import { PluginBase, PluginRuntime } from './runtime';
 import { VersionConflictError } from './sessions';
 import { parseHotkey, matchHotkey } from './hotkey';
 import { parseManifest } from './manifest';
-import type { HostServices, Manifest, PluginClass } from './types';
+import type { HostCommand, HostServices, Manifest, PluginClass } from './types';
 import type { Session as SessionData } from '../protocol/Session';
 import type { ClientEvent } from '../protocol/ClientEvent';
 import { hasIcon, lookupIcon, registerIcon, setLucideForTest } from '../icons.svelte';
@@ -44,6 +44,7 @@ function fakeServices() {
   const actions = new Set<string>();
   const actionDefs = new Map<string, { id: string; icon?: unknown }>();
   const slashDefs = new Map<string, { name: string; icon?: unknown }>();
+  const commands = new Map<string, HostCommand>();
   const sent: ClientEvent[] = [];
   const store = new Map<string, string>();
   let server = sessionData();
@@ -51,6 +52,7 @@ function fakeServices() {
     slash,
     actionDefs,
     slashDefs,
+    commands,
     actions,
     sent,
     store,
@@ -90,6 +92,10 @@ function fakeServices() {
         actions.add(a.id);
         actionDefs.set(a.id, a);
         return () => actions.delete(a.id);
+      },
+      registerCommand: (c: HostCommand) => {
+        commands.set(c.id, c);
+        return () => commands.delete(c.id);
       },
       openPanel: vi.fn(),
       closePanel: vi.fn(),
@@ -191,7 +197,7 @@ describe('PluginRuntime', () => {
     await r.start(P as PluginClass);
     expect(f.slash.has('dice')).toBe(true);
     expect(f.actions.has('plugin:dice:roll')).toBe(true);
-    expect(r.commands).toHaveLength(1);
+    expect(f.commands.has('dice:quick')).toBe(true);
     expect(r.settingTabs).toHaveLength(1);
     expect(r.defaultViewType()).toBe('dice');
     expect(r.cardRenderer).not.toBeNull();
@@ -204,7 +210,7 @@ describe('PluginRuntime', () => {
     expect(onunload).toHaveBeenCalledOnce();
     expect(f.slash.size).toBe(0);
     expect(f.actions.size).toBe(0);
-    expect(r.commands).toHaveLength(0);
+    expect(f.commands.size).toBe(0);
     expect(r.settingTabs).toHaveLength(0);
     expect(r.views.size).toBe(0);
     expect(r.cardRenderer).toBeNull();
@@ -258,6 +264,35 @@ describe('PluginRuntime', () => {
     await r.start(P as PluginClass);
     expect(r.errors).toHaveLength(1);
     expect(f.slash.has('ok')).toBe(true);
+  });
+
+  it('addCommand: ID にプラグイン ID を付け、読めないショートカット・スラッシュコマンド名はエラーにして外して登録する', async () => {
+    const f = fakeServices();
+    const run = vi.fn();
+    class P extends PluginBase {
+      onload() {
+        this.addCommand({ id: 'a', name: 'A', hotkey: 'Mod+Shift+D', slash: 'roll', args: '[n]', suggestArgs: () => [{ value: '1' }], run });
+        this.addCommand({ id: 'b', name: 'B', icon: 'dice-5', hotkey: 'Foo+X', slash: 'Bad Name', run: () => {} });
+        this.addCommand({ id: 'c', name: 'C', suggestArgs: () => { throw new Error('x'); }, run: () => {} });
+      }
+    }
+    const r = new PluginRuntime(manifest, f.services);
+    await r.start(P as PluginClass);
+    const a = f.commands.get('dice:a')!;
+    expect(a).toMatchObject({ name: 'A', defaultHotkey: 'Mod+Shift+D', slash: 'roll', args: '[n]', source: 'ダイス', icon: 'puzzle' });
+    expect(a.suggestArgs?.('')).toEqual([{ value: '1' }]);
+    await a.run({ args: '  2 ', threadId: 't1', via: 'slash' });
+    expect(run).toHaveBeenCalledWith({ args: '2', threadId: 't1', via: 'slash' });
+
+    const b = f.commands.get('dice:b')!;
+    expect(b.defaultHotkey).toBeUndefined();
+    expect(b.slash).toBeUndefined();
+    expect(b.icon).toBe('dice-5');
+    expect(r.errors).toHaveLength(2);
+    // 候補の例外は握りつぶす
+    expect(f.commands.get('dice:c')!.suggestArgs?.('')).toEqual([]);
+    r.stop();
+    expect(f.commands.size).toBe(0);
   });
 
   it('外したあとの登録は無視し、register はすぐ片付ける', async () => {

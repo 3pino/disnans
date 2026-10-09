@@ -22,7 +22,6 @@
 
   $effect(() => {
     const id = threadId;
-    threads.clearUnread(id);
     if (root || !client.ready) return;
     notFound = false;
     api.thread(id).then(
@@ -33,11 +32,6 @@
         if (id === threadId) notFound = true;
       },
     );
-  });
-
-  // 開いている間に届いた返信は未読にしない
-  $effect(() => {
-    if ((threads.unread[threadId] ?? 0) > 0 && document.visibilityState === 'visible') threads.clearUnread(threadId);
   });
 </script>
 
@@ -60,7 +54,7 @@
     <div class="thread-panel-not-found muted">このスレッドは見つかりませんでした。</div>
   {:else}
     {#key threadId}
-      <ChatView {threadId} placeholder="スレッドに返信">
+      <ChatView {threadId} placeholder="スレッドに返信" active>
         {#snippet header()}
           {#if root}
             <div class="thread-panel-root-message">

@@ -8,20 +8,34 @@
   import type { Timeline } from '../lib/stores/timeline.svelte';
   import { dayLabel, sameDay } from '../lib/format';
   import { ui } from '../lib/stores/ui.svelte';
+  import { client } from '../lib/stores/client.svelte';
+  import { firstUnread, page, registerUnreadView, takePendingJump, unread } from '../lib/stores/unread.svelte';
 
   let {
     timeline,
     inThread = false,
     header,
     empty,
-  }: { timeline: Timeline; inThread?: boolean; header?: Snippet; empty?: Snippet } = $props();
+    active = false,
+  }: {
+    timeline: Timeline;
+    inThread?: boolean;
+    header?: Snippet;
+    empty?: Snippet;
+    /** 画面に見えている（見えていて一番下までスクロールしていれば既読にする） */
+    active?: boolean;
+  } = $props();
 
   const GROUP_MS = 5 * 60_000;
   const STICK_PX = 80;
+  /** 最初の未読へ移動したときに、区切り線の上に空ける幅 */
+  const UNREAD_TOP_PX = 48;
 
   let scroller: HTMLDivElement | undefined = $state();
   let content: HTMLDivElement | undefined = $state();
   let atBottom = $state(true);
+  /** 「ここから未読」の区切り線を出すメッセージ。表示したときに決め、読んでいる間は動かさない */
+  let separatorId = $state<string | null>(null);
 
   const all = $derived<Message[]>([...timeline.messages, ...timeline.pending]);
 
@@ -38,7 +52,8 @@
         m.created_at - prev.created_at < GROUP_MS &&
         !prev.thread &&
         !m.thread;
-      out.push({ msg: m, grouped, day: newDay ? dayLabel(m.created_at, ui.now) : null });
+      // 区切り線のあとは、投稿者の名前から出し直す
+      out.push({ msg: m, grouped: grouped && m.id !== separatorId, day: newDay ? dayLabel(m.created_at, ui.now) : null });
       prev = m;
     }
     return out;
@@ -49,9 +64,14 @@
     scroller.scrollTo({ top: scroller.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
   }
 
-  function onscroll() {
+  function updateAtBottom() {
     if (!scroller) return;
     atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < STICK_PX;
+  }
+
+  function onscroll() {
+    if (!scroller) return;
+    updateAtBottom();
     if (scroller.scrollTop < 400) void loadOlder();
   }
 
@@ -91,7 +111,78 @@
   $effect(() => {
     void timeline;
     atBottom = true;
+    untrack(() => {
+      separatorId = null;
+      wasShowing = false;
+    });
     void tick().then(() => scrollToBottom());
+  });
+
+  // ---- 未読 ----
+
+  /** 見えていて、未読の位置を比べられる（区切り線の位置を決められる） */
+  const showing = $derived(active && page.visible && timeline.loaded && unread.loaded);
+  let wasShowing = false;
+
+  function findFirstUnread(): string | null {
+    return firstUnread(timeline.messages, unread.cursor(timeline.threadId), client.me?.id ?? null)?.id ?? null;
+  }
+
+  /** 区切り線が上から少し下に来るようにスクロールする。区切り線がなければ false */
+  function scrollToSeparator(): boolean {
+    const el = scroller?.querySelector<HTMLElement>('.message-list-unread-divider');
+    if (!scroller || !el) return false;
+    scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - UNREAD_TOP_PX;
+    updateAtBottom();
+    return true;
+  }
+
+  /** 区切り線（なければ一番下）へ移動する。描画を待ってからスクロールする */
+  function jumpToSeparator(smooth = false) {
+    // スクロールし終わるまでは既読にしない（一番下にいるとみなさない）
+    if (separatorId !== null) atBottom = false;
+    void tick().then(() => {
+      if (separatorId !== null && scrollToSeparator()) return;
+      atBottom = true;
+      scrollToBottom(smooth);
+    });
+  }
+
+  // 表示したときに区切り線の位置を決める。一番下が見えていて、画面にフォーカスがあれば既読にする
+  $effect(() => {
+    const isShowing = showing;
+    const count = unread.count(timeline.threadId);
+    const latest = timeline.messages.at(-1)?.id;
+    const canMark = isShowing && page.active && atBottom;
+    untrack(() => {
+      if (isShowing && !wasShowing) {
+        separatorId = findFirstUnread();
+        // 開いたとき（と、移動を頼まれたとき）は最初の未読へ
+        const requested = takePendingJump(timeline.threadId);
+        if (separatorId !== null || requested) jumpToSeparator();
+      } else if (isShowing && !canMark && separatorId === null && count > 0) {
+        // 見えているが読んでいない（スクロールで上にいる、フォーカスがない）間に届いた
+        separatorId = findFirstUnread();
+      }
+      wasShowing = isShowing;
+      if (canMark && atBottom && latest) unread.markRead(timeline.threadId, latest);
+    });
+  });
+
+  // 見えている間は、コマンドから「最初の未読へ」を受け付ける
+  $effect(() => {
+    if (!showing) return;
+    const threadId = timeline.threadId;
+    return untrack(() =>
+      registerUnreadView(threadId, {
+        scrollToFirstUnread: () => {
+          const id = findFirstUnread();
+          if (id !== null) separatorId = id;
+          jumpToSeparator(true);
+          return true;
+        },
+      }),
+    );
   });
 </script>
 
@@ -116,6 +207,9 @@
     {#each rows as r (r.msg.id)}
       {#if r.day}
         <div class="message-list-day-divider"><span>{r.day}</span></div>
+      {/if}
+      {#if r.msg.id === separatorId}
+        <div class="message-list-unread-divider" role="separator"><span>ここから未読</span></div>
       {/if}
       <MessageItem message={r.msg} grouped={r.grouped} {inThread} />
     {/each}
@@ -182,6 +276,22 @@
     flex: 1;
     height: 1px;
     background: var(--border);
+    opacity: 0.6;
+  }
+  .message-list-unread-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 16px 4px;
+    color: var(--danger);
+    font-size: 12px;
+    font-weight: 650;
+  }
+  .message-list-unread-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--danger);
     opacity: 0.6;
   }
   .message-list-jump-latest {

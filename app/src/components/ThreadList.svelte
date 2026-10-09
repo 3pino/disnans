@@ -2,6 +2,7 @@
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import Avatar from './Avatar.svelte';
   import { threads } from '../lib/stores/threads.svelte';
+  import { unread as unreadStore } from '../lib/stores/unread.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { relative } from '../lib/format';
@@ -22,7 +23,7 @@
   <ul class="thread-list-items">
     {#each threads.list as t (t.root.id)}
       {@const active = ui.panel?.kind === 'thread' && ui.panel.id === t.root.id}
-      {@const unread = threads.unread[t.root.id] ?? 0}
+      {@const unread = unreadStore.count(t.root.id)}
       <li class="thread-list-entry">
         <button type="button" class="thread-list-item" class:thread-list-item-active={active} class:thread-list-item-unread={unread > 0} onclick={() => ui.openThread(t.root.id)}>
           <Avatar user={client.user(t.root.author_id)} id={t.root.author_id} size={28} />

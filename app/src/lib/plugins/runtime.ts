@@ -1,4 +1,5 @@
-import { parseHotkey, type Hotkey } from './hotkey';
+import { parseHotkey } from './hotkey';
+import { SLASH_NAME_RE } from '../slashCommands.svelte';
 import { SessionsImpl, type SessionImpl } from './sessions';
 import { errorMessage, type Cleanup, type HostServices, type Manifest, type PluginClass } from './types';
 
@@ -13,8 +14,6 @@ export type ViewHandle = {
   close(): void;
   readonly closed: boolean;
 };
-
-export type RegisteredCommand = { cmd: Disnans.Command; hotkey: Hotkey | null };
 
 // ---- Plugin の基底クラス ----
 
@@ -107,7 +106,6 @@ export class PluginRuntime {
   readonly views = new Map<string, (session: Disnans.Session<unknown>) => Disnans.View>();
   cardRenderer: Disnans.CardRenderer | null = null;
   readonly settingTabs: Disnans.SettingTab[] = [];
-  readonly commands: RegisteredCommand[] = [];
   stopped = false;
   /** 読み込めたが、一部の登録に失敗したなど（一覧に出す） */
   readonly errors: string[] = [];
@@ -167,7 +165,6 @@ export class PluginRuntime {
     this.views.clear();
     this.cardRenderer = null;
     this.settingTabs.length = 0;
-    this.commands.length = 0;
     for (const h of [...this.openViews]) h.close();
     this.services.closePanel(this.id);
     this.sessions.dispose();
@@ -193,16 +190,6 @@ export class PluginRuntime {
     this.log(text);
     this.errors.push(text);
     this.services.changed();
-  }
-
-  /** プラグインの関数を呼び、例外はトーストで知らせる */
-  private async guard(what: string, fn: () => void | Promise<void>): Promise<void> {
-    try {
-      await fn();
-    } catch (e) {
-      this.log(`${what} で例外`, e);
-      this.services.toast(`${this.manifest.name}: ${errorMessage(e)}`, 'error');
-    }
   }
 
   addSlashCommand(cmd: Disnans.SlashCommand): void {
@@ -262,22 +249,53 @@ export class PluginRuntime {
 
   addCommand(cmd: Disnans.Command): void {
     if (this.stopped) return;
-    let hotkey: Hotkey | null = null;
-    if (cmd.hotkey) {
-      hotkey = parseHotkey(cmd.hotkey);
-      if (!hotkey) console.warn(`[plugin:${this.id}] ショートカット「${cmd.hotkey}」を読めません`);
+    const services = this.services;
+    const id = this.id;
+    let hotkey = cmd.hotkey || undefined;
+    if (hotkey && !parseHotkey(hotkey)) {
+      // ショートカットなしで登録する（利用者が設定で付けられる）
+      this.addError(`コマンド「${cmd.name}」のショートカット「${hotkey}」を読めません`);
+      hotkey = undefined;
     }
-    const entry: RegisteredCommand = { cmd, hotkey };
-    this.commands.push(entry);
-    this.register(() => {
-      const i = this.commands.indexOf(entry);
-      if (i >= 0) this.commands.splice(i, 1);
-    });
-  }
-
-  /** ショートカットからコマンドを実行する */
-  runCommand(cmd: Disnans.Command): void {
-    void this.guard(cmd.name, () => cmd.run());
+    let slash = cmd.slash || undefined;
+    if (slash && !SLASH_NAME_RE.test(slash)) {
+      // スラッシュコマンドにはせずに登録する（パレット・ショートカットからは使える）
+      this.addError(`/${slash} を登録できません: コマンド名には英小文字・数字・ハイフンだけを使えます`);
+      slash = undefined;
+    }
+    let off: Cleanup;
+    try {
+      off = services.registerCommand({
+        // ショートカットの設定はこの ID で保存する。ほかのプラグインとぶつからないように、プラグイン ID を前に付ける
+        id: `${id}:${cmd.id}`,
+        name: cmd.name,
+        // 省くとプラグインのアイコン（icon.svg はあとから読めることがあるので、そのつど引く）
+        get icon() {
+          return cmd.icon || services.pluginIcon(id);
+        },
+        defaultHotkey: hotkey,
+        slash,
+        description: cmd.description,
+        args: cmd.args,
+        suggestArgs: cmd.suggestArgs
+          ? (input) => {
+              try {
+                return cmd.suggestArgs?.(input) ?? [];
+              } catch (e) {
+                this.log(`コマンド「${cmd.name}」の候補で例外`, e);
+                return [];
+              }
+            }
+          : undefined,
+        source: this.manifest.name,
+        // run の例外は本体（入力欄・ショートカット・パレット）がトーストで知らせる
+        run: ({ args, threadId, via }) => cmd.run({ args: args.trim(), threadId, via }),
+      });
+    } catch (e) {
+      this.addError(`コマンド「${cmd.name}」を登録できません: ${errorMessage(e)}`);
+      return;
+    }
+    this.register(off);
   }
 
   addSettingTab(tab: Disnans.SettingTab): void {

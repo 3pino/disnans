@@ -32,6 +32,7 @@
   import SegmentedButton from './ui/SegmentedButton.svelte';
   import PluginSettings from './PluginSettings.svelte';
   import ThemeSettings from './ThemeSettings.svelte';
+  import KeySettings from './KeySettings.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui, type ThemePref } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
@@ -279,6 +280,8 @@
           <Send size={15} />サンプル通知を送信
         </Button>
       </Section>
+
+      <KeySettings />
 
       <PluginSettings />
 

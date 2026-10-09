@@ -9,7 +9,7 @@
   <Modal title={req.title} onclose={() => req.resolve(false)} width={380}>
     {#if req.body}<p class="confirm-dialog-message">{req.body}</p>{/if}
     <div class="modal-actions confirm-dialog-actions">
-      <Button class="confirm-dialog-cancel" onclick={() => req.resolve(false)}>キャンセル</Button>
+      <Button class="confirm-dialog-cancel" onclick={() => req.resolve(false)}>{req.ngLabel ?? 'キャンセル'}</Button>
       <Button class="confirm-dialog-ok" variant={req.danger ? 'danger' : 'primary'} onclick={() => req.resolve(true)}>{req.okLabel}</Button>
     </div>
   </Modal>

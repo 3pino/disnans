@@ -203,6 +203,29 @@ pub struct Thread {
     pub info: ThreadInfo,
 }
 
+/// 既読の位置と未読数（メインチャットかスレッド1つ分）。`GET /api/me/read` と `read.updated` で使う。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ReadMarker {
+    /// スレッドの ID。メインチャットなら `null`。
+    pub thread_id: Option<Id>,
+    /// ここまで読んだ位置。この ID 以下のメッセージは既読（ID の文字列の大小で比べる）。
+    /// 実在するメッセージの ID とは限らない（一度も既読にしていなければ、アカウントを作った時刻の位置）。
+    pub last_read_id: Id,
+    /// `last_read_id` より新しい、他人のメッセージの数。
+    pub unread_count: u32,
+}
+
+/// `PUT /api/me/read`
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MarkRead {
+    /// スレッドの ID。メインチャットなら `null`。
+    pub thread_id: Option<Id>,
+    /// ここまで読んだメッセージの ID。いまの位置より古ければ何もしない（戻らない）。
+    pub message_id: Id,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct UpdateMe {
@@ -313,6 +336,15 @@ pub enum ServerEvent {
         #[ts(type = "unknown")]
         payload: serde_json::Value,
     },
+    /// 自分の設定（`/api/me/prefs`）が変わった。同じユーザーのすべての接続に届く。
+    #[serde(rename = "prefs.updated")]
+    PrefsUpdated {
+        #[ts(type = "Record<string, unknown>")]
+        prefs: serde_json::Value,
+    },
+    /// 自分の既読の位置が変わった（別の端末で読んだときも）。自分のすべての接続に送る。
+    #[serde(rename = "read.updated")]
+    ReadUpdated { marker: ReadMarker },
     #[serde(rename = "error")]
     Error {
         client_id: Option<String>,

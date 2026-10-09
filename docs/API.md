@@ -24,6 +24,10 @@
 | PATCH | `/api/me` | 表示名の変更（body: `UpdateMe`） | `User` |
 | PUT | `/api/me/avatar` | アバターの設定（multipart、フィールド名 `file`） | `User` |
 | DELETE | `/api/me/avatar` | 自分で設定したアバターを消し、Tailscale のプロフィール画像に戻す | `User` |
+| GET | `/api/me/read` | 自分の既読の位置と未読数（メインチャットが先頭、続いてすべてのスレッド） | `ReadMarker[]` |
+| PUT | `/api/me/read` | 既読の位置を進める（body: `MarkRead`） | `ReadMarker` |
+| GET | `/api/me/prefs` | 自分の設定（ショートカット・Enter キーの動作など。まだなければ `{}`） | JSON オブジェクト |
+| PUT | `/api/me/prefs` | 自分の設定をまるごと置き換える（body: JSON オブジェクト） | JSON オブジェクト |
 | GET | `/api/users` | メンバー一覧 | `User[]` |
 | GET | `/api/avatars/{id}` | 自分で設定したアバターの画像（WebP） | バイナリ |
 | GET | `/api/messages?thread_id=&before=&limit=` | メッセージ履歴 | `Message[]` |
@@ -52,9 +56,25 @@
 - 設定・削除で表示が変わったら、全員に `user.updated` を配信する（設定していないときの削除は何もしない）
 - Tailscale のプロフィール画像は、ログインのたびに最新の URL を覚えておく。自分で設定しているあいだは表示に使わない（`user.updated` も流さない）。削除するとその最新の URL に戻る
 
+### 設定（prefs）
+- ユーザーごとに1つの JSON オブジェクトを保存し、同じユーザーの端末どうしで共有する。中身はクライアントが決める（サーバーは形と大きさだけを確かめる）
+  - いまの中身: `hotkeys`（コマンド ID → `"Mod+Shift+D"` 形式のショートカット。空文字列は「なし」、項目がなければ既定）、`enterKeys`（`enter` / `shift` / `ctrl` / `alt` → `"send"` / `"newline"` / `"none"`）
+- オブジェクトでなければ `400 invalid_prefs`、JSON にして 64 KB を超えたら `413 prefs_too_large`
+- 保存したら、そのユーザーのすべての接続に `prefs.updated` を送る（保存した端末にも届く）
+
 ### メッセージ履歴
 - `thread_id` を省略するとメインチャット、指定するとそのスレッドの返信（起点のメッセージは含まない）
 - `before`（メッセージ ID）より古いものを、新しい順に最大 `limit` 件（既定 50、最大 200）取り、**古い順に並べて**返す
+
+### 既読の位置と未読数
+- 場所（メインチャットかスレッド1つ）ごとに、ユーザーの「ここまで読んだ位置」（メッセージ ID）を保存する。ID（ULID）の文字列の大小で前後を比べ、位置以下の ID のメッセージを既読とみなす
+- `unread_count` は、位置より新しい他人のメッセージの数（自分のメッセージと削除されたメッセージは数えない）
+- 一度も既読にしていない場所の位置は、アカウントを作った時刻の位置（実在するメッセージの ID ではない）。それより前のメッセージは未読にしない
+- マイグレーション 0008 を当てた時点のメッセージは、全員について既読にする
+- `PUT` は位置を進めるだけで、戻さない（古い ID なら何もせず、いまの位置を返す）
+  - `message_id` が ULID の形でなければ `400 invalid_message_id`、スレッドがなければ `404 not_found`
+  - 位置が進んだら、自分のすべての接続（送った端末を含む）に `read.updated` を送る
+- スレッドの起点を削除すると、そのスレッドの位置も消える
 
 ### スレッド一覧
 - スレッドに種類はない。クエリ文字列は受け取らない（付いていても無視する）
@@ -129,4 +149,6 @@
 - プラグインの配布・更新・削除（`plugin.updated` / `plugin.removed`）と、セッションの更新（`session.updated`）は全員に配信する（自分だけのプラグイン・テーマのイベントは持ち主にだけ）
 - `session.emit` は保存せず、送信した接続以外の全員（同じユーザーの別の接続を含む）に `session.event` として中継する。`from` は送信者のユーザー ID
   - セッションがなければ `not_found`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）
+- `prefs.updated` は、`PUT /api/me/prefs` で設定が変わったとき、そのユーザーのすべての接続にだけ送る
+- `read.updated` は、`PUT /api/me/read` で既読の位置が進んだとき、そのユーザーのすべての接続にだけ送る（`unread_count` はその時点の値）
 - 失敗したら、送信者に `error` を返す

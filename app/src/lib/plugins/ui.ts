@@ -5,7 +5,7 @@ import { createIcon } from '../icons.svelte';
 
 export type UiDeps = {
   toast(text: string, kind?: 'info' | 'error'): void;
-  confirm(opts: { title: string; body?: string; okLabel: string; danger?: boolean }): Promise<boolean>;
+  confirm(opts: { title: string; body?: string; okLabel: string; ngLabel: string; danger?: boolean }): Promise<boolean>;
 };
 
 /** ボタンの中のアイコンの大きさ（components/ui/Button.svelte と同じ） */
@@ -41,6 +41,7 @@ export function createUi(deps: UiDeps): Disnans.Ui {
       el.className = 'btn';
       if (opts.variant === 'primary') el.classList.add('primary');
       if (opts.variant === 'danger') el.classList.add('danger');
+      if (opts.variant === 'ghost') el.classList.add('ghost');
       if (opts.icon) {
         el.append(createIcon(opts.icon, { size: text ? BUTTON_ICON_SIZE : BUTTON_ICON_ONLY_SIZE }));
       }
@@ -206,7 +207,13 @@ export function createUi(deps: UiDeps): Disnans.Ui {
     },
 
     confirm(opts) {
-      return deps.confirm({ title: opts.title, body: opts.body, okLabel: opts.okLabel ?? 'OK', danger: opts.danger });
+      return deps.confirm({
+        title: opts.title,
+        body: opts.body,
+        okLabel: opts.okLabel ?? 'OK',
+        ngLabel: opts.ngLabel ?? 'キャンセル',
+        danger: opts.danger,
+      });
     },
   };
 }

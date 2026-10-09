@@ -11,7 +11,7 @@
 | 部品 | グローバルクラス | 使い方 |
 | --- | --- | --- |
 | `Icon` | `.icon` | `<Icon icon="dice-5" size={18} />`。`icon` はアイコンの名前か Svelte の部品（下を参照）。`label` で読み上げ用の名前 |
-| `Button` | `.btn`（`.primary` / `.danger` / `.btn-icon-only`） | `<Button variant="primary" icon={Upload} onclick={...}>配布</Button>`。`type` の既定は `button`（フォームの送信は `type="submit"`）。中身なしで `icon` だけならアイコンだけの正方形のボタンで、`label`（aria-label）が必須 |
+| `Button` | `.btn`（`.primary` / `.danger` / `.ghost` / `.btn-icon-only`） | `<Button variant="primary" icon={Upload} onclick={...}>配布</Button>`。`variant="ghost"` は枠も背景もなく、ホバーで背景に色が付く。`type` の既定は `button`（フォームの送信は `type="submit"`）。中身なしで `icon` だけならアイコンだけの正方形のボタンで、`label`（aria-label）が必須 |
 | `IconButton` | `.icon-btn`（`.active`） | `<IconButton label="閉じる" icon={X} onclick={...} />` か、中身にアイコンを書く。枠のないアイコンだけのボタン。`label` は aria-label |
 | `SegmentedButton` | `.segmented` / `.segmented-option`（`-selected`） | `<SegmentedButton label="テーマ" options={[{ value, label, icon? }]} value={...} onchange={...} />`（`bind:value` も可） |
 | `NavBar` | `.nav-bar` / `.nav-bar-item`（`-selected`） / `-item-icon` / `-item-badge` / `-item-label` | `<NavBar items={[{ id, label, icon, badge? }]} selected={...} onselect={...} />`。本体の下のナビゲーション（`components/NavBar.svelte`）が使う |
@@ -25,7 +25,7 @@
 | `SuggestList` | `.suggest-list` / `.suggest-list-item`（`-selected`） / `-item-title` / `-item-detail` | 入力欄の補完候補。下を参照 |
 | `Modal` | `.modal-scrim` / `.modal` / `.modal-title` / `.modal-actions` | `<Modal title="..." onclose={...}>...</Modal>`。ボタンの並びは `.modal-actions` |
 
-ほかのグローバルクラス: `.field-label`（入力欄の上の小さな見出し）、`.muted`、`.scroll`、`.badge`、`.spin`、`.sr-only`、`.top-bar`。
+ほかのグローバルクラス: `.field-label`（入力欄の上の小さな見出し）、`.muted`、`.scroll`、`.badge`、`.kbd`（キーボードのキー）、`.spin`、`.sr-only`、`.top-bar`。
 
 ## アイコン
 

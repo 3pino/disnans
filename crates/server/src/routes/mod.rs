@@ -4,6 +4,7 @@ mod files;
 mod messages;
 mod notify;
 mod plugins;
+mod reads;
 mod sessions;
 mod threads;
 mod users;
@@ -31,6 +32,14 @@ pub fn router(state: SharedState) -> Router {
                     crate::avatars::MAX_UPLOAD_BYTES + 64 * 1024,
                 )),
         )
+        // 上限は設定の大きさに、少し余裕を足したもの（大きすぎるものは prefs_too_large で断る）
+        .route(
+            "/me/prefs",
+            get(users::get_prefs)
+                .put(users::put_prefs)
+                .layer(DefaultBodyLimit::max(users::MAX_PREFS_BYTES * 2)),
+        )
+        .route("/me/read", get(reads::list).put(reads::mark))
         .route("/users", get(users::list))
         .route("/avatars/{id}", get(users::avatar))
         .route("/messages", get(messages::list))

@@ -2,6 +2,7 @@
 import type { Message } from "./Message";
 import type { PluginInfo } from "./PluginInfo";
 import type { Reaction } from "./Reaction";
+import type { ReadMarker } from "./ReadMarker";
 import type { Session } from "./Session";
 import type { Thread } from "./Thread";
 import type { User } from "./User";
@@ -17,4 +18,4 @@ client_id: string | null, message: Message, } | { "type": "message.updated", mes
 /**
  * 「サンプル通知を送信」で送ったもの。アプリを表示中でもシステム通知を出す。
  */
-sample: boolean, } | { "type": "plugin.updated", plugin: PluginInfo, } | { "type": "plugin.removed", plugin_id: string, } | { "type": "session.updated", session: Session, } | { "type": "session.event", session_id: string, from: string, name: string, payload: unknown, } | { "type": "error", client_id: string | null, code: string, message: string, } | { "type": "pong" };
+sample: boolean, } | { "type": "plugin.updated", plugin: PluginInfo, } | { "type": "plugin.removed", plugin_id: string, } | { "type": "session.updated", session: Session, } | { "type": "session.event", session_id: string, from: string, name: string, payload: unknown, } | { "type": "prefs.updated", prefs: Record<string, unknown>, } | { "type": "read.updated", marker: ReadMarker, } | { "type": "error", client_id: string | null, code: string, message: string, } | { "type": "pong" };

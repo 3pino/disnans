@@ -6,9 +6,9 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 
 | ダイスでできること | 使っている API |
 |---|---|
-| `/dice 2d6` でサイコロを用意する（補完に候補が出る） | `addSlashCommand`（`icon`・`args`・`suggestArgs`） |
+| `/dice 2d6` でサイコロを用意する（補完に候補が出る）。Ctrl+Shift+D・コマンドパレットからも | `addCommand`（`icon`・`hotkey`・`slash`・`args`・`suggestArgs`） |
+| コマンドパレットの「20面のサイコロを用意する」 | `addCommand`（ショートカットもスラッシュコマンドもないもの） |
 | 「＋」メニューの「サイコロ（2d6）」 | `addComposerAction`（Lucide のアイコン `dices`） |
-| Ctrl+Shift+D で既定のサイコロを用意する | `addCommand`（`hotkey`） |
 | 立方体のサイコロのアイコン | `icon.svg`（プラグインのアイコン）、`addIcon`（`dice-cube`）、manifest の `icon`（予備） |
 | パネルの画面（「結果」「使い方」のタブ） | `registerView` / `openView`、`View.title` / `View.icon`、`panel.setTitle` / `setIcon`、`ui.navbar` / `ui.button` / `ui.icon` / `ui.divider` |
 | 振ると全員の画面に結果が出て、カードが書き換わる | `sessions.create`、`session.update`（楽観ロックと `VersionConflictError` のやり直し）、`session.onChange` |
@@ -22,7 +22,7 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 - 設計: [`SPEC.md`](../SPEC.md) の 3.3 と 9章
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
 - UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](PLUGIN_UI.md)
-- ホスト API のバージョン: **1**
+- ホスト API のバージョン: **2**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から）
 
 ## 目次
 
@@ -113,7 +113,7 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `1` |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `2`（`1` の本体には `addCommand` の `slash` などがない） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -122,10 +122,10 @@ export default class HelloPlugin extends Plugin {
 {
   "id": "dice",
   "name": "ダイス",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "サイコロを振って、結果をみんなに見せる",
   "author": "sanpino",
-  "minApiVersion": 1,
+  "minApiVersion": 2,
   "icon": "dice-5"
 }
 ```
@@ -155,9 +155,9 @@ const { Plugin } = disnans;
 
 export default class DicePlugin extends Plugin {
   onload() {
-    this.addSlashCommand({ /* ... */ });
+    this.addCommand({ /* ... */ });
     this.registerView('dice', (session) => new DiceView(this, session));
-    // ほかに addComposerAction / addCommand / addIcon / registerCardRenderer / addSettingTab / registerInterval など
+    // ほかに addComposerAction / addIcon / registerCardRenderer / addSettingTab / registerInterval など
   }
 
   onunload() {
@@ -225,48 +225,76 @@ app/node_modules/.bin/tsc -p examples/dice
 | `this.app.me` / `this.app.users` / `this.app.user(id)` / `this.app.nameOf(id)` | 自分・メンバー |
 | `this.app.isMobile` / `this.app.theme` | モバイルか、現在のテーマ（`'light'` / `'dark'`） |
 | `this.manifest` | 自分の manifest |
-| `this.addSlashCommand(cmd)` | 入力欄の `/コマンド` |
+| `this.addCommand(cmd)` | コマンド。コマンドパレット・ショートカット（デスクトップ）・入力欄の `/コマンド`（`slash`）から実行できる |
+| `this.addSlashCommand(cmd)` | 入力欄の `/コマンド` だけ（API v1 からある書き方。新しく書くなら `addCommand` の `slash`） |
 | `this.addComposerAction(action)` | 入力欄の「＋」メニュー |
-| `this.addCommand(cmd)` | キーボードショートカット（デスクトップ） |
 | `this.registerView(type, factory)` / `this.openView(type, session)` | パネル（モバイルでは全画面）に出す画面 |
 | `this.registerCardRenderer(render)` | カードの見た目 |
 | `this.sessions.create(...)` / `this.sessions.get(id)` | セッション |
 | `session.update(state, { card })` / `session.onChange(cb)` | 楽観ロック付きの保存、変更の購読 |
 | `session.emit(name, payload)` / `session.on(name, cb)` | 保存しない一時的なイベント |
 | `this.notify(userIds, text, { session })` | 通知 |
-| `this.addSettingTab(tab)` | 設定画面のプラグインの欄 |
+| `this.addSettingTab(tab)` | プラグインの設定画面（設定 → プラグインの一覧で、トグルの右の歯車から開く） |
 | `this.addIcon(name, svg)` | 独自のアイコンを登録する（→ [PLUGIN_UI.md](PLUGIN_UI.md#addicon独自のアイコン)） |
 | `this.loadData()` / `this.saveData(data)` | その端末にだけ保存するデータ |
 | `this.register(cleanup)` / `this.registerDomEvent(...)` / `this.registerInterval(id)` | 後始末を自動で行う登録 |
 | `disnans.ui.*` | 本体と同じ見た目の部品とアイコン（→ [PLUGIN_UI.md](PLUGIN_UI.md)） |
 | `disnans.VersionConflictError` | `session.update` がぶつかったときのエラー |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 1） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 2） |
 
-### スラッシュコマンドと補完
+### コマンド（パレット・ショートカット・スラッシュコマンド）
 
-入力欄で行頭に `/` と打つと、プラグインが足したコマンドが補完に出ます（本体のコマンドはいまはありません）。
-`/dice 2d6` のように送信すると、メッセージとしては送らずに `run({ args, threadId })` を呼びます。
+`addCommand` で足したコマンドは、次の3つから実行できます。
+
+- **コマンドパレット**（デスクトップ。既定は Ctrl+P、macOS では Cmd+P）: 名前で絞り込んで Enter
+- **ショートカット**（デスクトップ。Android では効きません）: `hotkey` は既定のキーで、利用者は **設定 → ショートカット** で変えたり外したりできます
+- **スラッシュコマンド**: `slash` を付けると、入力欄の `/名前` にもなります（補完に出ます）
 
 ```js
-this.addSlashCommand({
-  name: 'dice',                 // `/dice`。英小文字・数字・ハイフン
-  description: 'サイコロを振る', // 補完に出る説明
-  icon: 'dice-cube',            // 補完に出るアイコン（addIcon で登録したもの。省略するとプラグインのアイコン）
-  args: '[個数]d[面数]',          // 引数の書き方のヒント
+this.addCommand({
+  id: 'roll',                    // プラグインの中で一意。利用者のショートカットの設定は `dice:roll` で保存される
+  name: 'サイコロを用意する',      // パレット・設定の一覧に出る名前
+  icon: 'dice-cube',             // アイコン（addIcon で登録したもの。省略するとプラグインのアイコン）
+  hotkey: 'Mod+Shift+D',         // 既定のショートカット。Mod は Ctrl（macOS では Cmd）
+  slash: 'dice',                 // `/dice`。英小文字・数字・ハイフン。省略するとスラッシュコマンドにしない
+  description: 'サイコロを振る',   // 補完に出る説明（省略すると name）
+  args: '[個数]d[面数]',           // 引数の書き方のヒント
   // 引数の候補。input はコマンド名のあとに打った文字列
   suggestArgs: (input) => {
     const q = input.trim().toLowerCase();
     return PRESETS.filter((p) => p.value.startsWith(q)); // [{ value: '2d6', description: 'サイコロ2個' }, ...]
   },
-  // args は前後の空白を除いた文字列（なければ ''）。threadId はスレッドで打ったときだけ入る
-  run: ({ args, threadId }) => this.prepare(args, threadId),
+  // ctx.args: `/dice 2d6` なら '2d6'（前後の空白は除く）。ショートカット・パレットからは ''
+  // ctx.threadId: スラッシュコマンドは入力したスレッド、ショートカット・パレットは開いているスレッド（なければ null）
+  // ctx.via: 'slash' / 'hotkey' / 'palette'
+  run: (ctx) => this.prepare(ctx.args, ctx.threadId),
 });
 ```
 
 ダイスの `prepare` は、`args` が空なら設定の「既定のサイコロ」を使います。
+ショートカットもスラッシュコマンドもないコマンド（ダイスの「20面のサイコロを用意する」）は、パレットから実行します（利用者は設定でショートカットを付けられます）。
 
+- `/dice 2d6` のように送信すると、メッセージとしては送らずに `run` を呼びます
 - 入力の誤りは `disnans.ui.toast('…', 'error')` で知らせます。`run` が例外を投げた（reject した）ときも、本体がエラーのトーストを出します
 - 候補（`Suggestion`）は `{ value, label?, description? }`。`value` が入力欄に入ります
+- `hotkey` が読めない・`slash` の名前が正しくないときは、その部分を外して登録し、設定のプラグイン一覧にエラーを出します
+- ショートカットは、入力欄で文字を打っている間は Ctrl・Cmd・Alt を含むもの（と F1〜F12）だけが効きます
+- 本体のコマンド（設定を開く・チャットを開く・コマンドパレットなど）と同じキーにすると、設定のショートカットの一覧に警告が出ます。先に登録されたもの（本体のもの）が優先されます
+
+#### addSlashCommand（API v1 の書き方）
+
+スラッシュコマンドだけを足す、v1 からある書き方です。いまも使えます（パレット・ショートカットには出ません）。
+
+```js
+this.addSlashCommand({
+  name: 'hello',
+  description: 'あいさつする',
+  icon: 'hand',        // 省略するとプラグインのアイコン
+  args: '[名前]',       // 任意
+  suggestArgs: (input) => [], // 任意
+  run: ({ args, threadId }) => disnans.ui.toast(`こんにちは ${args}`),
+});
+```
 
 ### ＋メニュー
 
@@ -281,22 +309,11 @@ this.addComposerAction({
 
 `icon` は**アイコンの名前**です（Lucide の名前・`disnans-logo`・`addIcon` で登録した名前）。
 独自の SVG を使うときは、先に `this.addIcon('dice-cube', '<path .../>')` で登録してから名前で指定します（→ [PLUGIN_UI.md](PLUGIN_UI.md#アイコン)）。
-ダイスは `onload` の最初に、立方体のサイコロを `dice-cube` として登録し、`/dice` の補完・パネルの上部・タブ・カードで使っています。
+ダイスは `onload` の最初に、立方体のサイコロを `dice-cube` として登録し、`/dice` のコマンド・パネルの上部・タブ・カードで使っています。
 
 ```js
 // <svg> の中身だけを渡すと、既定は fill="none" stroke="currentColor" stroke-width="2"（Lucide と同じ）
 this.addIcon('dice-cube', '<path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="m3 7 9 5 9-5M12 12v10"/>…');
-```
-
-### コマンド（ショートカット）
-
-```js
-this.addCommand({
-  id: 'quick-roll',
-  name: '既定のサイコロを用意する',
-  hotkey: 'Mod+Shift+D', // Mod は Ctrl（macOS では Cmd）
-  run: () => this.prepare('', null), // '' なら設定の既定のサイコロ。null はメインチャット
-});
 ```
 
 ### view
@@ -491,7 +508,7 @@ await this.notify([nextPlayerId], 'あなたの番です', { session: this.sessi
 
 ### 設定タブ
 
-ダイスの設定タブ（**設定 → プラグイン → ダイス**）は、選択肢（`ui.segmented`）・トグル（`ui.toggle`）・区切り線・
+ダイスの設定タブ（**設定 → プラグイン → ダイスの歯車**で開く画面）は、選択肢（`ui.segmented`）・トグル（`ui.toggle`）・区切り線・
 確認してから実行する危ないボタン（`ui.button` の `danger` と `ui.confirm`）を、設定の行（`ui.setting`）に並べたものです。
 
 ```js

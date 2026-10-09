@@ -6,7 +6,7 @@
  *
  * できること:
  * 1. `/dice 2d6` と打つと、セッションを作り（チャットにカードが流れる）、パネルを開く
- *    （「＋」メニューの「サイコロ（2d6）」、ショートカット Ctrl+Shift+D でも用意できる）
+ *    （「＋」メニューの「サイコロ（2d6）」、ショートカット Ctrl+Shift+D、コマンドパレットからも用意できる）
  * 2. 振れるのは用意した人だけ、1回だけ。[振る] を押すと、見ている人の画面でもサイコロが揺れ、
  *    結果が全員に同期して、カードが書き換わる
  * 3. ほかの人はカードをタップすると、パネルで結果を見られる
@@ -15,9 +15,10 @@
  * - onload / onunload ............................. DicePlugin
  * - loadData / saveData / addSettingTab ............ 「設定」の節（ui.setting / toggle / segmented / button / divider / confirm）
  * - addIcon ........................................ DIE_ICON（独自のアイコン）
- * - addSlashCommand（icon・args・suggestArgs）...... `/dice`
+ * - addCommand（icon・hotkey・slash・args・suggestArgs）... `/dice` と Ctrl+Shift+D（macOS では Cmd+Shift+D）
+ * - addCommand（パレットだけ）........................ 「20面のサイコロを用意する」
  * - addComposerAction（Lucide のアイコン）........... 「＋」メニューの「サイコロ（2d6）」
- * - addCommand（hotkey）............................ Ctrl+Shift+D（macOS では Cmd+Shift+D）
+ *   （addSlashCommand は addCommand の slash に置き換わったので使っていない。古いプラグインのために残っている）
  * - registerView / openView ........................ DiceView
  * - registerCardRenderer ........................... カードの見た目
  * - registerInterval / registerDomEvent ............ 演出のタイマー、裏に回ったときの後始末
@@ -128,17 +129,32 @@ export default class DicePlugin extends Plugin {
     // 独自のアイコン。以後、アイコン名を受け取るところならどこでも 'dice-cube' と書ける
     this.addIcon(DIE_ICON, DIE_SVG);
 
-    // 入力欄の `/dice`。icon を省くとプラグインのアイコン（icon.svg）になる
-    this.addSlashCommand({
-      name: 'dice',
-      description: 'サイコロを振る',
+    // コマンド。コマンドパレット（Ctrl+P）と設定のショートカットの一覧に出る。
+    // hotkey は既定のショートカット（デスクトップ。Mod は Ctrl、macOS では Cmd。利用者が設定で変えられる）、
+    // slash を付けると入力欄の `/dice` にもなる。icon を省くとプラグインのアイコン（icon.svg）になる
+    this.addCommand({
+      id: 'roll',
+      name: 'サイコロを用意する',
       icon: DIE_ICON,
+      hotkey: 'Mod+Shift+D',
+      slash: 'dice',
+      description: 'サイコロを振る',
       args: '[個数]d[面数]',
       suggestArgs: (input) => {
         const q = input.trim().toLowerCase();
         return PRESETS.filter((p) => p.value.startsWith(q));
       },
+      // ctx.args は `/dice 2d6` の「2d6」（ショートカット・パレットからは空 → 設定の既定のサイコロ）。
+      // ctx.threadId は入力したスレッドか、ショートカット・パレットなら開いているスレッド
       run: (ctx) => this.prepare(ctx.args, ctx.threadId),
+    });
+
+    // ショートカットもスラッシュコマンドもないコマンドは、パレットから使う（利用者は設定でショートカットを付けられる）
+    this.addCommand({
+      id: 'roll-d20',
+      name: '20面のサイコロを用意する',
+      icon: 'dice-5',
+      run: (ctx) => this.prepare('1d20', ctx.threadId),
     });
 
     // 入力欄の「＋」メニュー。アイコンは Lucide の名前で指定する
@@ -147,14 +163,6 @@ export default class DicePlugin extends Plugin {
       label: 'サイコロ（2d6）',
       icon: 'dices',
       run: (ctx) => this.prepare('2d6', ctx.threadId),
-    });
-
-    // キーボードショートカット（デスクトップ）。Mod は Ctrl（macOS では Cmd）。メインチャットに用意する
-    this.addCommand({
-      id: 'quick-roll',
-      name: '既定のサイコロを用意する',
-      hotkey: 'Mod+Shift+D',
-      run: () => this.prepare('', null),
     });
 
     // type をプラグイン ID と同じ 'dice' にすると、カードをタップしたときにこの view で開く
@@ -522,7 +530,14 @@ class DiceView {
       ['settings', '設定 → プラグイン → ダイス で、既定のサイコロや演出を変えられます'],
     ];
     // ショートカットはデスクトップだけ
-    if (!this.plugin.app.isMobile) items.splice(2, 0, ['keyboard', 'Ctrl+Shift+D（macOS では Cmd+Shift+D）で、既定のサイコロを用意します']);
+    if (!this.plugin.app.isMobile) {
+      items.splice(
+        2,
+        0,
+        ['keyboard', 'Ctrl+Shift+D（macOS では Cmd+Shift+D）で、既定のサイコロを用意します。キーは 設定 → ショートカット で変えられます'],
+        ['command', 'コマンドパレット（Ctrl+P）の「20面のサイコロを用意する」も使えます'],
+      );
+    }
 
     const list = h('ul', 'dice-help-list');
     for (const [icon, text] of items) {

@@ -5,7 +5,7 @@ import { PluginBase, PluginRuntime, type ViewHeader } from './runtime';
 import { VersionConflictError } from './sessions';
 import { createUi, type UiDeps } from './ui';
 import { registerIcon, setLucideForTest } from '../icons.svelte';
-import { API_VERSION, type HostComposerAction, type HostServices, type HostSlashCommand, type PluginClass } from './types';
+import { API_VERSION, type HostCommand, type HostComposerAction, type HostServices, type HostSlashCommand, type PluginClass } from './types';
 import type { ClientEvent } from '../protocol/ClientEvent';
 import type { Session as SessionData } from '../protocol/Session';
 
@@ -38,6 +38,7 @@ function setup(opts: { me?: string; data?: unknown; server?: SessionData } = {})
 
   const slash = new Map<string, HostSlashCommand>();
   const actions = new Map<string, HostComposerAction>();
+  const commands = new Map<string, HostCommand>();
   const sent: ClientEvent[] = [];
   const storage = new Map<string, string>();
   if (opts.data !== undefined) storage.set(DATA_KEY, JSON.stringify(opts.data));
@@ -93,6 +94,25 @@ function setup(opts: { me?: string; data?: unknown; server?: SessionData } = {})
       actions.set(a.id, a);
       return () => actions.delete(a.id);
     },
+    // 本体の登録簿（lib/commands.svelte.ts）と同じく、slash があればスラッシュコマンドにもする
+    registerCommand: (c: HostCommand) => {
+      commands.set(c.id, c);
+      if (c.slash) {
+        slash.set(c.slash, {
+          name: c.slash,
+          description: c.description || c.name,
+          args: c.args,
+          suggestArgs: c.suggestArgs,
+          icon: c.icon,
+          source: c.source,
+          run: ({ args, threadId }) => c.run({ args, threadId, via: 'slash' }),
+        });
+      }
+      return () => {
+        commands.delete(c.id);
+        if (c.slash) slash.delete(c.slash);
+      };
+    },
     openPanel,
     closePanel: () => {},
     toast,
@@ -106,13 +126,14 @@ function setup(opts: { me?: string; data?: unknown; server?: SessionData } = {})
   } as unknown as HostServices;
 
   const r = new PluginRuntime(
-    { id: 'dice', name: 'ダイス', version: '1.1.0', description: '', author: '', minApiVersion: 1 },
+    { id: 'dice', name: 'ダイス', version: '1.2.0', description: '', author: '', minApiVersion: 2 },
     services,
   );
   return {
     r,
     slash,
     actions,
+    commands,
     sent,
     storage,
     openPanel,
@@ -135,7 +156,7 @@ const result = (s: SessionData | null) => (s!.state as DiceState).result;
 beforeEach(() =>
   setLucideForTest(
     Object.fromEntries(
-      ['Puzzle', 'Dices', 'Dice5', 'BookOpen', 'CircleHelp', 'Sparkles', 'RotateCcw', 'Hand', 'Settings', 'Keyboard'].map((k) => [
+      ['Puzzle', 'Dices', 'Dice5', 'BookOpen', 'CircleHelp', 'Sparkles', 'RotateCcw', 'Hand', 'Settings', 'Keyboard', 'Command'].map((k) => [
         k,
         [['path', { d: 'M1 1' }]],
       ]),
@@ -200,7 +221,7 @@ describe('examples/dice', () => {
     expect(handle.closed).toBe(true);
   });
 
-  it('「＋」メニューとショートカットを登録する', async () => {
+  it('「＋」メニューとコマンド（ショートカット・パレット）を登録する', async () => {
     const env = setup({ data: { animate: false } });
     await start(env);
     const action = env.actions.get('plugin:dice:roll-2d6')!;
@@ -209,10 +230,29 @@ describe('examples/dice', () => {
     await action.run({ threadId: 't1' });
     expect((env.state.server!.state as DiceState).spec).toBe('2d6');
 
-    const cmd = env.r.commands.find((c) => c.cmd.id === 'quick-roll')!;
-    expect(cmd.hotkey).toMatchObject({ shift: true, key: 'd' });
+    // コマンド: プラグイン ID を前に付けた ID で、既定のショートカット・スラッシュコマンド・アイコンを持つ
+    const roll = env.commands.get('dice:roll')!;
+    expect(roll.name).toBe('サイコロを用意する');
+    expect(roll.defaultHotkey).toBe('Mod+Shift+D');
+    expect(roll.slash).toBe('dice');
+    expect(roll.icon).toBe('dice-cube');
+    expect(roll.source).toBe('ダイス');
+    // ショートカット・パレットからは引数なし → 設定の既定のサイコロ。開いているスレッドに用意する
+    await roll.run({ args: '', threadId: 't2', via: 'hotkey' });
+    expect((env.state.server!.state as DiceState).spec).toBe('1d6');
+    expect(env.openPanel).toHaveBeenLastCalledWith('dice', 'dice', 's1');
+
+    // パレットだけのコマンド
+    const d20 = env.commands.get('dice:roll-d20')!;
+    expect(d20.defaultHotkey).toBeUndefined();
+    expect(d20.slash).toBeUndefined();
+    expect(d20.icon).toBe('dice-5');
+    await d20.run({ args: '', threadId: null, via: 'palette' });
+    expect((env.state.server!.state as DiceState).spec).toBe('1d20');
+
     env.r.stop();
     expect(env.actions.size).toBe(0);
+    expect(env.commands.size).toBe(0);
   });
 
   it('設定タブ: 既定のサイコロ・トグルを保存し、確認してから初期値に戻す', async () => {

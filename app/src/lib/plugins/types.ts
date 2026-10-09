@@ -8,9 +8,10 @@ import type { Session as SessionData } from '../protocol/Session';
 import type { UpdateSession } from '../protocol/UpdateSession';
 import type { SlashCommandDef } from '../slashCommands.svelte';
 import type { ComposerAction } from '../composerActions';
+import type { AppCommand } from '../commands.svelte';
 
 /** ホスト API のバージョン。index.d.ts を変えたら上げる */
-export const API_VERSION = 1;
+export const API_VERSION = 2;
 
 export type Manifest = Disnans.Manifest;
 export type Cleanup = Disnans.Cleanup;
@@ -21,6 +22,7 @@ export type PluginClass = new () => Disnans.Plugin;
 /** 本体のスラッシュコマンド・「＋」メニューの項目（登録先の型をそのまま使う） */
 export type HostSlashCommand = SlashCommandDef;
 export type HostComposerAction = ComposerAction;
+export type HostCommand = AppCommand;
 
 /**
  * プラグインの実行に必要な本体の機能。
@@ -37,6 +39,8 @@ export interface HostServices {
   send(ev: ClientEvent): void;
   registerSlashCommand(def: HostSlashCommand): Cleanup;
   registerComposerAction(action: HostComposerAction): Cleanup;
+  /** コマンド（ショートカット・パレット・スラッシュコマンド）を登録する（lib/commands.svelte.ts） */
+  registerCommand(cmd: HostCommand): Cleanup;
   /** パネルに view を開く */
   openPanel(pluginId: string, view: string, sessionId: string): void;
   /** 開いているパネルを閉じる（そのプラグインの view が開いていれば） */

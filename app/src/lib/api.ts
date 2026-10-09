@@ -1,10 +1,12 @@
 import type { ApiError } from './protocol/ApiError';
 import type { Attachment } from './protocol/Attachment';
 import type { CreateSession } from './protocol/CreateSession';
+import type { MarkRead } from './protocol/MarkRead';
 import type { Message } from './protocol/Message';
 import type { PluginInfo } from './protocol/PluginInfo';
 import type { PluginVisibility } from './protocol/PluginVisibility';
 import type { PluginNotify } from './protocol/PluginNotify';
+import type { ReadMarker } from './protocol/ReadMarker';
 import type { Session } from './protocol/Session';
 import type { Thread } from './protocol/Thread';
 import type { UpdateMe } from './protocol/UpdateMe';
@@ -75,6 +77,9 @@ export const api = {
   },
   /** 自分で設定したアバターを消し、Tailscale のプロフィール画像に戻す */
   clearAvatar: () => request<User>('DELETE', '/api/me/avatar'),
+  /** 自分の設定（端末をまたいで共有する。中身はクライアントが決める JSON オブジェクト） */
+  prefs: () => request<Record<string, unknown>>('GET', '/api/me/prefs'),
+  setPrefs: (prefs: Record<string, unknown>) => request<Record<string, unknown>>('PUT', '/api/me/prefs', prefs),
   users: () => request<User[]>('GET', '/api/users'),
   messages: (opts: { threadId?: string | null; before?: string | null; limit?: number }) =>
     request<Message[]>(
@@ -85,6 +90,10 @@ export const api = {
   thread: (id: string) => request<Thread>('GET', `/api/threads/${encodeURIComponent(id)}`),
   /** 自分にサンプルの通知を送る */
   sampleNotification: () => request<void>('POST', '/api/notify/sample'),
+  /** 既読の位置と未読数（メインチャットが先頭、続いてすべてのスレッド） */
+  readMarkers: () => request<ReadMarker[]>('GET', '/api/me/read'),
+  /** 既読の位置を進める（戻らない） */
+  markRead: (body: MarkRead) => request<ReadMarker>('PUT', '/api/me/read', body),
 
   // ---- プラグイン ----
   plugins: () => request<PluginInfo[]>('GET', '/api/plugins'),

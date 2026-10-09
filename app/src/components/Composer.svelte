@@ -202,7 +202,6 @@
       bind:this={input}
       {placeholder}
       commands
-      enterSends={!ui.isMobile}
       onsubmit={submit}
       onfiles={addFiles}
       onarrowupempty={editLast}

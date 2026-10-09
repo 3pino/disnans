@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUi } from './ui';
 import { setLucideForTest } from '../icons.svelte';
 
-const ui = createUi({ toast: vi.fn(), confirm: vi.fn(async () => true) });
+const confirm = vi.fn(async () => true);
+const ui = createUi({ toast: vi.fn(), confirm });
 
 beforeEach(() => setLucideForTest({ Puzzle: [['path', { d: 'M1 1' }]] } as never));
 afterEach(() => setLucideForTest(null));
@@ -28,6 +29,9 @@ describe('disnans.ui', () => {
     expect(c.classList.contains('btn-icon-only')).toBe(true);
     expect(c.getAttribute('aria-label')).toBe('送信');
     expect(c.firstElementChild?.getAttribute('width')).toBe('18');
+
+    const d = ui.button({ icon: 'puzzle', label: '設定', variant: 'ghost' });
+    expect(d.className).toBe('btn ghost btn-icon-only');
 
     expect(() => ui.button({ icon: 'puzzle' } as never)).toThrow();
     expect(() => ui.button({} as never)).toThrow();
@@ -93,5 +97,13 @@ describe('disnans.ui', () => {
       'setting-row-control',
     ]);
     expect(row.querySelector('hr')?.className).toBe('divider');
+  });
+
+  it('confirm: okLabel・ngLabel の既定値', async () => {
+    confirm.mockClear();
+    await ui.confirm({ title: 'やり直しますか？' });
+    expect(confirm).toHaveBeenLastCalledWith({ title: 'やり直しますか？', body: undefined, okLabel: 'OK', ngLabel: 'キャンセル', danger: undefined });
+    await ui.confirm({ title: '消しますか？', okLabel: '消す', ngLabel: 'やめる', danger: true });
+    expect(confirm).toHaveBeenLastCalledWith({ title: '消しますか？', body: undefined, okLabel: '消す', ngLabel: 'やめる', danger: true });
   });
 });

@@ -15,7 +15,8 @@
     children,
     ...rest
   }: HTMLButtonAttributes & {
-    variant?: 'default' | 'primary' | 'danger';
+    /** ghost は枠も背景もなく、ホバーで背景に色を付ける */
+    variant?: 'default' | 'primary' | 'danger' | 'ghost';
     /** アイコン（名前か Svelte の部品） */
     icon?: IconRef;
     /** 読み上げ用の名前（aria-label） */
@@ -29,6 +30,7 @@
   class="btn {className}"
   class:primary={variant === 'primary'}
   class:danger={variant === 'danger'}
+  class:ghost={variant === 'ghost'}
   class:btn-icon-only={!!icon && !children}
   aria-label={label}
   {...rest}
