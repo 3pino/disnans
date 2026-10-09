@@ -3,7 +3,6 @@
   import Send from '@lucide/svelte/icons/send';
   import X from '@lucide/svelte/icons/x';
   import Paperclip from '@lucide/svelte/icons/paperclip';
-  import Megaphone from '@lucide/svelte/icons/megaphone';
   import FileIcon from '@lucide/svelte/icons/file';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import MessageInput from './MessageInput.svelte';
@@ -30,7 +29,6 @@
   let input: MessageInput | undefined = $state();
   let fileEl: HTMLInputElement | undefined = $state();
   let uploads = $state<Upload[]>([]);
-  let asStatus = $state(false);
   let menuOpen = $state(false);
   let hasText = $state(false);
   let seq = 0;
@@ -41,21 +39,10 @@
 
   const actions: ComposerAction[] = [
     { id: 'file', label: 'ファイルを添付', icon: Paperclip, run: (c) => c.pickFiles() },
-    {
-      id: 'status',
-      label: '近況として投稿',
-      icon: Megaphone,
-      when: (c) => c.threadId === null,
-      run: (c) => c.toggleStatus(),
-    },
   ];
   const ctx = $derived({
     threadId,
     pickFiles: () => fileEl?.click(),
-    toggleStatus: () => {
-      asStatus = !asStatus;
-      input?.focus();
-    },
   });
 
   export function addFiles(files: File[]) {
@@ -103,10 +90,9 @@
       ui.toast(`メッセージが長すぎます（${body.length} / ${MAX_BODY}文字）`, 'error');
       return;
     }
-    client.sendMessage({ threadId, body, attachments, startThread: asStatus ? 'status' : null });
+    client.sendMessage({ threadId, body, attachments });
     input.clear();
     hasText = false;
-    asStatus = false;
     // プレビュー用の blob URL は、仮表示が終わるまで残しておく必要がないので破棄する
     for (const u of uploads) if (u.preview) URL.revokeObjectURL(u.preview);
     uploads = uploads.filter((u) => !u.attachment);
@@ -125,17 +111,7 @@
   }
 </script>
 
-<div class="composer">
-  {#if asStatus}
-    <div class="mode">
-      <Megaphone size={14} />
-      <span>近況として投稿します（スレッドになります）</span>
-      <button type="button" class="icon-btn" aria-label="近況をやめる" onclick={() => (asStatus = false)}>
-        <X size={14} />
-      </button>
-    </div>
-  {/if}
-
+<div class="composer" class:thread={threadId !== null}>
   {#if uploads.length > 0}
     <div class="tray">
       {#each uploads as u (u.key)}
@@ -157,7 +133,7 @@
     </div>
   {/if}
 
-  <div class="row" class:status={asStatus}>
+  <div class="row">
     <div class="plus">
       <button
         type="button"
@@ -176,7 +152,6 @@
             <button
               type="button"
               role="menuitem"
-              class:on={a.id === 'status' && asStatus}
               onclick={() => {
                 menuOpen = false;
                 a.run(ctx);
@@ -192,7 +167,7 @@
 
     <MessageInput
       bind:this={input}
-      placeholder={asStatus ? '近況をひとこと' : placeholder}
+      {placeholder}
       enterSends={!ui.isMobile}
       onsubmit={submit}
       onfiles={addFiles}
@@ -236,10 +211,6 @@
   .row:focus-within {
     border-color: var(--accent);
   }
-  .row.status {
-    border-color: var(--accent);
-    background: color-mix(in oklch, var(--accent) 6%, var(--surface));
-  }
   .row > :global(.icon-btn),
   .plus {
     margin-bottom: 3px;
@@ -281,9 +252,6 @@
   .menu button:hover {
     background: var(--surface-2);
   }
-  .menu button.on {
-    color: var(--accent);
-  }
   .send {
     display: grid;
     place-items: center;
@@ -300,19 +268,6 @@
   .send:disabled {
     opacity: 0.35;
     cursor: default;
-  }
-  .mode {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 4px 6px 8px;
-    color: var(--accent);
-    font-size: 13px;
-    font-weight: 500;
-  }
-  .mode .icon-btn {
-    width: 24px;
-    height: 24px;
   }
   .tray {
     display: flex;
@@ -391,6 +346,10 @@
   @media (max-width: 767px) {
     .composer {
       padding: 0 8px 8px;
+    }
+    /* スレッドは全画面でボトムナビがないので、ナビゲーションバーの分を空ける */
+    .composer.thread {
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
     }
   }
 </style>

@@ -28,7 +28,7 @@
     z-index: 100;
     display: grid;
     place-items: center;
-    background: oklch(0.12 0.03 248 / 0.92);
+    background: oklch(0.1 0.01 248 / 0.92);
     animation: fade 0.15s;
   }
   .bg {
@@ -49,13 +49,13 @@
   }
   .tools {
     position: absolute;
-    top: max(8px, env(safe-area-inset-top));
+    top: calc(env(safe-area-inset-top) + 8px);
     left: 12px;
     right: 8px;
     display: flex;
     align-items: center;
     gap: 4px;
-    color: oklch(0.88 0.06 248);
+    color: oklch(0.93 0.015 248);
   }
   .tools .icon-btn {
     color: inherit;

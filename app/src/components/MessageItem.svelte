@@ -6,7 +6,6 @@
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import X from '@lucide/svelte/icons/x';
-  import Megaphone from '@lucide/svelte/icons/megaphone';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Avatar from './Avatar.svelte';
   import Markdown from './Markdown.svelte';
@@ -144,9 +143,6 @@
         <time datetime={new Date(message.created_at).toISOString()} title={formatFull(message.created_at)}
           >{formatStamp(message.created_at, ui.now)}</time
         >
-        {#if message.thread?.kind === 'status'}
-          <span class="kind-chip"><Megaphone size={11} />近況</span>
-        {/if}
       </div>
     {/if}
 
@@ -341,9 +337,6 @@
   .head time {
     font-size: 12px;
     color: var(--text-muted);
-  }
-  .head .kind-chip {
-    align-self: center;
   }
   .body {
     min-width: 0;

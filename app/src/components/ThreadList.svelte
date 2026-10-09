@@ -1,17 +1,11 @@
 <script lang="ts">
-  import Megaphone from '@lucide/svelte/icons/megaphone';
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import Avatar from './Avatar.svelte';
-  import { threads, type ThreadFilter } from '../lib/stores/threads.svelte';
+  import { threads } from '../lib/stores/threads.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { relative } from '../lib/format';
   import { mentionsToText } from '../lib/markdown';
-
-  const tabs: { id: ThreadFilter; label: string }[] = [
-    { id: 'all', label: 'すべて' },
-    { id: 'status', label: '近況' },
-  ];
 
   function preview(body: string, attachments: number): string {
     const text = mentionsToText(body, (id) => client.nameOf(id))
@@ -25,20 +19,8 @@
 </script>
 
 <div class="threads">
-  <div class="tabs" role="tablist">
-    {#each tabs as t (t.id)}
-      <button
-        type="button"
-        role="tab"
-        aria-selected={threads.filter === t.id}
-        class:sel={threads.filter === t.id}
-        onclick={() => (threads.filter = t.id)}>{t.label}</button
-      >
-    {/each}
-  </div>
-
   <ul>
-    {#each threads.visible as t (t.root.id)}
+    {#each threads.list as t (t.root.id)}
       {@const active = ui.panel?.kind === 'thread' && ui.panel.id === t.root.id}
       {@const unread = threads.unread[t.root.id] ?? 0}
       <li>
@@ -47,7 +29,6 @@
           <div class="text">
             <div class="top">
               <span class="name">{client.nameOf(t.root.author_id)}</span>
-              {#if t.info.kind === 'status'}<span class="kind"><Megaphone size={11} /></span>{/if}
               <span class="time">{relative(t.info.last_reply_at ?? t.root.created_at, ui.now)}</span>
             </div>
             <div class="preview">{preview(t.root.body, t.root.attachments.length)}</div>
@@ -61,7 +42,7 @@
       </li>
     {:else}
       <li class="empty muted">
-        {#if !threads.loaded}読み込み中…{:else if threads.filter === 'status'}まだ近況はありません{:else}まだスレッドはありません。メッセージの「スレッドで返信」から始められます{/if}
+        {#if !threads.loaded}読み込み中…{:else}まだスレッドはありません。メッセージの「スレッドで返信」から始められます{/if}
       </li>
     {/each}
   </ul>
@@ -72,29 +53,6 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-  }
-  .tabs {
-    display: flex;
-    gap: 4px;
-    padding: 4px;
-    margin: 0 12px 8px;
-    background: var(--surface-2);
-    border-radius: var(--radius-sm);
-  }
-  .tabs button {
-    flex: 1;
-    height: 30px;
-    border: none;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 600;
-  }
-  .tabs button.sel {
-    background: var(--bg);
-    color: var(--text);
-    box-shadow: 0 1px 2px oklch(0.1 0.04 248 / 0.2);
   }
   ul {
     list-style: none;
@@ -132,10 +90,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .kind {
-    display: inline-flex;
-    color: var(--accent);
   }
   .time {
     margin-left: auto;

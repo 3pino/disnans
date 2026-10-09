@@ -1,7 +1,6 @@
 <script lang="ts">
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import X from '@lucide/svelte/icons/x';
-  import Megaphone from '@lucide/svelte/icons/megaphone';
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import ChatView from './ChatView.svelte';
   import MessageItem from './MessageItem.svelte';
@@ -18,7 +17,6 @@
 
   // 起点のメッセージ: メインチャットの読み込み済み分 → スレッド一覧 → API の順に探す
   const root = $derived(client.peekTimeline(null)?.find(threadId) ?? threads.get(threadId)?.root ?? fetched);
-  const kind = $derived(root?.thread?.kind ?? threads.get(threadId)?.info.kind ?? 'normal');
   const replyCount = $derived(root?.thread?.reply_count ?? 0);
 
   $effect(() => {
@@ -45,14 +43,14 @@
 <div class="panel">
   <header>
     {#if ui.isMobile}
-      <button type="button" class="icon-btn" aria-label="戻る" onclick={() => ui.closePanel()}><ArrowLeft size={20} /></button>
-    {/if}
-    <div class="title">
-      {#if kind === 'status'}<Megaphone size={16} />{:else}<MessagesSquare size={16} />{/if}
-      <span>{kind === 'status' ? '近況' : 'スレッド'}</span>
-      {#if root}<span class="muted sub">{client.nameOf(root.author_id)}</span>{/if}
-    </div>
-    {#if !ui.isMobile}
+      <!-- モバイルは戻るボタンだけ -->
+      <button type="button" class="icon-btn back" aria-label="戻る" onclick={() => ui.closePanel()}><ArrowLeft size={20} /></button>
+    {:else}
+      <div class="title">
+        <MessagesSquare size={16} />
+        <span>スレッド</span>
+        {#if root}<span class="muted sub">{client.nameOf(root.author_id)}</span>{/if}
+      </div>
       <button type="button" class="icon-btn" aria-label="閉じる" onclick={() => ui.closePanel()}><X size={18} /></button>
     {/if}
   </header>
@@ -67,9 +65,9 @@
             <div class="root">
               <MessageItem message={root} inThread />
             </div>
-            <div class="divider">
-              <span>{replyCount > 0 ? `${replyCount}件の返信` : 'まだ返信はありません'}</span>
-            </div>
+            {#if replyCount > 0}
+              <div class="divider"><span>{replyCount}件の返信</span></div>
+            {/if}
           {/if}
         {/snippet}
       </ChatView>
@@ -132,9 +130,13 @@
   }
   @media (max-width: 767px) {
     header {
-      padding-left: 4px;
-      padding-top: env(safe-area-inset-top);
-      height: calc(52px + env(safe-area-inset-top));
+      padding: calc(env(safe-area-inset-top) + 4px) 8px 4px 4px;
+      height: auto;
+      border-bottom: none;
+    }
+    .back {
+      width: 40px;
+      height: 40px;
     }
   }
 </style>

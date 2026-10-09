@@ -2,8 +2,6 @@ import { api } from '../api';
 import type { Message } from '../protocol/Message';
 import type { Thread } from '../protocol/Thread';
 
-export type ThreadFilter = 'all' | 'status';
-
 function activity(t: Thread): number {
   return t.info.last_reply_at ?? t.root.created_at;
 }
@@ -11,13 +9,8 @@ function activity(t: Thread): number {
 class Threads {
   list = $state<Thread[]>([]);
   loaded = $state(false);
-  filter = $state<ThreadFilter>('all');
   /** スレッド ID → 未読の返信数（このセッション内だけ） */
   unread = $state<Record<string, number>>({});
-
-  get visible(): Thread[] {
-    return this.filter === 'status' ? this.list.filter((t) => t.info.kind === 'status') : this.list;
-  }
 
   get totalUnread(): number {
     return Object.values(this.unread).reduce((a, b) => a + b, 0);

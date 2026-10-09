@@ -57,6 +57,9 @@
   .md :global(ol) {
     padding-left: 1.5em;
   }
+  .md :global(li::marker) {
+    color: var(--text-muted);
+  }
   .md :global(pre) {
     padding: 10px 12px;
     border-radius: var(--radius-sm);

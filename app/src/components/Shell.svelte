@@ -1,5 +1,4 @@
 <script lang="ts">
-  import Hash from '@lucide/svelte/icons/hash';
   import MessageCircle from '@lucide/svelte/icons/message-circle';
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import Settings from '@lucide/svelte/icons/settings';
@@ -7,9 +6,7 @@
   import ChatView from './ChatView.svelte';
   import ThreadPanel from './ThreadPanel.svelte';
   import SettingsView from './SettingsView.svelte';
-  import Avatar from './Avatar.svelte';
   import ConnectionBanner from './ConnectionBanner.svelte';
-  import { client } from '../lib/stores/client.svelte';
   import { threads } from '../lib/stores/threads.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 
@@ -30,17 +27,7 @@
   {/if}
 
   <main class="main" class:hidden={!showChat}>
-    <header class="bar">
-      {#if ui.isMobile}
-        <span class="title"><Hash size={18} />チャット</span>
-        <button type="button" class="me-btn" aria-label="設定" onclick={() => ui.openSettings()}>
-          {#if client.me}<Avatar user={client.me} id={client.me.id} size={30} />{/if}
-        </button>
-      {:else}
-        <span class="title"><Hash size={18} />チャット</span>
-        <span class="muted desc">みんなの会話</span>
-      {/if}
-    </header>
+    <header class="top-bar"></header>
     <ConnectionBanner />
     <ChatView threadId={null} placeholder="メッセージを送信" empty={mainEmpty} />
   </main>
@@ -102,27 +89,6 @@
     min-width: 0;
     min-height: 0;
   }
-  .bar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    height: 52px;
-    padding: 0 18px;
-    border-bottom: 1px solid var(--border);
-    flex: none;
-  }
-  .title {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 700;
-  }
-  .title :global(svg) {
-    color: var(--text-muted);
-  }
-  .desc {
-    font-size: 13px;
-  }
   .panel {
     min-width: 0;
     min-height: 0;
@@ -155,19 +121,6 @@
   .main.hidden {
     display: none;
   }
-  .mobile .bar {
-    padding: env(safe-area-inset-top) 10px 0 14px;
-    height: calc(52px + env(safe-area-inset-top));
-  }
-  .mobile .title {
-    flex: 1;
-  }
-  .me-btn {
-    padding: 0;
-    border: none;
-    background: none;
-    border-radius: 50%;
-  }
   .mobile .panel {
     position: fixed;
     inset: 0;
@@ -177,6 +130,7 @@
   }
   .mobile-threads :global(.sidebar) {
     border-right: none;
+    background: var(--bg);
   }
   .bottom-nav {
     display: flex;
@@ -209,10 +163,6 @@
     position: absolute;
     top: -5px;
     left: 14px;
-  }
-  /* モバイルのスレッド画面ではボトムナビの上にプロフィール欄が来るので、safe-area は不要 */
-  .mobile-threads :global(.me) {
-    padding-bottom: 10px;
   }
   @keyframes slide {
     from {

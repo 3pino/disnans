@@ -68,7 +68,7 @@
     position: fixed;
     inset: 0;
     z-index: 60;
-    background: oklch(0.1 0.03 248 / 0.45);
+    background: oklch(0.08 0.01 248 / 0.45);
     animation: fade 0.15s;
   }
   .sheet {

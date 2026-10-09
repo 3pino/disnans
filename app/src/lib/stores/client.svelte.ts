@@ -3,7 +3,6 @@ import { mentionsToText } from '../markdown';
 import type { ClientEvent } from '../protocol/ClientEvent';
 import type { Message } from '../protocol/Message';
 import type { ServerEvent } from '../protocol/ServerEvent';
-import type { ThreadKind } from '../protocol/ThreadKind';
 import type { User } from '../protocol/User';
 import type { Attachment } from '../protocol/Attachment';
 import { Socket, type SocketStatus } from '../ws';
@@ -101,7 +100,8 @@ class Client {
     threadId: string | null;
     body: string;
     attachments: Attachment[];
-    startThread?: ThreadKind | null;
+    // 近況（status）は使わない。スレッドはすべて同じ扱い
+    startThread?: 'normal' | null;
   }): void {
     const me = this.me;
     if (!me) return;

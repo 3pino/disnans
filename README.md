@@ -1,0 +1,97 @@
+# disnans
+
+友達同士（〜10人）で使う、小さな SNS。チャットとスレッド、写真やファイルの共有ができます。
+
+- **Tailscale の中だけで動きます。** インターネットには公開しません。ログインも Tailscale のアカウントで自動的に行われます
+- **サーバーは自宅の PC で動かします。** データは手元に置かれます
+- 対応: Android / Windows / Linux
+
+## インストール（参加する人）
+
+### 1. Tailscale に参加する
+
+1. [Tailscale](https://tailscale.com/download) をインストールし、自分のアカウントでログインする
+2. サーバーの管理者から届く「ノード共有」の招待を受け入れる
+
+これで準備は完了です。disnans 用のアカウントは、初めて接続したときに自動で作られます。
+
+### 2. アプリを入れる
+
+[最新のリリース](https://github.com/3pino/disnans/releases/latest)から、端末に合ったファイルをダウンロードします。
+
+| 端末 | ファイル | 入れ方 |
+|---|---|---|
+| Android | `disnans_*_android-arm64.apk` | ダウンロードした APK を開く。「この提供元のアプリを許可」の確認が出たら許可する |
+| Windows | `disnans_*_x64-setup.exe` | 実行してインストールする。「Windows によって PC が保護されました」と出たら「詳細情報」→「実行」 |
+| Linux（Ubuntu / Debian） | `disnans_*_amd64.deb` | `sudo apt install ./disnans_*_amd64.deb` |
+| Linux（その他） | `disnans_*_amd64.AppImage` | `chmod +x` で実行権限を付けて起動する |
+
+### 3. サーバーに接続する
+
+アプリを起動し、管理者から教わったサーバーのアドレス（例: `100.x.x.x:8080`）を入力します。`http://` は省略できます。
+
+### アップデート
+
+アプリの「設定」→「アップデートを確認」から更新できます。
+
+## サーバーを動かす（管理者）
+
+必要なもの: Rust（stable）、Tailscale
+
+```sh
+cargo build --release -p disnans-server
+DISNANS_BIND=<Tailscale の IP>:8080 DISNANS_DATA_DIR=/var/lib/disnans ./target/release/disnans-server
+```
+
+- Tailscale の IP は `tailscale ip -4` で確認できます
+- 友達を招待するには、Tailscale の管理画面でサーバー端末を[ノード共有](https://tailscale.com/kb/1084/sharing)します。友達は自分の無料アカウントのままで接続できます
+- 環境変数や注意点は [crates/server/README.md](crates/server/README.md) を参照してください
+
+### 常駐させる（systemd）
+
+`~/.config/systemd/user/disnans.service`:
+
+```ini
+[Unit]
+Description=disnans server
+After=network-online.target
+
+[Service]
+ExecStart=%h/repos/disnans/target/release/disnans-server
+Environment=DISNANS_BIND=100.x.y.z:8080
+Environment=DISNANS_DATA_DIR=%h/.local/share/disnans
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now disnans
+loginctl enable-linger $USER   # ログアウトしても動かし続ける
+```
+
+起動時に Tailscale の IP がまだ割り当てられていないと失敗しますが、`Restart=on-failure` で再試行されます。
+
+## 開発
+
+```sh
+DISNANS_DEV=1 cargo run -p disnans-server   # サーバー（開発モード）
+cd app && npm install && npm run dev        # クライアント
+```
+
+ブラウザで `http://localhost:5173/?dev_user=alice` と `?dev_user=bob` を別々のタブで開くと、2人での会話を試せます。
+
+| ドキュメント | 内容 |
+|---|---|
+| [SPEC.md](SPEC.md) | 要件定義 |
+| [docs/API.md](docs/API.md) | REST / WebSocket の仕様 |
+| [crates/shared](crates/shared) | API の型（`cargo test -p disnans-shared` で TypeScript の型を `app/src/lib/protocol/` に生成） |
+
+### リリース
+
+1. `app/src-tauri/tauri.conf.json` の `version` を上げてコミットする
+2. `git tag v<version> && git push origin master v<version>`
+
+GitHub Actions が Android / Windows / Linux 版をビルドし、Releases に公開します。署名の鍵は GitHub の Secrets と管理者の `~/.config/disnans-keys/` にあります（**鍵はなくさないこと**。Android の鍵をなくすと、全員がアンインストールして入れ直す必要があります）。

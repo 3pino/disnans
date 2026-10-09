@@ -16,5 +16,4 @@ export type ComposerAction = {
 export type ComposerContext = {
   threadId: string | null;
   pickFiles: () => void;
-  toggleStatus: () => void;
 };

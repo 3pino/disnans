@@ -1,12 +1,12 @@
-/* カラートークン（SPEC 7.2）。基本の色は oklch(L 0.06 248) で、明度だけを変える */
+/* カラートークン（SPEC 7.2）。中立色は oklch(L 0.015 248) で、明度だけを変える */
 :root {
   color-scheme: light;
-  --bg: oklch(0.88 0.06 248);
-  --surface: oklch(0.85 0.06 248);
-  --surface-2: oklch(0.8 0.06 248);
-  --border: oklch(0.72 0.06 248);
-  --text-muted: oklch(0.42 0.06 248);
-  --text: oklch(0.23 0.06 248);
+  --bg: oklch(0.97 0.015 248);
+  --surface: oklch(0.94 0.015 248);
+  --surface-2: oklch(0.9 0.015 248);
+  --border: oklch(0.84 0.015 248);
+  --text-muted: oklch(0.48 0.015 248);
+  --text: oklch(0.22 0.015 248);
 
   --accent: oklch(0.45 0.11 248);
   --mention: oklch(0.45 0.09 75);
@@ -15,7 +15,7 @@
   --warning: oklch(0.45 0.09 85);
 
   --avatar-l: 0.45;
-  --shadow: 0 8px 28px oklch(0.23 0.06 248 / 0.18), 0 1px 3px oklch(0.23 0.06 248 / 0.12);
+  --shadow: 0 8px 28px oklch(0.22 0.015 248 / 0.16), 0 1px 3px oklch(0.22 0.015 248 / 0.1);
 
   /* 派生 */
   --on-accent: var(--bg);
@@ -36,12 +36,12 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --bg: oklch(0.23 0.06 248);
-    --surface: oklch(0.28 0.06 248);
-    --surface-2: oklch(0.34 0.06 248);
-    --border: oklch(0.42 0.06 248);
-    --text-muted: oklch(0.72 0.06 248);
-    --text: oklch(0.88 0.06 248);
+    --bg: oklch(0.17 0.015 248);
+    --surface: oklch(0.21 0.015 248);
+    --surface-2: oklch(0.26 0.015 248);
+    --border: oklch(0.32 0.015 248);
+    --text-muted: oklch(0.7 0.015 248);
+    --text: oklch(0.93 0.015 248);
 
     --accent: oklch(0.74 0.13 248);
     --mention: oklch(0.74 0.12 75);
@@ -50,18 +50,18 @@
     --warning: oklch(0.74 0.13 85);
 
     --avatar-l: 0.74;
-    --shadow: 0 10px 32px oklch(0.1 0.04 248 / 0.55), 0 1px 3px oklch(0.1 0.04 248 / 0.4);
+    --shadow: 0 10px 32px oklch(0.05 0.01 248 / 0.6), 0 1px 3px oklch(0.05 0.01 248 / 0.45);
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: oklch(0.23 0.06 248);
-  --surface: oklch(0.28 0.06 248);
-  --surface-2: oklch(0.34 0.06 248);
-  --border: oklch(0.42 0.06 248);
-  --text-muted: oklch(0.72 0.06 248);
-  --text: oklch(0.88 0.06 248);
+  --bg: oklch(0.17 0.015 248);
+  --surface: oklch(0.21 0.015 248);
+  --surface-2: oklch(0.26 0.015 248);
+  --border: oklch(0.32 0.015 248);
+  --text-muted: oklch(0.7 0.015 248);
+  --text: oklch(0.93 0.015 248);
 
   --accent: oklch(0.74 0.13 248);
   --mention: oklch(0.74 0.12 75);
@@ -70,7 +70,7 @@
   --warning: oklch(0.74 0.13 85);
 
   --avatar-l: 0.74;
-  --shadow: 0 10px 32px oklch(0.1 0.04 248 / 0.55), 0 1px 3px oklch(0.1 0.04 248 / 0.4);
+  --shadow: 0 10px 32px oklch(0.05 0.01 248 / 0.6), 0 1px 3px oklch(0.05 0.01 248 / 0.45);
 }
 
 *,
@@ -113,6 +113,20 @@ button {
   cursor: pointer;
 }
 
+/* ボタンやナビは長押しで文字が選択されたり、コールアウトが出たりしないようにする。
+   メッセージ本文などの文章は選択できるままにする */
+button,
+nav,
+[role='tab'],
+[role='menu'],
+[role='menuitem'],
+[role='radiogroup'],
+label {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 a {
   color: var(--accent);
 }
@@ -127,6 +141,13 @@ a {
 }
 
 /* 共通の部品 */
+
+/* 画面の上端。中身は持たず、ステータスバー（Android は edge-to-edge）の分の余白だけを取る */
+.top-bar {
+  flex: none;
+  padding-top: calc(env(safe-area-inset-top) + 8px);
+}
+
 .icon-btn {
   display: inline-grid;
   place-items: center;
@@ -222,19 +243,6 @@ a {
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
-}
-
-.kind-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 0 7px;
-  height: 19px;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 600;
-  background: var(--accent-soft);
-  color: var(--accent);
 }
 
 .spin {
