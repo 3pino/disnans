@@ -234,11 +234,7 @@ pub async fn insert(conn: &mut SqliteConnection, row: &MessageRow) -> sqlx::Resu
     Ok(())
 }
 
-pub async fn insert_thread(
-    conn: &mut SqliteConnection,
-    id: &str,
-    now: i64,
-) -> sqlx::Result<()> {
+pub async fn insert_thread(conn: &mut SqliteConnection, id: &str, now: i64) -> sqlx::Result<()> {
     sqlx::query("INSERT INTO threads (id, created_at) VALUES (?, ?)")
         .bind(id)
         .bind(now)

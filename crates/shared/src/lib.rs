@@ -158,6 +158,8 @@ pub enum ServerEvent {
         body: String,
         message_id: Option<Id>,
         thread_id: Option<Id>,
+        /// 「サンプル通知を送信」で送ったもの。アプリを表示中でもシステム通知を出す。
+        sample: bool,
     },
     #[serde(rename = "error")]
     Error {

@@ -10,7 +10,7 @@ import { wsUrl } from '../config';
 import { Timeline } from './timeline.svelte';
 import { threads } from './threads.svelte';
 import { ui } from './ui.svelte';
-import { showNotification } from '../notify';
+import { notifications } from './notifications.svelte';
 import { errorText } from '../errors';
 
 type Listener = (ev: ServerEvent) => void;
@@ -252,7 +252,7 @@ class Client {
       }
       case 'notify': {
         const body = mentionsToText(ev.body, (id) => this.nameOf(id));
-        showNotification(ev.title, body, ev.thread_id, ev.message_id);
+        notifications.show({ title: ev.title, body, threadId: ev.thread_id, sample: ev.sample });
         break;
       }
       case 'error': {

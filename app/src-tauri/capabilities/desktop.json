@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
-  "description": "デスクトップ版のアップデート",
+  "description": "デスクトップ版のアップデートと通知",
   "platforms": ["linux", "windows", "macOS"],
   "windows": ["main"],
-  "permissions": ["updater:default", "process:allow-restart"]
+  "permissions": ["updater:default", "process:allow-restart", "notification:default"]
 }

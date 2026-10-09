@@ -29,6 +29,7 @@
 | POST | `/api/files` | ファイルのアップロード（multipart、フィールド名 `file`） | `Attachment` |
 | GET | `/api/files/{id}` | ファイル本体 | バイナリ |
 | GET | `/api/files/{id}/thumb` | サムネイル（WebP） | バイナリ |
+| POST | `/api/notify/sample` | 自分にサンプルの `notify` を送る（通知の動作確認用） | `204` |
 | GET | `/api/ws` | WebSocket | — |
 
 ### メッセージ履歴
@@ -56,6 +57,8 @@
 - `notify` は対象者にだけ送る
   - メンションされた（`<@user_id>`）
   - 自分が起点のスレッド、または自分が返信したスレッドに、他人が返信した
+  - `POST /api/notify/sample` で自分に送った（`sample: true`。クライアントは表示中でもシステム通知を出す）
+- `notify` はそのユーザーのすべての接続に送る。Android アプリは WebView とは別に、通知用の常駐サービスからも接続する
 - スレッドは `thread.create`（既存のメッセージを起点にする）か、`message.send` の `start_thread: true`（送信と同時に起点にする）で作る。スレッドの中の返信からは作れない
 - 編集・削除は本人のメッセージだけ。スレッドの起点を削除すると、スレッドの返信もすべて削除する
 - 失敗したら、送信者に `error` を返す

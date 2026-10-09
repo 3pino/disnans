@@ -2,6 +2,7 @@
 
 mod files;
 mod messages;
+mod notify;
 mod threads;
 mod users;
 
@@ -30,6 +31,7 @@ pub fn router(state: SharedState) -> Router {
         )
         .route("/files/{id}", get(files::get))
         .route("/files/{id}/thumb", get(files::thumb))
+        .route("/notify/sample", post(notify::sample))
         .route("/ws", get(ws::handler))
         .fallback(|| async { AppError::not_found("API が見つかりません") })
         .layer(from_fn_with_state(state.clone(), auth::middleware));

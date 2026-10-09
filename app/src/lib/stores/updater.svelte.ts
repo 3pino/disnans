@@ -1,4 +1,4 @@
-import { isTauri } from '../config';
+import { isAndroid, isTauri } from '../config';
 import { isNewer } from '../semver';
 
 const REPO = '3pino/disnans';
@@ -15,10 +15,6 @@ export type UpdateState =
   | { kind: 'error'; message: string };
 
 type Progress = { downloaded: number; total: number | null };
-
-function isAndroid(): boolean {
-  return /android/i.test(navigator.userAgent);
-}
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);

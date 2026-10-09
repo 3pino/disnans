@@ -5,16 +5,32 @@
   import ConfirmDialog from './components/ConfirmDialog.svelte';
   import Toasts from './components/Toasts.svelte';
   import Lightbox from './components/Lightbox.svelte';
-  import { needsServerSetup, isTauri } from './lib/config';
+  import { needsServerSetup, isAndroid, isTauri } from './lib/config';
   import { client } from './lib/stores/client.svelte';
   import { ui } from './lib/stores/ui.svelte';
+  import { notifications } from './lib/stores/notifications.svelte';
 
   let setup = $state(needsServerSetup());
 
   ui.init();
 
   $effect(() => {
-    if (!setup) client.start();
+    if (setup) return;
+    client.start();
+    void notifications.init();
+  });
+
+  // 配布版でも Ctrl+Shift+I で開発者ツールを開く（デスクトップのみ）
+  onMount(() => {
+    if (!isTauri() || isAndroid()) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i')) {
+        e.preventDefault();
+        void import('@tauri-apps/api/core').then(({ invoke }) => invoke('open_devtools'));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   });
 
   onMount(() => {

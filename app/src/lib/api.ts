@@ -41,6 +41,7 @@ async function request<T>(method: string, path: string, body?: unknown, base?: s
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw await toError(res);
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -66,6 +67,8 @@ export const api = {
     ),
   threads: () => request<Thread[]>('GET', '/api/threads'),
   thread: (id: string) => request<Thread>('GET', `/api/threads/${encodeURIComponent(id)}`),
+  /** 自分にサンプルの通知を送る */
+  sampleNotification: () => request<void>('POST', '/api/notify/sample'),
 };
 
 export type UploadHandle = { promise: Promise<Attachment>; abort: () => void };

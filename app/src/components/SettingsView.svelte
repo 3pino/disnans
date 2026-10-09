@@ -4,6 +4,9 @@
   import Moon from '@lucide/svelte/icons/moon';
   import Monitor from '@lucide/svelte/icons/monitor';
   import Bell from '@lucide/svelte/icons/bell';
+  import BellOff from '@lucide/svelte/icons/bell-off';
+  import BatteryCharging from '@lucide/svelte/icons/battery-charging';
+  import Send from '@lucide/svelte/icons/send';
   import Server from '@lucide/svelte/icons/server';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Download from '@lucide/svelte/icons/download';
@@ -16,26 +19,42 @@
   import { ui, type ThemePref } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
   import { devUser, getServerUrl, isTauri, setServerUrl } from '../lib/config';
-  import { notificationPermission, requestNotificationPermission } from '../lib/notify';
+  import { notifications } from '../lib/stores/notifications.svelte';
 
   // svelte-ignore state_referenced_locally
   let name = $state(client.me?.display_name ?? '');
   let saving = $state(false);
   let error = $state<string | null>(null);
-  let perm = $state(notificationPermission());
 
   // 表示名が届く前に開いたとき
   $effect(() => {
     if (!name && client.me) name = client.me.display_name;
   });
 
-  onMount(() => void updater.loadVersion());
+  onMount(() => {
+    void updater.loadVersion();
+    if (notifications.backend !== 'android') return;
+    // 接続の状態や、端末の設定画面から戻ったときの変化を反映する
+    void notifications.refresh();
+    const timer = setInterval(() => void notifications.refresh(), 3000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void notifications.refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  });
 
   const themes: { id: ThemePref; label: string; icon: typeof Sun }[] = [
     { id: 'system', label: '自動', icon: Monitor },
     { id: 'light', label: 'ライト', icon: Sun },
     { id: 'dark', label: 'ダーク', icon: Moon },
   ];
+
+  const perm = $derived(notifications.permission);
+  const android = $derived(notifications.android);
 
   const changed = $derived(name.trim() !== '' && name.trim() !== client.me?.display_name);
   const st = $derived(updater.state);
@@ -112,18 +131,56 @@
 
       <section>
         <h2>通知</h2>
-        {#if perm === 'unsupported'}
+        {#if notifications.backend === 'android'}
+          <label class="switch">
+            <input
+              type="checkbox"
+              checked={notifications.background}
+              onchange={(e) => notifications.setBackground(e.currentTarget.checked)}
+            />
+            <span class="switch-text">
+              <span class="switch-title">アプリを閉じていても通知を受け取る</span>
+              <span class="muted small">
+                「通知を受け取っています」という通知が常に表示されます。端末の設定で、この通知（「常駐接続」）だけを非表示にできます。
+              </span>
+            </span>
+          </label>
+          {#if notifications.background && android}
+            {#if !android.permission}
+              <p class="status warn"><BellOff size={15} />通知が許可されていません</p>
+              <button type="button" class="btn" onclick={() => notifications.requestPermission()}>
+                <Bell size={15} />通知を許可する
+              </button>
+            {:else if android.connected}
+              <p class="status ok"><CircleCheck size={15} />サーバーにつながっています</p>
+            {:else}
+              <p class="status muted"><LoaderCircle size={15} class="spin" />サーバーに接続しています…</p>
+            {/if}
+            {#if !android.batteryUnrestricted}
+              <p class="muted small">電池の最適化を解除すると、省電力中も接続が切れにくくなり、通知が遅れにくくなります。</p>
+              <button type="button" class="btn" onclick={() => notifications.openBatterySettings()}>
+                <BatteryCharging size={15} />電池の最適化を解除
+              </button>
+            {/if}
+          {/if}
+        {:else if perm === 'unsupported'}
           <p class="muted small">この環境ではシステム通知を使えません。アプリ内に表示します。</p>
         {:else if perm === 'granted'}
-          <p class="muted small"><Bell size={13} /> アプリが裏にあるときは、システム通知で知らせます。</p>
+          <p class="muted small line"><Bell size={13} />ほかのアプリを使っているときは、システム通知で知らせます。</p>
         {:else if perm === 'denied'}
-          <p class="muted small">通知はブロックされています。ブラウザーの設定から許可できます。</p>
+          <p class="muted small">通知はブロックされています。{isTauri() ? 'OS' : 'ブラウザー'}の設定から許可できます。</p>
         {:else}
-          <p class="muted small">アプリが裏にあるときに、システム通知で知らせます。</p>
-          <button type="button" class="btn" onclick={async () => (perm = await requestNotificationPermission())}>
+          <p class="muted small">ほかのアプリを使っているときに、システム通知で知らせます。</p>
+          <button type="button" class="btn" onclick={() => notifications.requestPermission()}>
             <Bell size={15} />通知を許可する
           </button>
         {/if}
+        <div class="sample">
+          <button type="button" class="btn" disabled={notifications.sendingSample} onclick={() => notifications.sendSample()}>
+            <Send size={15} />サンプル通知を送信
+          </button>
+          <p class="muted small">サーバーから自分に通知を送ります。アプリを表示したままでもシステム通知として出ます。</p>
+        </div>
       </section>
 
       {#if isTauri() || devUser}
@@ -340,6 +397,9 @@
   .status.new {
     color: var(--accent);
   }
+  .status.warn {
+    color: var(--warning);
+  }
   .status.err {
     color: var(--danger);
     font-weight: 500;
@@ -351,6 +411,39 @@
     background: var(--surface);
     border-radius: var(--radius-sm);
     font-size: 14px;
+  }
+  .switch {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 0;
+    cursor: pointer;
+    font-weight: 400;
+    color: var(--text);
+  }
+  .switch input {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin: 2px 0 0;
+    accent-color: var(--accent);
+  }
+  .switch-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .switch-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .sample {
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .sample > :global(* + *) {
+    margin-top: 8px;
   }
   progress {
     width: 100%;

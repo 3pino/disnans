@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "android",
-  "description": "Android 版のアップデートとシステムバー",
+  "description": "Android 版のアップデート、システムバー、通知",
   "platforms": ["android"],
   "windows": ["main"],
-  "permissions": ["apk-updater:default", "system-bars:default"]
+  "permissions": ["apk-updater:default", "system-bars:default", "notifier:default"]
 }

@@ -7,6 +7,10 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+export function isAndroid(): boolean {
+  return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+}
+
 /** 末尾のスラッシュを落とし、スキームがなければ http:// を補う */
 export function normalizeServerUrl(input: string): string {
   // 日本語 IME で入力された全角文字（／：． など）を半角にする

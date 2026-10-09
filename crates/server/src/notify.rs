@@ -16,6 +16,21 @@ pub struct Notification {
     pub body: String,
     pub message_id: Option<Id>,
     pub thread_id: Option<Id>,
+    /// 動作確認用のサンプル。
+    pub sample: bool,
+}
+
+impl Notification {
+    /// 「サンプル通知を送信」で送る通知。
+    pub fn sample() -> Self {
+        Self {
+            title: "disnans".into(),
+            body: "サンプル通知です。通知はこのように表示されます。".into(),
+            message_id: None,
+            thread_id: None,
+            sample: true,
+        }
+    }
 }
 
 /// 通知の送り方。
@@ -44,6 +59,7 @@ impl Notifier for WsNotifier {
                 body: n.body.clone(),
                 message_id: n.message_id.clone(),
                 thread_id: n.thread_id.clone(),
+                sample: n.sample,
             },
         );
     }
@@ -99,6 +115,7 @@ pub fn plan(
                 body: body.clone(),
                 message_id: Some(message.id.clone()),
                 thread_id: message.thread_id.clone(),
+                sample: false,
             },
         ));
     };

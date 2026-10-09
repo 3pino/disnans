@@ -1,0 +1,13 @@
+[package]
+name = "tauri-plugin-notifier"
+version = "0.1.0"
+description = "Android で常駐サービスからサーバーにつなぎ、アプリを閉じていても通知を出す"
+edition = "2021"
+publish = false
+links = "tauri-plugin-notifier"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

@@ -253,7 +253,9 @@ async fn threads_cannot_nest() {
             body,
             message_id,
             thread_id,
+            sample,
         } => {
+            assert!(!sample);
             assert_eq!(title, "bob さんがスレッドに返信");
             assert_eq!(body, "返信");
             assert_eq!(message_id.as_deref(), Some(reply.id.as_str()));
@@ -418,6 +420,26 @@ async fn mentions_notify_only_the_target() {
         assert_eq!(body, "@bob 見て");
     }
     alice.assert_silent(Duration::from_millis(200)).await;
+}
+
+#[tokio::test]
+async fn sample_notification_goes_only_to_the_requester() {
+    let server = TestServer::start().await;
+    let mut alice = server.ws(ALICE).await;
+    let mut bob = server.ws(BOB).await;
+    alice.recv().await;
+
+    let res = reqwest::Client::new()
+        .post(server.url("/api/notify/sample"))
+        .header("X-Dev-User", ALICE)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+
+    let event = alice.recv().await;
+    assert!(matches!(event, ServerEvent::Notify { sample: true, .. }));
+    bob.assert_silent(Duration::from_millis(200)).await;
 }
 
 #[tokio::test]

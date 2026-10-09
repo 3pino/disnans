@@ -1,8 +1,4 @@
-import { isTauri } from './config';
-
-function isAndroid(): boolean {
-  return /android/i.test(navigator.userAgent);
-}
+import { isAndroid, isTauri } from './config';
 
 let last: boolean | null = null;
 

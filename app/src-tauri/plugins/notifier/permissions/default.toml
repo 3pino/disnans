@@ -1,0 +1,14 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "通知用の常駐サービスの操作を許可する"
+permissions = [
+  "allow-start",
+  "allow-stop",
+  "allow-status",
+  "allow-request-permission",
+  "allow-open-battery-settings",
+  "allow-take-launch-target",
+  "allow-register-listener",
+  "allow-remove-listener",
+]
