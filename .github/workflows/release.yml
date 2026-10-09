@@ -48,6 +48,8 @@ jobs:
     needs: create-release
     strategy:
       fail-fast: false
+      # 各ジョブが latest.json を読んで書き換えるので、同時に動かすと競合する
+      max-parallel: 1
       matrix:
         # AppImage を古い glibc の環境でも動かすため、Linux は古めの Ubuntu でビルドする
         os: [ubuntu-22.04, windows-latest]
