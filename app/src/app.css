@@ -1,0 +1,263 @@
+/* カラートークン（SPEC 7.2）。基本の色は oklch(L 0.06 248) で、明度だけを変える */
+:root {
+  color-scheme: light;
+  --bg: oklch(0.88 0.06 248);
+  --surface: oklch(0.85 0.06 248);
+  --surface-2: oklch(0.8 0.06 248);
+  --border: oklch(0.72 0.06 248);
+  --text-muted: oklch(0.42 0.06 248);
+  --text: oklch(0.23 0.06 248);
+
+  --accent: oklch(0.45 0.11 248);
+  --mention: oklch(0.45 0.09 75);
+  --danger: oklch(0.45 0.15 25);
+  --success: oklch(0.45 0.1 155);
+  --warning: oklch(0.45 0.09 85);
+
+  --avatar-l: 0.45;
+  --shadow: 0 8px 28px oklch(0.23 0.06 248 / 0.18), 0 1px 3px oklch(0.23 0.06 248 / 0.12);
+
+  /* 派生 */
+  --on-accent: var(--bg);
+  --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent);
+  --mention-soft: color-mix(in oklch, var(--mention) 16%, transparent);
+  --danger-soft: color-mix(in oklch, var(--danger) 14%, transparent);
+  --hover: color-mix(in oklch, var(--surface-2) 60%, transparent);
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --sidebar-w: 280px;
+  --panel-w: 420px;
+  --font: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP',
+    'Yu Gothic UI', Meiryo, sans-serif;
+  --mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', 'Noto Sans Mono', Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: oklch(0.23 0.06 248);
+    --surface: oklch(0.28 0.06 248);
+    --surface-2: oklch(0.34 0.06 248);
+    --border: oklch(0.42 0.06 248);
+    --text-muted: oklch(0.72 0.06 248);
+    --text: oklch(0.88 0.06 248);
+
+    --accent: oklch(0.74 0.13 248);
+    --mention: oklch(0.74 0.12 75);
+    --danger: oklch(0.74 0.15 25);
+    --success: oklch(0.74 0.12 155);
+    --warning: oklch(0.74 0.13 85);
+
+    --avatar-l: 0.74;
+    --shadow: 0 10px 32px oklch(0.1 0.04 248 / 0.55), 0 1px 3px oklch(0.1 0.04 248 / 0.4);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: oklch(0.23 0.06 248);
+  --surface: oklch(0.28 0.06 248);
+  --surface-2: oklch(0.34 0.06 248);
+  --border: oklch(0.42 0.06 248);
+  --text-muted: oklch(0.72 0.06 248);
+  --text: oklch(0.88 0.06 248);
+
+  --accent: oklch(0.74 0.13 248);
+  --mention: oklch(0.74 0.12 75);
+  --danger: oklch(0.74 0.15 25);
+  --success: oklch(0.74 0.12 155);
+  --warning: oklch(0.74 0.13 85);
+
+  --avatar-l: 0.74;
+  --shadow: 0 10px 32px oklch(0.1 0.04 248 / 0.55), 0 1px 3px oklch(0.1 0.04 248 / 0.4);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  height: 100%;
+  height: 100dvh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--accent) 35%, transparent);
+}
+
+/* 共通の部品 */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  flex: none;
+}
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.icon-btn.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.btn:hover {
+  border-color: var(--text-muted);
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.btn.primary:hover {
+  filter: brightness(1.06);
+}
+.btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-accent);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  outline: none;
+}
+.input:focus {
+  border-color: var(--accent);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.kind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px;
+  height: 19px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

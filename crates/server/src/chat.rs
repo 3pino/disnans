@@ -1,0 +1,291 @@
+//! メッセージ・スレッド・リアクションの操作。
+//!
+//! WebSocket の `ClientEvent` から呼ばれる。DB を書き換えたあと、結果を全員に配信し、
+//! 必要なら通知を送る。
+
+use disnans_shared::{Id, ServerEvent, ThreadKind, User};
+
+use crate::db;
+use crate::error::{AppError, AppResult};
+use crate::files;
+use crate::hub::ConnId;
+use crate::notify;
+use crate::state::AppState;
+use crate::store::messages::{self, MessageRow};
+use crate::store::{files as file_store, users};
+
+/// 本文の最大文字数。
+const MAX_BODY_CHARS: usize = 10_000;
+/// リアクションの絵文字の最大文字数（合字の絵文字は複数の文字からなる）。
+const MAX_EMOJI_CHARS: usize = 32;
+
+/// 操作をした人と、その接続。
+pub struct Actor<'a> {
+    pub user: &'a User,
+    pub conn: Option<ConnId>,
+}
+
+pub struct SendMessage {
+    pub client_id: String,
+    pub thread_id: Option<Id>,
+    pub body: String,
+    pub attachment_ids: Vec<Id>,
+    pub start_thread: Option<ThreadKind>,
+}
+
+pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage) -> AppResult<()> {
+    let mut attachment_ids = req.attachment_ids;
+    dedup_keep_order(&mut attachment_ids);
+    validate_body(&req.body, !attachment_ids.is_empty())?;
+
+    let _guard = state.write_lock().await;
+
+    if let Some(thread_id) = &req.thread_id {
+        if req.start_thread.is_some() {
+            return Err(nested_thread());
+        }
+        if !messages::thread_exists(&state.pool, thread_id).await? {
+            return Err(AppError::new(
+                axum::http::StatusCode::NOT_FOUND,
+                "thread_not_found",
+                "スレッドが見つかりません",
+            ));
+        }
+    }
+
+    let ulid = db::new_ulid();
+    let row = MessageRow {
+        id: ulid.to_string(),
+        author_id: actor.user.id.clone(),
+        thread_id: req.thread_id.clone(),
+        body: req.body,
+        created_at: ulid.timestamp_ms() as i64,
+        edited_at: None,
+    };
+
+    let mut tx = state.pool.begin().await?;
+    messages::insert(&mut tx, &row).await?;
+    if let Err(file_id) =
+        file_store::attach(&mut tx, &attachment_ids, &row.id, &actor.user.id).await?
+    {
+        return Err(AppError::bad_request(
+            "invalid_attachment",
+            format!("添付できないファイルです（{file_id}）"),
+        ));
+    }
+    if let Some(kind) = req.start_thread {
+        messages::insert_thread(&mut tx, &row.id, kind, row.created_at).await?;
+    }
+    tx.commit().await?;
+
+    let message = messages::get(&state.pool, &row.id)
+        .await?
+        .ok_or_else(|| AppError::internal("作ったメッセージが見つかりません"))?;
+
+    // client_id は送信者本人の接続にだけ入れる
+    let created = |client_id| ServerEvent::MessageCreated {
+        client_id,
+        message: message.clone(),
+    };
+    match actor.conn {
+        Some(conn) => {
+            state.hub.send_to_conn(conn, &created(Some(req.client_id)));
+            state.hub.broadcast_except(&created(None), conn);
+        }
+        None => state.hub.broadcast(&created(None)),
+    }
+
+    if req.start_thread.is_some() {
+        broadcast_thread(state, &message.id).await?;
+    }
+    if let Some(thread_id) = &message.thread_id {
+        broadcast_thread(state, thread_id).await?;
+    }
+
+    // 通知
+    let participants = match &message.thread_id {
+        Some(thread_id) => messages::thread_participants(&state.pool, thread_id).await?,
+        None => Vec::new(),
+    };
+    let all_users = users::list(&state.pool).await?;
+    for (user_id, notification) in notify::plan(&message, &all_users, &participants) {
+        state.notifier.notify(&user_id, &notification);
+    }
+    Ok(())
+}
+
+pub async fn edit_message(
+    state: &AppState,
+    actor: &Actor<'_>,
+    message_id: &str,
+    body: String,
+) -> AppResult<()> {
+    let _guard = state.write_lock().await;
+    let row = own_message(state, actor, message_id).await?;
+    validate_body(
+        &body,
+        messages::has_attachments(&state.pool, message_id).await?,
+    )?;
+
+    messages::update_body(&state.pool, message_id, &body, db::now_ms()).await?;
+
+    let message = messages::get(&state.pool, &row.id)
+        .await?
+        .ok_or_else(|| AppError::not_found("メッセージが見つかりません"))?;
+    let is_root = message.thread.is_some();
+    state
+        .hub
+        .broadcast(&ServerEvent::MessageUpdated { message });
+    if is_root {
+        broadcast_thread(state, message_id).await?;
+    }
+    Ok(())
+}
+
+/// メッセージを完全に消す。スレッドの起点なら、返信と添付ファイルもすべて消す。
+pub async fn delete_message(
+    state: &AppState,
+    actor: &Actor<'_>,
+    message_id: &str,
+) -> AppResult<()> {
+    let _guard = state.write_lock().await;
+    let row = own_message(state, actor, message_id).await?;
+
+    let mut tx = state.pool.begin().await?;
+    let file_ids = file_store::ids_in_message_tree(&mut tx, message_id).await?;
+    messages::delete(&mut tx, message_id).await?;
+    tx.commit().await?;
+
+    files::remove_stored(&state.config, &file_ids).await;
+
+    state.hub.broadcast(&ServerEvent::MessageDeleted {
+        message_id: row.id,
+        thread_id: row.thread_id.clone(),
+    });
+    if let Some(thread_id) = &row.thread_id {
+        broadcast_thread(state, thread_id).await?;
+    }
+    Ok(())
+}
+
+/// 既存のメッセージを起点にスレッドを作る。スレッドの中の返信からは作れない（ネストしない）。
+pub async fn create_thread(
+    state: &AppState,
+    root_message_id: &str,
+    kind: ThreadKind,
+) -> AppResult<()> {
+    let _guard = state.write_lock().await;
+    let row = find_message(state, root_message_id).await?;
+    if row.thread_id.is_some() {
+        return Err(nested_thread());
+    }
+    if messages::thread_exists(&state.pool, root_message_id).await? {
+        return Err(AppError::new(
+            axum::http::StatusCode::CONFLICT,
+            "thread_exists",
+            "このメッセージにはすでにスレッドがあります",
+        ));
+    }
+
+    let mut conn = state.pool.acquire().await?;
+    messages::insert_thread(&mut conn, root_message_id, kind, db::now_ms()).await?;
+    drop(conn);
+
+    if let Some(message) = messages::get(&state.pool, root_message_id).await? {
+        state
+            .hub
+            .broadcast(&ServerEvent::MessageUpdated { message });
+    }
+    broadcast_thread(state, root_message_id).await
+}
+
+pub async fn add_reaction(
+    state: &AppState,
+    actor: &Actor<'_>,
+    message_id: &str,
+    emoji: &str,
+) -> AppResult<()> {
+    let emoji = validate_emoji(emoji)?;
+    let _guard = state.write_lock().await;
+    find_message(state, message_id).await?;
+    messages::add_reaction(&state.pool, message_id, &actor.user.id, emoji, db::now_ms()).await?;
+    broadcast_reactions(state, message_id).await
+}
+
+pub async fn remove_reaction(
+    state: &AppState,
+    actor: &Actor<'_>,
+    message_id: &str,
+    emoji: &str,
+) -> AppResult<()> {
+    let emoji = validate_emoji(emoji)?;
+    let _guard = state.write_lock().await;
+    find_message(state, message_id).await?;
+    messages::remove_reaction(&state.pool, message_id, &actor.user.id, emoji).await?;
+    broadcast_reactions(state, message_id).await
+}
+
+// ---- 補助 ----
+
+async fn find_message(state: &AppState, id: &str) -> AppResult<MessageRow> {
+    messages::get_row(&state.pool, id)
+        .await?
+        .ok_or_else(|| AppError::not_found("メッセージが見つかりません"))
+}
+
+/// 自分のメッセージを取る。他人のメッセージなら `forbidden`。
+async fn own_message(state: &AppState, actor: &Actor<'_>, id: &str) -> AppResult<MessageRow> {
+    let row = find_message(state, id).await?;
+    if row.author_id != actor.user.id {
+        return Err(AppError::forbidden(
+            "自分のメッセージだけ編集・削除できます",
+        ));
+    }
+    Ok(row)
+}
+
+async fn broadcast_thread(state: &AppState, thread_id: &str) -> AppResult<()> {
+    if let Some(thread) = messages::get_thread(&state.pool, thread_id).await? {
+        state.hub.broadcast(&ServerEvent::ThreadUpdated { thread });
+    }
+    Ok(())
+}
+
+async fn broadcast_reactions(state: &AppState, message_id: &str) -> AppResult<()> {
+    let reactions = messages::reactions(&state.pool, message_id).await?;
+    state.hub.broadcast(&ServerEvent::ReactionUpdated {
+        message_id: message_id.to_owned(),
+        reactions,
+    });
+    Ok(())
+}
+
+fn nested_thread() -> AppError {
+    AppError::bad_request("nested_thread", "スレッドの中にスレッドは作れません")
+}
+
+fn validate_body(body: &str, has_attachments: bool) -> AppResult<()> {
+    if body.trim().is_empty() && !has_attachments {
+        return Err(AppError::bad_request("empty_message", "本文が空です"));
+    }
+    if body.chars().count() > MAX_BODY_CHARS {
+        return Err(AppError::bad_request(
+            "body_too_long",
+            format!("本文は {MAX_BODY_CHARS} 文字までです"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_emoji(emoji: &str) -> AppResult<&str> {
+    let emoji = emoji.trim();
+    if emoji.is_empty() || emoji.chars().count() > MAX_EMOJI_CHARS {
+        return Err(AppError::bad_request("invalid_emoji", "絵文字が不正です"));
+    }
+    Ok(emoji)
+}
+
+fn dedup_keep_order(ids: &mut Vec<Id>) {
+    let mut seen = std::collections::HashSet::new();
+    ids.retain(|id| seen.insert(id.clone()));
+}
