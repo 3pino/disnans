@@ -2,9 +2,11 @@
   import Hash from '@lucide/svelte/icons/hash';
   import MessageCircle from '@lucide/svelte/icons/message-circle';
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
+  import Settings from '@lucide/svelte/icons/settings';
   import Sidebar from './Sidebar.svelte';
   import ChatView from './ChatView.svelte';
   import ThreadPanel from './ThreadPanel.svelte';
+  import SettingsView from './SettingsView.svelte';
   import Avatar from './Avatar.svelte';
   import ConnectionBanner from './ConnectionBanner.svelte';
   import { client } from '../lib/stores/client.svelte';
@@ -12,6 +14,7 @@
   import { ui } from '../lib/stores/ui.svelte';
 
   const panelOpen = $derived(ui.panel !== null);
+  const showChat = $derived(ui.isMobile ? ui.tab === 'chat' : ui.tab !== 'settings');
 </script>
 
 {#snippet mainEmpty()}
@@ -26,11 +29,11 @@
     <div class="side"><Sidebar /></div>
   {/if}
 
-  <main class="main" class:hidden={ui.isMobile && ui.tab !== 'chat'}>
+  <main class="main" class:hidden={!showChat}>
     <header class="bar">
       {#if ui.isMobile}
         <span class="title"><Hash size={18} />チャット</span>
-        <button type="button" class="me-btn" aria-label="プロフィールと設定" onclick={() => (ui.profileOpen = true)}>
+        <button type="button" class="me-btn" aria-label="設定" onclick={() => ui.openSettings()}>
           {#if client.me}<Avatar user={client.me} id={client.me.id} size={30} />{/if}
         </button>
       {:else}
@@ -41,6 +44,10 @@
     <ConnectionBanner />
     <ChatView threadId={null} placeholder="メッセージを送信" empty={mainEmpty} />
   </main>
+
+  {#if ui.tab === 'settings'}
+    <div class="settings-view"><SettingsView /></div>
+  {/if}
 
   {#if ui.isMobile && ui.tab === 'threads'}
     <div class="mobile-threads"><Sidebar showMain={false} /></div>
@@ -65,6 +72,10 @@
         </span>
         <span>Threads</span>
       </button>
+      <button type="button" class:sel={ui.tab === 'settings'} onclick={() => (ui.tab = 'settings')}>
+        <Settings size={22} />
+        <span>Settings</span>
+      </button>
     </nav>
   {/if}
 </div>
@@ -79,6 +90,10 @@
     grid-template-columns: var(--sidebar-w) minmax(320px, 1fr) minmax(320px, var(--panel-w));
   }
   .side {
+    min-height: 0;
+  }
+  .settings-view {
+    min-width: 0;
     min-height: 0;
   }
   .main {
@@ -132,11 +147,12 @@
     flex-direction: column;
   }
   .mobile .main,
+  .mobile .settings-view,
   .mobile-threads {
     flex: 1;
     min-height: 0;
   }
-  .mobile .main.hidden {
+  .main.hidden {
     display: none;
   }
   .mobile .bar {

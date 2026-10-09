@@ -19,7 +19,15 @@
 
   <div class="scroll body">
     {#if showMain}
-      <button type="button" class="main-link" class:active={!ui.panel} onclick={() => ui.closePanel()}>
+      <button
+        type="button"
+        class="main-link"
+        class:active={!ui.panel && ui.tab !== 'settings'}
+        onclick={() => {
+          ui.closePanel();
+          ui.tab = 'chat';
+        }}
+      >
         <Hash size={16} />
         チャット
       </button>
@@ -32,7 +40,7 @@
     <MemberList />
   </div>
 
-  <button type="button" class="me" onclick={() => (ui.profileOpen = true)} aria-label="プロフィールと設定">
+  <button type="button" class="me" class:active={ui.tab === 'settings'} onclick={() => ui.openSettings()} aria-label="設定">
     {#if client.me}
       <Avatar user={client.me} id={client.me.id} size={30} />
       <span class="me-text">
@@ -128,6 +136,10 @@
   }
   .me:hover {
     background: var(--hover);
+  }
+  .me.active {
+    background: var(--accent-soft);
+    color: var(--accent);
   }
   .me-text {
     flex: 1;

@@ -1,0 +1,5 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "APK のダウンロードとインストーラーの起動を許可する"
+permissions = ["allow-can-install", "allow-open-install-settings", "allow-download-and-install"]

@@ -14,8 +14,26 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// リリース署名の鍵。CI では環境変数、手元では ~/.config/disnans-keys/ から読む。
+// 同じ鍵で署名しないと、アップデートとしてインストールできない。
+val keyDir = File(System.getProperty("user.home"), ".config/disnans-keys")
+val keystoreFile = System.getenv("DISNANS_KEYSTORE")?.let { file(it) }
+    ?: File(keyDir, "android.jks").takeIf { it.exists() }
+val keystorePassword = System.getenv("DISNANS_KEYSTORE_PASSWORD")
+    ?: File(keyDir, "android.password").takeIf { it.exists() }?.readText()?.trim()
+
 android {
     compileSdk = 37
+    signingConfigs {
+        if (keystoreFile != null && keystorePassword != null) {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = keystorePassword
+                keyAlias = "disnans"
+                keyPassword = keystorePassword
+            }
+        }
+    }
     namespace = "dev.disnans.app"
     defaultConfig {
         // 自宅サーバーには Tailscale 経由の http:// で接続する（通信路は WireGuard で暗号化される）
@@ -28,6 +46,8 @@ android {
     }
     buildTypes {
         getByName("debug") {
+            // リリース版と同じ鍵で署名し、デバッグ版とリリース版を入れ替えてもアンインストール不要にする
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             isDebuggable = true
             isJniDebuggable = true
@@ -40,6 +60,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             optimization {
                enable = true
             }

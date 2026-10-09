@@ -1,0 +1,13 @@
+[package]
+name = "tauri-plugin-apk-updater"
+version = "0.1.0"
+description = "Android で GitHub Releases の APK をダウンロードしてインストーラーを開く"
+edition = "2021"
+publish = false
+links = "tauri-plugin-apk-updater"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

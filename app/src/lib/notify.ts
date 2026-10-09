@@ -20,7 +20,7 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
 function isViewing(threadId: string | null): boolean {
   if (document.visibilityState !== 'visible') return false;
   if (threadId) return ui.panel?.kind === 'thread' && ui.panel.id === threadId;
-  return !ui.isMobile || ui.tab === 'chat';
+  return ui.isMobile ? ui.tab === 'chat' : ui.tab !== 'settings';
 }
 
 /** サーバーの notify イベントを表示する */

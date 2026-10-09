@@ -15,13 +15,12 @@ const MOBILE_QUERY = '(max-width: 767px)';
 class Ui {
   theme = $state<ThemePref>((getItem(THEME_KEY) as ThemePref | null) ?? 'system');
   isMobile = $state(false);
-  /** モバイルのボトムナビ */
-  tab = $state<'chat' | 'threads'>('chat');
+  /** モバイルのボトムナビ。デスクトップでは chat と settings だけを使う */
+  tab = $state<'chat' | 'threads' | 'settings'>('chat');
   panel = $state<Panel>(null);
   lightbox = $state<{ src: string; alt: string; downloadUrl: string } | null>(null);
   toasts = $state<Toast[]>([]);
   confirmReq = $state<ConfirmRequest | null>(null);
-  profileOpen = $state(false);
   /** インライン編集中のメッセージ */
   editing = $state<string | null>(null);
   /** 相対時刻の表示を更新するための現在時刻 */
@@ -49,7 +48,13 @@ class Ui {
   }
 
   openThread(id: string): void {
+    if (!this.isMobile && this.tab === 'settings') this.tab = 'chat';
     this.panel = { kind: 'thread', id };
+  }
+
+  openSettings(): void {
+    this.tab = 'settings';
+    if (!this.isMobile) this.panel = null;
   }
 
   closePanel(): void {

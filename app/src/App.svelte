@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import Setup from './components/Setup.svelte';
   import Shell from './components/Shell.svelte';
-  import ProfileDialog from './components/ProfileDialog.svelte';
   import ConfirmDialog from './components/ConfirmDialog.svelte';
   import Toasts from './components/Toasts.svelte';
   import Lightbox from './components/Lightbox.svelte';
@@ -48,7 +47,6 @@
   <Setup ondone={() => (setup = false)} />
 {:else}
   <Shell />
-  {#if ui.profileOpen}<ProfileDialog />{/if}
   <ConfirmDialog />
   <Lightbox />
 {/if}

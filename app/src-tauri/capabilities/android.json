@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "android",
+  "description": "Android 版のアップデート",
+  "platforms": ["android"],
+  "windows": ["main"],
+  "permissions": ["apk-updater:default"]
+}
