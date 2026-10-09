@@ -67,6 +67,100 @@ pub struct Message {
     pub edited_at: Option<Timestamp>,
     /// このメッセージがスレッドの起点なら入る。
     pub thread: Option<ThreadInfo>,
+    /// プラグインのセッションのカードなら入る（本文は空）。
+    pub card: Option<MessageCard>,
+}
+
+// ---- プラグイン ----
+
+/// サーバーに配布されたプラグイン。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PluginInfo {
+    /// 英小文字・数字・ハイフン（2〜32文字）。
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub author: String,
+    pub min_api_version: u32,
+    /// 配布されているファイル名（`manifest.json` / `main.js` / `styles.css`）。
+    pub files: Vec<String>,
+    /// ファイルの中身のハッシュ（16進）。キャッシュの区別と、更新の判定に使う。
+    pub hash: String,
+    pub updated_by: Id,
+    pub updated_at: Timestamp,
+}
+
+/// カードに表示する内容。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Card {
+    pub title: String,
+    pub text: String,
+}
+
+/// メッセージに付くカード。タップすると `plugin` の view で `session_id` を開く。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MessageCard {
+    pub session_id: Id,
+    pub plugin: String,
+    pub title: String,
+    pub text: String,
+}
+
+/// プラグインの「1回分の利用」（ゲームの1局など）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Session {
+    pub id: Id,
+    pub plugin: String,
+    /// カードのメッセージ。
+    pub message_id: Id,
+    pub created_by: Id,
+    /// プラグインが自由に決める JSON。
+    #[ts(type = "unknown")]
+    pub state: serde_json::Value,
+    /// 更新のたびに +1。楽観ロックに使う。
+    pub version: i64,
+    pub card: Card,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// `POST /api/sessions`
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CreateSession {
+    pub plugin: String,
+    /// カードを流すスレッド。`null` ならメインチャット。
+    pub thread_id: Option<Id>,
+    #[ts(type = "unknown")]
+    pub state: serde_json::Value,
+    pub card: Card,
+}
+
+/// `PUT /api/sessions/{id}`
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateSession {
+    /// 読み込んだときの version。一致しなければ `409 version_conflict`。
+    pub version: i64,
+    #[ts(type = "unknown")]
+    pub state: serde_json::Value,
+    /// 指定するとカードも書き換える。
+    pub card: Option<Card>,
+}
+
+/// `POST /api/plugins/{id}/notify`
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PluginNotify {
+    pub user_ids: Vec<Id>,
+    pub body: String,
+    /// 指定すると、通知から開いたときにそのカードのある場所を開く。
+    pub session_id: Option<Id>,
 }
 
 /// スレッド一覧の1件。
@@ -116,6 +210,14 @@ pub enum ClientEvent {
     ReactionAdd { message_id: Id, emoji: String },
     #[serde(rename = "reaction.remove")]
     ReactionRemove { message_id: Id, emoji: String },
+    /// セッションの一時的なイベント（保存しない）。送信者以外の全員に中継する。
+    #[serde(rename = "session.emit")]
+    SessionEmit {
+        session_id: Id,
+        name: String,
+        #[ts(type = "unknown")]
+        payload: serde_json::Value,
+    },
     #[serde(rename = "ping")]
     Ping,
 }
@@ -160,6 +262,23 @@ pub enum ServerEvent {
         thread_id: Option<Id>,
         /// 「サンプル通知を送信」で送ったもの。アプリを表示中でもシステム通知を出す。
         sample: bool,
+    },
+    /// プラグインが配布・更新された。
+    #[serde(rename = "plugin.updated")]
+    PluginUpdated { plugin: PluginInfo },
+    #[serde(rename = "plugin.removed")]
+    PluginRemoved { plugin_id: String },
+    /// セッションの state（とカード）が更新された。
+    #[serde(rename = "session.updated")]
+    SessionUpdated { session: Session },
+    /// `session.emit` の中継。
+    #[serde(rename = "session.event")]
+    SessionEvent {
+        session_id: Id,
+        from: Id,
+        name: String,
+        #[ts(type = "unknown")]
+        payload: serde_json::Value,
     },
     #[serde(rename = "error")]
     Error {
