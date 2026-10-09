@@ -1,9 +1,0 @@
-dev.disnans.apkupdater.tauri-plugin-apk-updater-pngs-0 /home/sanpino/repos/disnans/app/src-tauri/plugins/apk-updater/android/build/generated/res/pngs/debug
-dev.disnans.apkupdater.tauri-plugin-apk-updater-updated_navigation_xml-1 /home/sanpino/repos/disnans/app/src-tauri/plugins/apk-updater/android/build/generated/updated_navigation_xml/debug
-dev.disnans.apkupdater.tauri-plugin-apk-updater-mergeDebugResources-2 /home/sanpino/repos/disnans/app/src-tauri/plugins/apk-updater/android/build/intermediates/incremental/debug/mergeDebugResources/merged.dir
-dev.disnans.apkupdater.tauri-plugin-apk-updater-mergeDebugResources-3 /home/sanpino/repos/disnans/app/src-tauri/plugins/apk-updater/android/build/intermediates/incremental/debug/mergeDebugResources/stripped.dir
-dev.disnans.apkupdater.tauri-plugin-apk-updater-debug-4 /home/sanpino/repos/disnans/app/src-tauri/plugins/apk-updater/android/build/intermediates/merged_res/debug/mergeDebugResources
-dev.disnans.apkupdater.tauri-plugin-apk-updater-debug-5 /home/sanpino/repos/disnans/app/src-tauri/plugins/apk-updater/android/build/intermediates/packaged_res/debug/packageDebugResources
-dev.disnans.apkupdater.tauri-plugin-apk-updater-debug-6 /home/sanpino/repos/disnans/app/src-tauri/plugins/apk-updater/android/src/debug/res
-dev.disnans.apkupdater.tauri-plugin-apk-updater-main-7 /home/sanpino/repos/disnans/app/src-tauri/plugins/apk-updater/android/src/main/res
-gradleHome-0 /home/sanpino/.gradle

@@ -1,2 +1,0 @@
-dev.disnans.apkupdater
-xml apk_updater_paths

@@ -1,1 +1,0 @@
-int xml apk_updater_paths 0x0
