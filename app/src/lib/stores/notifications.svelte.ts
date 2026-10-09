@@ -1,6 +1,5 @@
 import { api } from '../api';
 import { getServerUrl, isAndroid, isTauri } from '../config';
-import { getItem, setItem } from '../storage';
 import { ui } from './ui.svelte';
 
 /**
@@ -17,7 +16,6 @@ export type Permission = NotificationPermission | 'unsupported';
 
 /** Android の常駐サービスの状態（notifier プラグインの status） */
 export type AndroidStatus = {
-  enabled: boolean;
   running: boolean;
   connected: boolean;
   permission: boolean;
@@ -30,8 +28,6 @@ export type NotifyEvent = {
   threadId: string | null;
   sample: boolean;
 };
-
-const BACKGROUND_KEY = 'disnans.notify.background';
 
 function detectBackend(): Backend {
   if (!isTauri()) return 'web';
@@ -53,8 +49,6 @@ class Notifications {
   permission = $state<Permission>('default');
   /** Android の常駐サービスの状態 */
   android = $state<AndroidStatus | null>(null);
-  /** Android: アプリを閉じていても通知を受け取るか（既定はオン） */
-  background = $state(getItem(BACKGROUND_KEY) !== 'off');
   sendingSample = $state(false);
 
   private started = false;
@@ -79,11 +73,9 @@ class Notifications {
     const { target } = await invokeNotifier<{ target?: { threadId?: string | null } }>('take_launch_target');
     if (target) this.openTarget(target.threadId);
 
-    if (this.background) {
-      // 初回は通知の許可を求める（Android 13 以降。2回目以降は何も出ない）
-      await invokeNotifier('request_permission');
-      await invokeNotifier('start', { serverUrl: getServerUrl() });
-    }
+    // 初回は通知の許可を求める（Android 13 以降。2回目以降は何も出ない）
+    await invokeNotifier('request_permission');
+    await invokeNotifier('start', { serverUrl: getServerUrl() });
     await this.refresh();
   }
 
@@ -120,22 +112,6 @@ class Notifications {
     } catch (e) {
       ui.toast(`通知の許可を求められませんでした: ${errorMessage(e)}`, 'error');
     }
-  }
-
-  async setBackground(on: boolean): Promise<void> {
-    this.background = on;
-    setItem(BACKGROUND_KEY, on ? 'on' : 'off');
-    try {
-      if (on) {
-        await invokeNotifier('request_permission');
-        await invokeNotifier('start', { serverUrl: getServerUrl() });
-      } else {
-        await invokeNotifier('stop');
-      }
-    } catch (e) {
-      ui.toast(`切り替えられませんでした: ${errorMessage(e)}`, 'error');
-    }
-    await this.refresh();
   }
 
   async openBatterySettings(): Promise<void> {

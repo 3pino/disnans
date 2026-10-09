@@ -13,19 +13,19 @@
       {#if r.user_ids.length > 0}
         <button
           type="button"
-          class="pill"
-          class:mine={meId !== undefined && r.user_ids.includes(meId)}
+          class="reaction-pill"
+          class:reaction-pill-mine={meId !== undefined && r.user_ids.includes(meId)}
           title={r.user_ids.map((id) => client.nameOf(id)).join('、')}
           onclick={() => client.toggleReaction(message, r.emoji)}
         >
-          <span class="emoji">{r.emoji}</span>
-          <span class="count">{r.user_ids.length}</span>
+          <span class="reaction-pill-emoji">{r.emoji}</span>
+          <span class="reaction-pill-count">{r.user_ids.length}</span>
         </button>
       {/if}
     {/each}
     <button
       type="button"
-      class="pill add"
+      class="reaction-pill reaction-add"
       aria-label="リアクションを追加"
       onclick={(e) => onaddclick(e.currentTarget.getBoundingClientRect())}
     >
@@ -41,7 +41,7 @@
     gap: 4px;
     margin-top: 4px;
   }
-  .pill {
+  .reaction-pill {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -52,33 +52,33 @@
     background: var(--surface);
     font-size: 13px;
   }
-  .pill:hover {
+  .reaction-pill:hover {
     border-color: var(--text-muted);
   }
-  .pill.mine {
+  .reaction-pill.reaction-pill-mine {
     border-color: var(--accent);
     background: var(--accent-soft);
     color: var(--accent);
   }
-  .emoji {
+  .reaction-pill-emoji {
     font-size: 15px;
     line-height: 1;
   }
-  .count {
+  .reaction-pill-count {
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
-  .add {
+  .reaction-add {
     color: var(--text-muted);
     opacity: 0;
     transition: opacity 0.12s;
   }
-  :global(.msg:hover) .add,
-  .add:focus-visible {
+  :global(.message-item:hover) .reaction-add,
+  .reaction-add:focus-visible {
     opacity: 1;
   }
   @media (hover: none) {
-    .add {
+    .reaction-add {
       opacity: 1;
     }
   }

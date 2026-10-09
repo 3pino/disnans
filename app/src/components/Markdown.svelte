@@ -33,34 +33,34 @@
   {/each}
 {/snippet}
 
-<div class="md">
+<div class="markdown-body">
   {@render render(blocks, true)}{#if suffix && !inlineSuffix}<div>{@render suffix()}</div>{/if}
 </div>
 
 <style>
-  .md {
+  .markdown-body {
     overflow-wrap: anywhere;
     min-width: 0;
   }
-  .md :global(p),
-  .md :global(ul),
-  .md :global(ol),
-  .md :global(pre),
-  .md :global(blockquote) {
+  .markdown-body :global(p),
+  .markdown-body :global(ul),
+  .markdown-body :global(ol),
+  .markdown-body :global(pre),
+  .markdown-body :global(blockquote) {
     margin: 0;
   }
-  .md > :global(* + *),
-  .md :global(blockquote > * + *) {
+  .markdown-body > :global(* + *),
+  .markdown-body :global(blockquote > * + *) {
     margin-top: 0.4em;
   }
-  .md :global(ul),
-  .md :global(ol) {
+  .markdown-body :global(ul),
+  .markdown-body :global(ol) {
     padding-left: 1.5em;
   }
-  .md :global(li::marker) {
+  .markdown-body :global(li::marker) {
     color: var(--text-muted);
   }
-  .md :global(pre) {
+  .markdown-body :global(pre) {
     padding: 10px 12px;
     border-radius: var(--radius-sm);
     background: var(--surface-2);
@@ -72,7 +72,7 @@
     white-space: pre;
     scrollbar-width: thin;
   }
-  .md :global(blockquote) {
+  .markdown-body :global(blockquote) {
     padding: 1px 0 1px 12px;
     border-left: 3px solid var(--border);
     color: var(--text-muted);

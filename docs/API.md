@@ -29,7 +29,7 @@
 | POST | `/api/files` | ファイルのアップロード（multipart、フィールド名 `file`） | `Attachment` |
 | GET | `/api/files/{id}` | ファイル本体 | バイナリ |
 | GET | `/api/files/{id}/thumb` | サムネイル（WebP） | バイナリ |
-| POST | `/api/notify/sample` | 自分にサンプルの `notify` を送る（通知の動作確認用） | `204` |
+| POST | `/api/notify/sample` | 自分にサンプルの `notify` を送る（通知の動作確認用）。送り先は、リクエストと同じ IP アドレス（端末）からの接続だけ | `204` |
 | GET | `/api/ws` | WebSocket | — |
 
 ### メッセージ履歴

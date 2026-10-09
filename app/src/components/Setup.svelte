@@ -38,17 +38,17 @@
   }
 </script>
 
-<div class="setup">
-  <form class="card" onsubmit={submit}>
-    <div class="logo"><AppIcon size={40} /></div>
-    <h1>disnans へようこそ</h1>
-    <p class="muted">
+<div id="setup" class="setup">
+  <form class="setup-card" onsubmit={submit}>
+    <div class="setup-logo"><AppIcon size={40} /></div>
+    <h1 class="setup-title">disnans へようこそ</h1>
+    <p class="muted setup-intro">
       接続するサーバーのアドレスを入力してください。Tailscale の IP アドレスか MagicDNS の名前が使えます。
     </p>
-    <label for="server">サーバー</label>
+    <label class="setup-server-label" for="setup-server-url">サーバー</label>
     <input
-      id="server"
-      class="input"
+      id="setup-server-url"
+      class="input setup-server-input"
       bind:value={url}
       placeholder="http://homeserver:8080"
       autocapitalize="off"
@@ -58,14 +58,14 @@
       required
     />
     {#if error}
-      <p class="err">接続できませんでした: {error}<br />Tailscale に接続しているか確かめてください。</p>
+      <p class="setup-error">接続できませんでした: {error}<br />Tailscale に接続しているか確かめてください。</p>
     {/if}
-    <button class="btn primary" disabled={checking || !url.trim()}>
+    <button class="btn primary setup-connect" disabled={checking || !url.trim()}>
       {#if checking}<LoaderCircle size={16} class="spin" />{/if}
       接続する
     </button>
     {#if failedOnce}
-      <button type="button" class="btn ghost" onclick={saveAnyway}>確認せずに保存</button>
+      <button type="button" class="btn setup-save-anyway" onclick={saveAnyway}>確認せずに保存</button>
     {/if}
   </form>
 </div>
@@ -77,7 +77,7 @@
     min-height: 100%;
     padding: calc(env(safe-area-inset-top) + 24px) 16px calc(env(safe-area-inset-bottom) + 24px);
   }
-  .card {
+  .setup-card {
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -88,23 +88,24 @@
     border-radius: 16px;
     box-shadow: var(--shadow);
   }
-  .logo {
+  .setup-logo {
     color: var(--accent);
   }
-  h1 {
+  .setup-title {
     margin: 4px 0 0;
     font-size: 20px;
   }
-  p {
+  .setup-intro,
+  .setup-error {
     margin: 0 0 6px;
     font-size: 14px;
   }
-  label {
+  .setup-server-label {
     font-size: 12px;
     font-weight: 700;
     color: var(--text-muted);
   }
-  .err {
+  .setup-error {
     color: var(--danger);
     font-size: 13px;
   }
@@ -112,7 +113,7 @@
     height: 42px;
     margin-top: 6px;
   }
-  .ghost {
+  .setup-save-anyway {
     background: transparent;
     margin-top: 0;
   }

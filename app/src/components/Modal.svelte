@@ -15,14 +15,14 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
 
-<div class="scrim" role="presentation" onclick={onclose}></div>
+<div class="modal-scrim" role="presentation" onclick={onclose}></div>
 <div class="modal" role="dialog" aria-modal="true" aria-label={title} bind:this={box} style:--w="{width}px">
-  <h2>{title}</h2>
+  <h2 class="modal-title">{title}</h2>
   {@render children()}
 </div>
 
 <style>
-  .scrim {
+  .modal-scrim {
     position: fixed;
     inset: 0;
     z-index: 80;
@@ -45,7 +45,7 @@
     box-shadow: var(--shadow);
     animation: pop 0.15s ease-out;
   }
-  h2 {
+  .modal-title {
     margin: 0 0 14px;
     font-size: 17px;
   }

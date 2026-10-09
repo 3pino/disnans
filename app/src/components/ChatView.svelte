@@ -26,7 +26,7 @@
 </script>
 
 <section
-  class="chat"
+  class="chat-view"
   aria-label={threadId ? 'スレッド' : 'チャット'}
   ondragenter={(e) => {
     if (!hasFiles(e)) return;
@@ -51,8 +51,8 @@
   <Composer bind:this={composer} {threadId} {placeholder} />
 
   {#if dragDepth > 0}
-    <div class="drop">
-      <div class="drop-inner">
+    <div class="chat-view-drop-overlay">
+      <div class="chat-view-drop-message">
         <Paperclip size={28} />
         <span>ドロップして添付</span>
       </div>
@@ -61,7 +61,7 @@
 </section>
 
 <style>
-  .chat {
+  .chat-view {
     position: relative;
     display: flex;
     flex-direction: column;
@@ -69,7 +69,7 @@
     min-height: 0;
     min-width: 0;
   }
-  .drop {
+  .chat-view-drop-overlay {
     position: absolute;
     inset: 8px;
     z-index: 40;
@@ -80,7 +80,7 @@
     background: color-mix(in oklch, var(--bg) 85%, transparent);
     pointer-events: none;
   }
-  .drop-inner {
+  .chat-view-drop-message {
     display: flex;
     flex-direction: column;
     align-items: center;

@@ -5,20 +5,20 @@
 
 <div class="toasts" aria-live="polite">
   {#each ui.toasts as t (t.id)}
-    <div class="toast" class:error={t.kind === 'error'}>
-      <span class="text">{t.text}</span>
+    <div class="toast" class:toast-error={t.kind === 'error'}>
+      <span class="toast-text">{t.text}</span>
       {#if t.action}
         {@const action = t.action}
         <button
           type="button"
-          class="act"
+          class="toast-action"
           onclick={() => {
             action.run();
             ui.dismiss(t.id);
           }}>{action.label}</button
         >
       {/if}
-      <button type="button" class="icon-btn" aria-label="閉じる" onclick={() => ui.dismiss(t.id)}><X size={14} /></button>
+      <button type="button" class="icon-btn toast-close" aria-label="閉じる" onclick={() => ui.dismiss(t.id)}><X size={14} /></button>
     </div>
   {/each}
 </div>
@@ -50,10 +50,10 @@
     pointer-events: auto;
     animation: drop 0.18s ease-out;
   }
-  .toast.error {
+  .toast.toast-error {
     border-left-color: var(--danger);
   }
-  .text {
+  .toast-text {
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -62,13 +62,13 @@
     line-clamp: 3;
     -webkit-box-orient: vertical;
   }
-  .act {
+  .toast-action {
     border: none;
     background: none;
     color: var(--accent);
     font-weight: 600;
   }
-  .icon-btn {
+  .toast-close {
     width: 26px;
     height: 26px;
   }

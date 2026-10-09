@@ -94,17 +94,17 @@
   });
 </script>
 
-<div class="wrap">
-<div class="list scroll" bind:this={scroller} {onscroll}>
-  <div class="inner" bind:this={content}>
+<div class="message-list">
+<div class="message-list-scroller scroll" bind:this={scroller} {onscroll}>
+  <div class="message-list-content" bind:this={content}>
     {#if header}{@render header()}{/if}
     {#if timeline.loadingOlder || (timeline.loading && !timeline.loaded)}
-      <div class="loading"><LoaderCircle size={18} class="spin" /></div>
+      <div class="message-list-loading"><LoaderCircle size={18} class="spin" /></div>
     {:else if timeline.loaded && !timeline.hasMore && !header}
-      <div class="start">ここが始まりです</div>
+      <div class="message-list-start">ここが始まりです</div>
     {/if}
     {#if timeline.error && !timeline.loaded}
-      <div class="error">
+      <div class="message-list-error">
         読み込めませんでした（{timeline.error}）
         <button type="button" class="btn" onclick={() => timeline.load()}>再試行</button>
       </div>
@@ -114,7 +114,7 @@
     {/if}
     {#each rows as r (r.msg.id)}
       {#if r.day}
-        <div class="day"><span>{r.day}</span></div>
+        <div class="message-list-day-divider"><span>{r.day}</span></div>
       {/if}
       <MessageItem message={r.msg} grouped={r.grouped} {inThread} />
     {/each}
@@ -122,42 +122,42 @@
 </div>
 
 {#if !atBottom}
-  <button type="button" class="jump" onclick={() => scrollToBottom(true)} aria-label="最新へ移動">
+  <button type="button" class="message-list-jump-latest" onclick={() => scrollToBottom(true)} aria-label="最新へ移動">
     <ArrowDown size={18} />
   </button>
 {/if}
 </div>
 
 <style>
-  .wrap {
+  .message-list {
     position: relative;
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
   }
-  .list {
+  .message-list-scroller {
     flex: 1;
     min-height: 0;
     overflow-anchor: none;
     overscroll-behavior: contain;
   }
-  .inner {
+  .message-list-content {
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
     min-height: 100%;
     padding: 16px 0 12px;
   }
-  .loading,
-  .start {
+  .message-list-loading,
+  .message-list-start {
     display: grid;
     place-items: center;
     padding: 16px;
     color: var(--text-muted);
     font-size: 13px;
   }
-  .error {
+  .message-list-error {
     display: flex;
     gap: 10px;
     align-items: center;
@@ -166,7 +166,7 @@
     color: var(--danger);
     font-size: 14px;
   }
-  .day {
+  .message-list-day-divider {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -175,15 +175,15 @@
     font-size: 12px;
     font-weight: 600;
   }
-  .day::before,
-  .day::after {
+  .message-list-day-divider::before,
+  .message-list-day-divider::after {
     content: '';
     flex: 1;
     height: 1px;
     background: var(--border);
     opacity: 0.6;
   }
-  .jump {
+  .message-list-jump-latest {
     position: absolute;
     right: 20px;
     bottom: 12px;

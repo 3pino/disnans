@@ -6,22 +6,22 @@
 {#if ui.confirmReq}
   {@const req = ui.confirmReq}
   <Modal title={req.title} onclose={() => req.resolve(false)} width={380}>
-    {#if req.body}<p class="body">{req.body}</p>{/if}
-    <div class="actions">
-      <button type="button" class="btn" onclick={() => req.resolve(false)}>キャンセル</button>
-      <button type="button" class="btn primary" class:danger={req.danger} onclick={() => req.resolve(true)}>{req.okLabel}</button>
+    {#if req.body}<p class="confirm-dialog-message">{req.body}</p>{/if}
+    <div class="confirm-dialog-actions">
+      <button type="button" class="btn confirm-dialog-cancel" onclick={() => req.resolve(false)}>キャンセル</button>
+      <button type="button" class="btn primary confirm-dialog-ok" class:danger={req.danger} onclick={() => req.resolve(true)}>{req.okLabel}</button>
     </div>
   </Modal>
 {/if}
 
 <style>
-  .body {
+  .confirm-dialog-message {
     margin: 0 0 18px;
     white-space: pre-line;
     color: var(--text-muted);
     font-size: 14px;
   }
-  .actions {
+  .confirm-dialog-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;

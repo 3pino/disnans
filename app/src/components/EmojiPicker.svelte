@@ -41,14 +41,14 @@
   });
 </script>
 
-<div class="picker" bind:this={el} style:top="{pos.top}px" style:left="{pos.left}px" role="dialog" aria-label="リアクションを選ぶ">
+<div class="emoji-picker" bind:this={el} style:top="{pos.top}px" style:left="{pos.left}px" role="dialog" aria-label="リアクションを選ぶ">
   {#each EMOJI_SET as e (e)}
-    <button type="button" onclick={() => onpick(e)} aria-label={e}>{e}</button>
+    <button type="button" class="emoji-picker-option" onclick={() => onpick(e)} aria-label={e}>{e}</button>
   {/each}
 </div>
 
 <style>
-  .picker {
+  .emoji-picker {
     position: fixed;
     z-index: 50;
     display: grid;
@@ -60,7 +60,7 @@
     border-radius: var(--radius);
     box-shadow: var(--shadow);
   }
-  button {
+  .emoji-picker-option {
     width: 40px;
     height: 38px;
     border: none;
@@ -69,8 +69,8 @@
     font-size: 22px;
     line-height: 1;
   }
-  button:hover,
-  button:focus-visible {
+  .emoji-picker-option:hover,
+  .emoji-picker-option:focus-visible {
     background: var(--surface-2);
     outline: none;
   }

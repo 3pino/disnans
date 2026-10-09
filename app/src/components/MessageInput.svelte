@@ -130,26 +130,28 @@
   }
 </script>
 
-<div class="wrap">
+<div class="message-input">
   {#if suggest}
-    <ul class="suggest" role="listbox" aria-label="メンション">
+    <ul class="message-input-suggestions" role="listbox" aria-label="メンション">
       {#each suggest.items as u, i (u.id)}
-        <li role="option" aria-selected={i === suggest.index}>
+        <li class="message-input-suggestion-option" role="option" aria-selected={i === suggest.index}>
           <button
             type="button"
-            class:sel={i === suggest.index}
+            class="message-input-suggestion"
+            class:message-input-suggestion-selected={i === suggest.index}
             onmousedown={(e) => e.preventDefault()}
             onclick={() => pick(u)}
           >
             <Avatar user={u} id={u.id} size={22} />
-            <span class="name">{u.display_name}</span>
-            <span class="login">{u.login_name}</span>
+            <span class="message-input-suggestion-name">{u.display_name}</span>
+            <span class="message-input-suggestion-login">{u.login_name}</span>
           </button>
         </li>
       {/each}
     </ul>
   {/if}
   <textarea
+    class="message-input-textarea"
     bind:this={ta}
     bind:value={text}
     rows="1"
@@ -167,13 +169,13 @@
 </div>
 
 <style>
-  .wrap {
+  .message-input {
     position: relative;
     flex: 1;
     min-width: 0;
     display: flex;
   }
-  textarea {
+  .message-input-textarea {
     flex: 1;
     min-width: 0;
     resize: none;
@@ -185,11 +187,11 @@
     max-height: 40vh;
     scrollbar-width: thin;
   }
-  textarea::placeholder {
+  .message-input-textarea::placeholder {
     color: var(--text-muted);
     opacity: 0.8;
   }
-  .suggest {
+  .message-input-suggestions {
     position: absolute;
     left: -8px;
     right: -8px;
@@ -203,7 +205,7 @@
     box-shadow: var(--shadow);
     z-index: 20;
   }
-  .suggest button {
+  .message-input-suggestions .message-input-suggestion {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -214,13 +216,13 @@
     background: transparent;
     text-align: left;
   }
-  .suggest button.sel {
+  .message-input-suggestions .message-input-suggestion.message-input-suggestion-selected {
     background: var(--accent-soft);
   }
-  .name {
+  .message-input-suggestion-name {
     font-weight: 600;
   }
-  .login {
+  .message-input-suggestion-login {
     color: var(--text-muted);
     font-size: 12px;
     overflow: hidden;

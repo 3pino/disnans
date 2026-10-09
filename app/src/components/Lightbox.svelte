@@ -9,14 +9,14 @@
 {#if ui.lightbox}
   {@const lb = ui.lightbox}
   <div class="lightbox" role="dialog" aria-modal="true" aria-label={lb.alt}>
-    <button type="button" class="bg" aria-label="閉じる" onclick={() => (ui.lightbox = null)}></button>
-    <img src={lb.src} alt={lb.alt} />
-    <div class="tools">
-      <span class="name">{lb.alt}</span>
-      <a class="icon-btn" href={lb.downloadUrl} download={lb.alt} target="_blank" rel="noopener" aria-label="ダウンロード"
+    <button type="button" class="lightbox-backdrop" aria-label="閉じる" onclick={() => (ui.lightbox = null)}></button>
+    <img class="lightbox-image" src={lb.src} alt={lb.alt} />
+    <div class="lightbox-toolbar">
+      <span class="lightbox-file-name">{lb.alt}</span>
+      <a class="icon-btn lightbox-download" href={lb.downloadUrl} download={lb.alt} target="_blank" rel="noopener" aria-label="ダウンロード"
         ><Download size={20} /></a
       >
-      <button type="button" class="icon-btn" aria-label="閉じる" onclick={() => (ui.lightbox = null)}><X size={22} /></button>
+      <button type="button" class="icon-btn lightbox-close" aria-label="閉じる" onclick={() => (ui.lightbox = null)}><X size={22} /></button>
     </div>
   </div>
 {/if}
@@ -31,14 +31,14 @@
     background: oklch(0.1 0.01 248 / 0.92);
     animation: fade 0.15s;
   }
-  .bg {
+  .lightbox-backdrop {
     position: absolute;
     inset: 0;
     border: none;
     background: transparent;
     cursor: zoom-out;
   }
-  img {
+  .lightbox-image {
     position: relative;
     max-width: calc(100vw - 32px);
     max-height: calc(100dvh - 96px);
@@ -47,7 +47,7 @@
     box-shadow: 0 10px 40px oklch(0 0 0 / 0.5);
     pointer-events: none;
   }
-  .tools {
+  .lightbox-toolbar {
     position: absolute;
     top: calc(env(safe-area-inset-top) + 8px);
     left: 12px;
@@ -57,13 +57,13 @@
     gap: 4px;
     color: oklch(0.93 0.015 248);
   }
-  .tools .icon-btn {
+  .lightbox-toolbar .icon-btn {
     color: inherit;
   }
-  .tools .icon-btn:hover {
+  .lightbox-toolbar .icon-btn:hover {
     background: oklch(1 0 0 / 0.1);
   }
-  .name {
+  .lightbox-file-name {
     flex: 1;
     min-width: 0;
     overflow: hidden;

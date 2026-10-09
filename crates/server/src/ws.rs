@@ -3,12 +3,13 @@
 //! `ClientEvent` を受け取って `chat` の操作を呼び、`ServerEvent` を送る。
 //! 送信はすべて `Hub` のキューを通す（書き込みタスクが1つだけソケットに書く）。
 
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
-use axum::extract::State;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, State};
 use axum::response::Response;
 use disnans_shared::{ClientEvent, ServerEvent, User};
 use futures_util::{SinkExt, StreamExt};
@@ -29,12 +30,13 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 pub async fn handler(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    ws.on_upgrade(move |socket| run(state, user, socket))
+    ws.on_upgrade(move |socket| run(state, user, addr.ip(), socket))
 }
 
-async fn run(state: SharedState, user: User, socket: WebSocket) {
+async fn run(state: SharedState, user: User, ip: IpAddr, socket: WebSocket) {
     let users = match users::list(&state.pool).await {
         Ok(users) => users,
         Err(err) => {
@@ -46,7 +48,7 @@ async fn run(state: SharedState, user: User, socket: WebSocket) {
         me: user.clone(),
         users,
     };
-    let (conn, mut queue) = state.hub.register(&user.id, &hello);
+    let (conn, mut queue) = state.hub.register(&user.id, ip, &hello);
     tracing::info!(conn, user = %user.login_name, "WebSocket 接続");
 
     let (mut sink, mut stream) = socket.split();

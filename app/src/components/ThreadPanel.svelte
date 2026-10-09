@@ -40,33 +40,33 @@
   });
 </script>
 
-<div class="panel">
-  <header>
+<div id="thread-panel" class="thread-panel">
+  <header class="thread-panel-header">
     {#if ui.isMobile}
       <!-- モバイルは戻るボタンだけ -->
-      <button type="button" class="icon-btn back" aria-label="戻る" onclick={() => ui.closePanel()}><ArrowLeft size={20} /></button>
+      <button type="button" class="icon-btn thread-panel-back" aria-label="戻る" onclick={() => ui.closePanel()}><ArrowLeft size={20} /></button>
     {:else}
-      <div class="title">
+      <div class="thread-panel-title">
         <MessagesSquare size={16} />
         <span>スレッド</span>
-        {#if root}<span class="muted sub">{client.nameOf(root.author_id)}</span>{/if}
+        {#if root}<span class="muted thread-panel-root-author">{client.nameOf(root.author_id)}</span>{/if}
       </div>
-      <button type="button" class="icon-btn" aria-label="閉じる" onclick={() => ui.closePanel()}><X size={18} /></button>
+      <button type="button" class="icon-btn thread-panel-close" aria-label="閉じる" onclick={() => ui.closePanel()}><X size={18} /></button>
     {/if}
   </header>
 
   {#if notFound && !root}
-    <div class="gone muted">このスレッドは見つかりませんでした。</div>
+    <div class="thread-panel-not-found muted">このスレッドは見つかりませんでした。</div>
   {:else}
     {#key threadId}
       <ChatView {threadId} placeholder="スレッドに返信">
         {#snippet header()}
           {#if root}
-            <div class="root">
+            <div class="thread-panel-root-message">
               <MessageItem message={root} inThread />
             </div>
             {#if replyCount > 0}
-              <div class="divider"><span>{replyCount}件の返信</span></div>
+              <div class="thread-panel-reply-divider"><span>{replyCount}件の返信</span></div>
             {/if}
           {/if}
         {/snippet}
@@ -76,14 +76,14 @@
 </div>
 
 <style>
-  .panel {
+  .thread-panel {
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
     background: var(--bg);
   }
-  header {
+  .thread-panel-header {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -92,7 +92,7 @@
     border-bottom: 1px solid var(--border);
     flex: none;
   }
-  .title {
+  .thread-panel-title {
     flex: 1;
     display: flex;
     align-items: center;
@@ -100,17 +100,17 @@
     min-width: 0;
     font-weight: 650;
   }
-  .sub {
+  .thread-panel-root-author {
     font-weight: 400;
     font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .root {
+  .thread-panel-root-message {
     padding-bottom: 6px;
   }
-  .divider {
+  .thread-panel-reply-divider {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -118,23 +118,23 @@
     color: var(--text-muted);
     font-size: 12px;
   }
-  .divider::after {
+  .thread-panel-reply-divider::after {
     content: '';
     flex: 1;
     height: 1px;
     background: var(--border);
   }
-  .gone {
+  .thread-panel-not-found {
     padding: 32px 16px;
     text-align: center;
   }
   @media (max-width: 767px) {
-    header {
+    .thread-panel-header {
       padding: calc(env(safe-area-inset-top) + 4px) 8px 4px 4px;
       height: auto;
       border-bottom: none;
     }
-    .back {
+    .thread-panel-back {
       width: 40px;
       height: 40px;
     }

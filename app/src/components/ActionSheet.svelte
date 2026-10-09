@@ -21,13 +21,14 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
 
-<div class="scrim" role="presentation" onclick={onclose}></div>
-<div class="sheet" role="dialog" aria-label="メッセージの操作">
+<div class="action-sheet-scrim" role="presentation" onclick={onclose}></div>
+<div class="action-sheet" role="dialog" aria-label="メッセージの操作">
   {#if reactions.length > 0}
-    <div class="reacts">
+    <div class="action-sheet-reactions">
       {#each reactions as e (e)}
         <button
           type="button"
+          class="action-sheet-reaction"
           onclick={() => {
             onreact?.(e);
             onclose();
@@ -37,7 +38,7 @@
       {#if onmorereactions}
         <button
           type="button"
-          class="more"
+          class="action-sheet-reaction action-sheet-more-reactions"
           aria-label="ほかのリアクション"
           onclick={() => {
             onclose();
@@ -50,8 +51,8 @@
   {#each items as it (it.label)}
     <button
       type="button"
-      class="item"
-      class:danger={it.danger}
+      class="action-sheet-item"
+      class:action-sheet-item-danger={it.danger}
       onclick={() => {
         onclose();
         it.run();
@@ -64,14 +65,14 @@
 </div>
 
 <style>
-  .scrim {
+  .action-sheet-scrim {
     position: fixed;
     inset: 0;
     z-index: 60;
     background: oklch(0.08 0.01 248 / 0.45);
     animation: fade 0.15s;
   }
-  .sheet {
+  .action-sheet {
     position: fixed;
     left: 0;
     right: 0;
@@ -84,7 +85,7 @@
     box-shadow: var(--shadow);
     animation: up 0.18s ease-out;
   }
-  .reacts {
+  .action-sheet-reactions {
     display: flex;
     justify-content: space-between;
     gap: 4px;
@@ -92,7 +93,7 @@
     margin-bottom: 6px;
     border-bottom: 1px solid var(--border);
   }
-  .reacts button {
+  .action-sheet-reactions .action-sheet-reaction {
     flex: 1;
     height: 48px;
     border: none;
@@ -100,12 +101,12 @@
     background: var(--surface-2);
     font-size: 24px;
   }
-  .reacts .more {
+  .action-sheet-reactions .action-sheet-more-reactions {
     display: grid;
     place-items: center;
     color: var(--text-muted);
   }
-  .item {
+  .action-sheet-item {
     display: flex;
     align-items: center;
     gap: 14px;
@@ -118,10 +119,10 @@
     font-size: 16px;
     text-align: left;
   }
-  .item:active {
+  .action-sheet-item:active {
     background: var(--surface-2);
   }
-  .item.danger {
+  .action-sheet-item.action-sheet-item-danger {
     color: var(--danger);
   }
   @keyframes fade {

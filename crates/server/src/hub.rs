@@ -3,6 +3,7 @@
 //! 1人のユーザーが複数の接続（スマホと PC など）を持つことがある。
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -19,6 +20,8 @@ const QUEUE_SIZE: usize = 1024;
 
 struct Conn {
     user_id: String,
+    /// 接続元の IP アドレス。Tailscale では端末ごとに決まるので、端末の識別に使う。
+    ip: IpAddr,
     tx: mpsc::Sender<Utf8Bytes>,
 }
 
@@ -37,6 +40,7 @@ impl Hub {
     pub fn register(
         &self,
         user_id: &str,
+        ip: IpAddr,
         first: &ServerEvent,
     ) -> (ConnId, mpsc::Receiver<Utf8Bytes>) {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -47,6 +51,7 @@ impl Hub {
             id,
             Conn {
                 user_id: user_id.to_owned(),
+                ip,
                 tx,
             },
         );
@@ -74,6 +79,11 @@ impl Hub {
     /// そのユーザーのすべての接続に送る。
     pub fn send_to_user(&self, user_id: &str, event: &ServerEvent) {
         self.deliver(event, |_, c| c.user_id == user_id);
+    }
+
+    /// そのユーザーの、指定した端末（IP アドレス）からの接続だけに送る。
+    pub fn send_to_device(&self, user_id: &str, ip: IpAddr, event: &ServerEvent) {
+        self.deliver(event, |_, c| c.user_id == user_id && c.ip == ip);
     }
 
     fn deliver(&self, event: &ServerEvent, filter: impl Fn(ConnId, &Conn) -> bool) {

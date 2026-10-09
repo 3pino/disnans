@@ -1,13 +1,10 @@
 <script lang="ts">
-  import MessageCircle from '@lucide/svelte/icons/message-circle';
-  import MessagesSquare from '@lucide/svelte/icons/messages-square';
-  import Settings from '@lucide/svelte/icons/settings';
   import Sidebar from './Sidebar.svelte';
   import ChatView from './ChatView.svelte';
   import ThreadPanel from './ThreadPanel.svelte';
   import SettingsView from './SettingsView.svelte';
   import ConnectionBanner from './ConnectionBanner.svelte';
-  import { threads } from '../lib/stores/threads.svelte';
+  import NavBar from './NavBar.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 
   const panelOpen = $derived(ui.panel !== null);
@@ -15,55 +12,39 @@
 </script>
 
 {#snippet mainEmpty()}
-  <div class="empty">
-    <p class="big">ようこそ 👋</p>
-    <p class="muted">最初のメッセージを送ってみましょう。</p>
+  <div class="shell-welcome">
+    <p class="shell-welcome-title">ようこそ 👋</p>
+    <p class="muted shell-welcome-text">最初のメッセージを送ってみましょう。</p>
   </div>
 {/snippet}
 
-<div class="shell" class:mobile={ui.isMobile} class:with-panel={panelOpen} data-tab={ui.tab}>
+<div class="shell" class:shell-mobile={ui.isMobile} class:shell-with-panel={panelOpen} data-tab={ui.tab}>
   {#if !ui.isMobile}
-    <div class="side"><Sidebar /></div>
+    <div class="shell-sidebar"><Sidebar /></div>
   {/if}
 
-  <main class="main" class:hidden={!showChat}>
+  <main id="main-chat" class="shell-main-chat" class:shell-main-chat-hidden={!showChat}>
     <header class="top-bar"></header>
     <ConnectionBanner />
     <ChatView threadId={null} placeholder="メッセージを送信" empty={mainEmpty} />
   </main>
 
   {#if ui.tab === 'settings'}
-    <div class="settings-view"><SettingsView /></div>
+    <div class="shell-settings"><SettingsView /></div>
   {/if}
 
   {#if ui.isMobile && ui.tab === 'threads'}
-    <div class="mobile-threads"><Sidebar showMain={false} /></div>
+    <div class="shell-mobile-threads"><Sidebar showMain={false} /></div>
   {/if}
 
   {#if ui.panel?.kind === 'thread'}
-    <div class="panel">
+    <div class="shell-thread-panel">
       <ThreadPanel threadId={ui.panel.id} />
     </div>
   {/if}
 
   {#if ui.isMobile && !panelOpen}
-    <nav class="bottom-nav" aria-label="ナビゲーション">
-      <button type="button" class:sel={ui.tab === 'chat'} onclick={() => (ui.tab = 'chat')}>
-        <MessageCircle size={22} />
-        <span>Chat</span>
-      </button>
-      <button type="button" class:sel={ui.tab === 'threads'} onclick={() => (ui.tab = 'threads')}>
-        <span class="ico">
-          <MessagesSquare size={22} />
-          {#if threads.totalUnread > 0}<span class="badge">{threads.totalUnread}</span>{/if}
-        </span>
-        <span>Threads</span>
-      </button>
-      <button type="button" class:sel={ui.tab === 'settings'} onclick={() => (ui.tab = 'settings')}>
-        <Settings size={22} />
-        <span>Settings</span>
-      </button>
-    </nav>
+    <NavBar withThreads />
   {/if}
 </div>
 
@@ -73,96 +54,64 @@
     grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
     height: 100%;
   }
-  .shell.with-panel:not(.mobile) {
+  .shell.shell-with-panel:not(.shell-mobile) {
     grid-template-columns: var(--sidebar-w) minmax(320px, 1fr) minmax(320px, var(--panel-w));
   }
-  .side {
+  .shell-sidebar {
     min-height: 0;
   }
-  .settings-view {
+  .shell-settings {
     min-width: 0;
     min-height: 0;
   }
-  .main {
+  .shell-main-chat {
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
   }
-  .panel {
+  .shell-thread-panel {
     min-width: 0;
     min-height: 0;
     border-left: 1px solid var(--border);
   }
-  .empty {
+  .shell-welcome {
     margin: auto;
     padding: 40px 16px;
     text-align: center;
   }
-  .empty p {
+  .shell-welcome p {
     margin: 4px;
   }
-  .big {
+  .shell-welcome-title {
     font-size: 20px;
     font-weight: 700;
   }
 
   /* モバイル */
-  .shell.mobile {
+  .shell.shell-mobile {
     display: flex;
     flex-direction: column;
   }
-  .mobile .main,
-  .mobile .settings-view,
-  .mobile-threads {
+  .shell-mobile .shell-main-chat,
+  .shell-mobile .shell-settings,
+  .shell-mobile-threads {
     flex: 1;
     min-height: 0;
   }
-  .main.hidden {
+  .shell-main-chat.shell-main-chat-hidden {
     display: none;
   }
-  .mobile .panel {
+  .shell-mobile .shell-thread-panel {
     position: fixed;
     inset: 0;
     z-index: 30;
     border: none;
     animation: slide 0.18s ease-out;
   }
-  .mobile-threads :global(.sidebar) {
+  .shell-mobile-threads :global(.sidebar) {
     border-right: none;
     background: var(--bg);
-  }
-  .bottom-nav {
-    display: flex;
-    flex: none;
-    border-top: 1px solid var(--border);
-    background: var(--surface);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  .bottom-nav button {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    padding: 8px 0 6px;
-    border: none;
-    background: none;
-    color: var(--text-muted);
-    font-size: 11px;
-    font-weight: 600;
-  }
-  .bottom-nav button.sel {
-    color: var(--accent);
-  }
-  .ico {
-    position: relative;
-    display: inline-flex;
-  }
-  .ico .badge {
-    position: absolute;
-    top: -5px;
-    left: 14px;
   }
   @keyframes slide {
     from {

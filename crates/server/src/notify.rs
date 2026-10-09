@@ -4,6 +4,7 @@
 //! 今は WebSocket の接続に `ServerEvent::Notify` を流すだけ。
 
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use disnans_shared::{Id, Message, ServerEvent, User};
@@ -37,6 +38,9 @@ impl Notification {
 pub trait Notifier: Send + Sync {
     /// 1人のユーザーに通知を送る。時間のかかる送り方をする実装は、中でタスクを起こすこと。
     fn notify(&self, user_id: &str, notification: &Notification);
+
+    /// 1人のユーザーの、1つの端末（IP アドレス）だけに通知を送る（サンプル通知用）。
+    fn notify_device(&self, user_id: &str, ip: IpAddr, notification: &Notification);
 }
 
 /// そのユーザーの WebSocket のすべての接続に `notify` を流す。
@@ -52,16 +56,21 @@ impl WsNotifier {
 
 impl Notifier for WsNotifier {
     fn notify(&self, user_id: &str, n: &Notification) {
-        self.hub.send_to_user(
-            user_id,
-            &ServerEvent::Notify {
-                title: n.title.clone(),
-                body: n.body.clone(),
-                message_id: n.message_id.clone(),
-                thread_id: n.thread_id.clone(),
-                sample: n.sample,
-            },
-        );
+        self.hub.send_to_user(user_id, &event(n));
+    }
+
+    fn notify_device(&self, user_id: &str, ip: IpAddr, n: &Notification) {
+        self.hub.send_to_device(user_id, ip, &event(n));
+    }
+}
+
+fn event(n: &Notification) -> ServerEvent {
+    ServerEvent::Notify {
+        title: n.title.clone(),
+        body: n.body.clone(),
+        message_id: n.message_id.clone(),
+        thread_id: n.thread_id.clone(),
+        sample: n.sample,
     }
 }
 

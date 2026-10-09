@@ -111,33 +111,33 @@
   }
 </script>
 
-<div class="composer" class:thread={threadId !== null}>
+<div class="composer" class:composer-in-thread={threadId !== null}>
   {#if uploads.length > 0}
-    <div class="tray">
+    <div class="composer-upload-tray">
       {#each uploads as u (u.key)}
-        <div class="up" class:error={!!u.error} title={u.error ?? u.file.name}>
+        <div class="composer-upload" class:composer-upload-error={!!u.error} title={u.error ?? u.file.name}>
           {#if u.preview}
-            <img src={u.preview} alt="" />
+            <img class="composer-upload-preview" src={u.preview} alt="" />
           {:else}
-            <div class="fileicon"><FileIcon size={20} /><span>{formatSize(u.file.size)}</span></div>
+            <div class="composer-upload-file-icon"><FileIcon size={20} /><span>{formatSize(u.file.size)}</span></div>
           {/if}
-          <span class="fname">{u.file.name}</span>
+          <span class="composer-upload-name">{u.file.name}</span>
           {#if u.error}
-            <span class="err"><CircleAlert size={16} /></span>
+            <span class="composer-upload-error-icon"><CircleAlert size={16} /></span>
           {:else if !u.attachment}
-            <div class="bar"><div style:width="{Math.round(u.progress * 100)}%"></div></div>
+            <div class="composer-upload-progress"><div class="composer-upload-progress-fill" style:width="{Math.round(u.progress * 100)}%"></div></div>
           {/if}
-          <button type="button" class="rm" aria-label="取り消す" onclick={() => removeUpload(u)}><X size={12} /></button>
+          <button type="button" class="composer-upload-remove" aria-label="取り消す" onclick={() => removeUpload(u)}><X size={12} /></button>
         </div>
       {/each}
     </div>
   {/if}
 
-  <div class="row">
-    <div class="plus">
+  <div class="composer-row">
+    <div class="composer-plus">
       <button
         type="button"
-        class="icon-btn"
+        class="icon-btn composer-plus-button"
         class:active={menuOpen}
         aria-label="その他の操作"
         aria-expanded={menuOpen}
@@ -146,11 +146,12 @@
         <Plus size={20} />
       </button>
       {#if menuOpen}
-        <button type="button" class="backdrop" aria-label="閉じる" onclick={() => (menuOpen = false)}></button>
-        <div class="menu" role="menu">
+        <button type="button" class="composer-menu-backdrop" aria-label="閉じる" onclick={() => (menuOpen = false)}></button>
+        <div class="composer-menu" role="menu">
           {#each actions.filter((a) => !a.when || a.when(ctx)) as a (a.id)}
             <button
               type="button"
+              class="composer-menu-item"
               role="menuitem"
               onclick={() => {
                 menuOpen = false;
@@ -175,7 +176,7 @@
       oninput={(t) => (hasText = t.trim().length > 0)}
     />
 
-    <button type="button" class="send" disabled={!canSend} aria-label="送信" onclick={submit}>
+    <button type="button" class="composer-send" disabled={!canSend} aria-label="送信" onclick={submit}>
       <Send size={18} />
     </button>
   </div>
@@ -183,6 +184,7 @@
   <input
     bind:this={fileEl}
     type="file"
+    class="composer-file-input"
     multiple
     hidden
     onchange={(e) => {
@@ -198,7 +200,7 @@
     padding: 0 16px 14px;
     padding-bottom: max(14px, env(safe-area-inset-bottom));
   }
-  .row {
+  .composer-row {
     display: flex;
     align-items: flex-end;
     gap: 4px;
@@ -208,17 +210,17 @@
     border-radius: 14px;
     transition: border-color 0.12s;
   }
-  .row:focus-within {
+  .composer-row:focus-within {
     border-color: var(--accent);
   }
-  .row > :global(.icon-btn),
-  .plus {
+  .composer-row > :global(.icon-btn),
+  .composer-plus {
     margin-bottom: 3px;
   }
-  .plus {
+  .composer-plus {
     position: relative;
   }
-  .backdrop {
+  .composer-menu-backdrop {
     position: fixed;
     inset: 0;
     background: transparent;
@@ -226,7 +228,7 @@
     z-index: 29;
     cursor: default;
   }
-  .menu {
+  .composer-menu {
     position: absolute;
     bottom: calc(100% + 8px);
     left: -4px;
@@ -238,7 +240,7 @@
     border-radius: var(--radius);
     box-shadow: var(--shadow);
   }
-  .menu button {
+  .composer-menu .composer-menu-item {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -249,10 +251,10 @@
     background: transparent;
     text-align: left;
   }
-  .menu button:hover {
+  .composer-menu .composer-menu-item:hover {
     background: var(--surface-2);
   }
-  .send {
+  .composer-send {
     display: grid;
     place-items: center;
     width: 36px;
@@ -265,17 +267,17 @@
     flex: none;
     transition: opacity 0.12s;
   }
-  .send:disabled {
+  .composer-send:disabled {
     opacity: 0.35;
     cursor: default;
   }
-  .tray {
+  .composer-upload-tray {
     display: flex;
     gap: 8px;
     overflow-x: auto;
     padding: 4px 2px 8px;
   }
-  .up {
+  .composer-upload {
     position: relative;
     flex: none;
     width: 88px;
@@ -284,17 +286,17 @@
     background: var(--surface);
     overflow: hidden;
   }
-  .up.error {
+  .composer-upload.composer-upload-error {
     border-color: var(--danger);
   }
-  .up img,
-  .fileicon {
+  .composer-upload .composer-upload-preview,
+  .composer-upload-file-icon {
     display: block;
     width: 100%;
     height: 64px;
     object-fit: cover;
   }
-  .fileicon {
+  .composer-upload-file-icon {
     display: grid;
     place-content: center;
     justify-items: center;
@@ -302,7 +304,7 @@
     color: var(--text-muted);
     font-size: 11px;
   }
-  .fname {
+  .composer-upload-name {
     display: block;
     padding: 2px 6px 4px;
     font-size: 11px;
@@ -310,7 +312,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .bar {
+  .composer-upload-progress {
     position: absolute;
     left: 0;
     right: 0;
@@ -318,18 +320,18 @@
     height: 4px;
     background: var(--surface-2);
   }
-  .bar div {
+  .composer-upload-progress .composer-upload-progress-fill {
     height: 100%;
     background: var(--accent);
     transition: width 0.15s;
   }
-  .err {
+  .composer-upload-error-icon {
     position: absolute;
     top: 22px;
     left: 34px;
     color: var(--danger);
   }
-  .rm {
+  .composer-upload-remove {
     position: absolute;
     top: 3px;
     right: 3px;
@@ -348,7 +350,7 @@
       padding: 0 8px 8px;
     }
     /* スレッドは全画面でボトムナビがないので、ナビゲーションバーの分を空ける */
-    .composer.thread {
+    .composer.composer-in-thread {
       padding-bottom: max(8px, env(safe-area-inset-bottom));
     }
   }

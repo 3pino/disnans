@@ -20,7 +20,7 @@
   />
 {:else}
   <span
-    class="avatar initials"
+    class="avatar avatar-initials"
     aria-hidden="true"
     style:width="{size}px"
     style:height="{size}px"
@@ -38,7 +38,7 @@
     object-fit: cover;
     display: block;
   }
-  .initials {
+  .avatar-initials {
     display: grid;
     place-items: center;
     background: oklch(var(--avatar-l) 0.08 var(--h));

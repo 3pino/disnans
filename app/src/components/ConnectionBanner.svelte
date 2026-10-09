@@ -15,15 +15,15 @@
 </script>
 
 {#if show}
-  <div class="banner" role="status">
+  <div class="connection-banner" role="status">
     <WifiOff size={15} />
-    <span>{client.ready ? 'サーバーとの接続が切れました。再接続しています…' : 'サーバーに接続しています…'}</span>
-    <button type="button" onclick={() => client.reconnect()}>今すぐ再接続</button>
+    <span class="connection-banner-text">{client.ready ? 'サーバーとの接続が切れました。再接続しています…' : 'サーバーに接続しています…'}</span>
+    <button type="button" class="connection-banner-reconnect" onclick={() => client.reconnect()}>今すぐ再接続</button>
   </div>
 {/if}
 
 <style>
-  .banner {
+  .connection-banner {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -34,7 +34,7 @@
     font-weight: 500;
     border-bottom: 1px solid color-mix(in oklch, var(--warning) 40%, transparent);
   }
-  button {
+  .connection-banner-reconnect {
     margin-left: auto;
     border: none;
     background: none;
