@@ -9,7 +9,8 @@ export function isTauri(): boolean {
 
 /** 末尾のスラッシュを落とし、スキームがなければ http:// を補う */
 export function normalizeServerUrl(input: string): string {
-  let s = input.trim();
+  // 日本語 IME で入力された全角文字（／：． など）を半角にする
+  let s = input.normalize('NFKC').trim();
   if (!s) return '';
   if (!/^https?:\/\//i.test(s)) s = 'http://' + s;
   return s.replace(/\/+$/, '');

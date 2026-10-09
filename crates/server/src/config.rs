@@ -31,8 +31,8 @@ impl Config {
             bind,
             dev: var("DISNANS_DEV").is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true")),
             tailscale_socket: var("DISNANS_TAILSCALE_SOCKET")
-                .unwrap_or_else(|| "/var/run/tailscale/tailscaled.sock".into())
-                .into(),
+                .map(PathBuf::from)
+                .unwrap_or_else(default_tailscale_socket),
         })
     }
 
@@ -49,4 +49,17 @@ impl Config {
     pub fn tmp_dir(&self) -> PathBuf {
         self.data_dir.join("tmp")
     }
+}
+
+/// 標準の場所になければ、snap 版の場所を使う。
+fn default_tailscale_socket() -> PathBuf {
+    const CANDIDATES: [&str; 2] = [
+        "/var/run/tailscale/tailscaled.sock",
+        "/var/snap/tailscale/common/socket/tailscaled.sock",
+    ];
+    CANDIDATES
+        .iter()
+        .map(PathBuf::from)
+        .find(|p| p.exists())
+        .unwrap_or_else(|| CANDIDATES[0].into())
 }

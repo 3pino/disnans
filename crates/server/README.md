@@ -9,7 +9,7 @@ disnans のサーバー（axum + SQLite）。API は [`docs/API.md`](../../docs/
 | `DISNANS_BIND` | `127.0.0.1:8080` | 待ち受けるアドレス。本番では Tailscale の IP（`100.x.y.z:8080`）にする |
 | `DISNANS_DATA_DIR` | `./data` | DB（`disnans.db`）とアップロードされたファイル（`files/`）の置き場所 |
 | `DISNANS_DEV` | なし | `1` で開発モード（whois を使わない。下記） |
-| `DISNANS_TAILSCALE_SOCKET` | `/var/run/tailscale/tailscaled.sock` | tailscaled の LocalAPI のソケット |
+| `DISNANS_TAILSCALE_SOCKET` | `/var/run/tailscale/tailscaled.sock`（なければ snap 版の `/var/snap/tailscale/common/socket/tailscaled.sock`） | tailscaled の LocalAPI のソケット |
 | `RUST_LOG` | `info,disnans_server=debug` | ログの出し方（`tracing-subscriber` の書式） |
 
 ## 開発
