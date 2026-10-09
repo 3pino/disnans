@@ -1,11 +1,14 @@
-//! plugins テーブル（配布されたプラグイン）。
+//! plugins テーブル（配布されたプラグイン・テーマ）。
 
-use disnans_shared::PluginInfo;
+use disnans_shared::{PluginInfo, PluginKind, PluginVisibility};
 use sqlx::{SqliteConnection, SqlitePool};
 
 #[derive(sqlx::FromRow)]
 struct PluginRow {
     id: String,
+    kind: String,
+    visibility: String,
+    owner: Option<String>,
     name: String,
     version: String,
     description: String,
@@ -24,6 +27,15 @@ impl From<PluginRow> for PluginInfo {
         let files: Vec<String> = serde_json::from_str(&row.files).unwrap_or_default();
         PluginInfo {
             id: row.id,
+            kind: match row.kind.as_str() {
+                "theme" => PluginKind::Theme,
+                _ => PluginKind::Plugin,
+            },
+            visibility: match row.visibility.as_str() {
+                "private" => PluginVisibility::Private,
+                _ => PluginVisibility::Public,
+            },
+            owner: row.owner,
             name: row.name,
             version: row.version,
             description: row.description,
@@ -39,7 +51,7 @@ impl From<PluginRow> for PluginInfo {
     }
 }
 
-const COLUMNS: &str = "id, name, version, description, author, min_api_version, icon, files, hash, updated_by, updated_at";
+const COLUMNS: &str = "id, kind, visibility, owner, name, version, description, author, min_api_version, icon, files, hash, updated_by, updated_at";
 
 pub async fn get(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<PluginInfo>> {
     let row: Option<PluginRow> =
@@ -50,20 +62,25 @@ pub async fn get(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<PluginInfo>
     Ok(row.map(Into::into))
 }
 
-/// ID 順の一覧。
-pub async fn list(pool: &SqlitePool) -> sqlx::Result<Vec<PluginInfo>> {
-    let rows: Vec<PluginRow> =
-        sqlx::query_as(&format!("SELECT {COLUMNS} FROM plugins ORDER BY id"))
-            .fetch_all(pool)
-            .await?;
+/// `viewer` に見えるもの（みんなのものと、`viewer` の自分だけのもの）の ID 順の一覧。
+pub async fn list_visible(pool: &SqlitePool, viewer: &str) -> sqlx::Result<Vec<PluginInfo>> {
+    let rows: Vec<PluginRow> = sqlx::query_as(&format!(
+        "SELECT {COLUMNS} FROM plugins WHERE visibility = 'public' OR owner = ? ORDER BY id"
+    ))
+    .bind(viewer)
+    .fetch_all(pool)
+    .await?;
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
 /// 追加する。同じ ID があれば上書きする。
 pub async fn upsert(conn: &mut SqliteConnection, p: &PluginInfo) -> sqlx::Result<()> {
     sqlx::query(&format!(
-        "INSERT INTO plugins ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO plugins ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
+             kind = excluded.kind,
+             visibility = excluded.visibility,
+             owner = excluded.owner,
              name = excluded.name,
              version = excluded.version,
              description = excluded.description,
@@ -76,6 +93,9 @@ pub async fn upsert(conn: &mut SqliteConnection, p: &PluginInfo) -> sqlx::Result
              updated_at = excluded.updated_at"
     ))
     .bind(&p.id)
+    .bind(kind_str(p.kind))
+    .bind(visibility_str(p.visibility))
+    .bind(&p.owner)
     .bind(&p.name)
     .bind(&p.version)
     .bind(&p.description)
@@ -97,4 +117,18 @@ pub async fn delete(conn: &mut SqliteConnection, id: &str) -> sqlx::Result<()> {
         .execute(conn)
         .await?;
     Ok(())
+}
+
+fn kind_str(kind: PluginKind) -> &'static str {
+    match kind {
+        PluginKind::Plugin => "plugin",
+        PluginKind::Theme => "theme",
+    }
+}
+
+fn visibility_str(visibility: PluginVisibility) -> &'static str {
+    match visibility {
+        PluginVisibility::Public => "public",
+        PluginVisibility::Private => "private",
+    }
 }

@@ -31,6 +31,7 @@
   import Toggle from './ui/Toggle.svelte';
   import SegmentedButton from './ui/SegmentedButton.svelte';
   import PluginSettings from './PluginSettings.svelte';
+  import ThemeSettings from './ThemeSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui, type ThemePref } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
@@ -239,6 +240,7 @@
       <Section title="外観" class="settings-appearance">
         <span class="field-label">テーマ</span>
         <SegmentedButton class="settings-theme-picker" label="テーマ" options={themes} value={ui.theme} onchange={(v) => ui.setTheme(v)} />
+        <ThemeSettings />
         {#if isTauri() && isAndroid()}
           <SettingRow name="ナビゲーションバーを隠す" description="画面の下端からスワイプすると一時的に表示します" class="settings-hide-nav-bar-row">
             {#snippet control()}

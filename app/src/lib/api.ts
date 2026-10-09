@@ -3,6 +3,7 @@ import type { Attachment } from './protocol/Attachment';
 import type { CreateSession } from './protocol/CreateSession';
 import type { Message } from './protocol/Message';
 import type { PluginInfo } from './protocol/PluginInfo';
+import type { PluginVisibility } from './protocol/PluginVisibility';
 import type { PluginNotify } from './protocol/PluginNotify';
 import type { Session } from './protocol/Session';
 import type { Thread } from './protocol/Thread';
@@ -87,9 +88,10 @@ export const api = {
 
   // ---- プラグイン ----
   plugins: () => request<PluginInfo[]>('GET', '/api/plugins'),
-  /** 配布・更新。files は manifest.json / main.js / styles.css（ファイル名で見分ける） */
-  publishPlugin: async (files: { name: string; data: Blob }[]): Promise<PluginInfo> => {
+  /** 配布・更新。files は manifest.json / main.js / styles.css / theme.css / icon.svg（ファイル名で見分ける） */
+  publishPlugin: async (files: { name: string; data: Blob }[], visibility: PluginVisibility = 'public'): Promise<PluginInfo> => {
     const fd = new FormData();
+    fd.append('visibility', visibility);
     for (const f of files) fd.append('file', f.data, f.name);
     const res = await fetch(apiUrl('/api/plugins'), { method: 'POST', headers: authHeaders(), body: fd });
     if (!res.ok) throw await toError(res);

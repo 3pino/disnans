@@ -1,11 +1,11 @@
 <script lang="ts">
-  import Upload from '@lucide/svelte/icons/upload';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Settings2 from '@lucide/svelte/icons/settings-2';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import FolderSearch from '@lucide/svelte/icons/folder-search';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import Button from './ui/Button.svelte';
+  import PublishButton from './PublishButton.svelte';
   import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import StatusLine from './ui/StatusLine.svelte';
@@ -16,8 +16,10 @@
   import { devFolderSupported } from '../lib/plugins/dev';
   import { isTauri } from '../lib/config';
   import { ui } from '../lib/stores/ui.svelte';
+  import type { PluginVisibility } from '../lib/protocol/PluginVisibility';
 
   // 設定の「プラグイン」セクション: 配布済み・開発中の一覧、開発用フォルダ（PC 版）、ファイルを選んで配布（ブラウザー版）
+  // テーマの一覧は「外観」（ThemeSettings）。開発用フォルダとファイルを選んでの配布は、テーマにも使う
 
   const entries = $derived(pluginHost.entries);
   const devSupported = devFolderSupported();
@@ -31,21 +33,27 @@
   /** 設定タブを開いている ID */
   let openSettings = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
+  /** ファイルを選んで配布するときの範囲（選ぶ前にメニューで決める） */
+  let pickVisibility: PluginVisibility = 'public';
 
   function nameOf(e: PluginEntry): string {
     return e.manifest?.name ?? e.id;
+  }
+
+  function publishedText(name: string, version: string, visibility: PluginVisibility): string {
+    return `「${name}」v${version} を${visibility === 'private' ? '自分だけに' : 'みんなに'}配布しました`;
   }
 
   function message(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
   }
 
-  async function publish(e: PluginEntry) {
+  async function publish(e: PluginEntry, visibility: PluginVisibility) {
     if (!e.dev) return;
     busy = e.id;
     try {
-      const info = await pluginHost.publishDev(e.dev);
-      ui.toast(`「${info.name}」v${info.version} を配布しました`);
+      const info = await pluginHost.publishDev(e.dev, visibility);
+      ui.toast(publishedText(info.name, info.version, visibility));
     } catch (err) {
       ui.toast(`配布できませんでした: ${message(err)}`, 'error');
     } finally {
@@ -54,9 +62,10 @@
   }
 
   async function remove(e: PluginEntry) {
+    const priv = e.server?.visibility === 'private';
     const ok = await ui.confirm({
       title: `プラグイン「${nameOf(e)}」を削除しますか？`,
-      body: '全員のクライアントから外れます。セッションとカードは残り、同じ ID で配布し直せばまた開けます。',
+      body: `${priv ? 'あなたのすべての端末' : '全員のクライアント'}から外れます。セッションとカードは残り、同じ ID で配布し直せばまた開けます。`,
       okLabel: '削除',
       danger: true,
     });
@@ -78,13 +87,18 @@
     if (files.length === 0) return;
     busy = '__files__';
     try {
-      const info = await pluginHost.publishFiles(files);
-      ui.toast(`「${info.name}」v${info.version} を配布しました`);
+      const info = await pluginHost.publishFiles(files, pickVisibility);
+      ui.toast(publishedText(info.name, info.version, pickVisibility));
     } catch (err) {
       ui.toast(`配布できませんでした: ${message(err)}`, 'error');
     } finally {
       busy = null;
     }
+  }
+
+  function pickFiles(visibility: PluginVisibility) {
+    pickVisibility = visibility;
+    fileInput?.click();
   }
 
   function saveDevDir(ev: SubmitEvent) {
@@ -132,6 +146,9 @@
         {:else if e.server}
           <span class="plugin-settings-tag">配布済み</span>
         {/if}
+        {#if e.server?.visibility === 'private'}
+          <span class="plugin-settings-tag plugin-settings-tag-private">自分だけ</span>
+        {/if}
       </div>
       {#if e.error}
         <p class="plugin-settings-error">{e.error}</p>
@@ -145,9 +162,7 @@
             </Button>
           {/if}
           {#if e.dev}
-            <Button disabled={busy !== null || !e.dev.manifest || !!e.dev.error} onclick={() => publish(e)}>
-              <Upload size={15} />配布
-            </Button>
+            <PublishButton disabled={busy !== null || !e.dev.manifest || !!e.dev.error} onpublish={(v) => publish(e, v)} />
           {/if}
           {#if e.server}
             <Button variant="danger" disabled={busy !== null} onclick={() => remove(e)}>
@@ -176,7 +191,7 @@
         <Button type="submit" disabled={devDir.trim() === pluginHost.devDir}><FolderOpen size={15} />設定</Button>
       </div>
       <p class="muted plugin-settings-small">
-        フォルダの中のサブフォルダ（manifest.json と main.js）を、この端末でだけ読み込みます。保存すると自動で読み込み直します。
+        フォルダの中のサブフォルダ（manifest.json と main.js、テーマなら theme.css）を、この端末でだけ読み込みます。保存すると自動で読み込み直します。
       </p>
       {#if pluginHost.devError}
         <StatusLine kind="error" icon={CircleAlert}>{pluginHost.devError}</StatusLine>
@@ -187,9 +202,11 @@
   {#if browser}
     <div class="plugin-settings-upload">
       <span class="field-label">ファイルを選んで配布</span>
-      <p class="muted plugin-settings-small">manifest.json と main.js（と styles.css・icon.svg）をまとめて選びます。</p>
+      <p class="muted plugin-settings-small">
+        manifest.json と main.js（と styles.css・icon.svg）をまとめて選びます。テーマなら manifest.json と theme.css です。
+      </p>
       <input bind:this={fileInput} class="sr-only" type="file" multiple accept=".json,.js,.css,.svg" onchange={publishPicked} />
-      <Button disabled={busy !== null} onclick={() => fileInput?.click()}><Upload size={15} />ファイルを選ぶ</Button>
+      <PublishButton label="ファイルを選んで配布" disabled={busy !== null} onpublish={pickFiles} />
     </div>
   {/if}
 </Section>
@@ -229,6 +246,10 @@
   .plugin-settings-tag.plugin-settings-tag-dev {
     background: var(--accent-soft);
     color: var(--accent);
+  }
+  .plugin-settings-tag.plugin-settings-tag-private {
+    background: var(--mention-soft);
+    color: var(--mention);
   }
   .plugin-settings-error {
     margin: 6px 0 0;

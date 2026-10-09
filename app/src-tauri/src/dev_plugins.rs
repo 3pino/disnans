@@ -1,6 +1,6 @@
-//! 開発用フォルダのプラグイン（PC 版だけ）。
+//! 開発用フォルダのプラグイン・テーマ（PC 版だけ）。
 //!
-//! 開発用フォルダの中の、サブフォルダ1つが1つのプラグイン。
+//! 開発用フォルダの中の、サブフォルダ1つが1つのプラグイン（またはテーマ）。
 //! フロントエンドは1秒ごとに `dev_plugins_scan` で更新時刻を見て、変わったものだけ `dev_plugin_read` で読み直す。
 
 use std::fs;
@@ -10,7 +10,13 @@ use std::time::UNIX_EPOCH;
 use serde::Serialize;
 
 /// 読むファイル（配布できるのもこれだけ）
-const FILES: [&str; 4] = ["manifest.json", "main.js", "styles.css", "icon.svg"];
+const FILES: [&str; 5] = [
+    "manifest.json",
+    "main.js",
+    "styles.css",
+    "theme.css",
+    "icon.svg",
+];
 
 /// 1つのプラグインの合計の上限（サーバーの配布の上限と同じ 5 MB）
 const MAX_TOTAL: u64 = 5 * 1024 * 1024;
@@ -35,6 +41,8 @@ pub struct DevPluginFiles {
     manifest: Option<String>,
     main: Option<String>,
     styles: Option<String>,
+    /// テーマの CSS（テーマのときだけ）
+    theme: Option<String>,
     /// プラグインのアイコン（任意。24x24 の SVG）
     icon: Option<String>,
     stamp: String,
@@ -122,12 +130,14 @@ pub fn dev_plugin_read(dir: String, folder: String) -> Result<DevPluginFiles, St
     let manifest = read("manifest.json")?;
     let main = read("main.js")?;
     let styles = read("styles.css")?;
+    let theme = read("theme.css")?;
     let icon = read("icon.svg")?;
     Ok(DevPluginFiles {
         folder,
         manifest,
         main,
         styles,
+        theme,
         icon,
         stamp,
     })

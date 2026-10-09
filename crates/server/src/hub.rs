@@ -72,6 +72,11 @@ impl Hub {
         self.deliver(event, |id, _| id != except);
     }
 
+    /// 指定したユーザー以外の全員（そのユーザーのすべての接続を除く）に配信する。
+    pub fn broadcast_except_user(&self, event: &ServerEvent, except: &str) {
+        self.deliver(event, |_, c| c.user_id != except);
+    }
+
     pub fn send_to_conn(&self, conn: ConnId, event: &ServerEvent) {
         self.deliver(event, |id, _| id == conn);
     }

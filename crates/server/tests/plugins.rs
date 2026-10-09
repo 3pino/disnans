@@ -3,7 +3,7 @@
 mod common;
 
 use common::TestServer;
-use disnans_shared::{ApiError, PluginInfo, ServerEvent, User};
+use disnans_shared::{ApiError, PluginInfo, PluginKind, PluginVisibility, ServerEvent, User};
 
 const ALICE: &str = "alice@test";
 const BOB: &str = "bob@test";
@@ -393,4 +393,250 @@ async fn plugin_icons() {
         .await
         .unwrap();
     assert_eq!(res.status(), 404);
+}
+
+#[tokio::test]
+async fn private_plugins_are_only_for_the_owner() {
+    let server = TestServer::start().await;
+    let alice_user: User = server.get_json(ALICE, "/api/me").await;
+    let mut bob = server.ws(BOB).await;
+    // bob のアカウントができたお知らせが先に届かないように、bob のあとにつなぐ
+    let mut alice = server.ws(ALICE).await;
+
+    // 自分だけに配布すると、持ち主にだけ届く
+    let m1 = manifest("dice", "1.0.0");
+    let res = server
+        .upload_plugin_as(
+            ALICE,
+            "private",
+            &[("manifest.json", &m1), ("main.js", MAIN_JS)],
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+    let info: PluginInfo = res.json().await.unwrap();
+    assert_eq!(info.visibility, PluginVisibility::Private);
+    assert_eq!(info.owner.as_deref(), Some(alice_user.id.as_str()));
+    assert_eq!(info.kind, PluginKind::Plugin);
+    let ServerEvent::PluginUpdated { plugin } = alice.recv().await else {
+        panic!()
+    };
+    assert_eq!(plugin.visibility, PluginVisibility::Private);
+    bob.assert_silent(std::time::Duration::from_millis(200))
+        .await;
+
+    // 一覧・ファイルも持ち主だけ
+    let list: Vec<PluginInfo> = server.get_json(ALICE, "/api/plugins").await;
+    assert_eq!(list.len(), 1);
+    let list: Vec<PluginInfo> = server.get_json(BOB, "/api/plugins").await;
+    assert!(list.is_empty());
+    let res = server
+        .get(ALICE, "/api/plugins/dice/files/main.js")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let res = server
+        .get(BOB, "/api/plugins/dice/files/main.js")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 404);
+
+    // ほかの人は同じ ID で配布できず、消せない
+    for visibility in ["public", "private"] {
+        let res = server
+            .upload_plugin_as(
+                BOB,
+                visibility,
+                &[("manifest.json", &m1), ("main.js", b"// bob")],
+            )
+            .await;
+        assert_eq!(
+            error_code(res).await,
+            (409, "plugin_id_taken".into()),
+            "{visibility}"
+        );
+    }
+    let res = server
+        .delete(BOB, "/api/plugins/dice")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(error_code(res).await, (404, "not_found".into()));
+    let res = server
+        .get(ALICE, "/api/plugins/dice/files/main.js")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(&res.bytes().await.unwrap()[..], MAIN_JS);
+
+    // 持ち主はみんなに配布し直せる（範囲を切り替える）
+    let res = server
+        .upload_plugin_as(
+            ALICE,
+            "public",
+            &[("manifest.json", &m1), ("main.js", MAIN_JS)],
+        )
+        .await;
+    let info: PluginInfo = res.json().await.unwrap();
+    assert_eq!(info.visibility, PluginVisibility::Public);
+    assert_eq!(info.owner, None);
+    let ServerEvent::PluginUpdated { plugin } = bob.recv().await else {
+        panic!()
+    };
+    assert_eq!(plugin.visibility, PluginVisibility::Public);
+    let _ = alice.recv().await;
+    let list: Vec<PluginInfo> = server.get_json(BOB, "/api/plugins").await;
+    assert_eq!(list.len(), 1);
+
+    // みんなのものを自分だけにすると、ほかの人には削除として届く
+    let res = server
+        .upload_plugin_as(
+            BOB,
+            "private",
+            &[("manifest.json", &m1), ("main.js", b"// bob")],
+        )
+        .await;
+    let info: PluginInfo = res.json().await.unwrap();
+    assert_eq!(info.visibility, PluginVisibility::Private);
+    let ServerEvent::PluginUpdated { plugin } = bob.recv().await else {
+        panic!()
+    };
+    assert_eq!(plugin.visibility, PluginVisibility::Private);
+    let ServerEvent::PluginRemoved { plugin_id } = alice.recv().await else {
+        panic!()
+    };
+    assert_eq!(plugin_id, "dice");
+    let list: Vec<PluginInfo> = server.get_json(ALICE, "/api/plugins").await;
+    assert!(list.is_empty());
+
+    // 持ち主が消すと、持ち主にだけ届く
+    let res = server
+        .delete(BOB, "/api/plugins/dice")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let ServerEvent::PluginRemoved { plugin_id } = bob.recv().await else {
+        panic!()
+    };
+    assert_eq!(plugin_id, "dice");
+    alice
+        .assert_silent(std::time::Duration::from_millis(200))
+        .await;
+    assert!(!server.dir.path().join("plugins/dice").exists());
+
+    // 範囲の値が不正
+    let res = server
+        .upload_plugin_as(
+            ALICE,
+            "friends",
+            &[("manifest.json", &m1), ("main.js", MAIN_JS)],
+        )
+        .await;
+    assert_eq!(error_code(res).await, (400, "invalid_visibility".into()));
+}
+
+#[tokio::test]
+async fn themes() {
+    let server = TestServer::start().await;
+    let theme_manifest: &[u8] =
+        br#"{"id":"sakura","name":"Sakura","version":"1.0.0","type":"theme"}"#;
+    const CSS: &[u8] = b":root { --accent: pink; }";
+
+    let res = server
+        .upload_plugin(
+            ALICE,
+            &[("manifest.json", theme_manifest), ("sakura/theme.css", CSS)],
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+    let info: PluginInfo = res.json().await.unwrap();
+    assert_eq!(info.kind, PluginKind::Theme);
+    assert_eq!(info.visibility, PluginVisibility::Public);
+    assert_eq!(info.files, ["manifest.json", "theme.css"]);
+
+    let res = server
+        .get(BOB, "/api/plugins/sakura/files/theme.css")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    assert_eq!(res.headers()["content-type"], "text/css");
+    assert_eq!(&res.bytes().await.unwrap()[..], CSS);
+
+    // テーマに JS は置けない。theme.css は必須
+    let cases: Vec<(Files, &str)> = vec![
+        (
+            vec![
+                ("manifest.json", theme_manifest.to_vec()),
+                ("theme.css", CSS.to_vec()),
+                ("main.js", MAIN_JS.to_vec()),
+            ],
+            "invalid_file_name",
+        ),
+        (
+            vec![
+                ("manifest.json", theme_manifest.to_vec()),
+                ("theme.css", CSS.to_vec()),
+                ("styles.css", CSS.to_vec()),
+            ],
+            "invalid_file_name",
+        ),
+        (
+            vec![("manifest.json", theme_manifest.to_vec())],
+            "missing_file",
+        ),
+        // プラグインに theme.css は置けない
+        (
+            vec![
+                ("manifest.json", manifest("dice", "1")),
+                ("main.js", MAIN_JS.to_vec()),
+                ("theme.css", CSS.to_vec()),
+            ],
+            "invalid_file_name",
+        ),
+        // type が不正
+        (
+            vec![
+                (
+                    "manifest.json",
+                    br#"{"id":"x1","name":"x","version":"1","type":"skin"}"#.to_vec(),
+                ),
+                ("theme.css", CSS.to_vec()),
+            ],
+            "invalid_manifest",
+        ),
+    ];
+    for (i, (files, code)) in cases.into_iter().enumerate() {
+        let files: Vec<(&str, &[u8])> = files.iter().map(|(n, d)| (*n, d.as_slice())).collect();
+        let res = server.upload_plugin(ALICE, &files).await;
+        assert_eq!(error_code(res).await, (400, code.into()), "ケース {i}");
+    }
+
+    // 自分だけのテーマ
+    let res = server
+        .upload_plugin_as(
+            BOB,
+            "private",
+            &[
+                (
+                    "manifest.json",
+                    br#"{"id":"night","name":"Night","version":"1","type":"theme"}"#,
+                ),
+                ("theme.css", CSS),
+            ],
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+    let list: Vec<PluginInfo> = server.get_json(BOB, "/api/plugins").await;
+    assert_eq!(
+        list.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+        ["night", "sakura"]
+    );
+    let list: Vec<PluginInfo> = server.get_json(ALICE, "/api/plugins").await;
+    assert_eq!(
+        list.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+        ["sakura"]
+    );
 }

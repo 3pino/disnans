@@ -33,10 +33,10 @@
 | GET | `/api/files/{id}` | ファイル本体 | バイナリ |
 | GET | `/api/files/{id}/thumb` | サムネイル（WebP） | バイナリ |
 | POST | `/api/notify/sample` | 自分にサンプルの `notify` を送る（通知の動作確認用）。送り先は、リクエストと同じ IP アドレス（端末）からの接続だけ | `204` |
-| GET | `/api/plugins` | 配布されたプラグインの一覧（ID 順） | `PluginInfo[]` |
-| POST | `/api/plugins` | プラグインの配布・更新（multipart、フィールド名 `file` を複数） | `PluginInfo` |
-| DELETE | `/api/plugins/{id}` | プラグインの削除 | `204` |
-| GET | `/api/plugins/{id}/files/{name}` | 配布されたファイル（`manifest.json` / `main.js` / `styles.css` / `icon.svg`） | ファイル本体 |
+| GET | `/api/plugins` | 自分に見えるプラグイン・テーマの一覧（みんなのものと自分だけのもの。ID 順） | `PluginInfo[]` |
+| POST | `/api/plugins` | プラグイン・テーマの配布・更新（multipart、フィールド名 `file` を複数、`visibility`） | `PluginInfo` |
+| DELETE | `/api/plugins/{id}` | プラグイン・テーマの削除 | `204` |
+| GET | `/api/plugins/{id}/files/{name}` | 配布されたファイル（`manifest.json` / `main.js` / `styles.css` / `theme.css` / `icon.svg`） | ファイル本体 |
 | POST | `/api/plugins/{id}/notify` | プラグインから通知を送る（body: `PluginNotify`） | `204` |
 | POST | `/api/sessions` | セッションを作り、カードを流す（body: `CreateSession`） | `Session` |
 | GET | `/api/sessions/{id}` | セッション1件 | `Session` |
@@ -67,20 +67,32 @@
 - アニメーション GIF / WebP は変換せずそのまま保存する
 - 投稿されていないファイルは、一定時間（24時間）後に削除してよい
 
-### プラグイン（SPEC 9.2, 9.6）
-- ファイルは `<data_dir>/plugins/<id>/` に置く。誰でも配布・更新・削除できる
-- 配布: multipart のフィールド `file` に、ファイル名 `manifest.json`・`main.js`（必須）と `styles.css`・`icon.svg`（任意）を入れる
-  - ファイル名はパスの最後の部分で判別する（`dice/main.js` も可）。それ以外のファイル名は `400 invalid_file_name`、同じファイルが2つあれば `400 duplicate_file`、必須のファイルがなければ `400 missing_file`
+### プラグイン・テーマ（SPEC 9.2, 9.6, 9.10）
+- ファイルは `<data_dir>/plugins/<id>/` に置く。みんなのものは誰でも配布・更新・削除できる
+- 種類（`PluginInfo.type`）は manifest の `type` で決まる: `plugin`（省略時）か `theme`
+- 配布: multipart のフィールド `file` にファイルを入れる
+  - プラグイン: `manifest.json`・`main.js`（必須）と `styles.css`・`icon.svg`（任意）
+  - テーマ: `manifest.json`・`theme.css`（必須）と `icon.svg`（任意）
+  - ファイル名はパスの最後の部分で判別する（`dice/main.js` も可）。上の5つ以外のファイル名や、種類に合わないファイル（テーマの `main.js`、プラグインの `theme.css` など）は `400 invalid_file_name`、同じファイルが2つあれば `400 duplicate_file`、必須のファイルがなければ `400 missing_file`
+  - テキストのフィールド `visibility` で範囲を選ぶ: `public`（みんなに配布。省略時）か `private`（自分だけ）。それ以外は `400 invalid_visibility`
   - 合計 5 MB まで。超えたら `413 plugin_too_large`
-  - manifest（camelCase）: `id`（英小文字・数字・ハイフンの 2〜32 文字。不正なら `400 invalid_plugin_id`）、`name`・`version`（必須）、`description`・`author`（省略すると空文字）、`minApiVersion`（省略すると 1）、`icon`（任意。Lucide のアイコン名で、英小文字・数字・ハイフンの 64 文字まで。空なら省略と同じ）。読めない・足りないときは `400 invalid_manifest`
+  - manifest（camelCase）: `id`（英小文字・数字・ハイフンの 2〜32 文字。不正なら `400 invalid_plugin_id`）、`type`（`plugin` か `theme`。省略すると `plugin`）、`name`・`version`（必須）、`description`・`author`（省略すると空文字）、`minApiVersion`（省略すると 1）、`icon`（任意。Lucide のアイコン名で、英小文字・数字・ハイフンの 64 文字まで。空なら省略と同じ）。読めない・足りないときは `400 invalid_manifest`
   - `PluginInfo.icon` は manifest の `icon`（なければ `null`）
   - `icon.svg` は 64 KB まで、UTF-8 で `<svg` を含むこと。満たさなければ `400 invalid_icon`。あれば `PluginInfo.has_icon` が `true`
-  - 同じ `id` なら上書きする（含まれなかったファイルは消える）。新しいファイルを一時ディレクトリに書いてから入れ替えるので、失敗しても前のものが残る
+  - 同じ `id` なら上書きする（含まれなかったファイルは消える。種類・範囲も今回の値になる）。新しいファイルを一時ディレクトリに書いてから入れ替えるので、失敗しても前のものが残る
+  - ほかの人の自分だけのものと同じ `id` は `409 plugin_id_taken`（`id` はプラグインとテーマ、みんなのものと自分だけのものを通して一意）
   - `hash` はファイル名と中身の SHA-256（16進）
+- 範囲（`PluginInfo.visibility` / `owner`）
+  - `public`: 全員の一覧に出る。`owner` は `null`
+  - `private`: 持ち主（配布した人。`owner`）の一覧にだけ出る。ほかの人には、ファイルの取得も削除も `404`（ないものと同じ）
+  - 持ち主は配布し直して範囲を変えられる。みんなのものを `private` で配布し直すと、配布した人のものになる
 - 削除: ファイルと一覧から消す。セッションとカードは残す（同じ ID で配布し直せば、また開ける）
-- ファイルの取得: `Content-Type` は `application/json` / `application/javascript; charset=utf-8` / `text/css` / `image/svg+xml`、`Cache-Control: no-cache`。クライアントは `?v=<hash>` を付けて取る
+- ファイルの取得: `Content-Type` は `application/json` / `application/javascript; charset=utf-8` / `text/css`（`styles.css` / `theme.css`） / `image/svg+xml`、`Cache-Control: no-cache`。クライアントは `?v=<hash>` を付けて取る
   - `icon.svg` には `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` を付ける（直接開かれてもスクリプトを動かさない）
-- 配布・更新・削除のたびに、全員に `plugin.updated` / `plugin.removed` を配信する。チャットにメッセージは流さない
+- 配布・更新・削除のたびに `plugin.updated` / `plugin.removed` を配信する。チャットにメッセージは流さない
+  - みんなのものは全員に。自分だけのものは持ち主のすべての接続にだけ
+  - みんなのものを `private` で配布し直したときは、持ち主に `plugin.updated`、ほかの全員に `plugin.removed`
+- セッションの作成は、プラグインの範囲を問わない。自分だけのプラグインのカードもほかの人に見えるが、ほかの人のクライアントにはそのプラグインがないので標準のカードになる
 
 ### セッションとカード（SPEC 9.5）
 - 作成: プラグインが配布済みかは問わない（開発中のプラグインでも使える）。`plugin` の形式だけ確かめる
@@ -114,7 +126,7 @@
 - `notify` はそのユーザーのすべての接続に送る。Android アプリは WebView とは別に、通知用の常駐サービスからも接続する
 - スレッドは `thread.create`（既存のメッセージを起点にする）か、`message.send` の `start_thread: true`（送信と同時に起点にする）で作る。スレッドの中の返信からは作れない
 - 編集・削除は本人のメッセージだけ。スレッドの起点を削除すると、スレッドの返信もすべて削除する
-- プラグインの配布・更新・削除（`plugin.updated` / `plugin.removed`）と、セッションの更新（`session.updated`）は全員に配信する
+- プラグインの配布・更新・削除（`plugin.updated` / `plugin.removed`）と、セッションの更新（`session.updated`）は全員に配信する（自分だけのプラグイン・テーマのイベントは持ち主にだけ）
 - `session.emit` は保存せず、送信した接続以外の全員（同じユーザーの別の接続を含む）に `session.event` として中継する。`from` は送信者のユーザー ID
   - セッションがなければ `not_found`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）
 - 失敗したら、送信者に `error` を返す

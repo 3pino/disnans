@@ -73,12 +73,40 @@ pub struct Message {
 
 // ---- プラグイン ----
 
-/// サーバーに配布されたプラグイン。
+/// パッケージの種類（manifest の `type`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PluginKind {
+    /// `main.js` で動くプラグイン。
+    Plugin,
+    /// `theme.css` だけのテーマ（JS なし）。端末ごとに1つ選んで適用する。
+    Theme,
+}
+
+/// 配布の範囲。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PluginVisibility {
+    /// みんなに配布。全員の一覧に出て、誰でも更新・削除できる。
+    Public,
+    /// 自分だけ。持ち主（`owner`）の一覧にだけ出て、持ち主だけが更新・削除できる。
+    Private,
+}
+
+/// サーバーに配布されたプラグイン・テーマ。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PluginInfo {
-    /// 英小文字・数字・ハイフン（2〜32文字）。
+    /// 英小文字・数字・ハイフン（2〜32文字）。プラグインとテーマ、みんなのものと自分だけのものを通して一意。
     pub id: String,
+    /// プラグインかテーマか（manifest の `type`。省略すると `plugin`）。
+    #[serde(rename = "type")]
+    pub kind: PluginKind,
+    pub visibility: PluginVisibility,
+    /// 自分だけのものの持ち主。みんなに配布したものは `null`。
+    pub owner: Option<Id>,
     pub name: String,
     pub version: String,
     pub description: String,
@@ -88,7 +116,7 @@ pub struct PluginInfo {
     pub icon: Option<String>,
     /// `icon.svg` が配布されているか（`/api/plugins/{id}/files/icon.svg`）。
     pub has_icon: bool,
-    /// 配布されているファイル名（`manifest.json` / `main.js` / `styles.css` / `icon.svg`）。
+    /// 配布されているファイル名（`manifest.json` / `main.js` / `styles.css` / `theme.css` / `icon.svg`）。
     pub files: Vec<String>,
     /// ファイルの中身のハッシュ（16進）。キャッシュの区別と、更新の判定に使う。
     pub hash: String,
@@ -267,9 +295,10 @@ pub enum ServerEvent {
         /// 「サンプル通知を送信」で送ったもの。アプリを表示中でもシステム通知を出す。
         sample: bool,
     },
-    /// プラグインが配布・更新された。
+    /// プラグイン・テーマが配布・更新された。自分だけのものは持ち主にだけ届く。
     #[serde(rename = "plugin.updated")]
     PluginUpdated { plugin: PluginInfo },
+    /// プラグイン・テーマが削除された（自分だけのものになって見えなくなったときも）。
     #[serde(rename = "plugin.removed")]
     PluginRemoved { plugin_id: String },
     /// セッションの state（とカード）が更新された。

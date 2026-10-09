@@ -1,6 +1,31 @@
-/* ダイスの view。本体の CSS 変数（app/src/app.css の :root）を使うので、ライト・ダークどちらでも本体に合う */
+/*
+ * ダイスの見た目。本体の CSS 変数（app/src/app.css の :root）を使うので、ライト・ダークどちらでも本体に合う。
+ * クラスにはすべてプラグイン ID の接頭辞（dice-）を付け、本体のクラス（.btn など）は書き換えない
+ */
 
+/* ---- view: 中身とタブのバー ---- */
+
+/* パネルの中いっぱいに広げ、タブのバー（ui.navbar）を下に置く */
 .dice-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.dice-view-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* モバイルの全画面では、画面の下の端（ホームバー）をよける */
+.dice-view .nav-bar {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ---- 「結果」タブ ---- */
+
+.dice-result {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -61,6 +86,53 @@
   color: var(--danger);
 }
 
+/* 揺れている間（出目の演出）。数字は main.js の tick で書き換わる */
+.dice-face-shaking {
+  border-color: var(--accent);
+  color: var(--text-muted);
+  animation: dice-shake 0.24s ease-in-out infinite;
+}
+
+/* 目が出たとき（出目の演出） */
+.dice-face-reveal {
+  animation: dice-reveal 0.32s ease-out;
+}
+
+@keyframes dice-shake {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate(-3px, 1px) rotate(-8deg);
+  }
+  75% {
+    transform: translate(3px, -1px) rotate(8deg);
+  }
+}
+
+@keyframes dice-reveal {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 動きを減らす設定の人には、揺らさない */
+@media (prefers-reduced-motion: reduce) {
+  .dice-face-shaking,
+  .dice-face-reveal {
+    animation: none;
+  }
+}
+
 .dice-total {
   font-size: 28px;
   font-weight: 700;
@@ -75,4 +147,63 @@
   min-width: 140px;
   height: 44px;
   font-size: 17px;
+}
+
+/* ---- 「使い方」タブ ---- */
+
+.dice-help {
+  padding: 16px;
+}
+
+.dice-help-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.dice-help-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.5;
+}
+
+.dice-help-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.dice-help-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+
+/* ---- チャットのカード（registerCardRenderer） ---- */
+
+.dice-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.dice-card-title {
+  font-weight: 600;
+}
+
+.dice-card-text {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* 振ったあと（「🎲 A: 2d6 → 3 + 5 = 8」） */
+.dice-card-done {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
 }

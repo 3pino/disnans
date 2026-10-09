@@ -2,6 +2,22 @@
 
 disnans のプラグインは、Obsidian のプラグインに近い仕組みです。JS のファイルを1つ書けば動き、ボタン1つで全員に配れます。
 このガイドは、実例の **ダイス**（[`examples/dice/`](../examples/dice/)）を題材に説明します。
+ダイスはホスト API をひととおり使っているので、迷ったら `main.js` を読むのが早道です（どの API をどこで使っているかは、ファイルの先頭にまとめてあります）。
+
+| ダイスでできること | 使っている API |
+|---|---|
+| `/dice 2d6` でサイコロを用意する（補完に候補が出る） | `addSlashCommand`（`icon`・`args`・`suggestArgs`） |
+| 「＋」メニューの「サイコロ（2d6）」 | `addComposerAction`（Lucide のアイコン `dices`） |
+| Ctrl+Shift+D で既定のサイコロを用意する | `addCommand`（`hotkey`） |
+| 立方体のサイコロのアイコン | `icon.svg`（プラグインのアイコン）、`addIcon`（`dice-cube`）、manifest の `icon`（予備） |
+| パネルの画面（「結果」「使い方」のタブ） | `registerView` / `openView`、`View.title` / `View.icon`、`panel.setTitle` / `setIcon`、`ui.navbar` / `ui.button` / `ui.icon` / `ui.divider` |
+| 振ると全員の画面に結果が出て、カードが書き換わる | `sessions.create`、`session.update`（楽観ロックと `VersionConflictError` のやり直し）、`session.onChange` |
+| 振っている間、見ている人の画面でもサイコロが揺れる | `session.emit` / `session.on`、`registerInterval`（演出のタイマー）、`registerDomEvent`（裏に回ったら演出をやめる） |
+| チャットのカードの見た目 | `registerCardRenderer` |
+| 設定（既定のサイコロ・振る前の確認・出目の演出・初期値に戻す） | `addSettingTab`、`loadData` / `saveData`、`ui.setting` / `ui.segmented` / `ui.toggle` / `ui.confirm` |
+| スタイル | `styles.css`（本体の CSS 変数） |
+
+使っていないのは `notify` だけです（カードの書き換えで足りるため。→ [通知](#通知)）。
 
 - 設計: [`SPEC.md`](../SPEC.md) の 3.3 と 9章
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
@@ -40,7 +56,7 @@ PC 版（Windows / Linux）の **設定 → プラグイン → 開発用フォ�
     └── main.js
 ```
 
-ダイスを試すなら、`examples/dice/` をそのまま開発用フォルダにコピーしてもかまいません。
+ダイスを試すなら、`examples/dice/`（`manifest.json`・`main.js`・`styles.css`・`icon.svg`）をそのまま開発用フォルダにコピーしてもかまいません。
 
 ### 3. manifest.json と main.js を書く
 
@@ -80,7 +96,8 @@ export default class HelloPlugin extends Plugin {
 
 ### 5. 配布する
 
-**設定 → プラグイン** の一覧で、そのプラグインの **[配布]** を押します。サーバーに上がり、つながっている全員のクライアントで動き始めます。
+**設定 → プラグイン** の一覧で、そのプラグインの **[配布]** を押し、**みんなに配布** か **自分だけに配布** を選びます。
+サーバーに上がり、つながっている全員（自分だけなら、自分のすべての端末）のクライアントで動き始めます。
 チャットにお知らせは流れません。
 
 直したら、`version` を上げてもう一度 [配布] を押すと更新になります。
@@ -105,12 +122,15 @@ export default class HelloPlugin extends Plugin {
 {
   "id": "dice",
   "name": "ダイス",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "サイコロを振って、結果をみんなに見せる",
   "author": "sanpino",
-  "minApiVersion": 1
+  "minApiVersion": 1,
+  "icon": "dice-5"
 }
 ```
+
+ダイスは `icon.svg`（立方体のサイコロ）も同梱しているので、アイコンにはそちらが使われます。manifest の `icon` は、`icon.svg` を読めなかったときの予備です。
 
 配布できるのは `manifest.json`・`main.js`・`styles.css`（任意）・`icon.svg`（任意）の4つだけで、合計 5 MB までです。
 `icon.svg` はプラグインのアイコンにする SVG です（UTF-8、64 KB まで）。Lucide にないアイコンを使いたいときに置きます。
@@ -137,6 +157,7 @@ export default class DicePlugin extends Plugin {
   onload() {
     this.addSlashCommand({ /* ... */ });
     this.registerView('dice', (session) => new DiceView(this, session));
+    // ほかに addComposerAction / addCommand / addIcon / registerCardRenderer / addSettingTab / registerInterval など
   }
 
   onunload() {
@@ -230,17 +251,19 @@ app/node_modules/.bin/tsc -p examples/dice
 this.addSlashCommand({
   name: 'dice',                 // `/dice`。英小文字・数字・ハイフン
   description: 'サイコロを振る', // 補完に出る説明
-  icon: 'dice-5',               // 補完に出るアイコン（省略するとプラグインのアイコン）
+  icon: 'dice-cube',            // 補完に出るアイコン（addIcon で登録したもの。省略するとプラグインのアイコン）
   args: '[個数]d[面数]',          // 引数の書き方のヒント
   // 引数の候補。input はコマンド名のあとに打った文字列
-  suggestArgs: (input) =>
-    ['1d6', '2d6', '1d20', '1d100']
-      .filter((v) => v.startsWith(input.trim()))
-      .map((value) => ({ value })),
+  suggestArgs: (input) => {
+    const q = input.trim().toLowerCase();
+    return PRESETS.filter((p) => p.value.startsWith(q)); // [{ value: '2d6', description: 'サイコロ2個' }, ...]
+  },
   // args は前後の空白を除いた文字列（なければ ''）。threadId はスレッドで打ったときだけ入る
   run: ({ args, threadId }) => this.prepare(args, threadId),
 });
 ```
+
+ダイスの `prepare` は、`args` が空なら設定の「既定のサイコロ」を使います。
 
 - 入力の誤りは `disnans.ui.toast('…', 'error')` で知らせます。`run` が例外を投げた（reject した）ときも、本体がエラーのトーストを出します
 - 候補（`Suggestion`）は `{ value, label?, description? }`。`value` が入力欄に入ります
@@ -251,22 +274,28 @@ this.addSlashCommand({
 this.addComposerAction({
   id: 'roll-2d6',
   label: 'サイコロ（2d6）',
-  icon: 'dice-6', // アイコンの名前（省略するとプラグインのアイコン）
+  icon: 'dices', // アイコンの名前（Lucide の名前。省略するとプラグインのアイコン）
   run: ({ threadId }) => this.prepare('2d6', threadId),
 });
 ```
 
 `icon` は**アイコンの名前**です（Lucide の名前・`disnans-logo`・`addIcon` で登録した名前）。
-独自の SVG を使うときは、先に `this.addIcon('dice-cup', '<path .../>')` で登録してから名前で指定します（→ [PLUGIN_UI.md](PLUGIN_UI.md#アイコン)）。
+独自の SVG を使うときは、先に `this.addIcon('dice-cube', '<path .../>')` で登録してから名前で指定します（→ [PLUGIN_UI.md](PLUGIN_UI.md#アイコン)）。
+ダイスは `onload` の最初に、立方体のサイコロを `dice-cube` として登録し、`/dice` の補完・パネルの上部・タブ・カードで使っています。
+
+```js
+// <svg> の中身だけを渡すと、既定は fill="none" stroke="currentColor" stroke-width="2"（Lucide と同じ）
+this.addIcon('dice-cube', '<path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="m3 7 9 5 9-5M12 12v10"/>…');
+```
 
 ### コマンド（ショートカット）
 
 ```js
 this.addCommand({
   id: 'quick-roll',
-  name: 'サイコロ（1d6）を用意する',
+  name: '既定のサイコロを用意する',
   hotkey: 'Mod+Shift+D', // Mod は Ctrl（macOS では Cmd）
-  run: () => this.prepare('', null),
+  run: () => this.prepare('', null), // '' なら設定の既定のサイコロ。null はメインチャット
 });
 ```
 
@@ -289,23 +318,47 @@ class DiceView {
   constructor(plugin, session) {
     this.plugin = plugin;
     this.session = session;
-    this.title = 'ダイス'; // パネルの上部の題名（省略するとプラグイン名。'' なら出さない）
-    this.icon = 'dice-5';  // パネルの上部のアイコン（省略するとプラグインのアイコン。'' なら出さない）
+    this.title = 'ダイス';    // パネルの上部の題名（省略するとプラグイン名。'' なら出さない）
+    this.icon = 'dice-cube'; // パネルの上部のアイコン（省略するとプラグインのアイコン。'' なら出さない）
+    this.tab = 'result';
   }
 
   /** @param {HTMLElement} containerEl @param {Disnans.ViewPanel} panel */
   onOpen(containerEl, panel) {
-    this.panel = panel; // あとから panel.setTitle('ダイス（2d6）') / panel.setIcon('dice-6') で変えられる
-    this.el = containerEl;
-    this.unsubscribe = this.session.onChange(() => this.render()); // 誰かが更新したら描き直す
+    this.panel = panel;
+    this.cleanups = [
+      this.session.onChange(() => this.render()), // 誰かが更新したら描き直す
+      this.session.on('shake', (_payload, from) => { /* 揺らす（→ 一時的なイベント） */ }),
+    ];
+    // 中身とタブのバー。バーは一度だけ作り、中身だけを描き直す
+    this.bodyEl = document.createElement('div');
+    const nav = disnans.ui.navbar({
+      label: 'ダイスのタブ',
+      selected: this.tab,
+      items: [
+        { id: 'result', label: '結果', icon: 'dice-cube' },
+        { id: 'help', label: '使い方', icon: 'book-open' },
+      ],
+      onSelect: (id) => {
+        this.tab = id;
+        this.render();
+      },
+    });
+    containerEl.append(this.bodyEl, nav);
     this.render();
   }
 
   onClose() {
-    this.unsubscribe?.();
+    for (const off of this.cleanups) off(); // 購読は自分で外す
   }
 
-  render() { /* this.el.replaceChildren(...) */ }
+  render() {
+    const state = this.session.state;
+    // パネルの上部: 題名にサイコロの表記、振ったあとはアイコンを出目に合わせる（null で既定に戻す）
+    this.panel.setTitle(`ダイス（${state.spec}）`);
+    this.panel.setIcon(state.result ? 'dices' : null);
+    this.bodyEl.replaceChildren(this.tab === 'help' ? this.renderHelp() : this.renderResult());
+  }
 }
 ```
 
@@ -323,15 +376,19 @@ class DiceView {
 - プラグインがない・オフの人には、本体の標準の見た目で最後の `title` / `text` が出ます。**`text` だけで内容がわかるように**書いてください
 - 見た目を変えたいときは `registerCardRenderer` を使います（省略すると標準のカード）
 
+ダイスは、題名の左に独自のアイコンを出し、振ったあとのカード（「🎲 …」）を等幅の大きめの文字にしています。
+
 ```js
 this.registerCardRenderer((el, card) => {
-  // card は { sessionId, title, text }
-  el.replaceChildren();
-  const b = document.createElement('b');
-  b.textContent = card.title;
-  el.append(b, ' ', card.text);
+  // card は { sessionId, title, text }。el は本体のカードの枠の中
+  const head = h('div', 'dice-card-head');
+  head.append(disnans.ui.icon('dice-cube', { size: 14 }), h('span', 'dice-card-title', card.title));
+  const done = card.text.startsWith('🎲');
+  el.replaceChildren(head, h('div', done ? 'dice-card-text dice-card-done' : 'dice-card-text', card.text));
 });
 ```
+
+- 渡されるのは `title` と `text` だけです。state を見て描きたいときも、カードの文言に必要なことを入れておきます
 
 ### セッションと楽観ロック
 
@@ -354,7 +411,7 @@ this.openView('dice', session);
 そのときは `session.state` がすでに最新になっているので、最新の state で考え直してやり直します。ダイスの [振る] は次のとおりです。
 
 ```js
-async roll() {
+async saveResult() {
   for (let attempt = 0; attempt < 3; attempt++) {
     const state = this.session.state;
     if (state.result) return; // もう振られている → そのまま表示
@@ -370,6 +427,22 @@ async roll() {
       // ぶつかった。session.state は最新になっているので、ループの頭でもう一度考える
     }
   }
+  disnans.ui.toast('ほかの更新とぶつかったため、振れませんでした', 'error');
+}
+```
+
+ダイスの [振る] は、設定の「振る前に確認する」がオンなら、先に確認のダイアログを出します。
+
+```js
+async roll() {
+  if (this.plugin.settings.confirmBeforeRoll) {
+    const ok = await disnans.ui.confirm({ title: '2d6 を振りますか？', body: '振れるのは1回だけです。', okLabel: '振る' });
+    if (!ok) return;
+  }
+  this.session.emit('shake');      // ほかの人の画面でも揺らす（→ 一時的なイベント）
+  this.startShaking(/* ... */);     // 自分の画面は自分で揺らす
+  await sleep(700);
+  await this.saveResult();
 }
 ```
 
@@ -380,15 +453,31 @@ async roll() {
 
 保存しないイベント（「考え中…」、カーソルの位置など）は、`emit` / `on` で中継だけします。途中で開いた人には届きません。
 
-```js
-// 送る（自分には届かない）
-this.session.emit('thinking', { on: true });
+ダイスは、振る人が [振る] を押したときに `shake` を送り、見ている人の画面でもサイコロを揺らします（「A が振っています…」）。
+結果は `update` で保存するので、揺れは結果が届いた（`onChange`）ところで止めます。
 
-// 受け取る。from は送った人
-const off = this.session.on('thinking', (payload, from) => {
-  this.showThinking(from.id, /** @type {{ on: boolean }} */ (payload).on);
+```js
+// 送る（自分には届かない。自分の画面は自分で揺らす）
+this.session.emit('shake');
+
+// 受け取る。from は送った人。payload は emit の2つ目の引数（省くと null）
+const off = this.session.on('shake', (_payload, from) => {
+  const state = this.session.state;
+  if (state.result || from.id !== state.roller) return; // 振る人以外・振ったあとのものは無視する
+  this.startShaking(from.id, 5000); // 結果が来ないまま 5 秒たったら止める
 });
 // view の onClose で off() する
+```
+
+演出のコマ送り（揺れている間、目の数字を入れ替える）には、`onload` で登録したタイマーを1つだけ使っています。
+`registerInterval` / `registerDomEvent` で登録すると、プラグインを外すときに本体が止めてくれます（→ [後始末は register* で](#後始末は-register-で)）。
+
+```js
+this.registerInterval(window.setInterval(() => this.tick(), 80)); // 開いている view の tick() を呼ぶ
+// アプリが裏に回るとタイマーが間引かれるので、そこで演出を終える
+this.registerDomEvent(document, 'visibilitychange', () => {
+  if (document.hidden) for (const view of this.openViews) view.stopShaking();
+});
 ```
 
 ### 通知
@@ -402,32 +491,61 @@ await this.notify([nextPlayerId], 'あなたの番です', { session: this.sessi
 
 ### 設定タブ
 
+ダイスの設定タブ（**設定 → プラグイン → ダイス**）は、選択肢（`ui.segmented`）・トグル（`ui.toggle`）・区切り線・
+確認してから実行する危ないボタン（`ui.button` の `danger` と `ui.confirm`）を、設定の行（`ui.setting`）に並べたものです。
+
 ```js
 async onload() {
-  /** @type {{ defaultSpec: string } | null} */
-  const saved = await this.loadData();
-  this.settings = { defaultSpec: '1d6', ...saved };
+  this.settings = await this.loadSettings(); // loadData() で読み、足りない値は初期値で埋める
+  this.addSettingTab({ display: (containerEl) => this.displaySettings(containerEl) });
+}
 
-  this.addSettingTab({
-    display: (containerEl) => {
-      disnans.ui.setting(containerEl, {
-        name: '既定のサイコロ',
-        description: '/dice だけで送ったときの個数と面の数',
-        control: disnans.ui.input({
-          value: this.settings.defaultSpec,
-          placeholder: '1d6',
-          onChange: async (value) => {
-            this.settings.defaultSpec = value;
-            await this.saveData(this.settings);
-          },
-        }),
-      });
-    },
+/** @param {HTMLElement} containerEl */
+displaySettings(containerEl) {
+  const { ui } = disnans;
+  ui.setting(containerEl, {
+    name: '既定のサイコロ',
+    description: '/dice だけで送ったときと、ショートカットで用意するサイコロ',
+    icon: 'dice-cube',
+    control: ui.segmented({
+      label: '既定のサイコロ',
+      value: this.settings.defaultSpec,
+      options: ['1d6', '2d6', '3d6', '1d20', '1d100'].map((spec) => ({ value: spec, label: spec })),
+      onChange: (value) => void this.setSetting('defaultSpec', value), // this.settings を変えて saveData する
+    }),
   });
+  ui.setting(containerEl, {
+    name: '振る前に確認する',
+    icon: 'circle-help',
+    control: ui.toggle({
+      label: '振る前に確認する', // 読み上げ用。見える名前は ui.setting の name
+      value: this.settings.confirmBeforeRoll,
+      onChange: (value) => void this.setSetting('confirmBeforeRoll', value),
+    }),
+  });
+  // 「出目の演出」のトグルも同じ
+  containerEl.append(ui.divider());
+  ui.setting(containerEl, {
+    name: '設定を初期値に戻す',
+    icon: 'rotate-ccw',
+    control: ui.button({ text: '初期値に戻す', variant: 'danger', onClick: () => void this.resetSettings(containerEl) }),
+  });
+}
+
+/** @param {HTMLElement} containerEl */
+async resetSettings(containerEl) {
+  const ok = await disnans.ui.confirm({ title: '設定を初期値に戻しますか？', okLabel: '初期値に戻す', danger: true });
+  if (!ok) return;
+  this.settings = { ...DEFAULT_SETTINGS };
+  await this.saveData(this.settings);
+  // 部品は自分の値を覚えているので、描き直して見た目を合わせる
+  containerEl.replaceChildren();
+  this.displaySettings(containerEl);
 }
 ```
 
-`display` は表示のたびに空の `containerEl` で呼ばれます。
+- `display` は表示のたびに空の `containerEl` で呼ばれます
+- 部品の `onChange` で、すぐに `saveData` します（「保存」ボタンは要りません）
 
 ### loadData / saveData
 
@@ -439,6 +557,20 @@ const data = await this.loadData(); // なければ null
 await this.saveData({ history: ['2d6', '1d20'] }); // JSON にできる値
 ```
 
+保存したデータは、古い版のプラグインが書いたものかもしれません。ダイスの `loadSettings` のように、型を確かめて使える値だけを拾うと安全です。
+
+```js
+async loadSettings() {
+  const saved = await this.loadData();
+  const s = { ...DEFAULT_SETTINGS };
+  if (saved && typeof saved === 'object') {
+    if (typeof saved.confirmBeforeRoll === 'boolean') s.confirmBeforeRoll = saved.confirmBeforeRoll;
+    // ...
+  }
+  return s;
+}
+```
+
 ### disnans.ui
 
 本体と同じ見た目の部品（ボタン・トグル・入力欄・選択肢・タブのバー・区切り線・設定の行・アイコン・トースト・確認ダイアログ）です。
@@ -446,8 +578,8 @@ await this.saveData({ history: ['2d6', '1d20'] }); // JSON にできる値
 
 ```js
 const { ui } = disnans;
-ui.button({ text: '振る', icon: 'dice-5', variant: 'primary', onClick: () => this.roll() });
-ui.toast('保存しました');
+ui.button({ text: '振る', icon: 'dices', variant: 'primary', onClick: () => this.roll() });
+ui.toast('設定を初期値に戻しました');
 ```
 
 ---
@@ -485,7 +617,7 @@ ui.toast('保存しました');
 - `body` や `.btn` など、本体のセレクターを直接書き換えないでください。全員の本体の見た目が変わります
 - 色は直接書かず、CSS 変数を使います
 
-ダイスの `styles.css`（抜粋）:
+ダイスの `styles.css`（抜粋）。揺れる演出は `@keyframes` で書き、動きを減らす設定（`prefers-reduced-motion`）の人には止めています。
 
 ```css
 .dice-face {
@@ -503,6 +635,19 @@ ui.toast('保存しました');
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
+}
+.dice-face-shaking {
+  border-color: var(--accent);
+  animation: dice-shake 0.24s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dice-face-shaking {
+    animation: none;
+  }
+}
+/* view の中のタブのバー（本体の .nav-bar）を、自分のクラスの下でだけ調整する */
+.dice-view .nav-bar {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 ```
 
@@ -541,14 +686,20 @@ esbuild は型をチェックしないので、`tsc --noEmit` も合わせて使
 
 | 操作 | どうなるか |
 |---|---|
-| **[配布]** | サーバーに上がり、つながっている全員のクライアントで動き始める（チャットにお知らせは流れない） |
-| **更新**（同じ `id` でもう一度 [配布]） | 上書きになる。サーバーが配信するのは常に1つの版。全員のクライアントで読み込み直す |
-| **削除** | 全員のクライアントから外れる。セッションとカードは残る（同じ `id` で配布し直せば、また開ける） |
+| **[配布] → みんなに配布** | サーバーに上がり、つながっている全員のクライアントで動き始める（チャットにお知らせは流れない） |
+| **[配布] → 自分だけに配布** | サーバーに上がり、**自分のすべての端末**（Android を含む）でだけ動く。ほかの人の一覧には出ない。一覧に「自分だけ」と出る |
+| **更新**（同じ `id` でもう一度 [配布]） | 上書きになる。サーバーが配信するのは常に1つの版。全員（自分だけなら自分の端末）のクライアントで読み込み直す。範囲も選び直せる |
+| **削除** | 全員（自分だけなら自分の端末）のクライアントから外れる。セッションとカードは残る（同じ `id` で配布し直せば、また開ける） |
 | **オン / オフ**（トグル） | **自分の端末でだけ**切り替える（その端末に保存）。配布されたプラグインは既定でオン |
 
-- 配布・更新・削除は誰でもできます。最後に配布・更新した人は一覧の情報（`updated_by`）に残ります
+- みんなに配布したものの更新・削除は誰でもできます。最後に配布・更新した人は一覧の情報（`updated_by`）に残ります
+- 自分だけのものは、配布した人（`owner`）だけが更新・削除できます
+- `id` はプラグインとテーマ、みんなのものと自分だけのものを通して一意です。ほかの人が自分だけに配布しているものと同じ `id` は使えません（`409 plugin_id_taken`。`id` を変えてください）
+- 自分だけのプラグインを、あとから「みんなに配布」し直すこともできます。逆に、みんなのものを「自分だけに配布」し直すと、ほかの人の端末からは外れます
+- 自分だけのプラグインでもセッションとカードは作れます。ただし、カードはチャットに流れて全員に見える一方、ほかの人の端末にはそのプラグインがないので、標準のカード（最後の内容を表示するだけで、タップしても開かない）になります
 - 開発用フォルダに、配布済みと同じ `id` のプラグインがあれば、自分の端末では開発中のほうが動きます。配布した版を直すときは、そのまま開発用フォルダで直して [配布] すれば更新になります
 - 壊れたプラグインが配られても、各自がトグルでオフにできます
+- テーマ（`theme.css` だけのパッケージ）も同じ方法で配れます。作り方は [THEMES.md](THEMES.md) を見てください
 
 ---
 

@@ -111,6 +111,27 @@ impl TestServer {
             .unwrap()
     }
 
+    /// `user` として、範囲（`public` / `private`）を指定して配布する。
+    pub async fn upload_plugin_as(
+        &self,
+        user: &str,
+        visibility: &str,
+        files: &[(&str, &[u8])],
+    ) -> reqwest::Response {
+        let mut form = reqwest::multipart::Form::new().text("visibility", visibility.to_string());
+        for (name, data) in files {
+            let part = reqwest::multipart::Part::bytes(data.to_vec()).file_name(name.to_string());
+            form = form.part("file", part);
+        }
+        self.http
+            .post(self.url("/api/plugins"))
+            .header("X-Dev-User", user)
+            .multipart(form)
+            .send()
+            .await
+            .unwrap()
+    }
+
     pub async fn messages(&self, query: &str) -> Vec<Message> {
         self.get_json("alice@test", &format!("/api/messages{query}"))
             .await

@@ -1,13 +1,16 @@
-//! プラグインの配布・更新・削除（SPEC 9.2, 9.6）。
+//! プラグイン・テーマの配布・更新・削除（SPEC 9.2, 9.6, 9.10）。
 //!
 //! ファイルは `<data_dir>/plugins/<id>/` に置く。サーバーはプラグインのコードを実行せず、
-//! 保存して配るだけ。配布・更新・削除のたびに全員に `plugin.updated` / `plugin.removed` を配信する
+//! 保存して配るだけ。配布・更新・削除のたびに `plugin.updated` / `plugin.removed` を配信する
 //! （チャットにお知らせは流さない）。
+//!
+//! 配布の範囲は「みんな」（public）か「自分だけ」（private）。自分だけのものは持ち主にだけ見え、
+//! イベントも持ち主の接続にだけ送る。ID はプラグインとテーマ、みんなのものと自分だけのものを通して一意。
 
 use std::path::{Path, PathBuf};
 
 use axum::http::StatusCode;
-use disnans_shared::{PluginInfo, ServerEvent, User};
+use disnans_shared::{PluginInfo, PluginKind, PluginVisibility, ServerEvent, User};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -18,9 +21,18 @@ use crate::state::AppState;
 use crate::store::plugins;
 
 /// 配布できるファイル（この順に並べる）。
-pub const FILE_NAMES: [&str; 4] = ["manifest.json", "main.js", "styles.css", "icon.svg"];
-/// 必須のファイル。
-const REQUIRED_FILES: [&str; 2] = ["manifest.json", "main.js"];
+pub const FILE_NAMES: [&str; 5] = [
+    "manifest.json",
+    "main.js",
+    "styles.css",
+    "theme.css",
+    "icon.svg",
+];
+/// プラグインのファイル（必須, 任意）。
+const PLUGIN_FILES: (&[&str], &[&str]) =
+    (&["manifest.json", "main.js"], &["styles.css", "icon.svg"]);
+/// テーマのファイル（必須, 任意）。JS は置けない。
+const THEME_FILES: (&[&str], &[&str]) = (&["manifest.json", "theme.css"], &["icon.svg"]);
 /// ファイルの合計サイズの上限。
 pub const MAX_PACKAGE_BYTES: usize = 5 * 1024 * 1024;
 /// アイコン（`icon.svg`）の上限。
@@ -57,9 +69,32 @@ pub fn content_type(file_name: &str) -> Option<&'static str> {
     match file_name {
         "manifest.json" => Some("application/json"),
         "main.js" => Some("application/javascript; charset=utf-8"),
-        "styles.css" => Some("text/css"),
+        "styles.css" | "theme.css" => Some("text/css"),
         "icon.svg" => Some("image/svg+xml"),
         _ => None,
+    }
+}
+
+/// 配布できるファイルの説明（エラーの文言に使う）。
+pub const ALLOWED_FILES_TEXT: &str = "manifest.json / main.js / styles.css / theme.css / icon.svg";
+
+/// `user_id` に見えるか（みんなのものか、自分だけのものの持ち主か）。
+pub fn is_visible(info: &PluginInfo, user_id: &str) -> bool {
+    match info.visibility {
+        PluginVisibility::Public => true,
+        PluginVisibility::Private => info.owner.as_deref() == Some(user_id),
+    }
+}
+
+/// multipart の `visibility`（`public` / `private`）を読む。
+pub fn parse_visibility(value: &str) -> AppResult<PluginVisibility> {
+    match value.trim() {
+        "public" => Ok(PluginVisibility::Public),
+        "private" => Ok(PluginVisibility::Private),
+        _ => Err(AppError::bad_request(
+            "invalid_visibility",
+            "visibility は public か private にしてください",
+        )),
     }
 }
 
@@ -83,9 +118,7 @@ impl Package {
         let Some(&name) = FILE_NAMES.iter().find(|n| **n == file_name) else {
             return Err(AppError::bad_request(
                 "invalid_file_name",
-                format!(
-                    "配布できないファイルです（{file_name}）。manifest.json / main.js / styles.css / icon.svg だけです"
-                ),
+                format!("配布できないファイルです（{file_name}）。{ALLOWED_FILES_TEXT} だけです"),
             ));
         };
         if self.files.iter().any(|(n, _)| *n == name) {
@@ -117,9 +150,24 @@ impl Package {
             .map(|(_, d)| d.as_slice())
     }
 
-    /// 必須のファイルと manifest を確かめ、`PluginInfo` を組み立てる（更新者と時刻は呼び出し側で入れる）。
-    fn into_info(mut self, user: &User) -> AppResult<(PluginInfo, Files)> {
-        for name in REQUIRED_FILES {
+    /// manifest と、種類ごとの必須のファイル・置けないファイルを確かめ、`PluginInfo` を組み立てる。
+    fn into_info(
+        mut self,
+        user: &User,
+        visibility: PluginVisibility,
+    ) -> AppResult<(PluginInfo, Files)> {
+        let Some(manifest) = self.file("manifest.json") else {
+            return Err(AppError::bad_request(
+                "missing_file",
+                "manifest.json がありません",
+            ));
+        };
+        let manifest = parse_manifest(manifest)?;
+        let (required, optional) = match manifest.kind {
+            PluginKind::Plugin => PLUGIN_FILES,
+            PluginKind::Theme => THEME_FILES,
+        };
+        for name in required {
             if self.file(name).is_none() {
                 return Err(AppError::bad_request(
                     "missing_file",
@@ -127,12 +175,34 @@ impl Package {
                 ));
             }
         }
-        let manifest = parse_manifest(self.file("manifest.json").unwrap_or_default())?;
+        if let Some((name, _)) = self
+            .files
+            .iter()
+            .find(|(n, _)| !required.contains(n) && !optional.contains(n))
+        {
+            let kind = match manifest.kind {
+                PluginKind::Plugin => "プラグイン",
+                PluginKind::Theme => "テーマ",
+            };
+            return Err(AppError::bad_request(
+                "invalid_file_name",
+                format!(
+                    "{kind}には {name} を置けません（{} だけです）",
+                    [required, optional].concat().join(" / ")
+                ),
+            ));
+        }
 
         self.files
             .sort_by_key(|(n, _)| FILE_NAMES.iter().position(|f| f == n));
         let info = PluginInfo {
             id: manifest.id,
+            kind: manifest.kind,
+            visibility,
+            owner: match visibility {
+                PluginVisibility::Public => None,
+                PluginVisibility::Private => Some(user.id.clone()),
+            },
             name: manifest.name,
             version: manifest.version,
             description: manifest.description,
@@ -196,10 +266,14 @@ struct RawManifest {
     author: Option<String>,
     min_api_version: Option<u32>,
     icon: Option<String>,
+    /// `plugin`（省略時）か `theme`。
+    #[serde(rename = "type")]
+    kind: Option<String>,
 }
 
 struct Manifest {
     id: String,
+    kind: PluginKind,
     name: String,
     version: String,
     description: String,
@@ -237,8 +311,18 @@ fn parse_manifest(data: &[u8]) -> AppResult<Manifest> {
             "icon は Lucide のアイコン名（英小文字・数字・ハイフンの {MAX_ICON_CHARS} 文字まで）にしてください"
         )));
     }
+    let kind = match raw.kind.as_deref().map(str::trim) {
+        None | Some("plugin") => PluginKind::Plugin,
+        Some("theme") => PluginKind::Theme,
+        Some(other) => {
+            return Err(invalid(format!(
+                "type は \"plugin\" か \"theme\" にしてください（{other}）"
+            )));
+        }
+    };
     Ok(Manifest {
         id,
+        kind,
         name: field(raw.name, "name", MAX_NAME_CHARS, true)?,
         version: field(raw.version, "version", MAX_VERSION_CHARS, true)?,
         description: field(raw.description, "description", MAX_DESCRIPTION_CHARS, false)?,
@@ -265,8 +349,16 @@ fn hash(files: &[(&str, Vec<u8>)]) -> String {
 }
 
 /// 配布・更新する。ファイルは一時ディレクトリに書いてから入れ替え、途中で失敗しても前のものが残るようにする。
-pub async fn install(state: &AppState, user: &User, package: Package) -> AppResult<PluginInfo> {
-    let (info, files) = package.into_info(user)?;
+///
+/// 同じ ID のものがあれば上書きする。ただし、ほかの人の自分だけのものは上書きできない（`409 plugin_id_taken`）。
+/// 範囲は配布し直すたびに選び直せる（みんなのものを自分だけにすると、ほかの人からは削除されたように見える）。
+pub async fn install(
+    state: &AppState,
+    user: &User,
+    package: Package,
+    visibility: PluginVisibility,
+) -> AppResult<PluginInfo> {
+    let (info, files) = package.into_info(user, visibility)?;
 
     // ロックの外で一時ディレクトリに書いておく
     let staging = state
@@ -287,6 +379,26 @@ pub async fn install(state: &AppState, user: &User, package: Package) -> AppResu
     }
 
     let _guard = state.write_lock().await;
+    let prev = match plugins::get(&state.pool, &info.id).await {
+        Ok(prev) => prev,
+        Err(err) => {
+            remove_dir(&staging).await;
+            return Err(err.into());
+        }
+    };
+    if let Some(prev) = &prev
+        && !is_visible(prev, &user.id)
+    {
+        remove_dir(&staging).await;
+        return Err(AppError::new(
+            StatusCode::CONFLICT,
+            "plugin_id_taken",
+            format!(
+                "ID「{}」はほかの人が使っています。manifest.json の id を変えてください",
+                info.id
+            ),
+        ));
+    }
     let mut tx = state.pool.begin().await?;
     plugins::upsert(&mut tx, &info).await?;
 
@@ -306,21 +418,39 @@ pub async fn install(state: &AppState, user: &User, package: Package) -> AppResu
     if let Some(old) = old {
         remove_dir(&old).await;
     }
-    tracing::info!(id = %info.id, version = %info.version, user = %user.login_name, "プラグインを配布しました");
+    tracing::info!(id = %info.id, version = %info.version, visibility = ?info.visibility, user = %user.login_name, "プラグインを配布しました");
 
-    state.hub.broadcast(&ServerEvent::PluginUpdated {
+    let updated = ServerEvent::PluginUpdated {
         plugin: info.clone(),
-    });
+    };
+    match info.visibility {
+        PluginVisibility::Public => state.hub.broadcast(&updated),
+        PluginVisibility::Private => {
+            state.hub.send_to_user(&user.id, &updated);
+            // みんなのものを自分だけにしたら、ほかの人からは消える
+            if prev.is_some_and(|p| p.visibility == PluginVisibility::Public) {
+                state.hub.broadcast_except_user(
+                    &ServerEvent::PluginRemoved {
+                        plugin_id: info.id.clone(),
+                    },
+                    &user.id,
+                );
+            }
+        }
+    }
     Ok(info)
 }
 
-/// 削除する。セッションとカードは残す。
+/// 削除する。セッションとカードは残す。自分だけのものは持ち主だけが消せる（ほかの人には 404）。
 pub async fn remove(state: &AppState, user: &User, id: &str) -> AppResult<()> {
     validate_id(id)?;
     let _guard = state.write_lock().await;
-    if plugins::get(&state.pool, id).await?.is_none() {
+    let Some(info) = plugins::get(&state.pool, id)
+        .await?
+        .filter(|p| is_visible(p, &user.id))
+    else {
         return Err(AppError::not_found("プラグインが見つかりません"));
-    }
+    };
 
     let mut tx = state.pool.begin().await?;
     plugins::delete(&mut tx, id).await?;
@@ -329,9 +459,13 @@ pub async fn remove(state: &AppState, user: &User, id: &str) -> AppResult<()> {
     remove_dir(&plugin_dir(&state.config, id)).await;
     tracing::info!(id, user = %user.login_name, "プラグインを削除しました");
 
-    state.hub.broadcast(&ServerEvent::PluginRemoved {
+    let removed = ServerEvent::PluginRemoved {
         plugin_id: id.to_owned(),
-    });
+    };
+    match info.visibility {
+        PluginVisibility::Public => state.hub.broadcast(&removed),
+        PluginVisibility::Private => state.hub.send_to_user(&user.id, &removed),
+    }
     Ok(())
 }
 
@@ -429,6 +563,39 @@ mod tests {
             let err = icon(&format!(r#"{{{base},"icon":"{ng}"}}"#)).err().unwrap();
             assert_eq!(err.code, "invalid_manifest", "{ng}");
         }
+    }
+
+    #[test]
+    fn parses_manifest_type() {
+        let kind = |json: &str| parse_manifest(json.as_bytes()).map(|m| m.kind);
+        let base = r#""id":"sakura","name":"a","version":"1""#;
+        assert_eq!(kind(&format!("{{{base}}}")).ok(), Some(PluginKind::Plugin));
+        assert_eq!(
+            kind(&format!(r#"{{{base},"type":"plugin"}}"#)).ok(),
+            Some(PluginKind::Plugin)
+        );
+        assert_eq!(
+            kind(&format!(r#"{{{base},"type":"theme"}}"#)).ok(),
+            Some(PluginKind::Theme)
+        );
+        let err = kind(&format!(r#"{{{base},"type":"skin"}}"#)).err().unwrap();
+        assert_eq!(err.code, "invalid_manifest");
+    }
+
+    #[test]
+    fn parses_visibility() {
+        assert_eq!(
+            parse_visibility("public").ok(),
+            Some(PluginVisibility::Public)
+        );
+        assert_eq!(
+            parse_visibility("private").ok(),
+            Some(PluginVisibility::Private)
+        );
+        assert_eq!(
+            parse_visibility("friends").err().unwrap().code,
+            "invalid_visibility"
+        );
     }
 
     #[test]

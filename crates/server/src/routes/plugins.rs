@@ -1,10 +1,10 @@
-//! `/api/plugins`（プラグインの配布・配信・削除と、プラグインからの通知）。
+//! `/api/plugins`（プラグイン・テーマの配布・配信・削除と、プラグインからの通知）。
 
 use axum::Json;
 use axum::extract::{Multipart, Path, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use disnans_shared::{PluginInfo, PluginNotify};
+use disnans_shared::{PluginInfo, PluginNotify, PluginVisibility};
 
 use crate::auth::CurrentUser;
 use crate::error::{AppError, AppResult};
@@ -13,18 +13,30 @@ use crate::sessions;
 use crate::state::SharedState;
 use crate::store::plugins as plugin_store;
 
-pub async fn list(State(state): State<SharedState>) -> AppResult<Json<Vec<PluginInfo>>> {
-    Ok(Json(plugin_store::list(&state.pool).await?))
+/// みんなのものと、自分だけのもの。
+pub async fn list(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+) -> AppResult<Json<Vec<PluginInfo>>> {
+    Ok(Json(
+        plugin_store::list_visible(&state.pool, &user.id).await?,
+    ))
 }
 
 /// 配布・更新（multipart、フィールド名 `file` を複数）。ファイル名で種類を見分ける。
+/// フィールド `visibility`（`public` / `private`）で範囲を選ぶ。省略すると `public`。
 pub async fn upload(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     mut multipart: Multipart,
 ) -> AppResult<Json<PluginInfo>> {
     let mut package = Package::default();
+    let mut visibility = PluginVisibility::Public;
     while let Some(mut field) = multipart.next_field().await.map_err(bad_multipart)? {
+        if field.name() == Some("visibility") {
+            visibility = plugins::parse_visibility(&field.text().await.map_err(bad_multipart)?)?;
+            continue;
+        }
         if field.name() != Some("file") {
             continue;
         }
@@ -38,7 +50,8 @@ pub async fn upload(
             return Err(AppError::bad_request(
                 "invalid_file_name",
                 format!(
-                    "配布できないファイルです（{file_name}）。manifest.json / main.js / styles.css / icon.svg だけです"
+                    "配布できないファイルです（{file_name}）。{} だけです",
+                    plugins::ALLOWED_FILES_TEXT
                 ),
             ));
         }
@@ -51,7 +64,9 @@ pub async fn upload(
         }
         package.add(&file_name, data)?;
     }
-    Ok(Json(plugins::install(&state, &user, package).await?))
+    Ok(Json(
+        plugins::install(&state, &user, package, visibility).await?,
+    ))
 }
 
 pub async fn remove(
@@ -64,8 +79,10 @@ pub async fn remove(
 }
 
 /// 配布されたファイル。クライアントは `?v=<hash>` を付けて取るので、キャッシュは毎回確かめさせる。
+/// ほかの人の自分だけのものは、ないものとして扱う（404）。
 pub async fn file(
     State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
     Path((id, name)): Path<(String, String)>,
 ) -> AppResult<Response> {
     let not_found = || AppError::not_found("ファイルが見つかりません");
@@ -75,6 +92,7 @@ pub async fn file(
     }
     let info = plugin_store::get(&state.pool, &id)
         .await?
+        .filter(|p| plugins::is_visible(p, &user.id))
         .ok_or_else(not_found)?;
     if !info.files.contains(&name) {
         return Err(not_found());

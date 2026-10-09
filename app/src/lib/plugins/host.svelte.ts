@@ -5,12 +5,15 @@ import { registerSlashCommand } from '../slashCommands.svelte';
 import { registerComposerAction } from '../composerActions';
 import type { MessageCard } from '../protocol/MessageCard';
 import type { PluginInfo } from '../protocol/PluginInfo';
+import type { PluginKind } from '../protocol/PluginKind';
+import type { PluginVisibility } from '../protocol/PluginVisibility';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import { client } from '../stores/client.svelte';
 import { ui } from '../stores/ui.svelte';
 import { devFolderSupported, readDevPlugin, scanDevFolder } from './dev';
 import { matchHotkey } from './hotkey';
-import { manifestOf, parseManifest, PLUGIN_FILES } from './manifest';
+import { manifestOf, parsePackageManifest, PLUGIN_FILES } from './manifest';
+import { THEME_STYLE_SELECTOR, themeHost } from './themes.svelte';
 import { PluginBase, PluginRuntime, type ViewHandle } from './runtime';
 import { toPluginUser, VersionConflictError } from './sessions';
 import { createUi } from './ui';
@@ -22,18 +25,22 @@ const DEV_DIR_KEY = 'disnans.plugins.devDir';
 const DEV_POLL_MS = 1000;
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
-/** 開発用フォルダのプラグイン1つ（サブフォルダ1つ） */
+/** 開発用フォルダのプラグイン・テーマ1つ（サブフォルダ1つ） */
 export type DevPlugin = {
   folder: string;
   stamp: string;
   manifest: Manifest | null;
+  /** manifest の type（読めないときは plugin） */
+  kind: PluginKind;
   /** manifest.json の中身そのもの（配布のときはこれを送る） */
   manifestText: string | null;
   main: string | null;
   styles: string | null;
+  /** theme.css（テーマのとき） */
+  theme: string | null;
   /** icon.svg（任意） */
   icon: string | null;
-  /** manifest が読めない、main.js がない、など */
+  /** manifest が読めない、main.js（テーマなら theme.css）がない、など */
   error: string | null;
 };
 
@@ -63,8 +70,24 @@ export function pluginIconName(id: string): string {
   return `plugin:${id}`;
 }
 
+/** 設定のテーマの一覧に出す1件 */
+export type ThemeEntry = {
+  id: string;
+  manifest: Manifest | null;
+  server: PluginInfo | null;
+  dev: DevPlugin | null;
+  /** この端末で選んでいるか */
+  selected: boolean;
+  /** いま適用しているか */
+  applied: boolean;
+  error: string | null;
+  /** アイコンの名前（icon.svg → manifest.icon → palette） */
+  icon: string;
+};
+
 /** 既定のアイコン */
 const DEFAULT_PLUGIN_ICON = 'puzzle';
+const DEFAULT_THEME_ICON = 'palette';
 
 /** 動いているプラグイン1つ */
 type Loaded = {
@@ -172,6 +195,7 @@ class PluginHost {
   start(): void {
     if (this.started) return;
     this.started = true;
+    themeHost.boot();
     const host: Disnans.Host = Object.freeze({
       apiVersion: API_VERSION,
       Plugin: PluginBase,
@@ -281,11 +305,13 @@ class PluginHost {
       return e;
     };
     for (const p of this.server) {
+      if (p.type !== 'plugin') continue;
       const e = get(p.id);
       e.server = p;
       e.manifest = manifestOf(p);
     }
     for (const d of this.dev) {
+      if (d.kind !== 'plugin') continue;
       const e = get(d.manifest?.id ?? d.folder);
       e.dev = d;
       if (d.manifest) e.manifest = d.manifest;
@@ -295,14 +321,52 @@ class PluginHost {
     return [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
 
+  /** 設定のテーマの一覧（配布済み・開発中をまとめたもの）。ID 順 */
+  get themeEntries(): ThemeEntry[] {
+    void this.rev;
+    const map = new Map<string, ThemeEntry>();
+    const get = (id: string): ThemeEntry => {
+      let e = map.get(id);
+      if (!e) {
+        e = {
+          id,
+          manifest: null,
+          server: null,
+          dev: null,
+          selected: themeHost.selected === id,
+          applied: themeHost.applied === id,
+          error: themeHost.selected === id ? themeHost.error : null,
+          icon: DEFAULT_THEME_ICON,
+        };
+        map.set(id, e);
+      }
+      return e;
+    };
+    for (const p of this.server) {
+      if (p.type !== 'theme') continue;
+      const e = get(p.id);
+      e.server = p;
+      e.manifest = manifestOf(p);
+    }
+    for (const d of this.dev) {
+      if (d.kind !== 'theme') continue;
+      const e = get(d.manifest?.id ?? d.folder);
+      e.dev = d;
+      if (d.manifest) e.manifest = d.manifest;
+      if (d.error && !e.error) e.error = d.error;
+    }
+    for (const e of map.values()) e.icon = this.iconOf(e.id, e.manifest, DEFAULT_THEME_ICON);
+    return [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
+  }
+
   // ---- アイコン ----
 
   /** icon.svg を登録したもの（ID ごと）。key は何を読んだか（変わったら読み直す） */
   private icons = new Map<string, { key: string; off: (() => void) | null }>();
 
-  private iconOf(id: string, manifest: Manifest | null): string {
+  private iconOf(id: string, manifest: Manifest | null, fallback = DEFAULT_PLUGIN_ICON): string {
     if (this.icons.get(id)?.off) return pluginIconName(id);
-    return manifest?.icon || DEFAULT_PLUGIN_ICON;
+    return manifest?.icon || fallback;
   }
 
   /**
@@ -376,6 +440,7 @@ class PluginHost {
   reconcile(): Promise<void> {
     if (!this.helloSeen) return this.queue;
     this.syncIcons();
+    themeHost.sync(this.server, this.dev, this.devReady);
     this.queue = this.queue.then(() => this.reconcileNow()).catch((e) => console.error('[plugins]', e));
     return this.queue;
   }
@@ -383,7 +448,7 @@ class PluginHost {
   private wanted(): Map<string, Wanted> {
     const out = new Map<string, Wanted>();
     for (const p of this.server) {
-      if (this.disabled.includes(p.id)) continue;
+      if (p.type !== 'plugin' || this.disabled.includes(p.id)) continue;
       out.set(p.id, {
         sig: `server:${p.hash}`,
         manifest: manifestOf(p),
@@ -396,7 +461,7 @@ class PluginHost {
     // 同じ ID なら開発中のものを優先する
     for (const d of this.dev) {
       const m = d.manifest;
-      if (!m || d.error || d.main === null || this.disabled.includes(m.id)) continue;
+      if (!m || d.kind !== 'plugin' || d.error || d.main === null || this.disabled.includes(m.id)) continue;
       const main = d.main;
       out.set(m.id, { sig: `dev:${d.folder}:${d.stamp}`, manifest: m, load: async () => ({ main, styles: d.styles }) });
     }
@@ -471,7 +536,8 @@ class PluginHost {
       style = document.createElement('style');
       style.dataset.plugin = id;
       style.textContent = files.styles;
-      document.head.append(style);
+      // テーマ（あれば）が後ろに来るように、その前に入れる
+      document.head.insertBefore(style, document.head.querySelector(THEME_STYLE_SELECTOR));
     }
     const runtime = new PluginRuntime(Object.freeze({ ...w.manifest }), this.services);
     this.loaded.set(id, { runtime, sig: w.sig, style });
@@ -528,34 +594,40 @@ class PluginHost {
 
   // ---- 配布・削除 ----
 
-  /** 開発中のものを配布する */
-  async publishDev(d: DevPlugin): Promise<PluginInfo> {
-    if (!d.manifest || d.manifestText === null || d.main === null) throw new Error(d.error ?? 'manifest.json と main.js が必要です');
-    const files: { name: string; data: Blob }[] = [
-      { name: 'manifest.json', data: new Blob([d.manifestText], { type: 'application/json' }) },
-      { name: 'main.js', data: new Blob([d.main], { type: 'text/javascript' }) },
-    ];
-    if (d.styles !== null) files.push({ name: 'styles.css', data: new Blob([d.styles], { type: 'text/css' }) });
+  /** 開発中のもの（プラグイン・テーマ）を配布する。visibility は「みんな」か「自分だけ」 */
+  async publishDev(d: DevPlugin, visibility: PluginVisibility): Promise<PluginInfo> {
+    const body = d.kind === 'theme' ? d.theme : d.main;
+    if (!d.manifest || d.manifestText === null || body === null) {
+      throw new Error(d.error ?? (d.kind === 'theme' ? 'manifest.json と theme.css が必要です' : 'manifest.json と main.js が必要です'));
+    }
+    const files: { name: string; data: Blob }[] = [{ name: 'manifest.json', data: new Blob([d.manifestText], { type: 'application/json' }) }];
+    if (d.kind === 'theme') {
+      files.push({ name: 'theme.css', data: new Blob([body], { type: 'text/css' }) });
+    } else {
+      files.push({ name: 'main.js', data: new Blob([body], { type: 'text/javascript' }) });
+      if (d.styles !== null) files.push({ name: 'styles.css', data: new Blob([d.styles], { type: 'text/css' }) });
+    }
     if (d.icon !== null) files.push({ name: 'icon.svg', data: new Blob([d.icon], { type: 'image/svg+xml' }) });
-    return this.publish(files);
+    return this.publish(files, visibility);
   }
 
-  /** 選んだファイルを配布する（ブラウザー版） */
-  async publishFiles(list: File[]): Promise<PluginInfo> {
+  /** 選んだファイルを配布する（ブラウザー版）。プラグインかテーマかは manifest でサーバーが見分ける */
+  async publishFiles(list: File[], visibility: PluginVisibility): Promise<PluginInfo> {
     const names = new Set<string>(PLUGIN_FILES);
     const files: { name: string; data: Blob }[] = [];
     for (const f of list) {
-      if (!names.has(f.name)) throw new Error(`配布できないファイルです（${f.name}）。manifest.json / main.js / styles.css / icon.svg だけです`);
+      if (!names.has(f.name)) throw new Error(`配布できないファイルです（${f.name}）。${PLUGIN_FILES.join(' / ')} だけです`);
       files.push({ name: f.name, data: f });
     }
-    if (!files.some((f) => f.name === 'manifest.json') || !files.some((f) => f.name === 'main.js')) {
-      throw new Error('manifest.json と main.js を選んでください');
+    const has = (name: string) => files.some((f) => f.name === name);
+    if (!has('manifest.json') || !(has('main.js') || has('theme.css'))) {
+      throw new Error('manifest.json と main.js（テーマなら theme.css）を選んでください');
     }
-    return this.publish(files);
+    return this.publish(files, visibility);
   }
 
-  private async publish(files: { name: string; data: Blob }[]): Promise<PluginInfo> {
-    const info = await api.publishPlugin(files);
+  private async publish(files: { name: string; data: Blob }[], visibility: PluginVisibility): Promise<PluginInfo> {
+    const info = await api.publishPlugin(files, visibility);
     // plugin.updated も届くが、先に反映しておく
     this.onEvent({ type: 'plugin.updated', plugin: info });
     return info;
@@ -568,11 +640,19 @@ class PluginHost {
 
   // ---- 開発用フォルダ ----
 
+  /** 開発用フォルダを1回は読み終えたか（テーマを外してよいかの判定に使う） */
+  private devScanned = false;
+
+  private get devReady(): boolean {
+    return !devFolderSupported() || !this.devDir || this.devScanned;
+  }
+
   setDevDir(dir: string): void {
     this.devDir = dir.trim();
     setItem(DEV_DIR_KEY, this.devDir || null);
     this.dev = [];
     this.devError = null;
+    this.devScanned = false;
     this.restartDevPolling();
     this.reconcile();
   }
@@ -606,12 +686,20 @@ class PluginHost {
         changed = true;
         next.push(await this.readDev(dir, s.folder, s.stamp));
       }
-      if (changed && dir === this.devDir) {
+      const first = !this.devScanned;
+      this.devScanned = true;
+      if ((changed || first) && dir === this.devDir) {
         this.dev = next;
         this.reconcile();
       }
     } catch (e) {
-      if (dir === this.devDir) this.devError = errorMessage(e);
+      if (dir === this.devDir) {
+        this.devError = errorMessage(e);
+        if (!this.devScanned) {
+          this.devScanned = true;
+          this.reconcile();
+        }
+      }
     } finally {
       this.devBusy = false;
     }
@@ -619,16 +707,23 @@ class PluginHost {
 
   private async readDev(dir: string, folder: string, stamp: string): Promise<DevPlugin> {
     // 読めなかったときも scan の stamp を覚え、変わるまで読み直さない
-    const d: DevPlugin = { folder, stamp, manifest: null, manifestText: null, main: null, styles: null, icon: null, error: null };
+    const d: DevPlugin = { folder, stamp, manifest: null, kind: 'plugin', manifestText: null, main: null, styles: null, theme: null, icon: null, error: null };
     try {
       const f = await readDevPlugin(dir, folder);
       d.main = f.main;
       d.styles = f.styles;
+      d.theme = f.theme;
       d.icon = f.icon;
       d.manifestText = f.manifest;
       if (f.manifest === null) throw new Error('manifest.json がありません');
-      d.manifest = parseManifest(f.manifest);
-      if (f.main === null) throw new Error('main.js がありません');
+      const parsed = parsePackageManifest(f.manifest);
+      d.manifest = parsed.manifest;
+      d.kind = parsed.kind;
+      if (d.kind === 'theme') {
+        if (f.theme === null) throw new Error('theme.css がありません');
+      } else if (f.main === null) {
+        throw new Error('main.js がありません');
+      }
     } catch (e) {
       d.error = errorMessage(e);
     }

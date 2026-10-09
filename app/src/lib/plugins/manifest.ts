@@ -1,11 +1,12 @@
 import type { PluginInfo } from '../protocol/PluginInfo';
+import type { PluginKind } from '../protocol/PluginKind';
 import type { Manifest } from './types';
 
 /** プラグイン ID: 英小文字・数字・ハイフン（2〜32文字） */
 export const PLUGIN_ID_RE = /^[a-z0-9-]{2,32}$/;
 
-/** 配布できるファイル */
-export const PLUGIN_FILES = ['manifest.json', 'main.js', 'styles.css', 'icon.svg'] as const;
+/** 配布できるファイル（プラグインは manifest.json / main.js / styles.css / icon.svg、テーマは manifest.json / theme.css / icon.svg） */
+export const PLUGIN_FILES = ['manifest.json', 'main.js', 'styles.css', 'theme.css', 'icon.svg'] as const;
 
 /** manifest の icon（Lucide のアイコン名）: 英小文字・数字・ハイフン */
 export const MANIFEST_ICON_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -15,6 +16,11 @@ export const MANIFEST_ICON_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
  * 読めなければ、利用者に見せる文言の Error を投げる。
  */
 export function parseManifest(text: string): Manifest {
+  return parsePackageManifest(text).manifest;
+}
+
+/** manifest.json を読み、種類（`type`。省略すると plugin）も返す */
+export function parsePackageManifest(text: string): { manifest: Manifest; kind: PluginKind } {
   let v: unknown;
   try {
     v = JSON.parse(text);
@@ -37,6 +43,8 @@ export function parseManifest(text: string): Manifest {
   if (icon !== undefined && (typeof icon !== 'string' || !MANIFEST_ICON_RE.test(icon))) {
     throw new Error('manifest.json の icon は Lucide のアイコン名（英小文字・数字・ハイフン。例: "dice-5"）にしてください');
   }
+  const type = o.type ?? 'plugin';
+  if (type !== 'plugin' && type !== 'theme') throw new Error('manifest.json の type は "plugin" か "theme" にしてください');
   const m: Manifest = {
     id,
     name: str('name', true),
@@ -46,7 +54,7 @@ export function parseManifest(text: string): Manifest {
     minApiVersion: min,
   };
   if (icon !== undefined) m.icon = icon;
-  return m;
+  return { manifest: m, kind: type };
 }
 
 /** サーバーの PluginInfo から manifest を作る */
