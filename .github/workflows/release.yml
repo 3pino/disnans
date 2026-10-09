@@ -34,8 +34,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG" --draft --title "disnans $TAG" --generate-notes
-          echo "release_id=$(gh api repos/${{ github.repository }}/releases --jq ".[] | select(.tag_name == \"$TAG\") | .id")" >> "$GITHUB_OUTPUT"
+          # 下書きはタグで検索できないことがあるので、作成時のレスポンスから ID を受け取る
+          ID=$(gh api -X POST repos/${{ github.repository }}/releases \
+            -f tag_name="$TAG" -f name="disnans $TAG" \
+            -F draft=true -F generate_release_notes=true --jq .id)
+          if [ -z "$ID" ]; then
+            echo "::error::リリースの作成に失敗しました"
+            exit 1
+          fi
+          echo "release_id=$ID" >> "$GITHUB_OUTPUT"
 
   desktop:
     needs: create-release
