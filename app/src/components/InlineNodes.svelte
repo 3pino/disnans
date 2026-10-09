@@ -8,7 +8,12 @@
 
 {#each nodes as n, i (i)}
   {#if n.type === 'text'}{n.text}{:else if n.type === 'bold'}<strong><InlineNodes nodes={n.children} /></strong
-    >{:else if n.type === 'italic'}<em><InlineNodes nodes={n.children} /></em>{:else if n.type === 'link'}<a
+    >{:else if n.type === 'italic'}<em><InlineNodes nodes={n.children} /></em
+    >{:else if n.type === 'underline'}<u><InlineNodes nodes={n.children} /></u
+    >{:else if n.type === 'strike'}<s><InlineNodes nodes={n.children} /></s
+    >{:else if n.type === 'highlight'}<mark class="inline-highlight"><InlineNodes nodes={n.children} /></mark
+    >{:else if n.type === 'code'}<code class="inline-code">{n.text}</code
+    >{:else if n.type === 'link'}<a
       class="inline-link"
       href={n.href}
       target="_blank"
@@ -34,5 +39,20 @@
   }
   .inline-link {
     word-break: break-all;
+  }
+  .inline-highlight {
+    padding: 0 2px;
+    border-radius: 3px;
+    background: rgba(250, 204, 21, 0.35);
+    color: inherit;
+  }
+  .inline-code {
+    padding: 0 4px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    font-family: var(--mono);
+    font-size: 0.92em;
+    white-space: pre-wrap;
   }
 </style>

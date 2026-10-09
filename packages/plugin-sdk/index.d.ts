@@ -1,5 +1,5 @@
 /**
- * disnans プラグインの型定義（ホスト API バージョン 2）。
+ * disnans プラグインの型定義（ホスト API バージョン 3）。
  *
  * プラグインの main.js は ES モジュールで、`Plugin` を継承したクラスを `export default` する。
  * ホスト API はグローバルの `disnans` から取る（`import` は使わない）。
@@ -56,7 +56,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 2） */
+      /** ホスト API のバージョン（いまは 3） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -152,7 +152,37 @@ declare global {
 
       /** 通知を送る。session を渡すと、通知から開いたときにそのカードの場所を開く */
       notify(userIds: string[], text: string, opts?: { session?: Session<any> }): Promise<void>;
+
+      /**
+       * このプラグインの一時的なイベントを、いまつながっているほかの人（と自分の別の端末）に送る（API v3）。
+       * セッションには紐づかず、保存もしない。自分には届かない。届くのはオンラインの人だけで、遅れて来た人には届かない。
+       * 宛先は選べず全員に届くので、宛先が要るときは payload に入れて受け取る側で見分ける。payload は 64 KB まで
+       */
+      broadcast(name: string, payload?: unknown): void;
+      /** broadcast を受け取る（API v3）。外すときに自動で外れる。from は送った人 */
+      onBroadcast(name: string, cb: (payload: unknown, from: User) => void): Cleanup;
+      /**
+       * 常時表示のステータス欄（アプリの最上部の帯）に出す要素を足して返す（API v3）。
+       * 中身はプラグインが自由に描く。何も入れない（`:empty`）間は隠れる。外すときに自動で消える
+       */
+      addStatusBarItem(): HTMLElement;
+      /**
+       * 画面を消したり別のアプリに切り替えたりしても動き続けられるようにする（API v3。通話など）。
+       * Android ではフォアグラウンドサービスを動かし、通知欄に「動いています」と出す。
+       * デスクトップなど、ほかの環境では何もしない。戻り値の関数で解除する（外すときにも自動で解除される）。
+       * `microphone` を使うときは、先にマイクの許可を得ておく（getUserMedia のあとに呼ぶ）
+       */
+      holdBackground(opts?: BackgroundOptions): Promise<Cleanup>;
     }
+
+    type BackgroundOptions = {
+      /** マイクを使い続ける（Android の microphone 型のサービス） */
+      microphone?: boolean;
+      /** 通知欄の題名（省略するとプラグイン名） */
+      title?: string;
+      /** 通知欄の本文 */
+      text?: string;
+    };
 
     // ---- 入力欄 ----
 

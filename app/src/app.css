@@ -5,6 +5,9 @@
   --surface: oklch(0.94 0.015 248);
   --surface-2: oklch(0.9 0.015 248);
   --border: oklch(0.84 0.015 248);
+  /* 入力欄（カード・input・textarea）にフォーカスしたとき。青くせず、枠と背景を少し明るくする */
+  --border-focus: oklch(0.92 0.012 248);
+  --field-focus-bg: oklch(0.97 0.012 248);
   --text-muted: oklch(0.48 0.015 248);
   --text: oklch(0.22 0.015 248);
 
@@ -40,6 +43,8 @@
     --surface: oklch(0.21 0.015 248);
     --surface-2: oklch(0.26 0.015 248);
     --border: oklch(0.32 0.015 248);
+    --border-focus: oklch(0.43 0.015 248);
+    --field-focus-bg: oklch(0.245 0.015 248);
     --text-muted: oklch(0.7 0.015 248);
     --text: oklch(0.93 0.015 248);
 
@@ -60,6 +65,8 @@
   --surface: oklch(0.21 0.015 248);
   --surface-2: oklch(0.26 0.015 248);
   --border: oklch(0.32 0.015 248);
+  --border-focus: oklch(0.43 0.015 248);
+  --field-focus-bg: oklch(0.245 0.015 248);
   --text-muted: oklch(0.7 0.015 248);
   --text: oklch(0.93 0.015 248);
 
@@ -79,11 +86,24 @@
   box-sizing: border-box;
 }
 
+/* 横にはみ出さず、端まで引っぱっても画面全体が動かないようにする（スクロールの跳ね返りも止める）。
+   ピンチでの拡大は touch-action で止める。横に動かしてよい `pan-x` は残し、拡大（pinch-zoom）だけを外す。
+   touch-action は重ねた要素の値の共通部分になるので、スクロールする要素（.scroll・コードブロックなど）にも付ける。
+   横にスクロールできる箇所（コードブロックなど）は、その要素の中で横に動く */
 html,
 body {
   margin: 0;
   height: 100%;
   overflow: hidden;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-x pan-y;
+}
+
+*,
+*::before,
+*::after {
+  touch-action: pan-x pan-y;
 }
 
 body {
@@ -96,9 +116,11 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* 高さは lib/viewport.ts が、キーボードを出したときの見えている高さ（visualViewport）に合わせる */
 #app {
   height: 100%;
-  height: 100dvh;
+  height: var(--app-height, 100dvh);
+  overflow: hidden;
 }
 
 button,
@@ -257,7 +279,8 @@ a {
   outline: none;
 }
 .input:focus {
-  border-color: var(--accent);
+  border-color: var(--border-focus);
+  background: var(--field-focus-bg);
 }
 
 .muted {

@@ -92,6 +92,18 @@ export class PluginBase implements Disnans.Plugin {
   notify(userIds: string[], text: string, opts?: { session?: Disnans.Session<any> }): Promise<void> {
     return rt(this).notify(userIds, text, opts?.session?.id ?? null);
   }
+  broadcast(name: string, payload?: unknown): void {
+    rt(this).broadcast(name, payload);
+  }
+  onBroadcast(name: string, cb: (payload: unknown, from: Disnans.User) => void): Cleanup {
+    return rt(this).onBroadcast(name, cb);
+  }
+  addStatusBarItem(): HTMLElement {
+    return rt(this).addStatusBarItem();
+  }
+  holdBackground(opts?: Disnans.BackgroundOptions): Promise<Cleanup> {
+    return rt(this).holdBackground(opts ?? {});
+  }
 }
 
 // ---- 読み込み1回分 ----
@@ -111,6 +123,7 @@ export class PluginRuntime {
   readonly errors: string[] = [];
 
   private cleanups: Cleanup[] = [];
+  private broadcastListeners = new Map<string, Set<(payload: unknown, from: Disnans.User) => void>>();
   private openViews = new Set<ViewHandle>();
 
   constructor(
@@ -168,6 +181,7 @@ export class PluginRuntime {
     for (const h of [...this.openViews]) h.close();
     this.services.closePanel(this.id);
     this.sessions.dispose();
+    this.broadcastListeners.clear();
     this.services.changed();
   }
 
@@ -343,6 +357,68 @@ export class PluginRuntime {
     if (this.stopped) return;
     el.addEventListener(type, cb);
     this.register(() => el.removeEventListener(type, cb));
+  }
+
+  // ---- プラグイン全体の一時的なイベント ----
+
+  broadcast(name: string, payload?: unknown): void {
+    if (this.stopped) return;
+    this.services.send({ type: 'plugin.emit', plugin: this.id, name, payload: payload ?? null });
+  }
+
+  onBroadcast(name: string, cb: (payload: unknown, from: Disnans.User) => void): Cleanup {
+    let set = this.broadcastListeners.get(name);
+    if (!set) {
+      set = new Set();
+      this.broadcastListeners.set(name, set);
+    }
+    const listeners = set;
+    listeners.add(cb);
+    const off = () => void listeners.delete(cb);
+    this.register(off);
+    return off;
+  }
+
+  /** plugin.event を受け取ったとき */
+  dispatchBroadcast(name: string, payload: unknown, fromId: string): void {
+    if (this.stopped) return;
+    const set = this.broadcastListeners.get(name);
+    if (!set) return;
+    const from = this.services.app.user(fromId) ?? {
+      id: fromId,
+      login_name: '',
+      display_name: '不明なユーザー',
+      avatar_url: null,
+    };
+    for (const cb of [...set]) {
+      try {
+        cb(payload, from);
+      } catch (e) {
+        this.log(`onBroadcast('${name}') で例外`, e);
+      }
+    }
+  }
+
+  // ---- ステータス欄・常駐 ----
+
+  addStatusBarItem(): HTMLElement {
+    const el = document.createElement('div');
+    if (this.stopped) return el;
+    this.register(this.services.registerStatusItem(this.id, el));
+    return el;
+  }
+
+  async holdBackground(opts: Disnans.BackgroundOptions): Promise<Cleanup> {
+    if (this.stopped) return () => {};
+    const release = await this.services.holdBackground({ ...opts, title: opts.title ?? this.manifest.name });
+    let done = false;
+    const once = () => {
+      if (done) return;
+      done = true;
+      release();
+    };
+    this.register(once);
+    return once;
   }
 
   // ---- view ----

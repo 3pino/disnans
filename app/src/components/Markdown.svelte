@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { parse, type Block } from '../lib/markdown';
+  import { parse, type Block, type ListItem } from '../lib/markdown';
   import InlineNodes from './InlineNodes.svelte';
   import CodeBlock from './CodeBlock.svelte';
 
@@ -23,15 +23,19 @@
     {:else if b.type === 'list'}
       {#if b.ordered}
         <ol start={b.start}>
-          {#each b.items as item, j (j)}<li><InlineNodes nodes={item} /></li>{/each}
+          {#each b.items as item, j (j)}{@render listItem(item)}{/each}
         </ol>
       {:else}
         <ul>
-          {#each b.items as item, j (j)}<li><InlineNodes nodes={item} /></li>{/each}
+          {#each b.items as item, j (j)}{@render listItem(item)}{/each}
         </ul>
       {/if}
     {/if}
   {/each}
+{/snippet}
+
+{#snippet listItem(item: ListItem)}
+  <li>{#each item.lines as line, k (k)}{#if k > 0}<br />{/if}<InlineNodes nodes={line} />{/each}{#if item.children.length > 0}{@render render(item.children)}{/if}</li>
 {/snippet}
 
 <div class="markdown-body">
@@ -60,6 +64,9 @@
   }
   .markdown-body :global(li::marker) {
     color: var(--text-muted);
+  }
+  .markdown-body :global(li > * + *) {
+    margin-top: 0.2em;
   }
   .markdown-body :global(pre) {
     padding: 10px 12px;

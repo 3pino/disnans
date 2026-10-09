@@ -66,6 +66,14 @@
     };
   });
 
+  // 設定の中のタブ。「キー」には入力欄のキーとショートカットを置く
+  type SettingsPage = 'general' | 'keys';
+  let settingsPage = $state<SettingsPage>('general');
+  const settingsPages: { value: SettingsPage; label: string }[] = [
+    { value: 'general', label: '一般' },
+    { value: 'keys', label: 'キー' },
+  ];
+
   const themes: { value: ThemePref; label: string; icon: typeof Sun }[] = [
     { value: 'system', label: '自動', icon: Monitor },
     { value: 'light', label: 'ライト', icon: Sun },
@@ -184,6 +192,15 @@
 
   <div class="scroll settings-body">
     <div class="settings-content">
+      <SegmentedButton
+        class="settings-page-tabs"
+        label="設定の種類"
+        options={settingsPages}
+        value={settingsPage}
+        onchange={(v) => (settingsPage = v)}
+      />
+
+      {#if settingsPage === 'general'}
       <Section title="プロフィール" class="settings-profile">
         {#if client.me}
           <div class="settings-profile-card">
@@ -281,8 +298,6 @@
         </Button>
       </Section>
 
-      <KeySettings />
-
       <PluginSettings />
 
       {#if isTauri() || devUser}
@@ -355,6 +370,9 @@
           </div>
         {/if}
       </Section>
+      {:else}
+        <KeySettings />
+      {/if}
     </div>
   </div>
 </div>
@@ -373,6 +391,9 @@
   .settings-body {
     flex: 1;
     min-height: 0;
+  }
+  .settings-content > :global(.settings-page-tabs) {
+    margin-bottom: 4px;
   }
   .settings-content {
     max-width: 640px;

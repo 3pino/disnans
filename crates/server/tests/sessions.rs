@@ -379,6 +379,57 @@ async fn emit_is_relayed_to_other_connections() {
 }
 
 #[tokio::test]
+async fn plugin_emit_is_relayed_without_a_session() {
+    let server = TestServer::start().await;
+    let alice_user: User = server.get_json(ALICE, "/api/me").await;
+    let mut alice = server.ws(ALICE).await;
+    let mut bob = server.ws(BOB).await;
+    alice.recv().await; // bob の user.updated
+
+    alice
+        .send(ClientEvent::PluginEmit {
+            plugin: "voice".into(),
+            name: "presence".into(),
+            payload: json!({ "muted": false }),
+        })
+        .await;
+    let ServerEvent::PluginEvent {
+        plugin,
+        from,
+        name,
+        payload,
+    } = bob.recv().await
+    else {
+        panic!()
+    };
+    assert_eq!(plugin, "voice");
+    assert_eq!(from, alice_user.id);
+    assert_eq!(name, "presence");
+    assert_eq!(payload, json!({ "muted": false }));
+    // 送った接続には返さない
+    alice.assert_silent(Duration::from_millis(200)).await;
+
+    // 不正なプラグイン ID・大きすぎる payload
+    alice
+        .send(ClientEvent::PluginEmit {
+            plugin: "Bad Id".into(),
+            name: "x".into(),
+            payload: json!(null),
+        })
+        .await;
+    alice.expect_error().await;
+    alice
+        .send(ClientEvent::PluginEmit {
+            plugin: "voice".into(),
+            name: "big".into(),
+            payload: json!("x".repeat(64 * 1024)),
+        })
+        .await;
+    assert_eq!(alice.expect_error().await.1, "payload_too_large");
+    bob.assert_silent(Duration::from_millis(200)).await;
+}
+
+#[tokio::test]
 async fn plugin_notify() {
     let server = TestServer::start().await;
     let alice_user: User = server.get_json(ALICE, "/api/me").await;

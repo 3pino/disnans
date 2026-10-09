@@ -22,7 +22,8 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 - 設計: [`SPEC.md`](../SPEC.md) の 3.3 と 9章
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
 - UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](PLUGIN_UI.md)
-- ホスト API のバージョン: **2**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から）
+- ホスト API のバージョン: **3**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から）
+- もう1つの実例 **ボイスチャット**（[`examples/voice/`](../examples/voice/)）は、v3 の API で作った通話のプラグインです（→ [ボイスチャットの作り](#実例ボイスチャットv3-の-api)）
 
 ## 目次
 
@@ -113,7 +114,7 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `2`（`1` の本体には `addCommand` の `slash` などがない） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `3`（`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がない） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -234,13 +235,16 @@ app/node_modules/.bin/tsc -p examples/dice
 | `session.update(state, { card })` / `session.onChange(cb)` | 楽観ロック付きの保存、変更の購読 |
 | `session.emit(name, payload)` / `session.on(name, cb)` | 保存しない一時的なイベント |
 | `this.notify(userIds, text, { session })` | 通知 |
+| `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント（v3）。いまつながっている人に届く |
+| `this.addStatusBarItem()` | 常時表示のステータス欄に出す要素（v3） |
+| `this.holdBackground({ microphone })` | 画面を切っても動き続ける（v3。Android のフォアグラウンドサービス） |
 | `this.addSettingTab(tab)` | プラグインの設定画面（設定 → プラグインの一覧で、トグルの右の歯車から開く） |
 | `this.addIcon(name, svg)` | 独自のアイコンを登録する（→ [PLUGIN_UI.md](PLUGIN_UI.md#addicon独自のアイコン)） |
 | `this.loadData()` / `this.saveData(data)` | その端末にだけ保存するデータ |
 | `this.register(cleanup)` / `this.registerDomEvent(...)` / `this.registerInterval(id)` | 後始末を自動で行う登録 |
 | `disnans.ui.*` | 本体と同じ見た目の部品とアイコン（→ [PLUGIN_UI.md](PLUGIN_UI.md)） |
 | `disnans.VersionConflictError` | `session.update` がぶつかったときのエラー |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 2） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 3） |
 
 ### コマンド（パレット・ショートカット・スラッシュコマンド）
 
@@ -497,6 +501,48 @@ this.registerDomEvent(document, 'visibilitychange', () => {
 });
 ```
 
+### プラグイン全体の一時的なイベント（broadcast、v3）
+
+`session.emit` は、先にセッション（とチャットのカード）を作らないと使えません。通話の在室やシグナリングのように、**カードを作らず、いまつながっている人に届けばよいもの**には `broadcast` を使います。
+
+```js
+// 送る。自分には届かない（自分の別の端末には届く）。payload は JSON にできる値で、64 KB まで
+this.broadcast('presence', { peer: 'abc', muted: false });
+
+// 受け取る。from は送った人。外すときに自動で外れる（戻り値の関数でも外せる）
+const off = this.onBroadcast('presence', (payload, from) => { /* ... */ });
+```
+
+- 保存しません。オンラインの人にだけ届き、あとから来た人には届きません（来た人に今の状態を知らせたいときは、定期的に送る・来た人に気づいたら送る、などをプラグインでします）
+- 宛先は選べず、**プラグイン ID が同じなら全員に**届きます（そのプラグインを入れていない人の端末では、何も起きません）。1人宛てにしたいときは payload に宛先を入れ、受け取る側で見分けます
+- 名前は 64 文字まで。ネットワークが切れている間のイベントは失われます
+
+### ステータス欄（addStatusBarItem、v3）
+
+アプリの下端（モバイルでは下のナビゲーションの上）にある、プラグイン共通の**常時表示の帯**に要素を足します。画面（チャット・設定・スレッド）を切り替えても出ています。
+
+```js
+const el = this.addStatusBarItem(); // 空の <div>。外すときに自動で消える
+el.replaceChildren(ui.icon('headphones'), 'ボイスチャット');
+```
+
+- 中身は自由に描きます。**何も入れていない（`:empty`）間は項目も帯も隠れる**ので、出したいときだけ描いてください
+- 帯は小さいので、アイコンと短い文字、小さなボタンだけにします。大きな画面は view を使います
+- 色や大きさは CSS 変数と共通クラスを使います（帯の背景は `--surface`）
+
+### 画面を切っても動き続ける（holdBackground、v3）
+
+```js
+// getUserMedia でマイクの許可を得たあとに呼ぶ
+const release = await this.holdBackground({ microphone: true, title: 'ボイスチャット', text: '通話中です' });
+// やめるとき
+release();
+```
+
+- **Android**: フォアグラウンドサービス（`microphone` 型）を動かし、通知欄に「通話中」を出します。画面を消す・別のアプリに切り替えるときに、WebView を止めない（タイマーと WebRTC が続く）ようにもします。`microphone: true` は、**マイクの許可を得たあと、アプリが前面にあるときに**呼びます（Android 14 以降の決まり）
+- **デスクトップ・ブラウザー**: ウィンドウが裏に回っても動くので、何もしません
+- 複数のプラグインが頼んでもよく、最後の1つが解除されたら止まります。プラグインを外すと自動で解除されます
+
 ### 通知
 
 ```js
@@ -598,6 +644,34 @@ const { ui } = disnans;
 ui.button({ text: '振る', icon: 'dices', variant: 'primary', onClick: () => this.roll() });
 ui.toast('設定を初期値に戻しました');
 ```
+
+### 実例: ボイスチャット（v3 の API）
+
+[`examples/voice/`](../examples/voice/) は、みんな共通の1部屋の音声通話です。**本体に通話の機能はなく、すべてプラグインの中**で動きます。
+
+| やりたいこと | 使っている API |
+|---|---|
+| 参加・退出・ミュート（パレット、`/vc-join` `/vc-leave` `/vc-mute`、Ctrl+Shift+M） | `addCommand` |
+| 「＋」メニューの「ボイスチャットに参加」 | `addComposerAction` |
+| いま通話にいる人のアイコンを常に出す・しゃべっている人の枠が光る・押すと自分の側だけ消音 | `addStatusBarItem`（v3） |
+| 在室の管理（3 秒ごとに知らせ、12 秒途絶えたら落ちたと見なす）と、offer / answer / ICE のやり取り | `broadcast` / `onBroadcast`（v3） |
+| 画面を消しても通話を続ける（Android） | `holdBackground`（v3） |
+| 設定（参加時にミュート、STUN サーバー） | `addSettingTab`、`loadData` / `saveData`、`ui.setting` / `ui.toggle` / `ui.input` |
+
+しくみ:
+
+- 参加すると `getUserMedia` でマイクを開き、`presence`（自分の peer ID とミュート）を 3 秒ごとに `broadcast` します。参加していない人も受け取って「通話中」の表示に使います
+- 新しい peer を見つけたら、**peer ID が小さいほうだけ**が WebRTC の offer を出します（同時に出し合わない）。`signal` イベントに `to`（相手の peer ID）を入れ、宛先でない人は無視します
+- 音声は端末同士が直接つなぐメッシュ（10 人ほどまで）。Tailscale の中なので STUN / TURN は要りません
+- 落ちた人（ハートビートが 12 秒途絶えた人）の接続は閉じて表示から外します。つながらない接続は 20 秒で作り直します
+- 画面が裏に回ってもハートビートが止まらないよう、タイマーは Web Worker で回しています
+
+必要なもの（環境ごと）:
+
+- **マイクを使うには、アプリ版（Tauri）が必要**です。WebView の `getUserMedia` は安全なコンテキストでしか動かないため、`http://` で開いたブラウザー版（Tailscale の IP など）では使えません
+- Android: マイクの許可（初回の参加で聞かれる）と、通話中のフォアグラウンドサービスをアプリが持っています
+- Linux: GStreamer のプラグイン（`gstreamer1.0-plugins-good` / `-bad` / `gstreamer1.0-nice`）が要ります
+- Windows: 追加の準備は要りません
 
 ---
 

@@ -5,6 +5,8 @@ description = "通知用の常駐サービスの操作を許可する"
 permissions = [
   "allow-start",
   "allow-stop",
+  "allow-start-call",
+  "allow-stop-call",
   "allow-status",
   "allow-request-permission",
   "allow-open-battery-settings",

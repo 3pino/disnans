@@ -284,6 +284,7 @@ class Client {
       case 'plugin.removed':
       case 'session.updated':
       case 'session.event':
+      case 'plugin.event':
         // プラグインのホスト（lib/plugins/host.svelte.ts）が subscribe で受け取る
         break;
       case 'prefs.updated':

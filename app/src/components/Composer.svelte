@@ -10,8 +10,10 @@
   import IconButton from './ui/IconButton.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
+  import { untrack } from 'svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { draftKey, loadDraft, saveDraft } from '../lib/drafts';
   import { uploadFile } from '../lib/api';
   import type { Attachment } from '../lib/protocol/Attachment';
   import { composerActions, type BuiltinComposerAction, type ComposerAction } from '../lib/composerActions';
@@ -39,6 +41,16 @@
   /** コマンドを実行中（終わるまで次を送らない） */
   let running = $state(false);
   let seq = 0;
+
+  /** 下書きを保存する場所（メインチャット・スレッドごと、ユーザーごと）。ユーザーがまだ分からないときは保存しない */
+  const draftId = $derived(client.me ? draftKey(client.me.id, threadId) : null);
+  /** 下書きの文章。場所を切り替えたら、その場所の下書きで入力欄を作り直す（{#key} の中） */
+  const draftText = $derived(draftId ? loadDraft(draftId) : '');
+
+  $effect(() => {
+    const t = draftText;
+    untrack(() => (hasText = t.trim() !== ''));
+  });
 
   const uploading = $derived(uploads.some((u) => !u.attachment && !u.error));
   const ready = $derived(uploads.filter((u) => u.attachment));
@@ -103,9 +115,10 @@
   function submit() {
     if (!input || running) return;
     const parsed = parseSlashInput(input.getBody());
+    const key = draftId;
     // コマンドは送らずに実行する。添付はそのまま残す
     if (parsed.kind === 'command') {
-      if (client.ready) void runCommand(parsed.name, parsed.args);
+      if (client.ready) void runCommand(parsed.name, parsed.args, key);
       return;
     }
     if (!canSend) return;
@@ -119,17 +132,19 @@
     client.sendMessage({ threadId, body, attachments });
     input.clear();
     hasText = false;
+    if (key) saveDraft(key, '');
     // プレビュー用の blob URL は、仮表示が終わるまで残しておく必要がないので破棄する
     for (const u of uploads) if (u.preview) URL.revokeObjectURL(u.preview);
     uploads = uploads.filter((u) => !u.attachment);
   }
 
-  async function runCommand(name: string, args: string) {
+  async function runCommand(name: string, args: string, key: string | null) {
     running = true;
     try {
       await runSlashCommand(name, args, threadId);
       input?.clear();
       hasText = false;
+      if (key) saveDraft(key, '');
     } catch (e) {
       ui.toast(e instanceof Error ? e.message : String(e), 'error');
     } finally {
@@ -198,15 +213,21 @@
       {/if}
     </div>
 
-    <MessageInput
-      bind:this={input}
-      {placeholder}
-      commands
-      onsubmit={submit}
-      onfiles={addFiles}
-      onarrowupempty={editLast}
-      oninput={(t) => (hasText = t.trim().length > 0)}
-    />
+    {#key draftId}
+      <MessageInput
+        bind:this={input}
+        {placeholder}
+        commands
+        initial={draftText}
+        onsubmit={submit}
+        onfiles={addFiles}
+        onarrowupempty={editLast}
+        oninput={(t) => {
+          hasText = t.trim().length > 0;
+          if (draftId && input) saveDraft(draftId, input.getRawBody());
+        }}
+      />
+    {/key}
 
     <button type="button" class="composer-send" disabled={!canSend} aria-label="送信" onclick={submit}>
       <Send size={18} />
@@ -243,13 +264,17 @@
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 14px;
-    transition: border-color 0.12s;
+    transition:
+      border-color 0.12s,
+      background-color 0.12s;
   }
   .composer .composer-row > :global(.message-input) {
     position: static;
   }
+  /* フォーカス中は青くせず、枠と背景を少し明るくする */
   .composer-row:focus-within {
-    border-color: var(--accent);
+    border-color: var(--border-focus);
+    background: var(--field-focus-bg);
   }
   .composer-row > :global(.icon-btn),
   .composer-plus {

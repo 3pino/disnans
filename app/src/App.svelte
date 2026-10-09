@@ -6,11 +6,13 @@
   import Toasts from './components/Toasts.svelte';
   import Lightbox from './components/Lightbox.svelte';
   import { needsServerSetup, isAndroid, isTauri } from './lib/config';
+  import { isMac } from './lib/plugins/hotkey';
+  import { startViewportSync, startZoomGuard } from './lib/viewport';
   import { client } from './lib/stores/client.svelte';
   import { ui } from './lib/stores/ui.svelte';
   import { notifications } from './lib/stores/notifications.svelte';
   import { pluginHost } from './lib/plugins/host.svelte';
-  import { startBackNav } from './lib/backNav';
+  import { closeTopLayer, isBackKey, startBackNav } from './lib/backNav';
 
   let setup = $state(needsServerSetup());
 
@@ -21,6 +23,32 @@
     client.start();
     pluginHost.start();
     void notifications.init();
+  });
+
+  // キーボードを出したときも、アプリの高さを見えている高さに合わせる。拡大（ピンチ・Ctrl+ホイールなど）は止める
+  onMount(() => {
+    const stopViewport = startViewportSync();
+    const stopZoom = startZoomGuard();
+    return () => {
+      stopViewport();
+      stopZoom();
+    };
+  });
+
+  // PC の Alt+←: Android の戻るボタンと同じく、開いているものを上から1つずつ閉じる（Android では戻るボタンを使う）
+  onMount(() => {
+    if (isAndroid()) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!isBackKey(e)) return;
+      // Mac の Option+← は入力欄で単語の移動に使うので、入力欄の中では効かせない
+      const t = e.target;
+      const typing = t instanceof HTMLElement && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable);
+      if (isMac() && typing) return;
+      e.preventDefault();
+      closeTopLayer(ui.backLayers());
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   });
 
   // 配布版でも Ctrl+Shift+I で開発者ツールを開く（デスクトップのみ）

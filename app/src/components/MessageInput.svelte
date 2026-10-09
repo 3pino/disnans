@@ -60,6 +60,10 @@
   export function getBody(): string {
     return draftToBody(text, mentionMap).trim();
   }
+  /** 下書き用。送る形（メンションは <@id>）で、前後の空白も残す */
+  export function getRawBody(): string {
+    return draftToBody(text, mentionMap);
+  }
   export function getText(): string {
     return text;
   }

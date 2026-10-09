@@ -103,6 +103,8 @@ function fakeServices() {
       storage: { get: (k: string) => store.get(k) ?? null, set: (k: string, v: string | null) => (v === null ? store.delete(k) : store.set(k, v)) },
       pluginIcon: () => 'puzzle',
       registerIcon,
+      registerStatusItem: () => () => {},
+      holdBackground: async () => () => {},
       changed: vi.fn(),
     } as unknown as HostServices,
   };
@@ -411,6 +413,43 @@ describe('Session', () => {
     off();
     r.sessions.dispatchEvent('s1', 'thinking', 3, 'u2');
     expect(cb).toHaveBeenCalledOnce();
+  });
+
+  it('broadcast は plugin.emit を送り、onBroadcast は plugin.event を受け取る', async () => {
+    const { r, f } = await setup();
+    r.broadcast('presence', { a: 1 });
+    expect(f.sent).toContainEqual({ type: 'plugin.emit', plugin: 'dice', name: 'presence', payload: { a: 1 } });
+    const cb = vi.fn();
+    const off = r.onBroadcast('presence', cb);
+    r.dispatchBroadcast('presence', 1, 'u2');
+    r.dispatchBroadcast('other', 2, 'u2');
+    expect(cb).toHaveBeenCalledOnce();
+    expect(cb.mock.calls[0][1].display_name).toBe('B');
+    off();
+    r.dispatchBroadcast('presence', 3, 'u2');
+    expect(cb).toHaveBeenCalledOnce();
+  });
+
+  it('addStatusBarItem の要素はステータス欄に登録され、外すと片付く', async () => {
+    const { r, f } = await setup();
+    const off = vi.fn();
+    f.services.registerStatusItem = vi.fn(() => off);
+    const el = r.addStatusBarItem();
+    expect(el).toBeInstanceOf(HTMLElement);
+    expect(f.services.registerStatusItem).toHaveBeenCalledWith('dice', el);
+    r.stop();
+    expect(off).toHaveBeenCalledOnce();
+  });
+
+  it('holdBackground は解除の関数を返し、外すときに自動で解除する', async () => {
+    const { r, f } = await setup();
+    const release = vi.fn();
+    f.services.holdBackground = vi.fn(async () => release);
+    const off = await r.holdBackground({ microphone: true });
+    expect(f.services.holdBackground).toHaveBeenCalledWith({ microphone: true, title: 'ダイス' });
+    off();
+    off();
+    expect(release).toHaveBeenCalledOnce();
   });
 
   it('プラグインを外すと購読は捨てる', async () => {

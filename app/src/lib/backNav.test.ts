@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { startBackNav } from './backNav';
+import { closeTopLayer, isBackKey, startBackNav } from './backNav';
 
 /** 戻る・進むを非同期の popstate で知らせる、履歴のまね */
 function fakeHistory() {
@@ -82,5 +82,26 @@ describe('backNav', () => {
     expect(n).toBe(1);
     expect(f.index()).toBe(1);
     nav.stop();
+  });
+});
+
+describe('isBackKey', () => {
+  const k = (o: Partial<KeyboardEvent>) => isBackKey({ key: 'ArrowLeft', altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, isComposing: false, ...o });
+  it('Alt+← だけを戻る操作とみなす', () => {
+    expect(k({})).toBe(true);
+    expect(k({ key: 'ArrowRight' })).toBe(false);
+    expect(k({ altKey: false })).toBe(false);
+    expect(k({ ctrlKey: true })).toBe(false);
+    expect(k({ shiftKey: true })).toBe(false);
+    expect(k({ isComposing: true })).toBe(false);
+  });
+});
+
+describe('closeTopLayer', () => {
+  it('上の層から1つだけ閉じる。層がなければ false', () => {
+    const log: string[] = [];
+    expect(closeTopLayer([])).toBe(false);
+    expect(closeTopLayer([() => log.push('tab'), () => log.push('panel')])).toBe(true);
+    expect(log).toEqual(['panel']);
   });
 });

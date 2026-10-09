@@ -167,6 +167,11 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
             name,
             payload,
         } => sessions::emit(state, actor, session_id, name, payload).await,
+        ClientEvent::PluginEmit {
+            plugin,
+            name,
+            payload,
+        } => sessions::emit_plugin(state, actor, plugin, name, payload),
         ClientEvent::Ping => {
             state.hub.send_to_conn(conn, &ServerEvent::Pong);
             Ok(())

@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <!-- 通話: マイク（WebView の getUserMedia がアプリの許可を求める）と、通話中のフォアグラウンドサービス -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
@@ -14,6 +18,12 @@
             android:name="dev.disnans.notifier.NotifyService"
             android:exported="false"
             android:foregroundServiceType="remoteMessaging" />
+
+        <!-- microphone: 画面を消しても通話のマイクを使い続けるための種類 -->
+        <service
+            android:name="dev.disnans.notifier.CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!-- BOOT_COMPLETED はシステムからしか送れないが、受け取るには exported が必要 -->
         <receiver

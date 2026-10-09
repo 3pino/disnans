@@ -273,6 +273,14 @@ pub enum ClientEvent {
         #[ts(type = "unknown")]
         payload: serde_json::Value,
     },
+    /// プラグインの一時的なイベント（保存しない・セッションに紐づかない）。送信した接続以外の全員に中継する。
+    #[serde(rename = "plugin.emit")]
+    PluginEmit {
+        plugin: String,
+        name: String,
+        #[ts(type = "unknown")]
+        payload: serde_json::Value,
+    },
     #[serde(rename = "ping")]
     Ping,
 }
@@ -331,6 +339,15 @@ pub enum ServerEvent {
     #[serde(rename = "session.event")]
     SessionEvent {
         session_id: Id,
+        from: Id,
+        name: String,
+        #[ts(type = "unknown")]
+        payload: serde_json::Value,
+    },
+    /// `plugin.emit` の中継。
+    #[serde(rename = "plugin.event")]
+    PluginEvent {
+        plugin: String,
         from: Id,
         name: String,
         #[ts(type = "unknown")]

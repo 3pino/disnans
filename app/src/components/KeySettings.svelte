@@ -11,7 +11,7 @@
   import StatusLine from './ui/StatusLine.svelte';
   import { commandList, effectiveHotkey, filterCommands, findHotkeyConflicts, isHotkeyCustomized, type AppCommand } from '../lib/commands.svelte';
   import { commandHost, PALETTE_COMMAND_ID } from '../lib/commandHost.svelte';
-  import { ENTER_COMBOS, enterComboLabel, sendCombos, type EnterAction } from '../lib/enterKeys';
+  import { ENTER_COMBOS, enterComboLabel, type EnterAction } from '../lib/enterKeys';
   import { formatHotkey, hotkeyFromEvent, hotkeyId } from '../lib/plugins/hotkey';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { isAndroid } from '../lib/config';
@@ -90,9 +90,6 @@
       {/snippet}
     </SettingRow>
   {/each}
-  {#if sendCombos(prefs.enterKeys).length === 0}
-    <p class="muted key-settings-note">送信に使うキーがありません。送信ボタンで送れます</p>
-  {/if}
   <p class="muted key-settings-note">メッセージの編集では「送信」が保存になります。この設定はほかの端末とも共有されます</p>
 </Section>
 
@@ -155,6 +152,13 @@
   .key-settings-note {
     margin: 0;
     font-size: 13px;
+  }
+  /* 「改行・送信・なし」の3つを、窮屈にならない幅で並べる（名前の欄とは、狭いときは比率で分ける） */
+  :global(.key-settings-enter-row .setting-row-control) {
+    width: min(264px, 62%);
+  }
+  :global(.key-settings-enter-picker) {
+    width: 100%;
   }
   /* ほかのコマンドと同じキーになっているときの警告 */
   .key-settings-command > :global(.key-settings-conflict) {

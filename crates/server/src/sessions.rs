@@ -121,19 +121,7 @@ pub async fn emit(
     name: String,
     payload: serde_json::Value,
 ) -> AppResult<()> {
-    if name.is_empty() || name.chars().count() > MAX_EVENT_NAME_CHARS {
-        return Err(AppError::bad_request(
-            "invalid_event_name",
-            format!("イベント名は 1〜{MAX_EVENT_NAME_CHARS} 文字にしてください"),
-        ));
-    }
-    if json_len(&payload) > MAX_PAYLOAD_BYTES {
-        return Err(AppError::new(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "payload_too_large",
-            format!("payload は {} KB までです", MAX_PAYLOAD_BYTES / 1024),
-        ));
-    }
+    validate_event(&name, &payload)?;
     find(state, &session_id).await?;
 
     let event = ServerEvent::SessionEvent {
@@ -145,6 +133,49 @@ pub async fn emit(
     match actor.conn {
         Some(conn) => state.hub.broadcast_except(&event, conn),
         None => state.hub.broadcast(&event),
+    }
+    Ok(())
+}
+
+/// セッションに紐づかない、プラグインの一時的なイベントを、送信した接続以外の全員に中継する（保存しない）。
+///
+/// 通話のシグナリングや在室の知らせなど、「いま接続している人」だけに届けばよいものに使う。
+pub fn emit_plugin(
+    state: &AppState,
+    actor: &Actor<'_>,
+    plugin: String,
+    name: String,
+    payload: serde_json::Value,
+) -> AppResult<()> {
+    plugins::validate_id(&plugin)?;
+    validate_event(&name, &payload)?;
+    let event = ServerEvent::PluginEvent {
+        plugin,
+        from: actor.user.id.clone(),
+        name,
+        payload,
+    };
+    match actor.conn {
+        Some(conn) => state.hub.broadcast_except(&event, conn),
+        None => state.hub.broadcast(&event),
+    }
+    Ok(())
+}
+
+/// イベントの名前と payload の大きさを確かめる。
+fn validate_event(name: &str, payload: &serde_json::Value) -> AppResult<()> {
+    if name.is_empty() || name.chars().count() > MAX_EVENT_NAME_CHARS {
+        return Err(AppError::bad_request(
+            "invalid_event_name",
+            format!("イベント名は 1〜{MAX_EVENT_NAME_CHARS} 文字にしてください"),
+        ));
+    }
+    if json_len(payload) > MAX_PAYLOAD_BYTES {
+        return Err(AppError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "payload_too_large",
+            format!("payload は {} KB までです", MAX_PAYLOAD_BYTES / 1024),
+        ));
     }
     Ok(())
 }

@@ -29,6 +29,10 @@ tauri-plugin-updater = "2"
 # 開発用フォルダを選ぶダイアログ
 tauri-plugin-dialog = "2"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# getUserMedia / WebRTC を有効にする設定（tauri が使うものと同じ版）
+webkit2gtk = { version = "2", features = ["v2_40"] }
+
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-apk-updater = { path = "plugins/apk-updater" }
 tauri-plugin-notifier = { path = "plugins/notifier" }

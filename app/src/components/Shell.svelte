@@ -8,6 +8,7 @@
   import PluginSettingsPage from './PluginSettingsPage.svelte';
   import ConnectionBanner from './ConnectionBanner.svelte';
   import NavBar from './NavBar.svelte';
+  import PluginStatusBar from './PluginStatusBar.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
@@ -28,6 +29,7 @@
   </div>
 {/snippet}
 
+<div class="shell-root">
 <div class="shell" class:shell-mobile={ui.isMobile} class:shell-with-panel={panelOpen} data-tab={ui.tab}>
   {#if !ui.isMobile}
     <div class="shell-sidebar"><Sidebar /></div>
@@ -65,8 +67,14 @@
   {/if}
 
   {#if ui.isMobile && !panelOpen}
+    <!-- プラグインのステータス欄（通話中の人など）。モバイルは下のナビゲーションの上、デスクトップは画面の下端 -->
+    <PluginStatusBar />
     <NavBar withThreads />
   {/if}
+</div>
+{#if !ui.isMobile}
+  <PluginStatusBar />
+{/if}
 </div>
 
 {#if commandHost.paletteOpen}
@@ -74,10 +82,16 @@
 {/if}
 
 <style>
+  .shell-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
   .shell {
+    flex: 1;
+    min-height: 0;
     display: grid;
     grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-    height: 100%;
   }
   .shell.shell-with-panel:not(.shell-mobile) {
     grid-template-columns: var(--sidebar-w) minmax(320px, 1fr) minmax(320px, var(--panel-w));

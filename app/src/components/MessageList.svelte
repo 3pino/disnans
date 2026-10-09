@@ -7,6 +7,7 @@
   import type { Message } from '../lib/protocol/Message';
   import type { Timeline } from '../lib/stores/timeline.svelte';
   import { dayLabel, sameDay } from '../lib/format';
+  import { isContinuation } from '../lib/messageRows';
   import { ui } from '../lib/stores/ui.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { firstUnread, page, registerUnreadView, takePendingJump, unread } from '../lib/stores/unread.svelte';
@@ -26,7 +27,6 @@
     active?: boolean;
   } = $props();
 
-  const GROUP_MS = 5 * 60_000;
   const STICK_PX = 80;
   /** 最初の未読へ移動したときに、区切り線の上に空ける幅 */
   const UNREAD_TOP_PX = 48;
@@ -45,15 +45,9 @@
     let prev: Message | null = null;
     for (const m of all) {
       const newDay = !prev || !sameDay(prev.created_at, m.created_at);
-      const grouped =
-        !!prev &&
-        !newDay &&
-        prev.author_id === m.author_id &&
-        m.created_at - prev.created_at < GROUP_MS &&
-        !prev.thread &&
-        !m.thread;
       // 区切り線のあとは、投稿者の名前から出し直す
-      out.push({ msg: m, grouped: grouped && m.id !== separatorId, day: newDay ? dayLabel(m.created_at, ui.now) : null });
+      const grouped = isContinuation(prev, m, newDay) && m.id !== separatorId;
+      out.push({ msg: m, grouped, day: newDay ? dayLabel(m.created_at, ui.now) : null });
       prev = m;
     }
     return out;
@@ -105,6 +99,26 @@
     ro.observe(content);
     ro.observe(scroller);
     return () => ro.disconnect();
+  });
+
+  // キーボードを出し入れして見えている高さが変わったときも、一番下にいたら下に張り付いたままにする
+  // （描画のあとと、キーボードの動きが終わるころの2回）
+  $effect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const keep = () => {
+      if (atBottom) scrollToBottom();
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onResize = () => {
+      requestAnimationFrame(keep);
+      timer = setTimeout(keep, 250);
+    };
+    vv.addEventListener('resize', onResize);
+    return () => {
+      vv.removeEventListener('resize', onResize);
+      clearTimeout(timer);
+    };
   });
 
   // タイムラインが切り替わったら一番下から

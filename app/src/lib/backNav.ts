@@ -56,3 +56,16 @@ export function startBackNav(layers: () => (() => void)[], h: HistoryLike = hist
     stop: () => w.removeEventListener('popstate', onPop),
   };
 }
+
+/** PC の Alt+←（戻る）かどうか。Ctrl・Cmd・Shift を一緒に押していれば違う操作なので除く */
+export function isBackKey(e: Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'isComposing'>): boolean {
+  return e.key === 'ArrowLeft' && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.isComposing;
+}
+
+/** 戻る操作で、上の層を1つだけ閉じる（Android の戻るボタンと同じ順）。閉じたものがあれば true */
+export function closeTopLayer(layers: (() => void)[]): boolean {
+  const top = layers.at(-1);
+  if (!top) return false;
+  top();
+  return true;
+}

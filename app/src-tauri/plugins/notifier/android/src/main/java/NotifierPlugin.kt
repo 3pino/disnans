@@ -25,6 +25,13 @@ class StartArgs {
   lateinit var serverUrl: String
 }
 
+@InvokeArg
+class StartCallArgs {
+  var title: String = ""
+  var text: String = ""
+  var microphone: Boolean = true
+}
+
 @TauriPlugin(
   permissions = [
     Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = "notifications")
@@ -36,7 +43,10 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   /** 通知から起動したときの行き先。JS の準備ができたら take_launch_target で受け取る */
   private var launchTarget: JSObject? = null
 
+  private var webView: WebView? = null
+
   override fun load(webView: WebView) {
+    this.webView = webView
     NotifyService.createChannels(activity)
     launchTarget = targetOf(activity.intent)
   }
@@ -62,6 +72,35 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     ret.put("target", launchTarget)
     launchTarget = null
     invoke.resolve(ret)
+  }
+
+  /**
+   * 通話中は、画面を消したり別のアプリに切り替えたりしても WebView を止めない。
+   * WryActivity.onPause が WebView.onPause() を呼ぶので、その直後に動かし直す（タイマーと WebRTC を保つ）。
+   */
+  override fun onPause() {
+    if (CallService.running) {
+      webView?.onResume()
+      webView?.resumeTimers()
+    }
+  }
+
+  /** 通話用のフォアグラウンドサービス（microphone 型）を始める。マイクの許可を得たあと、前面にいるときに呼ぶ */
+  @Command
+  fun startCall(invoke: Invoke) {
+    val args = invoke.parseArgs(StartCallArgs::class.java)
+    try {
+      CallService.start(activity, args.title, args.text, args.microphone)
+      invoke.resolve()
+    } catch (ex: Exception) {
+      invoke.reject(ex.message)
+    }
+  }
+
+  @Command
+  fun stopCall(invoke: Invoke) {
+    CallService.stop(activity)
+    invoke.resolve()
   }
 
   /** 常駐サービスを有効にして始める（すでに動いていれば、新しい URL でつなぎ直す） */

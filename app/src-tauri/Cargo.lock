@@ -796,6 +796,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-system-bars",
  "tauri-plugin-updater",
+ "webkit2gtk",
 ]
 
 [[package]]

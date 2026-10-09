@@ -16,6 +16,7 @@ import { THEME_STYLE_SELECTOR, themeHost } from './themes.svelte';
 import { PluginBase, PluginRuntime, type ViewHandle } from './runtime';
 import { toPluginUser, VersionConflictError } from './sessions';
 import { createUi } from './ui';
+import { holdBackground } from './background';
 import { loadLucide, registerIcon } from '../icons.svelte';
 import { API_VERSION, errorMessage, type HostServices, type Manifest, type PluginClass } from './types';
 
@@ -136,6 +137,8 @@ class PluginHost {
   disabled = $state<string[]>(loadDisabled());
   /** 読み込みのエラー（ID ごと） */
   errors = $state<Record<string, string>>({});
+  /** 常時表示のステータス欄に出している要素（addStatusBarItem） */
+  statusItems = $state.raw<{ pluginId: string; el: HTMLElement }[]>([]);
   /** 動いているものや登録物が変わったら増やす（loaded はリアクティブでないので、これで知らせる） */
   private rev = $state(0);
 
@@ -186,6 +189,14 @@ class PluginHost {
     storage: { get: (k) => getItem(k), set: (k, v) => setItem(k, v) },
     pluginIcon: (id) => this.pluginIcon(id),
     registerIcon: (name, svg) => registerIcon(name, svg),
+    registerStatusItem: (pluginId, el) => {
+      const item = { pluginId, el };
+      this.statusItems = [...this.statusItems, item];
+      return () => {
+        this.statusItems = this.statusItems.filter((i) => i !== item);
+      };
+    },
+    holdBackground: (opts) => holdBackground(opts),
     changed: () => this.rev++,
   };
 
@@ -239,6 +250,9 @@ class PluginHost {
         break;
       case 'session.updated':
         for (const l of this.loaded.values()) l.runtime.sessions.applyUpdate(ev.session);
+        break;
+      case 'plugin.event':
+        this.loaded.get(ev.plugin)?.runtime.dispatchBroadcast(ev.name, ev.payload, ev.from);
         break;
       case 'session.event':
         for (const l of this.loaded.values()) l.runtime.sessions.dispatchEvent(ev.session_id, ev.name, ev.payload, ev.from);

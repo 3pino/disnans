@@ -15,4 +15,4 @@ attachment_ids: Array<string>,
 /**
  * `true` なら、このメッセージを起点にスレッドを作る。
  */
-start_thread: boolean, } | { "type": "message.edit", message_id: string, body: string, } | { "type": "message.delete", message_id: string, } | { "type": "thread.create", root_message_id: string, } | { "type": "reaction.add", message_id: string, emoji: string, } | { "type": "reaction.remove", message_id: string, emoji: string, } | { "type": "session.emit", session_id: string, name: string, payload: unknown, } | { "type": "ping" };
+start_thread: boolean, } | { "type": "message.edit", message_id: string, body: string, } | { "type": "message.delete", message_id: string, } | { "type": "thread.create", root_message_id: string, } | { "type": "reaction.add", message_id: string, emoji: string, } | { "type": "reaction.remove", message_id: string, emoji: string, } | { "type": "session.emit", session_id: string, name: string, payload: unknown, } | { "type": "plugin.emit", plugin: string, name: string, payload: unknown, } | { "type": "ping" };
