@@ -15,12 +15,14 @@ pub fn run() {
 
     // アップデート: デスクトップは公式の updater、Android は自前のプラグイン
     // 通知: デスクトップは公式の notification、Android は常駐サービスを持つ自前のプラグイン
+    // dialog: 開発用フォルダを選ぶ（デスクトップだけ）
     #[cfg(desktop)]
     {
         builder = builder
             .plugin(tauri_plugin_updater::Builder::new().build())
             .plugin(tauri_plugin_process::init())
             .plugin(tauri_plugin_notification::init())
+            .plugin(tauri_plugin_dialog::init())
             .invoke_handler(tauri::generate_handler![
                 open_devtools,
                 dev_plugins::dev_plugins_scan,

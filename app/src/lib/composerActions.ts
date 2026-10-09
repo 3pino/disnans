@@ -1,4 +1,4 @@
-import type { Component } from 'svelte';
+import type { IconRef } from './icons.svelte';
 import { SvelteMap } from 'svelte/reactivity';
 
 /**
@@ -8,10 +8,8 @@ import { SvelteMap } from 'svelte/reactivity';
 export type ComposerAction = {
   id: string;
   label: string;
-  /** アイコン。icon も iconSvg も無ければ既定のアイコン（Puzzle） */
-  icon?: Component<{ size?: number }>;
-  /** プラグイン用の SVG 文字列。{@html} で描く */
-  iconSvg?: string;
+  /** アイコン（Svelte の部品か、アイコンの名前: lib/icons.svelte.ts）。無ければ既定のアイコン（Puzzle） */
+  icon?: IconRef;
   /** メインチャットでだけ出す、など */
   when?: (ctx: { threadId: string | null }) => boolean;
   run: (ctx: { threadId: string | null }) => void | Promise<void>;

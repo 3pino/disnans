@@ -1,8 +1,8 @@
 //! プラグインの配布・更新・削除（SPEC 9.2, 9.6）。
 //!
 //! ファイルは `<data_dir>/plugins/<id>/` に置く。サーバーはプラグインのコードを実行せず、
-//! 保存して配るだけ。配布・更新・削除のたびに全員に `plugin.updated` / `plugin.removed` を配信し、
-//! 操作した人の名前でメインチャットにお知らせを流す。
+//! 保存して配るだけ。配布・更新・削除のたびに全員に `plugin.updated` / `plugin.removed` を配信する
+//! （チャットにお知らせは流さない）。
 
 use std::path::{Path, PathBuf};
 
@@ -11,25 +11,27 @@ use disnans_shared::{PluginInfo, ServerEvent, User};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::chat;
 use crate::config::Config;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::store::{messages, plugins};
+use crate::store::plugins;
 
 /// 配布できるファイル（この順に並べる）。
-pub const FILE_NAMES: [&str; 3] = ["manifest.json", "main.js", "styles.css"];
+pub const FILE_NAMES: [&str; 4] = ["manifest.json", "main.js", "styles.css", "icon.svg"];
 /// 必須のファイル。
 const REQUIRED_FILES: [&str; 2] = ["manifest.json", "main.js"];
 /// ファイルの合計サイズの上限。
 pub const MAX_PACKAGE_BYTES: usize = 5 * 1024 * 1024;
+/// アイコン（`icon.svg`）の上限。
+const MAX_ICON_BYTES: usize = 64 * 1024;
 
 /// manifest の各項目の最大文字数。
 const MAX_NAME_CHARS: usize = 64;
 const MAX_VERSION_CHARS: usize = 32;
 const MAX_DESCRIPTION_CHARS: usize = 500;
 const MAX_AUTHOR_CHARS: usize = 64;
+const MAX_ICON_CHARS: usize = 64;
 
 /// プラグイン ID の形式（英小文字・数字・ハイフン、2〜32文字）。
 pub fn is_valid_id(id: &str) -> bool {
@@ -56,6 +58,7 @@ pub fn content_type(file_name: &str) -> Option<&'static str> {
         "manifest.json" => Some("application/json"),
         "main.js" => Some("application/javascript; charset=utf-8"),
         "styles.css" => Some("text/css"),
+        "icon.svg" => Some("image/svg+xml"),
         _ => None,
     }
 }
@@ -81,7 +84,7 @@ impl Package {
             return Err(AppError::bad_request(
                 "invalid_file_name",
                 format!(
-                    "配布できないファイルです（{file_name}）。manifest.json / main.js / styles.css だけです"
+                    "配布できないファイルです（{file_name}）。manifest.json / main.js / styles.css / icon.svg だけです"
                 ),
             ));
         };
@@ -93,6 +96,9 @@ impl Package {
         }
         if data.len() > self.remaining() {
             return Err(too_large());
+        }
+        if name == "icon.svg" {
+            validate_icon_svg(&data)?;
         }
         self.total += data.len();
         self.files.push((name, data));
@@ -132,6 +138,8 @@ impl Package {
             description: manifest.description,
             author: manifest.author,
             min_api_version: manifest.min_api_version,
+            icon: manifest.icon,
+            has_icon: self.file("icon.svg").is_some(),
             files: self.files.iter().map(|(n, _)| (*n).to_owned()).collect(),
             hash: hash(&self.files),
             updated_by: user.id.clone(),
@@ -139,6 +147,31 @@ impl Package {
         };
         Ok((info, self.files))
     }
+}
+
+/// `icon.svg` の中身を確かめる（64 KB まで、UTF-8、`<svg` を含む）。
+fn validate_icon_svg(data: &[u8]) -> AppResult<()> {
+    let invalid = |message: String| AppError::bad_request("invalid_icon", message);
+    if data.len() > MAX_ICON_BYTES {
+        return Err(invalid(format!(
+            "icon.svg は {} KB までです",
+            MAX_ICON_BYTES / 1024
+        )));
+    }
+    let text = std::str::from_utf8(data)
+        .map_err(|_| invalid("icon.svg は UTF-8 にしてください".into()))?;
+    if !text.contains("<svg") {
+        return Err(invalid("icon.svg が SVG ではありません".into()));
+    }
+    Ok(())
+}
+
+/// manifest の `icon`（Lucide のアイコン名）の形式（英小文字・数字・ハイフン、1〜64文字）。
+fn is_valid_icon_name(name: &str) -> bool {
+    (1..=MAX_ICON_CHARS).contains(&name.len())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 pub fn too_large() -> AppError {
@@ -162,6 +195,7 @@ struct RawManifest {
     description: Option<String>,
     author: Option<String>,
     min_api_version: Option<u32>,
+    icon: Option<String>,
 }
 
 struct Manifest {
@@ -171,6 +205,8 @@ struct Manifest {
     description: String,
     author: String,
     min_api_version: u32,
+    /// Lucide のアイコン名。空なら `None`。
+    icon: Option<String>,
 }
 
 fn parse_manifest(data: &[u8]) -> AppResult<Manifest> {
@@ -190,6 +226,17 @@ fn parse_manifest(data: &[u8]) -> AppResult<Manifest> {
         }
         Ok(value)
     };
+    let icon = raw
+        .icon
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+    if let Some(icon) = &icon
+        && !is_valid_icon_name(icon)
+    {
+        return Err(invalid(format!(
+            "icon は Lucide のアイコン名（英小文字・数字・ハイフンの {MAX_ICON_CHARS} 文字まで）にしてください"
+        )));
+    }
     Ok(Manifest {
         id,
         name: field(raw.name, "name", MAX_NAME_CHARS, true)?,
@@ -197,6 +244,7 @@ fn parse_manifest(data: &[u8]) -> AppResult<Manifest> {
         description: field(raw.description, "description", MAX_DESCRIPTION_CHARS, false)?,
         author: field(raw.author, "author", MAX_AUTHOR_CHARS, false)?,
         min_api_version: raw.min_api_version.unwrap_or(1),
+        icon,
     })
 }
 
@@ -239,30 +287,8 @@ pub async fn install(state: &AppState, user: &User, package: Package) -> AppResu
     }
 
     let _guard = state.write_lock().await;
-    let previous = plugins::get(&state.pool, &info.id).await?;
-    let body = match &previous {
-        None => format!(
-            "プラグイン「{}」{} を配布しました",
-            info.name,
-            v(&info.version)
-        ),
-        Some(prev) if prev.version != info.version => format!(
-            "プラグイン「{}」を更新しました（{} → {}）",
-            info.name,
-            v(&prev.version),
-            v(&info.version)
-        ),
-        Some(_) => format!(
-            "プラグイン「{}」{} を更新しました",
-            info.name,
-            v(&info.version)
-        ),
-    };
-    let row = chat::new_row(&user.id, None, body);
-
     let mut tx = state.pool.begin().await?;
     plugins::upsert(&mut tx, &info).await?;
-    messages::insert(&mut tx, &row).await?;
 
     // DB をコミットする直前にファイルを入れ替える。コミットに失敗したら元に戻す
     let dest = plugin_dir(&state.config, &info.id);
@@ -285,7 +311,6 @@ pub async fn install(state: &AppState, user: &User, package: Package) -> AppResu
     state.hub.broadcast(&ServerEvent::PluginUpdated {
         plugin: info.clone(),
     });
-    chat::broadcast_created(state, &row.id, None).await?;
     Ok(info)
 }
 
@@ -293,18 +318,12 @@ pub async fn install(state: &AppState, user: &User, package: Package) -> AppResu
 pub async fn remove(state: &AppState, user: &User, id: &str) -> AppResult<()> {
     validate_id(id)?;
     let _guard = state.write_lock().await;
-    let info = plugins::get(&state.pool, id)
-        .await?
-        .ok_or_else(|| AppError::not_found("プラグインが見つかりません"))?;
-    let row = chat::new_row(
-        &user.id,
-        None,
-        format!("プラグイン「{}」を削除しました", info.name),
-    );
+    if plugins::get(&state.pool, id).await?.is_none() {
+        return Err(AppError::not_found("プラグインが見つかりません"));
+    }
 
     let mut tx = state.pool.begin().await?;
     plugins::delete(&mut tx, id).await?;
-    messages::insert(&mut tx, &row).await?;
     tx.commit().await?;
 
     remove_dir(&plugin_dir(&state.config, id)).await;
@@ -313,17 +332,7 @@ pub async fn remove(state: &AppState, user: &User, id: &str) -> AppResult<()> {
     state.hub.broadcast(&ServerEvent::PluginRemoved {
         plugin_id: id.to_owned(),
     });
-    chat::broadcast_created(state, &row.id, None).await?;
     Ok(())
-}
-
-/// バージョンの表示（`1.0.0` → `v1.0.0`。もともと `v` が付いていればそのまま）。
-fn v(version: &str) -> String {
-    if version.starts_with(['v', 'V']) {
-        version.to_owned()
-    } else {
-        format!("v{version}")
-    }
 }
 
 /// `staging` を `dest` に移す。`dest` がすでにあれば脇に退け、その場所を返す（コミット後に消す）。
@@ -402,8 +411,34 @@ mod tests {
     }
 
     #[test]
-    fn formats_versions() {
-        assert_eq!(v("1.0.0"), "v1.0.0");
-        assert_eq!(v("v2"), "v2");
+    fn parses_manifest_icon() {
+        let icon = |json: &str| parse_manifest(json.as_bytes()).map(|m| m.icon);
+        let base = r#""id":"dice","name":"a","version":"1""#;
+        assert_eq!(icon(&format!("{{{base}}}")).ok().unwrap(), None);
+        assert_eq!(
+            icon(&format!(r#"{{{base},"icon":" "}}"#)).ok().unwrap(),
+            None
+        );
+        assert_eq!(
+            icon(&format!(r#"{{{base},"icon":"dice-5"}}"#))
+                .ok()
+                .unwrap(),
+            Some("dice-5".into())
+        );
+        for ng in ["Dice", "dice_5", "<svg>", &"x".repeat(65)] {
+            let err = icon(&format!(r#"{{{base},"icon":"{ng}"}}"#)).err().unwrap();
+            assert_eq!(err.code, "invalid_manifest", "{ng}");
+        }
+    }
+
+    #[test]
+    fn validates_icon_svg() {
+        assert!(validate_icon_svg(b"<svg xmlns='http://www.w3.org/2000/svg'/>").is_ok());
+        let err = |data: &[u8]| validate_icon_svg(data).err().unwrap().code;
+        assert_eq!(err(b"<html></html>"), "invalid_icon");
+        assert_eq!(err(&[0xff, 0xfe, b'<']), "invalid_icon");
+        let mut big = b"<svg>".to_vec();
+        big.resize(64 * 1024 + 1, b' ');
+        assert_eq!(err(&big), "invalid_icon");
     }
 }

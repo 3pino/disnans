@@ -13,7 +13,7 @@
  * }
  * ```
  *
- * 詳しい作り方は docs/PLUGINS.md を参照。
+ * 詳しい作り方は docs/PLUGINS.md、UI 部品（disnans.ui）は docs/PLUGIN_UI.md を参照。
  */
 
 export {};
@@ -38,10 +38,20 @@ declare global {
       description: string;
       author: string;
       minApiVersion: number;
+      /** Lucide のアイコン名（例: `dice-5`。英小文字・数字・ハイフン、64 文字まで）。画像にしたいときは `icon.svg` を同梱する */
+      icon?: string;
     };
 
     /** 後始末の関数 */
     type Cleanup = () => void;
+
+    /**
+     * アイコンの名前。次の順に探す:
+     * 1. 本体の独自のアイコン（`disnans-logo`: アプリのロゴ）
+     * 2. addIcon で登録したもの（どのプラグインのものでも）
+     * 3. Lucide のアイコン（https://lucide.dev/icons の名前。例: `dice-5`, `message-circle`）
+     */
+    type IconName = string;
 
     // ---- グローバルの disnans ----
 
@@ -93,6 +103,13 @@ declare global {
       addCommand(cmd: Command): void;
       /** 設定画面にプラグインの欄を出す */
       addSettingTab(tab: SettingTab): void;
+      /**
+       * アイコンを登録する。以後、アイコン名を受け取るところ（ui.icon、ComposerAction.icon など）で使える。
+       * svg は `<svg>` まるごとか、中身だけ（`<path d="..."/>` など）。viewBox は 24x24 を想定し、
+       * 既定は `fill="none" stroke="currentColor" stroke-width="2"`（Lucide と同じ）。外すときに自動で消える。
+       * 名前はほかのプラグインとぶつからないように、プラグイン ID を前に付けるとよい（例: `dice-cup`）
+       */
+      addIcon(name: IconName, svg: string): void;
 
       /**
        * view の種類を登録する。type にプラグイン ID と同じ名前を使うと、カードをタップしたときにその view で開く。
@@ -141,6 +158,8 @@ declare global {
       name: string;
       /** 補完に出る説明 */
       description: string;
+      /** 補完に出すアイコン（省略するとプラグインのアイコン） */
+      icon?: IconName;
       /** 引数の書き方のヒント（例: "[個数]d[面数]"） */
       args?: string;
       /** 引数の候補を出す（任意）。input はコマンド名のあとに打った文字列（先頭の空白は除く） */
@@ -170,8 +189,8 @@ declare global {
     type ComposerAction = {
       id: string;
       label: string;
-      /** SVG 文字列（24x24、stroke="currentColor" 推奨）。省略するとプラグインの既定のアイコン */
-      icon?: string;
+      /** アイコン（省略するとプラグインのアイコン）。独自の SVG は addIcon で登録してから名前で指定する */
+      icon?: IconName;
       run(ctx: { threadId: string | null }): void | Promise<void>;
     };
 
@@ -195,12 +214,25 @@ declare global {
     // ---- view ----
 
     interface View {
-      /** 開いたときに呼ばれる。containerEl に描く */
-      onOpen(containerEl: HTMLElement): void | Promise<void>;
+      /**
+       * 開いたときに呼ばれる。containerEl に描く。
+       * panel でパネルの上部（題名・アイコン）をあとから変えられる
+       */
+      onOpen(containerEl: HTMLElement, panel: ViewPanel): void | Promise<void>;
       /** 閉じたとき（プラグインを外すときも）に呼ばれる。onChange などの購読はここで外す */
       onClose?(): void;
-      /** パネルの上部に出す題名（省略するとプラグイン名） */
+      /** パネルの上部に出す題名（省略するとプラグイン名。空文字列なら出さない） */
       title?: string;
+      /** パネルの上部に出すアイコン（省略するとプラグインのアイコン。空文字列なら出さない） */
+      icon?: IconName;
+    }
+
+    /** view を出しているパネル */
+    interface ViewPanel {
+      /** 題名を変える。null で既定（View.title → プラグイン名）に戻す。空文字列なら出さない */
+      setTitle(title: string | null): void;
+      /** アイコンを変える。null で既定（View.icon → プラグインのアイコン）に戻す。空文字列なら出さない */
+      setIcon(icon: IconName | null): void;
     }
 
     type CardRenderer = (el: HTMLElement, card: CardData) => void;
@@ -248,21 +280,85 @@ declare global {
     }
 
     // ---- UI 部品 ----
+    // 詳しくは docs/PLUGIN_UI.md。見た目は本体のグローバルの CSS クラスで、本体の部品と同じ DOM を作る
+
+    type ButtonOptions = {
+      variant?: 'default' | 'primary' | 'danger';
+      onClick?: () => void;
+      disabled?: boolean;
+    } & (
+      | {
+          /** ボタンの文字 */
+          text: string;
+          /** 文字の左に出すアイコン */
+          icon?: IconName;
+          /** 読み上げ用の名前（省略すると text） */
+          label?: string;
+        }
+      | {
+          text?: undefined;
+          /** アイコンだけのボタン（`.btn-icon-only`） */
+          icon: IconName;
+          /** 読み上げ用の名前（アイコンだけのときは必須） */
+          label: string;
+        }
+    );
+
+    type IconOptions = {
+      /** 大きさ（px）。既定は 24 */
+      size?: number;
+      /** 足すクラス */
+      class?: string;
+      /** 読み上げ用の名前。省略すると飾り（aria-hidden） */
+      label?: string;
+    };
+
+    type SegmentedOption = {
+      value: string;
+      label: string;
+      icon?: IconName;
+    };
+
+    type NavBarItem = {
+      id: string;
+      label: string;
+      icon: IconName;
+      /** 右上に出す数字など（0・空文字列・null なら出さない） */
+      badge?: number | string | null;
+    };
 
     interface Ui {
-      /** 本体と同じ見た目のボタン（`.btn`） */
-      button(opts: {
-        text: string;
-        variant?: 'default' | 'primary' | 'danger';
-        onClick?: () => void;
-        disabled?: boolean;
-      }): HTMLButtonElement;
-      /** トグルスイッチ */
+      /** アイコンの <svg>（`.icon`）。Lucide の名前・`disnans-logo`・addIcon で登録した名前を使える */
+      icon(name: IconName, opts?: IconOptions): SVGSVGElement;
+      /** 本体と同じ見た目のボタン（`.btn`）。文字だけ・アイコン+文字・アイコンだけ（`.btn-icon-only`） */
+      button(opts: ButtonOptions): HTMLButtonElement;
+      /** トグルスイッチ（`.toggle`） */
       toggle(opts: { value: boolean; onChange?: (value: boolean) => void; label?: string }): HTMLElement;
       /** 1行の入力欄（`.input`） */
       input(opts?: { value?: string; placeholder?: string; onChange?: (value: string) => void }): HTMLInputElement;
-      /** 設定の1行（名前・説明と、右側の操作）を containerEl の末尾に足して返す */
-      setting(containerEl: HTMLElement, opts: { name: string; description?: string; control?: HTMLElement }): HTMLElement;
+      /** 横に並んだ選択肢から1つを選ぶボタン（`.segmented`）。選ぶと見た目も切り替わる */
+      segmented(opts: {
+        options: SegmentedOption[];
+        value: string;
+        onChange?: (value: string) => void;
+        /** 読み上げ用の名前 */
+        label?: string;
+      }): HTMLElement;
+      /** タブのバー（`.nav-bar`。本体の下のナビゲーションと同じ見た目）。選ぶと見た目も切り替わる */
+      navbar(opts: {
+        items: NavBarItem[];
+        selected?: string;
+        onSelect?: (id: string) => void;
+        /** 読み上げ用の名前 */
+        label?: string;
+      }): HTMLElement;
+      /** 横の区切り線（`.divider`） */
+      divider(): HTMLHRElement;
+      /** 設定の1行（アイコン・名前・説明と、右側の操作）を containerEl の末尾に足して返す（`.setting-row`） */
+      setting(
+        containerEl: HTMLElement,
+        opts: { name: string; description?: string; icon?: IconName; control?: HTMLElement },
+      ): HTMLElement;
       /** トースト */
       toast(text: string, kind?: 'info' | 'error'): void;
       /** 確認ダイアログ。OK なら true */

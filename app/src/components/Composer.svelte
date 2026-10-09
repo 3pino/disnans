@@ -16,7 +16,6 @@
   import type { Attachment } from '../lib/protocol/Attachment';
   import { composerActions, type BuiltinComposerAction, type ComposerAction } from '../lib/composerActions';
   import { parseSlashInput, runSlashCommand } from '../lib/slashCommands.svelte';
-  import '../lib/suggest/builtinCommands';
   import { formatSize } from '../lib/format';
   import { MAX_BODY } from '../lib/errors';
 
@@ -189,13 +188,9 @@
           {#each actions as a (('builtin' in a ? 'builtin:' : '') + a.id)}
             <MenuItem
               class="composer-menu-item"
-              icon={a.icon ?? (a.iconSvg ? undefined : Puzzle)}
+              icon={a.icon ?? Puzzle}
               onclick={() => void runAction(a, 'builtin' in a)}
             >
-              {#if !a.icon && a.iconSvg}
-                <!-- プラグインのアイコン（SVG 文字列） -->
-                <span class="composer-menu-icon" aria-hidden="true">{@html a.iconSvg}</span>
-              {/if}
               {a.label}
             </MenuItem>
           {/each}
@@ -238,7 +233,10 @@
     padding: 0 16px 14px;
     padding-bottom: max(14px, env(safe-area-inset-bottom));
   }
+  /* 補完の候補は、入力欄だけでなく、この枠（＋ボタンから送信ボタンまで）の幅いっぱいに出す */
   .composer-row {
+    position: relative;
+    --message-input-suggest-inset: -1px;
     display: flex;
     align-items: flex-end;
     gap: 4px;
@@ -247,6 +245,9 @@
     border: 1px solid var(--border);
     border-radius: 14px;
     transition: border-color 0.12s;
+  }
+  .composer .composer-row > :global(.message-input) {
+    position: static;
   }
   .composer-row:focus-within {
     border-color: var(--accent);
@@ -263,18 +264,6 @@
     position: absolute;
     bottom: calc(100% + 8px);
     left: -4px;
-  }
-  /* プラグインの SVG のアイコンを、lucide のアイコンと同じ大きさにそろえる */
-  .composer-menu-icon {
-    display: grid;
-    place-items: center;
-    width: 18px;
-    height: 18px;
-    flex: none;
-  }
-  .composer-menu-icon > :global(svg) {
-    width: 100%;
-    height: 100%;
   }
   .composer-send {
     display: grid;

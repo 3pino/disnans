@@ -7,7 +7,7 @@ const HEAD_RE = /^\/([a-z0-9-]+)[ \t]+/;
 
 function commandItem(c: SlashCommandDef): SuggestItem {
   const detail = [c.args, c.description, c.source && `（${c.source}）`].filter(Boolean).join(' ');
-  return { key: c.name, title: '/' + c.name, detail, insert: `/${c.name} ` };
+  return { key: c.name, title: '/' + c.name, detail, icon: c.icon, insert: `/${c.name} ` };
 }
 
 function argItems(c: SlashCommandDef, input: string): SuggestItem[] {

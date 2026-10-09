@@ -5,6 +5,7 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 
 - 設計: [`SPEC.md`](../SPEC.md) の 3.3 と 9章
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
+- UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](PLUGIN_UI.md)
 - ホスト API のバージョン: **1**
 
 ## 目次
@@ -80,7 +81,7 @@ export default class HelloPlugin extends Plugin {
 ### 5. 配布する
 
 **設定 → プラグイン** の一覧で、そのプラグインの **[配布]** を押します。サーバーに上がり、つながっている全員のクライアントで動き始めます。
-チャットには「プラグイン『あいさつ』v0.1.0 を配布しました」と、あなたの名前で流れます。
+チャットにお知らせは流れません。
 
 直したら、`version` を上げてもう一度 [配布] を押すと更新になります。
 
@@ -96,6 +97,7 @@ export default class HelloPlugin extends Plugin {
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
 | `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `1` |
+| `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
 
@@ -110,7 +112,11 @@ export default class HelloPlugin extends Plugin {
 }
 ```
 
-配布できるのは `manifest.json`・`main.js`・`styles.css`（任意）の3つだけで、合計 5 MB までです。
+配布できるのは `manifest.json`・`main.js`・`styles.css`（任意）・`icon.svg`（任意）の4つだけで、合計 5 MB までです。
+`icon.svg` はプラグインのアイコンにする SVG です（UTF-8、64 KB まで）。Lucide にないアイコンを使いたいときに置きます。
+24×24 の viewBox で、`stroke="currentColor"`（または `fill="currentColor"`）にすると本体の色に合います。
+プラグインのアイコンは `icon.svg` → manifest の `icon` → 既定（`puzzle`）の順に決まり、設定の一覧・パネルの上部・カード・
+「＋」メニューや補完の既定のアイコンに出ます（→ [PLUGIN_UI.md の「アイコン」](PLUGIN_UI.md#アイコン)）。
 画像などは、`main.js` に data URL や SVG 文字列として埋め込んでください。
 
 ---
@@ -208,21 +214,23 @@ app/node_modules/.bin/tsc -p examples/dice
 | `session.emit(name, payload)` / `session.on(name, cb)` | 保存しない一時的なイベント |
 | `this.notify(userIds, text, { session })` | 通知 |
 | `this.addSettingTab(tab)` | 設定画面のプラグインの欄 |
+| `this.addIcon(name, svg)` | 独自のアイコンを登録する（→ [PLUGIN_UI.md](PLUGIN_UI.md#addicon独自のアイコン)） |
 | `this.loadData()` / `this.saveData(data)` | その端末にだけ保存するデータ |
 | `this.register(cleanup)` / `this.registerDomEvent(...)` / `this.registerInterval(id)` | 後始末を自動で行う登録 |
-| `disnans.ui.*` | 本体と同じ見た目の部品 |
+| `disnans.ui.*` | 本体と同じ見た目の部品とアイコン（→ [PLUGIN_UI.md](PLUGIN_UI.md)） |
 | `disnans.VersionConflictError` | `session.update` がぶつかったときのエラー |
 | `disnans.apiVersion` | ホスト API のバージョン（いまは 1） |
 
 ### スラッシュコマンドと補完
 
-入力欄で行頭に `/` と打つと、本体のコマンドとプラグインのコマンドが補完に出ます。
+入力欄で行頭に `/` と打つと、プラグインが足したコマンドが補完に出ます（本体のコマンドはいまはありません）。
 `/dice 2d6` のように送信すると、メッセージとしては送らずに `run({ args, threadId })` を呼びます。
 
 ```js
 this.addSlashCommand({
   name: 'dice',                 // `/dice`。英小文字・数字・ハイフン
   description: 'サイコロを振る', // 補完に出る説明
+  icon: 'dice-5',               // 補完に出るアイコン（省略するとプラグインのアイコン）
   args: '[個数]d[面数]',          // 引数の書き方のヒント
   // 引数の候補。input はコマンド名のあとに打った文字列
   suggestArgs: (input) =>
@@ -243,12 +251,13 @@ this.addSlashCommand({
 this.addComposerAction({
   id: 'roll-2d6',
   label: 'サイコロ（2d6）',
-  icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>',
+  icon: 'dice-6', // アイコンの名前（省略するとプラグインのアイコン）
   run: ({ threadId }) => this.prepare('2d6', threadId),
 });
 ```
 
-`icon` は 24×24 の SVG 文字列で、`stroke="currentColor"` にすると本体のアイコンと色がそろいます。
+`icon` は**アイコンの名前**です（Lucide の名前・`disnans-logo`・`addIcon` で登録した名前）。
+独自の SVG を使うときは、先に `this.addIcon('dice-cup', '<path .../>')` で登録してから名前で指定します（→ [PLUGIN_UI.md](PLUGIN_UI.md#アイコン)）。
 
 ### コマンド（ショートカット）
 
@@ -280,11 +289,13 @@ class DiceView {
   constructor(plugin, session) {
     this.plugin = plugin;
     this.session = session;
-    this.title = 'ダイス'; // パネルの上部の題名（省略するとプラグイン名）
+    this.title = 'ダイス'; // パネルの上部の題名（省略するとプラグイン名。'' なら出さない）
+    this.icon = 'dice-5';  // パネルの上部のアイコン（省略するとプラグインのアイコン。'' なら出さない）
   }
 
-  /** @param {HTMLElement} containerEl */
-  onOpen(containerEl) {
+  /** @param {HTMLElement} containerEl @param {Disnans.ViewPanel} panel */
+  onOpen(containerEl, panel) {
+    this.panel = panel; // あとから panel.setTitle('ダイス（2d6）') / panel.setIcon('dice-6') で変えられる
     this.el = containerEl;
     this.unsubscribe = this.session.onChange(() => this.render()); // 誰かが更新したら描き直す
     this.render();
@@ -299,6 +310,8 @@ class DiceView {
 ```
 
 - 描くのは `containerEl` の中だけにします
+- 題名・アイコンを途中で変えるときは、`onOpen` の2つ目の引数（`panel`）の `setTitle(title)` / `setIcon(icon)` を使います（`null` で既定に戻す）
+- view の中にタブを作るなら `disnans.ui.navbar`、選択肢なら `disnans.ui.segmented` が使えます（→ [PLUGIN_UI.md](PLUGIN_UI.md)）
 - 毎回まるごと描き直す（`replaceChildren`）のが一番かんたんです。state は小さいので十分速く動きます
 
 ### カード
@@ -428,17 +441,13 @@ await this.saveData({ history: ['2d6', '1d20'] }); // JSON にできる値
 
 ### disnans.ui
 
-本体と同じ見た目の部品です。
+本体と同じ見た目の部品（ボタン・トグル・入力欄・選択肢・タブのバー・区切り線・設定の行・アイコン・トースト・確認ダイアログ）です。
+すべての関数・オプション・例と CSS クラスは [PLUGIN_UI.md](PLUGIN_UI.md) にまとめてあります。
 
 ```js
 const { ui } = disnans;
-
-ui.button({ text: '振る', variant: 'primary', onClick: () => this.roll() }); // variant: 'default' | 'primary' | 'danger'
-ui.toggle({ value: true, label: '音を鳴らす', onChange: (v) => {} });
-ui.input({ value: '', placeholder: '1d6', onChange: (v) => {} });
-ui.setting(containerEl, { name: '名前', description: '説明', control: someElement });
-ui.toast('保存しました');                 // kind: 'info'（既定） | 'error'
-const ok = await ui.confirm({ title: 'やり直しますか？', okLabel: 'やり直す', danger: true });
+ui.button({ text: '振る', icon: 'dice-5', variant: 'primary', onClick: () => this.roll() });
+ui.toast('保存しました');
 ```
 
 ---
@@ -467,14 +476,8 @@ const ok = await ui.confirm({ title: 'やり直しますか？', okLabel: 'や�
 
 ### 共通クラス
 
-| クラス | 内容 |
-|---|---|
-| `.btn`（`.primary` / `.danger`） | ボタン（`disnans.ui.button` が使う） |
-| `.input` | 1行の入力欄（`disnans.ui.input` が使う） |
-| `.icon-btn` | アイコンだけのボタン |
-| `.muted` | 控えめな文字 |
-| `.badge` | 数字のバッジ |
-| `.scroll` | 縦スクロールする領域 |
+`.btn`・`.input`・`.segmented`・`.nav-bar`・`.divider`・`.setting-row` などの本体のクラスは、プラグインからも使えます。
+一覧は [PLUGIN_UI.md の「CSS クラス」](PLUGIN_UI.md#css-クラス) を参照してください。
 
 ### 書き方の決まり
 
@@ -528,7 +531,7 @@ npx esbuild src/main.ts --bundle --format=esm --target=es2022 --outfile=main.js 
 ```
 
 esbuild は型をチェックしないので、`tsc --noEmit` も合わせて使ってください。
-配布されるのは `manifest.json`・`main.js`・`styles.css` だけなので、`src/` や `node_modules/` が同じフォルダにあってもかまいません。
+配布されるのは `manifest.json`・`main.js`・`styles.css`・`icon.svg` だけなので、`src/` や `node_modules/` が同じフォルダにあってもかまいません。
 
 ---
 
@@ -538,12 +541,12 @@ esbuild は型をチェックしないので、`tsc --noEmit` も合わせて使
 
 | 操作 | どうなるか |
 |---|---|
-| **[配布]** | サーバーに上がり、つながっている全員のクライアントで動き始める。チャットに「プラグイン『ダイス』v1.0.0 を配布しました」と流れる |
+| **[配布]** | サーバーに上がり、つながっている全員のクライアントで動き始める（チャットにお知らせは流れない） |
 | **更新**（同じ `id` でもう一度 [配布]） | 上書きになる。サーバーが配信するのは常に1つの版。全員のクライアントで読み込み直す |
-| **削除** | 全員のクライアントから外れる。チャットに流れる。セッションとカードは残る（同じ `id` で配布し直せば、また開ける） |
+| **削除** | 全員のクライアントから外れる。セッションとカードは残る（同じ `id` で配布し直せば、また開ける） |
 | **オン / オフ**（トグル） | **自分の端末でだけ**切り替える（その端末に保存）。配布されたプラグインは既定でオン |
 
-- 配布・更新・削除は誰でもできます。誰がやったかはチャットに残ります
+- 配布・更新・削除は誰でもできます。最後に配布・更新した人は一覧の情報（`updated_by`）に残ります
 - 開発用フォルダに、配布済みと同じ `id` のプラグインがあれば、自分の端末では開発中のほうが動きます。配布した版を直すときは、そのまま開発用フォルダで直して [配布] すれば更新になります
 - 壊れたプラグインが配られても、各自がトグルでオフにできます
 

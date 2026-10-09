@@ -1,22 +1,25 @@
 <script lang="ts">
   import type { User } from '../lib/protocol/User';
   import { hueOf, initials } from '../lib/format';
+  import { avatarSrc } from '../lib/config';
 
   let { user, id, size = 36 }: { user?: User; id: string; size?: number } = $props();
-  let broken = $state(false);
+  const url = $derived(user?.avatar_url ?? null);
+  // 読み込めなかった URL（変わったら、もう一度読み込んでみる）
+  let brokenUrl = $state<string | null>(null);
   const name = $derived(user?.display_name ?? '?');
 </script>
 
-{#if user?.avatar_url && !broken}
+{#if url && url !== brokenUrl}
   <img
     class="avatar"
-    src={user.avatar_url}
+    src={avatarSrc(url)}
     alt=""
     width={size}
     height={size}
     style:width="{size}px"
     style:height="{size}px"
-    onerror={() => (broken = true)}
+    onerror={() => (brokenUrl = url)}
   />
 {:else}
   <span

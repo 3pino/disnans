@@ -50,7 +50,7 @@
 |---|---|---|
 | `@` | メンバー | メンションを入れる |
 | `:` ＋ 2文字以上 | 絵文字（`:smile` など） | 絵文字を入れる |
-| 行頭の `/` | コマンド（本体のものとプラグインのもの） | コマンド名を入れる。引数の書き方をヒントに出す |
+| 行頭の `/` | コマンド（プラグインが足したもの） | コマンド名を入れる。引数の書き方をヒントに出す |
 
 - 上下キーで選び、Enter / Tab で決定、Esc で閉じる。モバイルはタップで選ぶ
 - `/コマンド` で始まるメッセージは、送信せずにコマンドを実行する。知らないコマンドならエラーを出し、送らない（`//` で始めると `/` から始まる普通のメッセージになる）
@@ -90,6 +90,9 @@
 - **Tailscale の識別情報で認証する**（パスワードもトークンも使わない）
   - サーバーは接続元の IP アドレスから、tailscaled の LocalAPI（whois）で接続してきたユーザーを特定する
   - 初めて接続したユーザーのアカウントは自動で作られる。表示名の初期値は Tailscale の表示名で、あとから変更できる
+  - アバターは初め Tailscale のプロフィール画像を使う（Tailscale 側の変更に追従する）。設定から自分の画像に変えられ、
+    サーバーに保存する（中央を正方形に切り抜き 256px の WebP）。自分の画像にしているあいだは Tailscale の画像で上書きしない。
+    いつでも Tailscale の画像に戻せる
   - 同じ Tailscale ユーザーの端末（スマホ・PCなど）は、自動的に同じアカウントになる
 - 招待は「サーバー端末をノード共有すること」そのものとする。アプリ側に招待の仕組みは作らない
 - サーバーは Tailscale のインターフェース（`100.x.y.z`）でだけ待ち受ける
@@ -301,7 +304,8 @@ Obsidian のプラグインを手本にする。最初の実例はダイス（�
 dice/
 ├── manifest.json
 ├── main.js        # 必須。ES モジュール
-└── styles.css     # 任意。読み込むと自動で適用し、オフにすると外す
+├── styles.css     # 任意。読み込むと自動で適用し、オフにすると外す
+└── icon.svg       # 任意。プラグインのアイコン（64 KB まで）
 ```
 
 ```jsonc
@@ -312,11 +316,14 @@ dice/
   "version": "1.0.0",
   "description": "サイコロを振って、結果をみんなに見せる",
   "author": "sanpino",
-  "minApiVersion": 1          // 必要なホスト API のバージョン。本体が古ければ読み込まない
+  "minApiVersion": 1,         // 必要なホスト API のバージョン。本体が古ければ読み込まない
+  "icon": "dice-5"            // 任意。Lucide のアイコン名（英小文字・数字・ハイフン、64 文字まで）
 }
 ```
 
-- 配布できるのは上の3つのファイルだけ。合計 5 MB まで
+- 配布できるのは上の4つのファイルだけ。合計 5 MB まで
+- アイコンは、manifest の `icon`（Lucide のアイコン名）か、同梱した `icon.svg`（UTF-8 の SVG、64 KB まで）で指定する。どちらも任意
+  - 優先順は `icon.svg` → `icon` → 既定（puzzle）。設定のプラグイン一覧・パネルの上部・カード・「＋」メニューや補完の既定のアイコンに使う
 - 同じ `id` を配布すると上書き（更新）になる。サーバーが配信するバージョンは常に1つ
 - 古いセッションの state との互換性は、プラグイン側で面倒を見る（state にスキーマのバージョンを入れておくとよい）
 
@@ -347,10 +354,11 @@ export default class DicePlugin extends Plugin {
 | API | 内容 |
 |---|---|
 | `this.app.me` / `this.app.users` | 自分・メンバー一覧 |
-| `this.addSlashCommand({ name, description, args?, suggestArgs?, run })` | 本体の補完（→ 3.1）にコマンドを足す。送信すると、メッセージとしては送らずに `run({ args, threadId })` を呼ぶ |
-| `this.addComposerAction({ id, label, icon?, run })` | 入力欄の「＋」メニューの項目 |
+| `this.addSlashCommand({ name, description, icon?, args?, suggestArgs?, run })` | 本体の補完（→ 3.1）にコマンドを足す。送信すると、メッセージとしては送らずに `run({ args, threadId })` を呼ぶ |
+| `this.addComposerAction({ id, label, icon?, run })` | 入力欄の「＋」メニューの項目（`icon` はアイコン名。省くとプラグインのアイコン） |
+| `this.addIcon(name, svg)` | 独自のアイコン（24x24 の SVG）を名前で登録する。アイコン名は 本体（`disnans-logo`）→ 登録したもの → Lucide の順に引く |
 | `this.addCommand({ id, name, hotkey?, run })` | キーボードショートカット（デスクトップ） |
-| `this.registerView(type, factory)` / `this.openView(type, session)` | 右側のパネル（モバイルでは全画面）に独自の画面を出す |
+| `this.registerView(type, factory)` / `this.openView(type, session)` | 右側のパネル（モバイルでは全画面）に独自の画面を出す。上部の題名・アイコンは `View.title` / `View.icon`（任意）と `onOpen` の `panel.setTitle()` / `panel.setIcon()` |
 | `this.registerCardRenderer(render)` | カードの見た目を独自に描く（省略すると本体の標準のカード） |
 | `this.addSettingTab(tab)` | 設定画面にプラグインの欄を出す |
 | `this.loadData()` / `this.saveData(data)` | プラグインの設定などを、その端末に保存する |
@@ -360,7 +368,7 @@ export default class DicePlugin extends Plugin {
 | `session.onChange(cb)` / `session.emit(name, payload)` / `session.on(name, cb)` | 変更の購読、一時的なイベント |
 | `this.notify(userIds, text, { session? })` | 通知を送る（「あなたの番です」） |
 | `this.registerDomEvent(...)` / `this.registerInterval(id)` / `this.register(cleanup)` | 外すときに自動で片付く購読・タイマー・後始末 |
-| `disnans.ui.*` | 本体と同じ見た目の部品（ボタン、トグル、入力欄、設定の行、トースト、確認ダイアログ） |
+| `disnans.ui.*` | 本体と同じ見た目の部品（アイコン、ボタン、トグル、入力欄、選択肢、タブのバー、区切り線、設定の行、トースト、確認ダイアログ）。→ `docs/PLUGIN_UI.md` |
 | `disnans.apiVersion` | ホスト API のバージョン（いまは 1） |
 
 - 型定義と詳しい説明は `packages/plugin-sdk/`、作り方のガイドは `docs/PLUGINS.md` を正とする
@@ -394,7 +402,7 @@ Session {
 ### 9.6 配布・更新・削除
 
 - 誰でもできる。設定のプラグイン一覧から行う
-- 配布・更新・削除したことは、その人の名前でチャットに自動で流す（例: 「プラグイン『ダイス』v1.0.0 を配布しました」）
+- 配布・更新・削除は全員の端末に即座に伝わる（チャットにお知らせは流さない）
 - 削除しても、セッションとカードは残す（同じ ID で配布し直せば、また開ける）
 
 ### 9.7 端末ごとのオンオフ
@@ -408,6 +416,7 @@ Session {
 - `packages/plugin-sdk/`: 型定義（`index.d.ts`）と、TypeScript でビルドするときの設定例
 - `examples/`: 実例のプラグイン（そのまま開発用フォルダにコピーして試せる）
 - `docs/PLUGINS.md`: 作り方のガイド
+- `docs/PLUGIN_UI.md`: UI 部品（`disnans.ui`）とアイコン
 
 ### 9.9 実例: ダイス
 

@@ -118,12 +118,16 @@ button {
 h1,
 h2,
 h3,
+header,
 button,
 nav,
+.badge,
 [role='tab'],
 [role='menu'],
 [role='menuitem'],
 [role='radiogroup'],
+[role='listbox'],
+[role='status'],
 label {
   -webkit-user-select: none;
   user-select: none;
@@ -144,6 +148,11 @@ a {
 }
 
 /* 共通の部品 */
+
+/* アイコン（components/ui/Icon.svelte、ui.icon）。並べたときに縮まないようにする */
+.icon {
+  flex: none;
+}
 
 /* 画面の上端。中身は持たず、ステータスバー（Android は edge-to-edge）の分の余白だけを取る */
 .top-bar {
@@ -212,6 +221,11 @@ a {
 .btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+/* アイコンだけのボタン（入力欄の送信ボタンのような、正方形のボタン） */
+.btn.btn-icon-only {
+  width: 36px;
+  padding: 0;
 }
 
 .input {
@@ -313,12 +327,98 @@ a {
   cursor: default;
 }
 
-/* 設定のセクション。カードにはせず、見出し + 区切り線だけにする */
+/* 横に並んだ選択肢から1つを選ぶボタン（テーマの切り替えなど）。
+   <div class="segmented" role="radiogroup"><button class="segmented-option" role="radio">…</button>…</div> */
+.segmented {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.segmented .segmented-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.segmented .segmented-option.segmented-option-selected {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* タブのバー（本体の下のナビゲーションなど）。アイコン + ラベルを横に等分に並べる。
+   <nav class="nav-bar"><button class="nav-bar-item"><span class="nav-bar-item-icon">svg + .nav-bar-item-badge</span>
+   <span class="nav-bar-item-label">…</span></button>…</nav> */
+.nav-bar {
+  display: flex;
+  flex: none;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.nav-bar .nav-bar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 0 6px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.nav-bar .nav-bar-item:hover {
+  color: var(--text);
+}
+.nav-bar .nav-bar-item.nav-bar-item-selected {
+  color: var(--accent);
+}
+.nav-bar-item-icon {
+  position: relative;
+  display: inline-flex;
+}
+.nav-bar-item-icon > .nav-bar-item-badge {
+  position: absolute;
+  top: -5px;
+  left: 14px;
+}
+.nav-bar-item-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 横の区切り線。<hr class="divider"> */
+.divider {
+  height: 0;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+/* 設定のセクション。カードにはせず、区切り線 + 見出しだけにする。
+   区切り線（.setting-section-divider）は、前にもセクションがあるときだけ、セクションの上端に出す */
 .setting-section {
   padding: 18px 2px;
 }
-.setting-section + .setting-section {
-  border-top: 1px solid var(--border);
+.setting-section > .setting-section-divider {
+  display: none;
+  margin: -18px -2px 18px;
+}
+.setting-section + .setting-section > .setting-section-divider {
+  display: block;
 }
 .setting-section:first-child {
   padding-top: 4px;
@@ -341,6 +441,9 @@ a {
   align-items: center;
   gap: 12px;
   font-size: 14px;
+}
+.setting-row-icon {
+  color: var(--text-muted);
 }
 .setting-row-info {
   flex: 1;

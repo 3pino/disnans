@@ -3,6 +3,7 @@
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Settings2 from '@lucide/svelte/icons/settings-2';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
+  import FolderSearch from '@lucide/svelte/icons/folder-search';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import Button from './ui/Button.svelte';
   import Section from './ui/Section.svelte';
@@ -90,6 +91,19 @@
     ev.preventDefault();
     pluginHost.setDevDir(devDir);
   }
+
+  /** フォルダを選ぶダイアログ（PC 版）。選んだらそのまま設定する */
+  async function browseDevDir() {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const picked = await open({ directory: true, multiple: false, defaultPath: devDir.trim() || undefined, title: '開発用フォルダを選ぶ' });
+      if (typeof picked !== 'string') return;
+      devDir = picked;
+      pluginHost.setDevDir(picked);
+    } catch (err) {
+      ui.toast(`フォルダを選べませんでした: ${message(err)}`, 'error');
+    }
+  }
 </script>
 
 <Section title="プラグイン" class="settings-plugins">
@@ -104,7 +118,7 @@
   {#each entries as e (e.id)}
     {@const m = e.manifest}
     <div class="plugin-settings-item" class:plugin-settings-item-off={!e.enabled}>
-      <SettingRow name={nameOf(e)} description={m?.description || undefined} class="plugin-settings-row">
+      <SettingRow name={nameOf(e)} description={m?.description || undefined} icon={e.icon} class="plugin-settings-row">
         {#snippet control()}
           <Toggle checked={e.enabled} label="{nameOf(e)} を有効にする" onchange={(on) => pluginHost.setEnabled(e.id, on)} />
         {/snippet}
@@ -158,6 +172,7 @@
       <label class="field-label" for="plugin-settings-dev-dir">開発用フォルダ</label>
       <div class="plugin-settings-dev-row">
         <TextInput id="plugin-settings-dev-dir" bind:value={devDir} placeholder="例: /home/you/disnans-plugins" autocomplete="off" spellcheck={false} />
+        <Button icon={FolderSearch} onclick={browseDevDir}>参照…</Button>
         <Button type="submit" disabled={devDir.trim() === pluginHost.devDir}><FolderOpen size={15} />設定</Button>
       </div>
       <p class="muted plugin-settings-small">
@@ -172,8 +187,8 @@
   {#if browser}
     <div class="plugin-settings-upload">
       <span class="field-label">ファイルを選んで配布</span>
-      <p class="muted plugin-settings-small">manifest.json と main.js（と styles.css）をまとめて選びます。</p>
-      <input bind:this={fileInput} class="sr-only" type="file" multiple accept=".json,.js,.css" onchange={publishPicked} />
+      <p class="muted plugin-settings-small">manifest.json と main.js（と styles.css・icon.svg）をまとめて選びます。</p>
+      <input bind:this={fileInput} class="sr-only" type="file" multiple accept=".json,.js,.css,.svg" onchange={publishPicked} />
       <Button disabled={busy !== null} onclick={() => fileInput?.click()}><Upload size={15} />ファイルを選ぶ</Button>
     </div>
   {/if}

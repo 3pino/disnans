@@ -64,6 +64,16 @@ export const api = {
   /** 初回設定で、保存前のサーバー URL に接続できるか確かめる */
   probe: (base: string) => request<User>('GET', '/api/me', undefined, base),
   updateMe: (body: UpdateMe) => request<User>('PATCH', '/api/me', body),
+  /** 自分のアバターを設定する（サーバーで中央を正方形に切り抜き、256px の WebP にする） */
+  setAvatar: async (file: Blob, fileName = 'avatar'): Promise<User> => {
+    const fd = new FormData();
+    fd.append('file', file, fileName);
+    const res = await fetch(apiUrl('/api/me/avatar'), { method: 'PUT', headers: authHeaders(), body: fd });
+    if (!res.ok) throw await toError(res);
+    return (await res.json()) as User;
+  },
+  /** 自分で設定したアバターを消し、Tailscale のプロフィール画像に戻す */
+  clearAvatar: () => request<User>('DELETE', '/api/me/avatar'),
   users: () => request<User[]>('GET', '/api/users'),
   messages: (opts: { threadId?: string | null; before?: string | null; limit?: number }) =>
     request<Message[]>(

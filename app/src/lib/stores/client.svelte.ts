@@ -186,6 +186,20 @@ class Client {
     this.users[u.id] = u;
   }
 
+  /** 自分のアバターを画像にする */
+  async setAvatar(file: File): Promise<void> {
+    const u = await api.setAvatar(file, file.name);
+    this.me = u;
+    this.users[u.id] = u;
+  }
+
+  /** 自分で設定したアバターを消し、Tailscale のプロフィール画像に戻す */
+  async clearAvatar(): Promise<void> {
+    const u = await api.clearAvatar();
+    this.me = u;
+    this.users[u.id] = u;
+  }
+
   // ---- イベント処理 ----
 
   private dispatch(ev: ServerEvent): void {

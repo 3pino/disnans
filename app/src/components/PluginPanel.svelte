@@ -1,22 +1,24 @@
 <script lang="ts">
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import X from '@lucide/svelte/icons/x';
-  import Puzzle from '@lucide/svelte/icons/puzzle';
   import IconButton from './ui/IconButton.svelte';
+  import Icon from './ui/Icon.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { pluginHost } from '../lib/plugins/host.svelte';
-  import type { ViewHandle } from '../lib/plugins/runtime';
+  import type { ViewHandle, ViewHeader } from '../lib/plugins/runtime';
 
-  // プラグインの view を出すパネル（枠は ThreadPanel と同じ）。view は containerEl に自分で描く
+  // プラグインの view を出すパネル（枠は ThreadPanel と同じ）。view は containerEl に自分で描く。
+  // 上部の題名・アイコンは view が決める（View.title / View.icon、setTitle / setIcon）。省くとプラグイン名・プラグインのアイコン、空文字列なら出さない
   let { plugin, view, sessionId }: { plugin: string; view: string; sessionId: string } = $props();
 
   const runtime = $derived(pluginHost.runtime(plugin));
   let containerEl: HTMLDivElement | undefined = $state();
-  let viewTitle = $state<string | null>(null);
+  let header = $state<ViewHeader>({ title: null, icon: null });
   let error = $state<string | null>(null);
   let opening = $state(true);
 
-  const title = $derived(viewTitle ?? runtime?.manifest.name ?? plugin);
+  const title = $derived(header.title ?? runtime?.manifest.name ?? plugin);
+  const icon = $derived(header.icon ?? pluginHost.pluginIcon(plugin));
 
   $effect(() => {
     const r = runtime;
@@ -33,16 +35,17 @@
     let cancelled = false;
     opening = true;
     error = null;
-    viewTitle = null;
+    header = { title: null, icon: null };
     el.replaceChildren();
-    r.mountView(v, sid, el).then(
+    r.mountView(v, sid, el, (h) => {
+      if (!cancelled) header = h;
+    }).then(
       (h) => {
         if (cancelled) {
           h.close();
           return;
         }
         handle = h;
-        viewTitle = h.view.title ?? null;
         opening = false;
       },
       (e: unknown) => {
@@ -65,11 +68,11 @@
     {#if ui.isMobile}
       <!-- モバイルは戻るボタンと題名 -->
       <IconButton class="plugin-panel-back" label="戻る" onclick={() => ui.closePanel()}><ArrowLeft size={20} /></IconButton>
-      <div class="plugin-panel-title"><span class="plugin-panel-title-text">{title}</span></div>
+      <div class="plugin-panel-title">{#if title}<span class="plugin-panel-title-text">{title}</span>{/if}</div>
     {:else}
       <div class="plugin-panel-title">
-        <Puzzle size={16} />
-        <span class="plugin-panel-title-text">{title}</span>
+        {#if icon}<Icon {icon} size={16} />{/if}
+        {#if title}<span class="plugin-panel-title-text">{title}</span>{/if}
       </div>
       <IconButton class="plugin-panel-close" label="閉じる" onclick={() => ui.closePanel()}><X size={18} /></IconButton>
     {/if}

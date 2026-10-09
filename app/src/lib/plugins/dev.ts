@@ -11,6 +11,8 @@ export type DevPluginFiles = {
   manifest: string | null;
   main: string | null;
   styles: string | null;
+  /** icon.svg（任意） */
+  icon: string | null;
   stamp: string;
 };
 

@@ -11,7 +11,7 @@ mod users;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn_with_state;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
@@ -22,7 +22,17 @@ use crate::{auth, ws};
 pub fn router(state: SharedState) -> Router {
     let api = Router::new()
         .route("/me", get(users::me).patch(users::update_me))
+        // 上限は画像の大きさに、multipart の見出しの分を足したもの
+        .route(
+            "/me/avatar",
+            put(users::upload_avatar)
+                .delete(users::delete_avatar)
+                .layer(DefaultBodyLimit::max(
+                    crate::avatars::MAX_UPLOAD_BYTES + 64 * 1024,
+                )),
+        )
         .route("/users", get(users::list))
+        .route("/avatars/{id}", get(users::avatar))
         .route("/messages", get(messages::list))
         .route("/threads", get(threads::list))
         .route("/threads/{id}", get(threads::get))

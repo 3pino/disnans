@@ -9,7 +9,15 @@ export type PluginInfo = {
  */
 id: string, name: string, version: string, description: string, author: string, min_api_version: number, 
 /**
- * 配布されているファイル名（`manifest.json` / `main.js` / `styles.css`）。
+ * manifest の `icon`（Lucide のアイコン名、英小文字・数字・ハイフン）。なければ `null`。
+ */
+icon: string | null, 
+/**
+ * `icon.svg` が配布されているか（`/api/plugins/{id}/files/icon.svg`）。
+ */
+has_icon: boolean, 
+/**
+ * 配布されているファイル名（`manifest.json` / `main.js` / `styles.css` / `icon.svg`）。
  */
 files: Array<string>, 
 /**

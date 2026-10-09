@@ -1,6 +1,7 @@
 //! disnans のサーバー。API は `docs/API.md` を参照。
 
 pub mod auth;
+pub mod avatars;
 pub mod chat;
 pub mod config;
 pub mod db;
@@ -35,6 +36,7 @@ pub async fn build(
 ) -> Result<(Router, SharedState), Box<dyn std::error::Error + Send + Sync>> {
     std::fs::create_dir_all(config.files_dir())?;
     std::fs::create_dir_all(config.plugins_dir())?;
+    std::fs::create_dir_all(config.avatars_dir())?;
     // 前回の途中で残った一時ファイルは捨てる
     let _ = std::fs::remove_dir_all(config.tmp_dir());
     std::fs::create_dir_all(config.tmp_dir())?;

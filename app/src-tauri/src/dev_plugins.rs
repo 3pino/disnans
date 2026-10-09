@@ -9,8 +9,8 @@ use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
 
-/// 読むファイル（配布できるのもこの3つだけ）
-const FILES: [&str; 3] = ["manifest.json", "main.js", "styles.css"];
+/// 読むファイル（配布できるのもこれだけ）
+const FILES: [&str; 4] = ["manifest.json", "main.js", "styles.css", "icon.svg"];
 
 /// 1つのプラグインの合計の上限（サーバーの配布の上限と同じ 5 MB）
 const MAX_TOTAL: u64 = 5 * 1024 * 1024;
@@ -21,7 +21,7 @@ const MAX_TOTAL: u64 = 5 * 1024 * 1024;
 pub struct DevPluginStat {
     /// サブフォルダの名前
     folder: String,
-    /// 3つのファイルのうち、あるもの
+    /// FILES のうち、あるもの
     files: Vec<String>,
     /// ファイルの更新時刻（ミリ秒）と大きさから作った値。変わったら読み直す
     stamp: String,
@@ -35,6 +35,8 @@ pub struct DevPluginFiles {
     manifest: Option<String>,
     main: Option<String>,
     styles: Option<String>,
+    /// プラグインのアイコン（任意。24x24 の SVG）
+    icon: Option<String>,
     stamp: String,
 }
 
@@ -95,7 +97,7 @@ pub fn dev_plugins_scan(dir: String) -> Result<Vec<DevPluginStat>, String> {
     Ok(out)
 }
 
-/// サブフォルダ1つの3つのファイルを読む
+/// サブフォルダ1つのファイル（FILES）を読む
 #[tauri::command]
 pub fn dev_plugin_read(dir: String, folder: String) -> Result<DevPluginFiles, String> {
     let path = sub_dir(&dir, &folder)?;
@@ -120,11 +122,13 @@ pub fn dev_plugin_read(dir: String, folder: String) -> Result<DevPluginFiles, St
     let manifest = read("manifest.json")?;
     let main = read("main.js")?;
     let styles = read("styles.css")?;
+    let icon = read("icon.svg")?;
     Ok(DevPluginFiles {
         folder,
         manifest,
         main,
         styles,
+        icon,
         stamp,
     })
 }

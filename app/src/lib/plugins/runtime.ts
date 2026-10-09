@@ -2,6 +2,9 @@ import { parseHotkey, type Hotkey } from './hotkey';
 import { SessionsImpl, type SessionImpl } from './sessions';
 import { errorMessage, type Cleanup, type HostServices, type Manifest, type PluginClass } from './types';
 
+/** パネルの上部（題名・アイコン）。null は既定（プラグイン名・プラグインのアイコン）、空文字列は出さない */
+export type ViewHeader = { title: string | null; icon: string | null };
+
 /** パネルに開いている view 1つ分 */
 export type ViewHandle = {
   readonly view: Disnans.View;
@@ -57,6 +60,9 @@ export class PluginBase implements Disnans.Plugin {
   }
   addSettingTab(tab: Disnans.SettingTab): void {
     rt(this).addSettingTab(tab);
+  }
+  addIcon(name: string, svg: string): void {
+    rt(this).addIcon(name, svg);
   }
   registerView<S = unknown>(type: string, factory: (session: Disnans.Session<S>) => Disnans.View): void {
     rt(this).registerView(type, factory as (session: Disnans.Session<unknown>) => Disnans.View);
@@ -201,6 +207,8 @@ export class PluginRuntime {
 
   addSlashCommand(cmd: Disnans.SlashCommand): void {
     if (this.stopped) return;
+    const services = this.services;
+    const id = this.id;
     let off: Cleanup;
     try {
       off = this.services.registerSlashCommand({
@@ -219,6 +227,10 @@ export class PluginRuntime {
           : undefined,
         // run の例外は本体（入力欄）がトーストで知らせる
         run: ({ args, threadId }) => cmd.run({ args: args.trim(), threadId }),
+        // 省くとプラグインのアイコン（icon.svg はあとから読めることがあるので、そのつど引く）
+        get icon() {
+          return cmd.icon || services.pluginIcon(id);
+        },
         source: this.manifest.name,
       });
     } catch (e) {
@@ -231,12 +243,16 @@ export class PluginRuntime {
 
   addComposerAction(action: Disnans.ComposerAction): void {
     if (this.stopped) return;
+    const services = this.services;
+    const id = this.id;
     const off = this.services.registerComposerAction({
       // 本体や他のプラグインとぶつからないように、プラグイン ID を前に付ける
       id: `plugin:${this.id}:${action.id}`,
       label: action.label,
-      // 省くと本体の既定のアイコン（Puzzle）
-      iconSvg: action.icon,
+      // 省くとプラグインのアイコン。icon.svg はあとから読めることがあるので、表示のたびに引く
+      get icon() {
+        return action.icon || services.pluginIcon(id);
+      },
       // run の例外は本体（入力欄）がトーストで知らせる
       run: ({ threadId }) => action.run({ threadId }),
       source: this.manifest.name,
@@ -272,6 +288,19 @@ export class PluginRuntime {
       if (i >= 0) this.settingTabs.splice(i, 1);
     });
     this.services.changed();
+  }
+
+  addIcon(name: string, svg: string): void {
+    if (this.stopped) return;
+    let off: Cleanup;
+    try {
+      off = this.services.registerIcon(String(name), String(svg));
+    } catch (e) {
+      // SVG が読めないなど。プラグインは動かし続け、一覧にエラーとして出す
+      this.addError(`アイコン「${name}」を登録できません: ${errorMessage(e)}`);
+      return;
+    }
+    this.register(off);
   }
 
   registerView(type: string, factory: (session: Disnans.Session<unknown>) => Disnans.View): void {
@@ -316,8 +345,14 @@ export class PluginRuntime {
   /**
    * パネルの containerEl に view を描く（PluginPanel から呼ぶ）。
    * 閉じるときは返した handle の close() を呼ぶ。
+   * onHeader は、パネルの上部（題名・アイコン）が決まったとき・view が変えたときに呼ぶ
    */
-  async mountView(type: string, sessionId: string, containerEl: HTMLElement): Promise<ViewHandle> {
+  async mountView(
+    type: string,
+    sessionId: string,
+    containerEl: HTMLElement,
+    onHeader?: (header: ViewHeader) => void,
+  ): Promise<ViewHandle> {
     if (this.stopped) throw new Error('プラグインは外されています');
     const session = (await this.sessions.get(sessionId)) as SessionImpl;
     const factory = this.views.get(type);
@@ -343,8 +378,34 @@ export class PluginRuntime {
       },
     };
     this.openViews.add(handle);
+    // 題名・アイコン: setTitle / setIcon で変えたもの → view.title / view.icon → 既定（null）
+    let title: string | null | undefined;
+    let icon: string | null | undefined;
+    const header = (): ViewHeader => ({
+      title: title !== undefined ? title : typeof view.title === 'string' ? view.title : null,
+      icon: icon !== undefined ? icon : typeof view.icon === 'string' ? view.icon : null,
+    });
+    const notify = () => {
+      if (closed) return;
+      try {
+        onHeader?.(header());
+      } catch (e) {
+        this.log('パネルの上部の更新で例外', e);
+      }
+    };
+    const panel: Disnans.ViewPanel = {
+      setTitle: (t) => {
+        title = t === null ? undefined : String(t);
+        notify();
+      },
+      setIcon: (i) => {
+        icon = i === null ? undefined : String(i);
+        notify();
+      },
+    };
+    notify();
     try {
-      await view.onOpen(containerEl);
+      await view.onOpen(containerEl, panel);
     } catch (e) {
       handle.close();
       throw e;

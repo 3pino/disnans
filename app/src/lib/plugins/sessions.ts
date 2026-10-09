@@ -1,5 +1,6 @@
 import type { Session as SessionData } from '../protocol/Session';
 import type { User } from '../protocol/User';
+import { avatarSrc } from '../config';
 import { errorMessage, isVersionConflict, type Cleanup, type HostServices } from './types';
 
 /** Session.update がぶつかったときのエラー（disnans.VersionConflictError） */
@@ -18,7 +19,8 @@ function unknownUser(id: string): Disnans.User {
 }
 
 function toPluginUser(u: User): Disnans.User {
-  return { id: u.id, login_name: u.login_name, display_name: u.display_name, avatar_url: u.avatar_url };
+  // avatar_url はサーバーからの相対パス（/api/avatars/...）のことがあるので、そのまま使える URL にする
+  return { id: u.id, login_name: u.login_name, display_name: u.display_name, avatar_url: u.avatar_url ? avatarSrc(u.avatar_url) : null };
 }
 
 /**

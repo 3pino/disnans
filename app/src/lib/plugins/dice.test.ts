@@ -61,6 +61,8 @@ describe('examples/dice', () => {
       closePanel: () => {},
       toast,
       storage: { get: () => null, set: () => {} },
+      pluginIcon: () => 'puzzle',
+      registerIcon: () => () => {},
       changed: () => {},
     } as unknown as HostServices;
 

@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte';
   import { parse, type Block } from '../lib/markdown';
   import InlineNodes from './InlineNodes.svelte';
+  import CodeBlock from './CodeBlock.svelte';
 
   // suffix: 末尾に添える要素（「編集済み」など）。最後が段落ならその行内に置く
   let { body, suffix }: { body: string; suffix?: Snippet } = $props();
@@ -16,7 +17,7 @@
         {#each b.lines as line, j (j)}{#if j > 0}<br />{/if}<InlineNodes nodes={line} />{/each}{#if top && suffix && i === list.length - 1}{' '}{@render suffix()}{/if}
       </p>
     {:else if b.type === 'code'}
-      <pre><code data-lang={b.lang || undefined}>{b.text}</code></pre>
+      <CodeBlock text={b.text} lang={b.lang} />
     {:else if b.type === 'quote'}
       <blockquote>{@render render(b.children)}</blockquote>
     {:else if b.type === 'list'}

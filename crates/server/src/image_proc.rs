@@ -4,6 +4,7 @@
 //!   作り直すので EXIF などのメタデータは残らない
 //! - アニメーション（GIF / WebP / APNG）: 変換しない。サムネイルだけ最初のフレームから作る
 //! - サムネイル: 長辺 480px の WebP
+//! - アバター: 中央を正方形に切り抜き、256px の WebP
 
 use std::fs::File;
 use std::io::BufReader;
@@ -18,6 +19,7 @@ use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat, ImageRead
 pub const MAX_EDGE: u32 = 2560;
 pub const THUMB_EDGE: u32 = 480;
 pub const QUALITY: f32 = 85.0;
+pub const AVATAR_EDGE: u32 = 256;
 
 /// アップロードされたファイルの種類。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +100,21 @@ pub fn thumbnail(image: &DynamicImage) -> Result<Encoded, String> {
         encode_webp(&image.thumbnail(THUMB_EDGE, THUMB_EDGE))
     } else {
         encode_webp(image)
+    }
+}
+
+/// アバター（中央を正方形に切り抜いた 256px 以下の WebP）を作る。小さい画像は拡大しない。
+pub fn avatar(image: &DynamicImage) -> Result<Encoded, String> {
+    let (w, h) = (image.width(), image.height());
+    if w == 0 || h == 0 {
+        return Err("画像が空です".into());
+    }
+    let side = w.min(h);
+    let square = image.crop_imm((w - side) / 2, (h - side) / 2, side, side);
+    if side > AVATAR_EDGE {
+        encode_webp(&square.resize_exact(AVATAR_EDGE, AVATAR_EDGE, FilterType::Lanczos3))
+    } else {
+        encode_webp(&square)
     }
 }
 

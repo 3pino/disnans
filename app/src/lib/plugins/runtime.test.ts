@@ -7,6 +7,7 @@ import { parseManifest } from './manifest';
 import type { HostServices, Manifest, PluginClass } from './types';
 import type { Session as SessionData } from '../protocol/Session';
 import type { ClientEvent } from '../protocol/ClientEvent';
+import { hasIcon, lookupIcon, registerIcon, setLucideForTest } from '../icons.svelte';
 
 const manifest: Manifest = {
   id: 'dice',
@@ -41,11 +42,15 @@ class Conflict extends Error {
 function fakeServices() {
   const slash = new Set<string>();
   const actions = new Set<string>();
+  const actionDefs = new Map<string, { id: string; icon?: unknown }>();
+  const slashDefs = new Map<string, { name: string; icon?: unknown }>();
   const sent: ClientEvent[] = [];
   const store = new Map<string, string>();
   let server = sessionData();
   const s = {
     slash,
+    actionDefs,
+    slashDefs,
     actions,
     sent,
     store,
@@ -78,16 +83,20 @@ function fakeServices() {
       registerSlashCommand: (def: { name: string }) => {
         if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(def.name)) throw new Error('bad name');
         slash.add(def.name);
+        slashDefs.set(def.name, def);
         return () => slash.delete(def.name);
       },
       registerComposerAction: (a: { id: string }) => {
         actions.add(a.id);
+        actionDefs.set(a.id, a);
         return () => actions.delete(a.id);
       },
       openPanel: vi.fn(),
       closePanel: vi.fn(),
       toast: vi.fn(),
       storage: { get: (k: string) => store.get(k) ?? null, set: (k: string, v: string | null) => (v === null ? store.delete(k) : store.set(k, v)) },
+      pluginIcon: () => 'puzzle',
+      registerIcon,
       changed: vi.fn(),
     } as unknown as HostServices,
   };
@@ -95,6 +104,64 @@ function fakeServices() {
 }
 
 describe('PluginRuntime', () => {
+  it('addIcon は外すと消え、アイコンを省いた項目はプラグインのアイコンになる', async () => {
+    const f = fakeServices();
+    class P extends PluginBase {
+      onload() {
+        this.addIcon('dice-test-cup', '<path d="M4 4h16v16H4z"/>');
+        this.addIcon('dice-test-bad', '<path');
+        this.addComposerAction({ id: 'a', label: 'A', run: () => {} });
+        this.addComposerAction({ id: 'b', label: 'B', icon: 'dice-test-cup', run: () => {} });
+        this.addSlashCommand({ name: 'c', description: '', run: () => {} });
+        this.addSlashCommand({ name: 'd', description: '', icon: 'dice-5', run: () => {} });
+      }
+    }
+    const r = new PluginRuntime(manifest, f.services);
+    await r.start(P as PluginClass);
+    expect(hasIcon('dice-test-cup')).toBe(true);
+    // 読めない SVG はエラーとして持って動き続ける
+    expect(r.errors).toHaveLength(1);
+    expect(f.actionDefs.get('plugin:dice:a')?.icon).toBe('puzzle');
+    expect(f.actionDefs.get('plugin:dice:b')?.icon).toBe('dice-test-cup');
+    expect(f.slashDefs.get('c')?.icon).toBe('puzzle');
+    expect(f.slashDefs.get('d')?.icon).toBe('dice-5');
+    r.stop();
+    setLucideForTest({});
+    expect(lookupIcon('dice-test-cup')).toBeNull();
+    setLucideForTest(null);
+  });
+
+  it('view はパネルの題名・アイコンを決められる（setTitle / setIcon）', async () => {
+    const f = fakeServices();
+    let panel: Disnans.ViewPanel | null = null;
+    class P extends PluginBase {
+      onload() {
+        this.registerView('dice', () => ({
+          title: '題名',
+          onOpen: (_el: HTMLElement, p: Disnans.ViewPanel) => {
+            panel = p;
+          },
+        }));
+      }
+    }
+    const r = new PluginRuntime(manifest, f.services);
+    await r.start(P as PluginClass);
+    const headers: unknown[] = [];
+    const handle = await r.mountView('dice', 's1', document.createElement('div'), (h) => headers.push(h));
+    expect(headers).toEqual([{ title: '題名', icon: null }]);
+    panel!.setIcon('dice-5');
+    panel!.setTitle('');
+    panel!.setTitle(null);
+    expect(headers.slice(1)).toEqual([
+      { title: '題名', icon: 'dice-5' },
+      { title: '', icon: 'dice-5' },
+      { title: '題名', icon: 'dice-5' },
+    ]);
+    handle.close();
+    panel!.setTitle('閉じたあと');
+    expect(headers).toHaveLength(4);
+  });
+
   it('読み込んで登録したものは、外すとすべて片付く', async () => {
     const f = fakeServices();
     const onClose = vi.fn();
@@ -358,5 +425,8 @@ describe('parseManifest', () => {
     expect(() => parseManifest('{')).toThrow();
     expect(() => parseManifest('{"id":"Dice","name":"a","version":"1"}')).toThrow();
     expect(() => parseManifest('{"id":"dice","version":"1"}')).toThrow();
+    // icon は Lucide のアイコン名（任意）
+    expect(parseManifest('{"id":"dice","name":"a","version":"1","icon":"dice-5"}').icon).toBe('dice-5');
+    expect(() => parseManifest('{"id":"dice","name":"a","version":"1","icon":"<svg>"}')).toThrow();
   });
 });

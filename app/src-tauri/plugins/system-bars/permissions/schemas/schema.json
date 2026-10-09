@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the set_navigation_bar_hidden command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-navigation-bar-hidden",
+          "markdownDescription": "Enables the set_navigation_bar_hidden command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_navigation_bar_hidden command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-navigation-bar-hidden",
+          "markdownDescription": "Denies the set_navigation_bar_hidden command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_style command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-style",
@@ -307,10 +319,10 @@
           "markdownDescription": "Denies the set_style command without any pre-configured scope."
         },
         {
-          "description": "システムバーのアイコンの明暗の変更を許可する\n#### This default permission set includes:\n\n- `allow-set-style`",
+          "description": "システムバーのアイコンの明暗の変更と、ナビゲーションバーを隠すことを許可する\n#### This default permission set includes:\n\n- `allow-set-style`\n- `allow-set-navigation-bar-hidden`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "システムバーのアイコンの明暗の変更を許可する\n#### This default permission set includes:\n\n- `allow-set-style`"
+          "markdownDescription": "システムバーのアイコンの明暗の変更と、ナビゲーションバーを隠すことを許可する\n#### This default permission set includes:\n\n- `allow-set-style`\n- `allow-set-navigation-bar-hidden`"
         }
       ]
     }

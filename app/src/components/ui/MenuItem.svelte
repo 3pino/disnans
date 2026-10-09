@@ -1,5 +1,7 @@
 <script lang="ts">
-  import type { Component, Snippet } from 'svelte';
+  import type { Snippet } from 'svelte';
+  import Icon from './Icon.svelte';
+  import type { IconRef } from '../../lib/icons.svelte';
 
   // メニューの1項目。見た目はグローバルの .menu-item（app.css）
   let {
@@ -10,7 +12,8 @@
     onclick,
     children,
   }: {
-    icon?: Component<{ size?: number }>;
+    /** アイコン（名前か Svelte の部品） */
+    icon?: IconRef;
     iconSize?: number;
     danger?: boolean;
     class?: string;
@@ -20,9 +23,6 @@
 </script>
 
 <button type="button" class="menu-item {className}" class:menu-item-danger={danger} role="menuitem" {onclick}>
-  {#if icon}
-    {@const Icon = icon}
-    <Icon size={iconSize} />
-  {/if}
+  {#if icon}<Icon {icon} size={iconSize} />{/if}
   {@render children?.()}
 </button>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Sun from '@lucide/svelte/icons/sun';
   import Moon from '@lucide/svelte/icons/moon';
   import Monitor from '@lucide/svelte/icons/monitor';
@@ -12,29 +12,41 @@
   import Download from '@lucide/svelte/icons/download';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
+  import Camera from '@lucide/svelte/icons/camera';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import Check from '@lucide/svelte/icons/check';
+  import X from '@lucide/svelte/icons/x';
+  import ImageUp from '@lucide/svelte/icons/image-up';
+  import Undo2 from '@lucide/svelte/icons/undo-2';
   import Avatar from './Avatar.svelte';
   import Markdown from './Markdown.svelte';
   import Button from './ui/Button.svelte';
+  import IconButton from './ui/IconButton.svelte';
+  import Menu from './ui/Menu.svelte';
+  import MenuItem from './ui/MenuItem.svelte';
   import TextInput from './ui/TextInput.svelte';
   import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import StatusLine from './ui/StatusLine.svelte';
+  import Toggle from './ui/Toggle.svelte';
+  import SegmentedButton from './ui/SegmentedButton.svelte';
   import PluginSettings from './PluginSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui, type ThemePref } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
-  import { devUser, getServerUrl, isTauri, setServerUrl } from '../lib/config';
+  import { devUser, getServerUrl, isAndroid, isCustomAvatar, isTauri, setServerUrl } from '../lib/config';
   import { notifications } from '../lib/stores/notifications.svelte';
 
-  // svelte-ignore state_referenced_locally
-  let name = $state(client.me?.display_name ?? '');
+  // 表示名は、カードの名前を押したときだけその場で編集する
+  let editingName = $state(false);
+  let name = $state('');
   let saving = $state(false);
   let error = $state<string | null>(null);
 
-  // 表示名が届く前に開いたとき
-  $effect(() => {
-    if (!name && client.me) name = client.me.display_name;
-  });
+  // アバター
+  let avatarInput = $state<HTMLInputElement>();
+  let avatarMenuOpen = $state(false);
+  let avatarBusy = $state(false);
 
   onMount(() => {
     void updater.loadVersion();
@@ -52,10 +64,10 @@
     };
   });
 
-  const themes: { id: ThemePref; label: string; icon: typeof Sun }[] = [
-    { id: 'system', label: '自動', icon: Monitor },
-    { id: 'light', label: 'ライト', icon: Sun },
-    { id: 'dark', label: 'ダーク', icon: Moon },
+  const themes: { value: ThemePref; label: string; icon: typeof Sun }[] = [
+    { value: 'system', label: '自動', icon: Monitor },
+    { value: 'light', label: 'ライト', icon: Sun },
+    { value: 'dark', label: 'ダーク', icon: Moon },
   ];
 
   const perm = $derived(notifications.permission);
@@ -65,18 +77,87 @@
   const st = $derived(updater.state);
   const busy = $derived(st.kind === 'checking' || st.kind === 'downloading' || st.kind === 'installing');
 
+  async function startEditName() {
+    name = client.me?.display_name ?? '';
+    error = null;
+    editingName = true;
+    await tick();
+    const input = document.getElementById('settings-display-name-input') as HTMLInputElement | null;
+    input?.focus();
+    input?.select();
+  }
+
+  function cancelEditName() {
+    editingName = false;
+    error = null;
+  }
+
   async function save(e: SubmitEvent) {
     e.preventDefault();
-    if (!changed) return;
+    if (saving) return;
+    // 変えていなければ、そのまま閉じる
+    if (!changed) {
+      if (name.trim() === client.me?.display_name) cancelEditName();
+      return;
+    }
     saving = true;
     error = null;
     try {
       await client.updateDisplayName(name.trim());
+      editingName = false;
       ui.toast('表示名を変更しました');
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
       saving = false;
+    }
+  }
+
+  function onNameKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelEditName();
+    }
+  }
+
+  // 自分で設定した画像なら、選び直すか Tailscale の画像に戻すかをメニューで選ぶ。そうでなければすぐ画像を選ぶ
+  function onAvatarClick() {
+    if (avatarBusy) return;
+    if (isCustomAvatar(client.me?.avatar_url)) avatarMenuOpen = true;
+    else avatarInput?.click();
+  }
+
+  function pickAvatar() {
+    avatarMenuOpen = false;
+    avatarInput?.click();
+  }
+
+  async function onAvatarPicked(e: Event & { currentTarget: HTMLInputElement }) {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = '';
+    if (!file) return;
+    avatarBusy = true;
+    try {
+      await client.setAvatar(file);
+      ui.toast('アバターを変更しました');
+    } catch (err) {
+      ui.toast(`アバターを変更できませんでした: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      avatarBusy = false;
+    }
+  }
+
+  async function revertAvatar() {
+    avatarMenuOpen = false;
+    avatarBusy = true;
+    try {
+      await client.clearAvatar();
+      ui.toast('Tailscale の画像に戻しました');
+    } catch (err) {
+      ui.toast(`アバターを戻せませんでした: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      avatarBusy = false;
     }
   }
 
@@ -104,32 +185,67 @@
       <Section title="プロフィール" class="settings-profile">
         {#if client.me}
           <div class="settings-profile-card">
-            <Avatar user={client.me} id={client.me.id} size={44} />
+            <div class="settings-profile-avatar-wrap">
+              <button
+                type="button"
+                id="settings-profile-avatar"
+                class="settings-profile-avatar"
+                class:settings-profile-avatar-busy={avatarBusy}
+                aria-label="アバターを変更"
+                title="アバターを変更"
+                aria-busy={avatarBusy}
+                onclick={onAvatarClick}
+              >
+                <Avatar user={client.me} id={client.me.id} size={44} />
+                <span class="settings-profile-avatar-badge" aria-hidden="true"><Camera size={12} /></span>
+              </button>
+              {#if avatarMenuOpen}
+                <Menu class="settings-avatar-menu" label="アバター" onclose={() => (avatarMenuOpen = false)}>
+                  <MenuItem class="settings-avatar-menu-pick" icon={ImageUp} onclick={pickAvatar}>画像を選ぶ</MenuItem>
+                  <MenuItem class="settings-avatar-menu-revert" icon={Undo2} onclick={() => void revertAvatar()}>Tailscale の画像に戻す</MenuItem>
+                </Menu>
+              {/if}
+              <input bind:this={avatarInput} id="settings-avatar-input" type="file" accept="image/*" hidden onchange={onAvatarPicked} />
+            </div>
             <div class="settings-profile-text">
-              <div class="settings-profile-display-name">{client.me.display_name}</div>
+              {#if editingName}
+                <form id="settings-display-name-form" class="settings-display-name-form" onsubmit={save}>
+                  <TextInput
+                    id="settings-display-name-input"
+                    class="settings-display-name-input"
+                    bind:value={name}
+                    maxlength={32}
+                    autocomplete="nickname"
+                    aria-label="表示名"
+                    enterkeyhint="done"
+                    onkeydown={onNameKeydown}
+                  />
+                  <IconButton type="submit" label="保存" class="settings-display-name-save" disabled={saving}><Check size={18} /></IconButton>
+                  <IconButton label="キャンセル" class="settings-display-name-cancel" onclick={cancelEditName}><X size={18} /></IconButton>
+                </form>
+                {#if error}<p class="settings-display-name-error">{error}</p>{/if}
+              {:else}
+                <button type="button" id="settings-profile-display-name" class="settings-profile-display-name" title="表示名を変更" onclick={() => void startEditName()}>
+                  <span class="settings-profile-display-name-text">{client.me.display_name}</span>
+                  <Pencil size={13} class="settings-profile-display-name-icon" />
+                </button>
+              {/if}
               <div class="muted settings-small-text settings-profile-login-name">{client.me.login_name}</div>
             </div>
           </div>
         {/if}
-        <form class="settings-display-name-form" onsubmit={save}>
-          <label class="field-label" for="settings-display-name-input">表示名</label>
-          <div class="settings-display-name-row">
-            <TextInput id="settings-display-name-input" class="settings-display-name-input" bind:value={name} maxlength={32} autocomplete="nickname" />
-            <Button type="submit" variant="primary" class="settings-display-name-save" disabled={!changed || saving}>保存</Button>
-          </div>
-          {#if error}<p class="settings-display-name-error">{error}</p>{/if}
-        </form>
       </Section>
 
       <Section title="外観" class="settings-appearance">
         <span class="field-label">テーマ</span>
-        <div class="settings-theme-picker" role="radiogroup" aria-label="テーマ">
-          {#each themes as t (t.id)}
-            <button type="button" class="settings-theme-option" role="radio" aria-checked={ui.theme === t.id} class:settings-theme-option-selected={ui.theme === t.id} onclick={() => ui.setTheme(t.id)}>
-              <t.icon size={15} />{t.label}
-            </button>
-          {/each}
-        </div>
+        <SegmentedButton class="settings-theme-picker" label="テーマ" options={themes} value={ui.theme} onchange={(v) => ui.setTheme(v)} />
+        {#if isTauri() && isAndroid()}
+          <SettingRow name="ナビゲーションバーを隠す" description="画面の下端からスワイプすると一時的に表示します" class="settings-hide-nav-bar-row">
+            {#snippet control()}
+              <Toggle checked={ui.hideNavigationBar} label="ナビゲーションバーを隠す" onchange={(on) => ui.setHideNavigationBar(on)} />
+            {/snippet}
+          </SettingRow>
+        {/if}
       </Section>
 
       <Section title="通知" class="settings-notifications">
@@ -265,11 +381,77 @@
     margin-bottom: 16px;
   }
   .settings-profile-text {
+    flex: 1;
     min-width: 0;
   }
+  /* アバターを押すと画像を選ぶ。右下にカメラの印を付ける */
+  .settings-profile-avatar-wrap {
+    position: relative;
+    flex: none;
+  }
+  .settings-profile-avatar {
+    position: relative;
+    display: block;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+  }
+  .settings-profile-avatar.settings-profile-avatar-busy {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .settings-profile-avatar-badge {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    border: 2px solid var(--bg);
+    color: var(--text-muted);
+  }
+  .settings-profile-avatar-wrap > :global(.settings-avatar-menu) {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+  }
+  /* 名前を押すと、その場で表示名を編集する */
   .settings-profile-display-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text);
     font-weight: 700;
     font-size: 16px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .settings-profile-display-name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .settings-profile-display-name > :global(.settings-profile-display-name-icon) {
+    flex: none;
+    color: var(--text-muted);
+  }
+  .settings-display-name-form {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .settings-display-name-form > :global(.settings-display-name-input) {
+    flex: 1;
+    min-width: 0;
   }
   .settings-small-text {
     font-size: 13px;
@@ -283,42 +465,10 @@
   .settings-server-url {
     overflow-wrap: anywhere;
   }
-  .settings-display-name-row {
-    display: flex;
-    gap: 8px;
-  }
-  .settings-display-name-row > :global(.btn) {
-    height: 40px;
-  }
   .settings-display-name-error {
     color: var(--danger);
     font-size: 13px;
     margin: 6px 0 0;
-  }
-  .settings-theme-picker {
-    display: flex;
-    gap: 4px;
-    padding: 4px;
-    background: var(--surface-2);
-    border-radius: var(--radius-sm);
-  }
-  .settings-theme-picker .settings-theme-option {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    height: 32px;
-    border: none;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 600;
-  }
-  .settings-theme-picker .settings-theme-option.settings-theme-option-selected {
-    background: var(--bg);
-    color: var(--text);
   }
   /* バージョンの行は、名前を控えめな色にする */
   .settings-content :global(.settings-version-row .setting-row-name) {

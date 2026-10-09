@@ -50,6 +50,11 @@ impl Config {
         self.data_dir.join("plugins")
     }
 
+    /// 自分で設定したアバター（`avatars/<id>.webp`）。
+    pub fn avatars_dir(&self) -> PathBuf {
+        self.data_dir.join("avatars")
+    }
+
     /// アップロード中の一時ファイル。
     pub fn tmp_dir(&self) -> PathBuf {
         self.data_dir.join("tmp")

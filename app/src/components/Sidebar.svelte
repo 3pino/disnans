@@ -36,7 +36,11 @@
     background: var(--surface);
     border-right: 1px solid var(--border);
   }
+  /* ロゴとアプリ名は見出しの飾りなので、文字を選択できないようにする */
   .sidebar-brand {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
     display: flex;
     align-items: center;
     gap: 10px;

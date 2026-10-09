@@ -1,3 +1,4 @@
+import type { IconRef } from '../icons.svelte';
 import type { User } from '../protocol/User';
 
 /** 入力欄の中で、候補で置き換える範囲 */
@@ -17,6 +18,8 @@ export type SuggestItem = {
   emoji?: string;
   /** 左に出すアバター */
   user?: User;
+  /** 左に出すアイコン（スラッシュコマンドなど） */
+  icon?: IconRef;
   /** 範囲（start〜end）をこの文字列で置き換える */
   insert: string;
   /** 選んだあとに呼ぶ（メンションの対応表に足す、など） */

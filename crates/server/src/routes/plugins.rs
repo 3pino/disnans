@@ -38,7 +38,7 @@ pub async fn upload(
             return Err(AppError::bad_request(
                 "invalid_file_name",
                 format!(
-                    "配布できないファイルです（{file_name}）。manifest.json / main.js / styles.css だけです"
+                    "配布できないファイルです（{file_name}）。manifest.json / main.js / styles.css / icon.svg だけです"
                 ),
             ));
         }
@@ -94,6 +94,13 @@ pub async fn file(
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
     );
+    if name == "icon.svg" {
+        // SVG はスクリプトを含められるので、直接開かれても何も実行させない
+        headers.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'; sandbox"),
+        );
+    }
     Ok(res)
 }
 

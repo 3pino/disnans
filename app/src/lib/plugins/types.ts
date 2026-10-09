@@ -47,6 +47,10 @@ export interface HostServices {
     get(key: string): string | null;
     set(key: string, value: string | null): void;
   };
+  /** プラグインのアイコンの名前（icon.svg → manifest.icon → puzzle）。リアクティブ */
+  pluginIcon(pluginId: string): string;
+  /** アイコンを登録する（lib/icons.svelte.ts の registerIcon）。返り値の関数で外す */
+  registerIcon(name: string, svg: string): Cleanup;
   /** 登録物（view・カードの描画・設定タブなど）が変わったときに呼ぶ */
   changed(): void;
 }

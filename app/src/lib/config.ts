@@ -80,6 +80,19 @@ export function wsUrl(): string {
   return withDevQuery(url);
 }
 
+/**
+ * `User.avatar_url` を <img> で使える URL にする。自分で設定したアバターはサーバーからの相対パス
+ * （`/api/avatars/{id}`）なので、サーバーの URL を前に付ける。Tailscale の画像はそのまま
+ */
+export function avatarSrc(url: string): string {
+  return url.startsWith('/') ? withDevQuery(apiUrl(url)) : url;
+}
+
+/** 自分で設定したアバターか（Tailscale のプロフィール画像ではない） */
+export function isCustomAvatar(url: string | null | undefined): boolean {
+  return !!url && url.startsWith('/api/avatars/');
+}
+
 /** <img> などヘッダーを付けられない場所で使う URL */
 export function fileUrl(id: string, thumb = false): string {
   return withDevQuery(apiUrl(`/api/files/${encodeURIComponent(id)}${thumb ? '/thumb' : ''}`));

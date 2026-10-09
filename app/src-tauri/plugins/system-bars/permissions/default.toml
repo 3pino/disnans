@@ -1,5 +1,5 @@
 "$schema" = "schemas/schema.json"
 
 [default]
-description = "システムバーのアイコンの明暗の変更を許可する"
-permissions = ["allow-set-style"]
+description = "システムバーのアイコンの明暗の変更と、ナビゲーションバーを隠すことを許可する"
+permissions = ["allow-set-style", "allow-set-navigation-bar-hidden"]

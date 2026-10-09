@@ -14,6 +14,7 @@ import { manifestOf, parseManifest, PLUGIN_FILES } from './manifest';
 import { PluginBase, PluginRuntime, type ViewHandle } from './runtime';
 import { toPluginUser, VersionConflictError } from './sessions';
 import { createUi } from './ui';
+import { loadLucide, registerIcon } from '../icons.svelte';
 import { API_VERSION, errorMessage, type HostServices, type Manifest, type PluginClass } from './types';
 
 const DISABLED_KEY = 'disnans.plugins.disabled';
@@ -30,6 +31,8 @@ export type DevPlugin = {
   manifestText: string | null;
   main: string | null;
   styles: string | null;
+  /** icon.svg（任意） */
+  icon: string | null;
   /** manifest が読めない、main.js がない、など */
   error: string | null;
 };
@@ -51,7 +54,17 @@ export type PluginEntry = {
   error: string | null;
   /** 設定タブがあるか */
   hasSettings: boolean;
+  /** プラグインのアイコンの名前（icon.svg → manifest.icon → puzzle） */
+  icon: string;
 };
+
+/** プラグインのアイコン（icon.svg）を登録する名前 */
+export function pluginIconName(id: string): string {
+  return `plugin:${id}`;
+}
+
+/** 既定のアイコン */
+const DEFAULT_PLUGIN_ICON = 'puzzle';
 
 /** 動いているプラグイン1つ */
 type Loaded = {
@@ -148,6 +161,8 @@ class PluginHost {
     },
     toast: (text, kind) => ui.toast(text, kind),
     storage: { get: (k) => getItem(k), set: (k, v) => setItem(k, v) },
+    pluginIcon: (id) => this.pluginIcon(id),
+    registerIcon: (name, svg) => registerIcon(name, svg),
     changed: () => this.rev++,
   };
 
@@ -259,6 +274,7 @@ class PluginHost {
           loaded: !!l,
           error: this.errors[id] ?? (l && l.runtime.errors.length > 0 ? l.runtime.errors.join('\n') : null),
           hasSettings: !!l && l.runtime.settingTabs.length > 0,
+          icon: DEFAULT_PLUGIN_ICON,
         };
         map.set(id, e);
       }
@@ -275,7 +291,65 @@ class PluginHost {
       if (d.manifest) e.manifest = d.manifest;
       if (d.error && !e.error) e.error = d.error;
     }
+    for (const e of map.values()) e.icon = this.iconOf(e.id, e.manifest);
     return [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  // ---- アイコン ----
+
+  /** icon.svg を登録したもの（ID ごと）。key は何を読んだか（変わったら読み直す） */
+  private icons = new Map<string, { key: string; off: (() => void) | null }>();
+
+  private iconOf(id: string, manifest: Manifest | null): string {
+    if (this.icons.get(id)?.off) return pluginIconName(id);
+    return manifest?.icon || DEFAULT_PLUGIN_ICON;
+  }
+
+  /**
+   * プラグインのアイコンの名前（icon.svg → manifest.icon → puzzle）。リアクティブ。
+   * 動いていない（オフ・ない）プラグインでも、一覧にあればそのアイコン
+   */
+  pluginIcon(id: string): string {
+    void this.rev;
+    const dev = this.dev.find((d) => d.manifest?.id === id);
+    const manifest = dev?.manifest ?? this.loaded.get(id)?.runtime.manifest ?? null;
+    if (manifest) return this.iconOf(id, manifest);
+    const server = this.server.find((p) => p.id === id);
+    return this.iconOf(id, server ? manifestOf(server) : null);
+  }
+
+  /** icon.svg を読み、アイコンとして登録する（一覧が変わるたびに呼ぶ）。開発中のものを優先する */
+  private syncIcons(): void {
+    const want = new Map<string, { key: string; get: () => Promise<string> }>();
+    for (const p of this.server) {
+      if (p.has_icon) want.set(p.id, { key: `server:${p.hash}`, get: () => api.pluginFile(p.id, 'icon.svg', p.hash) });
+    }
+    for (const d of this.dev) {
+      const id = d.manifest?.id;
+      if (!id) continue;
+      const svg = d.icon;
+      if (svg === null) want.delete(id);
+      else want.set(id, { key: `dev:${d.folder}:${d.stamp}`, get: async () => svg });
+    }
+    for (const [id, cur] of [...this.icons]) {
+      if (want.get(id)?.key === cur.key) continue;
+      cur.off?.();
+      this.icons.delete(id);
+      this.rev++;
+    }
+    for (const [id, w] of want) {
+      if (this.icons.has(id)) continue;
+      const slot: { key: string; off: (() => void) | null } = { key: w.key, off: null };
+      this.icons.set(id, slot);
+      w.get().then(
+        (svg) => {
+          if (this.icons.get(id) !== slot) return;
+          slot.off = registerIcon(pluginIconName(id), svg);
+          this.rev++;
+        },
+        (e: unknown) => console.warn(`[plugin:${id}] icon.svg を読めません`, e),
+      ).catch((e: unknown) => console.warn(`[plugin:${id}] icon.svg を読めません`, e));
+    }
   }
 
   /** 動いている（読み込み済みの）プラグイン。リアクティブ */
@@ -301,6 +375,7 @@ class PluginHost {
   /** 今あるべき状態に合わせて、読み込み・読み込み直し・外すを行う（順番に走らせる） */
   reconcile(): Promise<void> {
     if (!this.helloSeen) return this.queue;
+    this.syncIcons();
     this.queue = this.queue.then(() => this.reconcileNow()).catch((e) => console.error('[plugins]', e));
     return this.queue;
   }
@@ -377,6 +452,8 @@ class PluginHost {
       return;
     }
 
+    // プラグインはアイコンを名前（Lucide）で使うことが多いので、先に読み込み始める
+    void loadLucide();
     let files: { main: string; styles: string | null };
     let mod: { default?: unknown };
     try {
@@ -459,6 +536,7 @@ class PluginHost {
       { name: 'main.js', data: new Blob([d.main], { type: 'text/javascript' }) },
     ];
     if (d.styles !== null) files.push({ name: 'styles.css', data: new Blob([d.styles], { type: 'text/css' }) });
+    if (d.icon !== null) files.push({ name: 'icon.svg', data: new Blob([d.icon], { type: 'image/svg+xml' }) });
     return this.publish(files);
   }
 
@@ -467,7 +545,7 @@ class PluginHost {
     const names = new Set<string>(PLUGIN_FILES);
     const files: { name: string; data: Blob }[] = [];
     for (const f of list) {
-      if (!names.has(f.name)) throw new Error(`配布できないファイルです（${f.name}）。manifest.json / main.js / styles.css だけです`);
+      if (!names.has(f.name)) throw new Error(`配布できないファイルです（${f.name}）。manifest.json / main.js / styles.css / icon.svg だけです`);
       files.push({ name: f.name, data: f });
     }
     if (!files.some((f) => f.name === 'manifest.json') || !files.some((f) => f.name === 'main.js')) {
@@ -541,11 +619,12 @@ class PluginHost {
 
   private async readDev(dir: string, folder: string, stamp: string): Promise<DevPlugin> {
     // 読めなかったときも scan の stamp を覚え、変わるまで読み直さない
-    const d: DevPlugin = { folder, stamp, manifest: null, manifestText: null, main: null, styles: null, error: null };
+    const d: DevPlugin = { folder, stamp, manifest: null, manifestText: null, main: null, styles: null, icon: null, error: null };
     try {
       const f = await readDevPlugin(dir, folder);
       d.main = f.main;
       d.styles = f.styles;
+      d.icon = f.icon;
       d.manifestText = f.manifest;
       if (f.manifest === null) throw new Error('manifest.json がありません');
       d.manifest = parseManifest(f.manifest);

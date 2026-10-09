@@ -30,7 +30,7 @@ async fn error_code(res: reqwest::Response) -> (u16, String) {
 }
 
 #[tokio::test]
-async fn upload_update_and_delete_are_broadcast_and_announced() {
+async fn upload_update_and_delete_are_broadcast_without_chat_messages() {
     let server = TestServer::start().await;
     let alice_user: User = server.get_json(ALICE, "/api/me").await;
     let mut bob = server.ws(BOB).await;
@@ -58,17 +58,13 @@ async fn upload_update_and_delete_are_broadcast_and_announced() {
     assert_eq!(info.hash.len(), 64);
     assert_eq!(info.updated_by, alice_user.id);
 
+    assert_eq!(info.icon, None);
+    assert!(!info.has_icon);
+
     let ServerEvent::PluginUpdated { plugin } = bob.recv().await else {
         panic!()
     };
     assert_eq!(plugin.hash, info.hash);
-    let ServerEvent::MessageCreated { client_id, message } = bob.recv().await else {
-        panic!()
-    };
-    assert_eq!(client_id, None);
-    assert_eq!(message.author_id, alice_user.id);
-    assert_eq!(message.thread_id, None);
-    assert_eq!(message.body, "プラグイン「ダイス」v1.0.0 を配布しました");
 
     let list: Vec<PluginInfo> = server.get_json(BOB, "/api/plugins").await;
     assert_eq!(list.len(), 1);
@@ -122,13 +118,6 @@ async fn upload_update_and_delete_are_broadcast_and_announced() {
         panic!()
     };
     assert_eq!(plugin.version, "1.1.0");
-    let ServerEvent::MessageCreated { message, .. } = bob.recv().await else {
-        panic!()
-    };
-    assert_eq!(
-        message.body,
-        "プラグイン「ダイス」を更新しました（v1.0.0 → v1.1.0）"
-    );
 
     let res = server
         .get(ALICE, "/api/plugins/dice/files/main.js")
@@ -157,10 +146,6 @@ async fn upload_update_and_delete_are_broadcast_and_announced() {
         panic!()
     };
     assert_eq!(plugin_id, "dice");
-    let ServerEvent::MessageCreated { message, .. } = bob.recv().await else {
-        panic!()
-    };
-    assert_eq!(message.body, "プラグイン「ダイス」を削除しました");
     assert!(!server.dir.path().join("plugins/dice").exists());
     let list: Vec<PluginInfo> = server.get_json(BOB, "/api/plugins").await;
     assert!(list.is_empty());
@@ -179,9 +164,10 @@ async fn upload_update_and_delete_are_broadcast_and_announced() {
         .unwrap();
     assert_eq!(error_code(res).await, (404, "not_found".into()));
 
-    // アナウンスはメインチャットの履歴に残る
-    let history = server.messages("").await;
-    assert_eq!(history.len(), 3);
+    // チャットにはお知らせを流さない
+    bob.assert_silent(std::time::Duration::from_millis(200))
+        .await;
+    assert!(server.messages("").await.is_empty());
 }
 
 #[tokio::test]
@@ -249,6 +235,41 @@ async fn rejects_invalid_packages() {
             400,
             "invalid_manifest",
         ),
+        // icon が Lucide のアイコン名の形式でない
+        (
+            vec![
+                (
+                    "manifest.json",
+                    br#"{"id":"dice","name":"x","version":"1","icon":"Dice 5"}"#.to_vec(),
+                ),
+                ("main.js", MAIN_JS.to_vec()),
+            ],
+            400,
+            "invalid_manifest",
+        ),
+        // icon.svg が SVG でない・大きすぎる
+        (
+            vec![
+                ("manifest.json", ok.clone()),
+                ("main.js", MAIN_JS.to_vec()),
+                ("icon.svg", b"<html></html>".to_vec()),
+            ],
+            400,
+            "invalid_icon",
+        ),
+        (
+            vec![
+                ("manifest.json", ok.clone()),
+                ("main.js", MAIN_JS.to_vec()),
+                ("icon.svg", {
+                    let mut big = b"<svg>".to_vec();
+                    big.resize(64 * 1024 + 1, b' ');
+                    big
+                }),
+            ],
+            400,
+            "invalid_icon",
+        ),
         // 合計 5 MB を超える
         (
             vec![
@@ -265,10 +286,9 @@ async fn rejects_invalid_packages() {
         assert_eq!(error_code(res).await, (status, code.into()), "ケース {i}");
     }
 
-    // 何も配布されず、アナウンスも流れていない
+    // 何も配布されていない
     let list: Vec<PluginInfo> = server.get_json(ALICE, "/api/plugins").await;
     assert!(list.is_empty());
-    assert!(server.messages("").await.is_empty());
 
     // minApiVersion を指定でき、description・author は省略できる
     let res = server
@@ -296,4 +316,81 @@ async fn rejects_invalid_packages() {
         .await
         .unwrap();
     assert_eq!(error_code(res).await, (400, "invalid_plugin_id".into()));
+}
+
+#[tokio::test]
+async fn plugin_icons() {
+    let server = TestServer::start().await;
+    const SVG: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"/>";
+
+    // manifest の icon（Lucide のアイコン名）と icon.svg
+    let res = server
+        .upload_plugin(
+            ALICE,
+            &[
+                (
+                    "manifest.json",
+                    br#"{"id":"dice","name":"D","version":"1","icon":"dice-5"}"#,
+                ),
+                ("main.js", MAIN_JS),
+                ("dice/icon.svg", SVG),
+            ],
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+    let info: PluginInfo = res.json().await.unwrap();
+    assert_eq!(info.icon.as_deref(), Some("dice-5"));
+    assert!(info.has_icon);
+    assert_eq!(info.files, ["manifest.json", "main.js", "icon.svg"]);
+
+    let list: Vec<PluginInfo> = server.get_json(BOB, "/api/plugins").await;
+    assert_eq!(list[0].icon.as_deref(), Some("dice-5"));
+    assert!(list[0].has_icon);
+
+    let res = server
+        .get(BOB, "/api/plugins/dice/files/icon.svg")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    assert_eq!(res.headers()["content-type"], "image/svg+xml");
+    assert!(res.headers().contains_key("content-security-policy"));
+    assert_eq!(&res.bytes().await.unwrap()[..], SVG);
+
+    // icon.svg もハッシュに入る
+    let res = server
+        .upload_plugin(
+            ALICE,
+            &[
+                (
+                    "manifest.json",
+                    br#"{"id":"dice","name":"D","version":"1","icon":"dice-5"}"#,
+                ),
+                ("main.js", MAIN_JS),
+                ("icon.svg", b"<svg/>"),
+            ],
+        )
+        .await;
+    let info2: PluginInfo = res.json().await.unwrap();
+    assert_ne!(info2.hash, info.hash);
+
+    // なくすと has_icon も icon も消える
+    let res = server
+        .upload_plugin(
+            ALICE,
+            &[
+                ("manifest.json", &manifest("dice", "2")),
+                ("main.js", MAIN_JS),
+            ],
+        )
+        .await;
+    let info3: PluginInfo = res.json().await.unwrap();
+    assert_eq!(info3.icon, None);
+    assert!(!info3.has_icon);
+    let res = server
+        .get(BOB, "/api/plugins/dice/files/icon.svg")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 404);
 }

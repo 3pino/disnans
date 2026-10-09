@@ -4,7 +4,7 @@ import { findSlashCommand, parseSlashInput, registerSlashCommand, runSlashComman
 describe('parseSlashInput', () => {
   it('splits commands and messages', () => {
     expect(parseSlashInput('hello')).toEqual({ kind: 'message', body: 'hello' });
-    expect(parseSlashInput('/thread  hi there \n')).toEqual({ kind: 'command', name: 'thread', args: 'hi there' });
+    expect(parseSlashInput('/memo  hi there \n')).toEqual({ kind: 'command', name: 'memo', args: 'hi there' });
     expect(parseSlashInput('/dice')).toEqual({ kind: 'command', name: 'dice', args: '' });
     expect(parseSlashInput('/a\nb')).toEqual({ kind: 'command', name: 'a', args: 'b' });
   });

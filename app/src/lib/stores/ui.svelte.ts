@@ -1,5 +1,5 @@
 import { getItem, setItem } from '../storage';
-import { syncSystemBars } from '../systemBars';
+import { setNavigationBarHidden, syncSystemBars } from '../systemBars';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
@@ -14,11 +14,14 @@ export type Toast = { id: number; text: string; kind: 'info' | 'error'; action?:
 export type ConfirmRequest = { title: string; body?: string; okLabel: string; danger?: boolean; resolve: (ok: boolean) => void };
 
 const THEME_KEY = 'disnans.theme';
+const HIDE_NAV_BAR_KEY = 'disnans.hideNavigationBar';
 const MOBILE_QUERY = '(max-width: 767px)';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 class Ui {
   theme = $state<ThemePref>((getItem(THEME_KEY) as ThemePref | null) ?? 'system');
+  /** Android のナビゲーションバーを隠す（その端末にだけ保存する） */
+  hideNavigationBar = $state(getItem(HIDE_NAV_BAR_KEY) === '1');
   isMobile = $state(false);
   /** モバイルのボトムナビ。デスクトップでは chat と settings だけを使う */
   tab = $state<'chat' | 'threads' | 'settings'>('chat');
@@ -40,6 +43,13 @@ class Ui {
     // 「自動」のときはシステムの切り替えにも追従する
     window.matchMedia(DARK_QUERY).addEventListener('change', () => this.applyTheme());
     this.applyTheme();
+    if (this.hideNavigationBar) void setNavigationBarHidden(true).catch((e) => console.error('ナビゲーションバーを隠せませんでした', e));
+  }
+
+  setHideNavigationBar(hidden: boolean): void {
+    this.hideNavigationBar = hidden;
+    setItem(HIDE_NAV_BAR_KEY, hidden ? '1' : null);
+    void setNavigationBarHidden(hidden).catch((e) => this.toast(`ナビゲーションバーを切り替えられませんでした: ${e instanceof Error ? e.message : String(e)}`, 'error'));
   }
 
   setTheme(t: ThemePref): void {

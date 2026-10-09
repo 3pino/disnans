@@ -84,7 +84,11 @@ pub struct PluginInfo {
     pub description: String,
     pub author: String,
     pub min_api_version: u32,
-    /// 配布されているファイル名（`manifest.json` / `main.js` / `styles.css`）。
+    /// manifest の `icon`（Lucide のアイコン名、英小文字・数字・ハイフン）。なければ `null`。
+    pub icon: Option<String>,
+    /// `icon.svg` が配布されているか（`/api/plugins/{id}/files/icon.svg`）。
+    pub has_icon: bool,
+    /// 配布されているファイル名（`manifest.json` / `main.js` / `styles.css` / `icon.svg`）。
     pub files: Vec<String>,
     /// ファイルの中身のハッシュ（16進）。キャッシュの区別と、更新の判定に使う。
     pub hash: String,

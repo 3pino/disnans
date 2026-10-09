@@ -22,7 +22,10 @@
 |---|---|---|---|
 | GET | `/api/me` | 自分 | `User` |
 | PATCH | `/api/me` | 表示名の変更（body: `UpdateMe`） | `User` |
+| PUT | `/api/me/avatar` | アバターの設定（multipart、フィールド名 `file`） | `User` |
+| DELETE | `/api/me/avatar` | 自分で設定したアバターを消し、Tailscale のプロフィール画像に戻す | `User` |
 | GET | `/api/users` | メンバー一覧 | `User[]` |
+| GET | `/api/avatars/{id}` | 自分で設定したアバターの画像（WebP） | バイナリ |
 | GET | `/api/messages?thread_id=&before=&limit=` | メッセージ履歴 | `Message[]` |
 | GET | `/api/threads` | スレッド一覧 | `Thread[]` |
 | GET | `/api/threads/{id}` | スレッド1件 | `Thread` |
@@ -33,12 +36,21 @@
 | GET | `/api/plugins` | 配布されたプラグインの一覧（ID 順） | `PluginInfo[]` |
 | POST | `/api/plugins` | プラグインの配布・更新（multipart、フィールド名 `file` を複数） | `PluginInfo` |
 | DELETE | `/api/plugins/{id}` | プラグインの削除 | `204` |
-| GET | `/api/plugins/{id}/files/{name}` | 配布されたファイル（`manifest.json` / `main.js` / `styles.css`） | ファイル本体 |
+| GET | `/api/plugins/{id}/files/{name}` | 配布されたファイル（`manifest.json` / `main.js` / `styles.css` / `icon.svg`） | ファイル本体 |
 | POST | `/api/plugins/{id}/notify` | プラグインから通知を送る（body: `PluginNotify`） | `204` |
 | POST | `/api/sessions` | セッションを作り、カードを流す（body: `CreateSession`） | `Session` |
 | GET | `/api/sessions/{id}` | セッション1件 | `Session` |
 | PUT | `/api/sessions/{id}` | セッションの更新（body: `UpdateSession`） | `Session` |
 | GET | `/api/ws` | WebSocket | — |
+
+### アバター
+- `User.avatar_url` は、自分で設定していれば `/api/avatars/{id}`（**サーバーからの相対パス**。クライアントはサーバーの URL を前に付ける）、
+  なければ Tailscale のプロフィール画像の URL（絶対 URL）、どちらもなければ `null`
+- 設定: 静止画・アニメーション（最初のフレーム）を読み、中央を正方形に切り抜いて 256px（小さければそのまま）の WebP にする
+  - 画像として読めなければ `400 invalid_image`、`file` がなければ `400 missing_file`、20 MB を超えたら `413 avatar_too_large`
+  - 設定し直すたびに `{id}` が変わる（前の画像は消す）ので、`/api/avatars/{id}` は `Cache-Control: private, max-age=31536000, immutable`
+- 設定・削除で表示が変わったら、全員に `user.updated` を配信する（設定していないときの削除は何もしない）
+- Tailscale のプロフィール画像は、ログインのたびに最新の URL を覚えておく。自分で設定しているあいだは表示に使わない（`user.updated` も流さない）。削除するとその最新の URL に戻る
 
 ### メッセージ履歴
 - `thread_id` を省略するとメインチャット、指定するとそのスレッドの返信（起点のメッセージは含まない）
@@ -57,18 +69,18 @@
 
 ### プラグイン（SPEC 9.2, 9.6）
 - ファイルは `<data_dir>/plugins/<id>/` に置く。誰でも配布・更新・削除できる
-- 配布: multipart のフィールド `file` に、ファイル名 `manifest.json`・`main.js`（必須）と `styles.css`（任意）を入れる
+- 配布: multipart のフィールド `file` に、ファイル名 `manifest.json`・`main.js`（必須）と `styles.css`・`icon.svg`（任意）を入れる
   - ファイル名はパスの最後の部分で判別する（`dice/main.js` も可）。それ以外のファイル名は `400 invalid_file_name`、同じファイルが2つあれば `400 duplicate_file`、必須のファイルがなければ `400 missing_file`
   - 合計 5 MB まで。超えたら `413 plugin_too_large`
-  - manifest（camelCase）: `id`（英小文字・数字・ハイフンの 2〜32 文字。不正なら `400 invalid_plugin_id`）、`name`・`version`（必須）、`description`・`author`（省略すると空文字）、`minApiVersion`（省略すると 1）。読めない・足りないときは `400 invalid_manifest`
+  - manifest（camelCase）: `id`（英小文字・数字・ハイフンの 2〜32 文字。不正なら `400 invalid_plugin_id`）、`name`・`version`（必須）、`description`・`author`（省略すると空文字）、`minApiVersion`（省略すると 1）、`icon`（任意。Lucide のアイコン名で、英小文字・数字・ハイフンの 64 文字まで。空なら省略と同じ）。読めない・足りないときは `400 invalid_manifest`
+  - `PluginInfo.icon` は manifest の `icon`（なければ `null`）
+  - `icon.svg` は 64 KB まで、UTF-8 で `<svg` を含むこと。満たさなければ `400 invalid_icon`。あれば `PluginInfo.has_icon` が `true`
   - 同じ `id` なら上書きする（含まれなかったファイルは消える）。新しいファイルを一時ディレクトリに書いてから入れ替えるので、失敗しても前のものが残る
   - `hash` はファイル名と中身の SHA-256（16進）
 - 削除: ファイルと一覧から消す。セッションとカードは残す（同じ ID で配布し直せば、また開ける）
-- ファイルの取得: `Content-Type` は `application/json` / `application/javascript; charset=utf-8` / `text/css`、`Cache-Control: no-cache`。クライアントは `?v=<hash>` を付けて取る
-- 配布・更新・削除のたびに、全員に `plugin.updated` / `plugin.removed` を配信し、操作した人の名前でメインチャットにメッセージを流す
-  - 「プラグイン「ダイス」v1.0.0 を配布しました」
-  - 「プラグイン「ダイス」を更新しました（v1.0.0 → v1.1.0）」（バージョンが同じなら「プラグイン「ダイス」v1.0.0 を更新しました」）
-  - 「プラグイン「ダイス」を削除しました」
+- ファイルの取得: `Content-Type` は `application/json` / `application/javascript; charset=utf-8` / `text/css` / `image/svg+xml`、`Cache-Control: no-cache`。クライアントは `?v=<hash>` を付けて取る
+  - `icon.svg` には `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` を付ける（直接開かれてもスクリプトを動かさない）
+- 配布・更新・削除のたびに、全員に `plugin.updated` / `plugin.removed` を配信する。チャットにメッセージは流さない
 
 ### セッションとカード（SPEC 9.5）
 - 作成: プラグインが配布済みかは問わない（開発中のプラグインでも使える）。`plugin` の形式だけ確かめる

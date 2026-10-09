@@ -1,3 +1,5 @@
+import type { IconRef } from './icons.svelte';
+
 /** コマンドの引数の候補 */
 export type SlashArgSuggestion = { value: string; label?: string; description?: string };
 
@@ -14,6 +16,8 @@ export type SlashCommandDef = {
   /** 打っている引数（コマンド名のあと）から候補を返す。選んだ候補の value で引数を置き換える */
   suggestArgs?: (input: string) => SlashArgSuggestion[];
   run(ctx: { args: string; threadId: string | null }): void | Promise<void>;
+  /** 補完に出すアイコン（Svelte の部品か、アイコンの名前）。省略するとアイコンなし */
+  icon?: IconRef;
   /** 補完に出す出どころ（プラグイン名など）。本体のコマンドは省略 */
   source?: string;
 };

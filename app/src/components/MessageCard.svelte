@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Puzzle from '@lucide/svelte/icons/puzzle';
+  import Icon from './ui/Icon.svelte';
   import type { MessageCard } from '../lib/protocol/MessageCard';
   import { pluginHost } from '../lib/plugins/host.svelte';
 
@@ -9,6 +9,8 @@
 
   const view = $derived(pluginHost.cardView(card.plugin));
   const custom = $derived(pluginHost.hasCardRenderer(card.plugin));
+  /** プラグインのアイコン（icon.svg → manifest.icon → puzzle）。オフでも、配布済みならそのアイコン */
+  const icon = $derived(pluginHost.pluginIcon(card.plugin));
   /** 開けないときの説明 */
   const unavailable = $derived.by(() => {
     if (view) return null;
@@ -57,7 +59,7 @@
   <div class="message-card-custom" hidden={!custom || !customOk} bind:this={customEl}></div>
   {#if !custom || !customOk}
     <div class="message-card-header">
-      <Puzzle size={14} />
+      <Icon {icon} size={14} />
       <span class="message-card-title">{card.title}</span>
     </div>
     {#if card.text}<div class="message-card-text">{card.text}</div>{/if}
