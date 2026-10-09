@@ -1,13 +1,13 @@
-import { api } from '../api';
+import { api, uploadFile } from '../api';
+import { prepareUpload } from '../imageResize';
 import { mentionsToText } from '../markdown';
 import type { ClientEvent } from '../protocol/ClientEvent';
 import type { Message } from '../protocol/Message';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import type { User } from '../protocol/User';
-import type { Attachment } from '../protocol/Attachment';
 import { Socket, type SocketStatus } from '../ws';
 import { wsUrl } from '../config';
-import { Timeline } from './timeline.svelte';
+import { Timeline, type OutgoingFile } from './timeline.svelte';
 import { threads } from './threads.svelte';
 import { ui } from './ui.svelte';
 import { notifications } from './notifications.svelte';
@@ -98,25 +98,14 @@ class Client {
 
   // ---- 操作 ----
 
-  sendMessage(opts: {
-    threadId: string | null;
-    body: string;
-    attachments: Attachment[];
-    /** このメッセージを起点にスレッドを作る */
-    startThread?: boolean;
-  }): void {
+  /**
+   * メッセージを送る。添付は送るときにアップロードし、そのあとでメッセージを送る（送信中は仮表示）。
+   * 失敗したら仮表示を「送信できませんでした」にして、再送・取り消しに任せる
+   */
+  sendMessage(opts: { threadId: string | null; body: string; files: OutgoingFile[]; startThread?: boolean }): void {
     const me = this.me;
     if (!me) return;
     const clientId = `c-${Date.now().toString(36)}-${(++this.seq).toString(36)}`;
-    const ids = opts.attachments.map((a) => a.id);
-    const ev: ClientEvent = {
-      type: 'message.send',
-      client_id: clientId,
-      thread_id: opts.threadId,
-      body: opts.body,
-      attachment_ids: ids,
-      start_thread: opts.startThread ?? false,
-    };
     const tl = this.timeline(opts.threadId);
     tl.addPending({
       id: clientId,
@@ -124,7 +113,7 @@ class Client {
       author_id: me.id,
       thread_id: opts.threadId,
       body: opts.body,
-      attachments: opts.attachments,
+      attachments: [],
       reactions: [],
       created_at: Date.now(),
       edited_at: null,
@@ -132,27 +121,77 @@ class Client {
       card: null,
       sent: false,
       failed: false,
-      attachment_ids: ids,
+      attachment_ids: [],
       start_thread: opts.startThread ?? false,
+      files: opts.files.map((f) => ({
+        key: ++this.seq,
+        file: f.file,
+        maxEdge: f.maxEdge,
+        preview: f.file.type.startsWith('image/') ? URL.createObjectURL(f.file) : null,
+        progress: 0,
+        attachment: null,
+        error: null,
+        abort: null,
+      })),
+      busy: false,
     });
-    const sent = this.send(ev);
-    const p = tl.pending.find((x) => x.client_id === clientId);
-    if (p) p.sent = sent;
+    void this.deliver(opts.threadId, clientId);
   }
 
+  /** 送信できなかったものを、もう一度送る（アップロード済みのファイルは上げ直さない） */
   retry(threadId: string | null, clientId: string): void {
+    void this.deliver(threadId, clientId);
+  }
+
+  /**
+   * 仮表示のメッセージを先へ進める: まだ上げていないファイルを順に上げ、そろったらメッセージを送る。
+   * 失敗したところで止め、failed にする（同じ操作をもう一度すれば続きから）
+   */
+  private async deliver(threadId: string | null, clientId: string): Promise<void> {
     const tl = this.timeline(threadId);
-    const p = tl.pending.find((x) => x.client_id === clientId);
-    if (!p) return;
+    const find = () => tl.pending.find((x) => x.client_id === clientId);
+    const p = find();
+    if (!p || p.busy) return;
+    p.busy = true;
     p.failed = false;
-    p.sent = this.send({
-      type: 'message.send',
-      client_id: clientId,
-      thread_id: p.thread_id,
-      body: p.body,
-      attachment_ids: p.attachment_ids,
-      start_thread: p.start_thread,
-    });
+    try {
+      for (const f of p.files) {
+        if (f.attachment) continue;
+        f.error = null;
+        try {
+          const file = await prepareUpload(f.file, f.maxEdge);
+          if (!find()) return; // 取り消された
+          const h = uploadFile(file, (r) => (f.progress = r));
+          f.progress = 0;
+          f.abort = h.abort;
+          f.attachment = await h.promise;
+          f.progress = 1;
+        } catch (e) {
+          f.abort = null;
+          if (!find()) return; // 取り消したときの中止は、失敗として扱わない
+          f.error = e instanceof Error ? e.message : String(e);
+          p.failed = true;
+          ui.toast(`送信できませんでした: ${f.error}`, 'error');
+          return;
+        }
+        f.abort = null;
+        p.attachments = p.files.flatMap((x) => (x.attachment ? [x.attachment] : []));
+      }
+      if (!find()) return;
+      const ids = p.files.flatMap((x) => (x.attachment ? [x.attachment.id] : []));
+      p.attachment_ids = ids;
+      p.attachments = p.files.flatMap((x) => (x.attachment ? [x.attachment] : []));
+      p.sent = this.send({
+        type: 'message.send',
+        client_id: clientId,
+        thread_id: threadId,
+        body: p.body,
+        attachment_ids: ids,
+        start_thread: p.start_thread,
+      });
+    } finally {
+      p.busy = false;
+    }
   }
 
   editMessage(msg: Message, body: string): void {

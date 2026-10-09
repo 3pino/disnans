@@ -101,7 +101,7 @@ export class PluginBase implements Disnans.Plugin {
   addStatusBarItem(): HTMLElement {
     return rt(this).addStatusBarItem();
   }
-  holdBackground(opts?: Disnans.BackgroundOptions): Promise<Cleanup> {
+  holdBackground(opts?: Disnans.BackgroundOptions): Promise<Disnans.BackgroundHandle> {
     return rt(this).holdBackground(opts ?? {});
   }
 }
@@ -408,17 +408,33 @@ export class PluginRuntime {
     return el;
   }
 
-  async holdBackground(opts: Disnans.BackgroundOptions): Promise<Cleanup> {
-    if (this.stopped) return () => {};
-    const release = await this.services.holdBackground({ ...opts, title: opts.title ?? this.manifest.name });
+  async holdBackground(opts: Disnans.BackgroundOptions): Promise<Disnans.BackgroundHandle> {
+    if (this.stopped) return Object.assign(() => {}, { update: () => {} });
+    const request: Disnans.BackgroundOptions = { ...opts, title: opts.title ?? this.manifest.name };
+    if (opts.onAction) {
+      // プラグインの例外が本体に漏れないように、止まったあとは呼ばず、例外はログにする
+      request.onAction = (id) => {
+        if (this.stopped) return;
+        try {
+          opts.onAction?.(id);
+        } catch (e) {
+          this.log(`holdBackground の onAction('${id}') で例外`, e);
+        }
+      };
+    }
+    const handle = await this.services.holdBackground(request);
     let done = false;
     const once = () => {
       if (done) return;
       done = true;
-      release();
+      handle();
     };
     this.register(once);
-    return once;
+    return Object.assign(once, {
+      update: (patch: Disnans.BackgroundUpdate) => {
+        if (!done && !this.stopped) handle.update?.(patch);
+      },
+    });
   }
 
   // ---- view ----

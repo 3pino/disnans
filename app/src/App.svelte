@@ -11,6 +11,7 @@
   import { client } from './lib/stores/client.svelte';
   import { ui } from './lib/stores/ui.svelte';
   import { notifications } from './lib/stores/notifications.svelte';
+  import { startShareReceiver } from './lib/share';
   import { pluginHost } from './lib/plugins/host.svelte';
   import { closeTopLayer, isBackKey, startBackNav } from './lib/backNav';
 
@@ -23,6 +24,7 @@
     client.start();
     pluginHost.start();
     void notifications.init();
+    void startShareReceiver();
   });
 
   // キーボードを出したときも、アプリの高さを見えている高さに合わせる。拡大（ピンチ・Ctrl+ホイールなど）は止める

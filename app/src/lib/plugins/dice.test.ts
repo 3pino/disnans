@@ -123,7 +123,7 @@ function setup(opts: { me?: string; data?: unknown; server?: SessionData } = {})
     pluginIcon: () => 'puzzle',
     registerIcon,
     registerStatusItem: () => () => {},
-    holdBackground: async () => () => {},
+    holdBackground: async () => Object.assign(() => {}, { update: () => {} }),
     changed: () => {},
   } as unknown as HostServices;
 

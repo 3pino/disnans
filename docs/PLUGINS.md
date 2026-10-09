@@ -22,7 +22,7 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 - 設計: [`SPEC.md`](../SPEC.md) の 3.3 と 9章
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
 - UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](PLUGIN_UI.md)
-- ホスト API のバージョン: **3**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から）
+- ホスト API のバージョン: **4**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から。`holdBackground` の通知のボタン `actions` / `onAction` と `update()` は 4 から）
 - もう1つの実例 **ボイスチャット**（[`examples/voice/`](../examples/voice/)）は、v3 の API で作った通話のプラグインです（→ [ボイスチャットの作り](#実例ボイスチャットv3-の-api)）
 
 ## 目次
@@ -114,7 +114,7 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `3`（`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がない） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `4`（`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -237,7 +237,7 @@ app/node_modules/.bin/tsc -p examples/dice
 | `this.notify(userIds, text, { session })` | 通知 |
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント（v3）。いまつながっている人に届く |
 | `this.addStatusBarItem()` | 常時表示のステータス欄に出す要素（v3） |
-| `this.holdBackground({ microphone })` | 画面を切っても動き続ける（v3。Android のフォアグラウンドサービス） |
+| `this.holdBackground({ microphone, actions, onAction })` | 画面を切っても動き続ける（v3。Android のフォアグラウンドサービス）。通知のボタンと `update()` は v4 |
 | `this.addSettingTab(tab)` | プラグインの設定画面（設定 → プラグインの一覧で、トグルの右の歯車から開く） |
 | `this.addIcon(name, svg)` | 独自のアイコンを登録する（→ [PLUGIN_UI.md](PLUGIN_UI.md#addicon独自のアイコン)） |
 | `this.loadData()` / `this.saveData(data)` | その端末にだけ保存するデータ |
@@ -543,6 +543,32 @@ release();
 - **デスクトップ・ブラウザー**: ウィンドウが裏に回っても動くので、何もしません
 - 複数のプラグインが頼んでもよく、最後の1つが解除されたら止まります。プラグインを外すと自動で解除されます
 
+#### 通知のボタンと文言の更新（v4）
+
+```js
+const bg = await this.holdBackground({
+  microphone: true,
+  title: 'ボイスチャット',
+  text: '通話中 ・ 3人',
+  actions: [
+    { id: 'mute', title: 'ミュート' },
+    { id: 'hangup', title: '切断', dismiss: true },
+  ],
+  onAction: (id) => {
+    if (id === 'mute') this.toggleMute();
+    else if (id === 'hangup') this.leave();
+  },
+});
+// 状態が変わったら、渡した項目だけ差し替わる（ボタンも差し替えられる）
+bg.update({ text: 'ミュート中 ・ 3人', actions: [{ id: 'mute', title: 'ミュート解除' }, { id: 'hangup', title: '切断', dismiss: true }] });
+bg(); // 解除（関数として呼ぶ）
+```
+
+- ボタンは最大3つ。Android だけで、ほかの環境では何も出ません（`onAction` も呼ばれません）
+- アプリが裏にいても、通話中は WebView を止めないので `onAction` が呼ばれます。万一 JS に届けられなかったときは、`dismiss: true` のボタンだけ、本体が通知とサービスをその場で止めます（「切断」のように必ず効かせたいボタン用）。それ以外のボタンは、次に JS が動いたときに届きます
+- 複数のプラグインが同時に頼んだときは、通知に出ている（最後に頼んだ）プラグインの `onAction` にだけ届きます
+- `update()` は解除したあとは何もしません。古い本体（v3 以前）では `update` がないので、`minApiVersion` を `4` にしてください
+
 ### 通知
 
 ```js
@@ -655,7 +681,7 @@ ui.toast('設定を初期値に戻しました');
 | 「＋」メニューの「ボイスチャットに参加」 | `addComposerAction` |
 | いま通話にいる人のアイコンを常に出す・しゃべっている人の枠が光る・押すと自分の側だけ消音 | `addStatusBarItem`（v3） |
 | 在室の管理（3 秒ごとに知らせ、12 秒途絶えたら落ちたと見なす）と、offer / answer / ICE のやり取り | `broadcast` / `onBroadcast`（v3） |
-| 画面を消しても通話を続ける（Android） | `holdBackground`（v3） |
+| 画面を消しても通話を続ける（Android）。通知の「ミュート」「切断」ボタン | `holdBackground`（v3）、`actions` / `onAction` / `update()`（v4） |
 | 設定（参加時にミュート、STUN サーバー） | `addSettingTab`、`loadData` / `saveData`、`ui.setting` / `ui.toggle` / `ui.input` |
 
 しくみ:

@@ -4,7 +4,6 @@
   import X from '@lucide/svelte/icons/x';
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import FileIcon from '@lucide/svelte/icons/file';
-  import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import MessageInput from './MessageInput.svelte';
   import IconButton from './ui/IconButton.svelte';
@@ -14,8 +13,9 @@
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { draftKey, loadDraft, saveDraft } from '../lib/drafts';
-  import { uploadFile } from '../lib/api';
-  import type { Attachment } from '../lib/protocol/Attachment';
+  import ImageResizeDialog from './ImageResizeDialog.svelte';
+  import { readImageInfo, canResizeImage, type ImageInfo } from '../lib/imageResize';
+  import { shareInbox } from '../lib/stores/shareInbox.svelte';
   import { composerActions, type BuiltinComposerAction, type ComposerAction } from '../lib/composerActions';
   import { parseSlashInput, runSlashCommand } from '../lib/slashCommands.svelte';
   import { formatSize } from '../lib/format';
@@ -23,19 +23,22 @@
 
   let { threadId, placeholder }: { threadId: string | null; placeholder: string } = $props();
 
-  type Upload = {
+  /** 添付するファイル。送るまでアップロードしない（手元に File を持つだけ） */
+  type Staged = {
     key: number;
     file: File;
     preview: string | null;
-    progress: number;
-    attachment: Attachment | null;
-    error: string | null;
-    abort: () => void;
+    /** 寸法など（画像のときだけ。読めなければ null） */
+    info: ImageInfo | null;
+    /** 送る前に縮小する長辺（null は元のまま） */
+    maxEdge: number | null;
   };
 
   let input: MessageInput | undefined = $state();
   let fileEl: HTMLInputElement | undefined = $state();
-  let uploads = $state<Upload[]>([]);
+  let staged = $state<Staged[]>([]);
+  /** 大きさを選んでいる画像 */
+  let resizing = $state<Staged | null>(null);
   let menuOpen = $state(false);
   let hasText = $state(false);
   /** コマンドを実行中（終わるまで次を送らない） */
@@ -52,9 +55,29 @@
     untrack(() => (hasText = t.trim() !== ''));
   });
 
-  const uploading = $derived(uploads.some((u) => !u.attachment && !u.error));
-  const ready = $derived(uploads.filter((u) => u.attachment));
-  const canSend = $derived(!uploading && (hasText || ready.length > 0) && client.ready);
+  const canSend = $derived((hasText || staged.length > 0) && client.ready);
+
+  /** 大きさを選べる画像か（寸法が読めて、アニメーションでないもの） */
+  function resizable(s: Staged): boolean {
+    return canResizeImage(s.info);
+  }
+
+  // 共有で受け取ったものを、メインチャットの入力欄が拾う（スレッドは対象外）
+  $effect(() => {
+    if (threadId !== null) return;
+    if (shareInbox.files.length === 0 && shareInbox.text === '') return;
+    untrack(() => takeShared());
+  });
+
+  function takeShared() {
+    const got = shareInbox.take();
+    // チャットを見せる。モバイルでパネルが開いていれば閉じる（パネルがチャットを覆うため）
+    ui.tab = 'chat';
+    if (ui.isMobile) ui.closePanel();
+    if (got.text) input?.appendText(got.text);
+    if (got.files.length > 0) addFiles(got.files);
+    input?.focus();
+  }
 
   const builtinActions: BuiltinComposerAction[] = [
     { id: 'file', label: 'ファイルを添付', icon: Paperclip, run: (c) => c.pickFiles() },
@@ -76,28 +99,17 @@
     }
   }
 
+  /** 添付に加える（アップロードは送るときに行う） */
   export function addFiles(files: File[]) {
     for (const file of files) {
       const key = ++seq;
       const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
-      const h = uploadFile(file, (r) => {
-        const u = uploads.find((x) => x.key === key);
-        if (u) u.progress = r;
+      staged.push({ key, file, preview, info: null, maxEdge: null });
+      // 寸法は、大きさを選ぶときとサムネイルの表示のために、先に読んでおく
+      void readImageInfo(file).then((info) => {
+        const s = staged.find((x) => x.key === key);
+        if (s) s.info = info;
       });
-      uploads.push({ key, file, preview, progress: 0, attachment: null, error: null, abort: h.abort });
-      h.promise.then(
-        (a) => {
-          const u = uploads.find((x) => x.key === key);
-          if (u) {
-            u.attachment = a;
-            u.progress = 1;
-          }
-        },
-        (e: Error) => {
-          const u = uploads.find((x) => x.key === key);
-          if (u) u.error = e.message;
-        },
-      );
     }
     input?.focus();
   }
@@ -106,10 +118,10 @@
     input?.focus();
   }
 
-  function removeUpload(u: Upload) {
-    if (!u.attachment && !u.error) u.abort();
-    if (u.preview) URL.revokeObjectURL(u.preview);
-    uploads = uploads.filter((x) => x.key !== u.key);
+  function removeStaged(s: Staged) {
+    if (s.preview) URL.revokeObjectURL(s.preview);
+    if (resizing?.key === s.key) resizing = null;
+    staged = staged.filter((x) => x.key !== s.key);
   }
 
   function submit() {
@@ -123,19 +135,19 @@
     }
     if (!canSend) return;
     const body = parsed.body;
-    const attachments = ready.map((u) => u.attachment!);
-    if (!body && attachments.length === 0) return;
+    if (!body && staged.length === 0) return;
     if (body.length > MAX_BODY) {
       ui.toast(`メッセージが長すぎます（${body.length} / ${MAX_BODY}文字）`, 'error');
       return;
     }
-    client.sendMessage({ threadId, body, attachments });
+    // アップロードと送信は client の仮表示の中で行う。入力欄はすぐ空にする
+    client.sendMessage({ threadId, body, files: staged.map((s) => ({ file: s.file, maxEdge: s.maxEdge })) });
     input.clear();
     hasText = false;
     if (key) saveDraft(key, '');
-    // プレビュー用の blob URL は、仮表示が終わるまで残しておく必要がないので破棄する
-    for (const u of uploads) if (u.preview) URL.revokeObjectURL(u.preview);
-    uploads = uploads.filter((u) => !u.attachment);
+    // 一覧用の見本の URL は、ここで破棄する（送るファイルは client が持つ）
+    for (const s of staged) if (s.preview) URL.revokeObjectURL(s.preview);
+    staged = [];
   }
 
   async function runCommand(name: string, args: string, key: string | null) {
@@ -166,22 +178,25 @@
 </script>
 
 <div class="composer" class:composer-in-thread={threadId !== null}>
-  {#if uploads.length > 0}
+  {#if staged.length > 0}
     <div class="composer-upload-tray">
-      {#each uploads as u (u.key)}
-        <div class="composer-upload" class:composer-upload-error={!!u.error} title={u.error ?? u.file.name}>
-          {#if u.preview}
-            <img class="composer-upload-preview" src={u.preview} alt="" />
+      {#each staged as s (s.key)}
+        <div class="composer-upload" title={s.file.name}>
+          {#if s.preview}
+            {#if resizable(s)}
+              <!-- 画像は、タップすると大きさを選べる -->
+              <button type="button" class="composer-upload-thumb" aria-label="{s.file.name} の大きさを選ぶ" onclick={() => (resizing = s)}>
+                <img class="composer-upload-preview" src={s.preview} alt="" />
+              </button>
+            {:else}
+              <img class="composer-upload-preview" src={s.preview} alt="" />
+            {/if}
+            {#if s.maxEdge !== null}<span class="composer-upload-badge">長辺 {s.maxEdge}</span>{/if}
           {:else}
-            <div class="composer-upload-file-icon"><FileIcon size={20} /><span>{formatSize(u.file.size)}</span></div>
+            <div class="composer-upload-file-icon"><FileIcon size={20} /><span>{formatSize(s.file.size)}</span></div>
           {/if}
-          <span class="composer-upload-name">{u.file.name}</span>
-          {#if u.error}
-            <span class="composer-upload-error-icon"><CircleAlert size={16} /></span>
-          {:else if !u.attachment}
-            <div class="composer-upload-progress"><div class="composer-upload-progress-fill" style:width="{Math.round(u.progress * 100)}%"></div></div>
-          {/if}
-          <button type="button" class="composer-upload-remove" aria-label="取り消す" onclick={() => removeUpload(u)}><X size={12} /></button>
+          <span class="composer-upload-name">{s.file.name}</span>
+          <button type="button" class="composer-upload-remove" aria-label="取り消す" onclick={() => removeStaged(s)}><X size={12} /></button>
         </div>
       {/each}
     </div>
@@ -246,6 +261,20 @@
       if (files.length) addFiles(files);
     }}
   />
+
+  {#if resizing && resizing.info}
+    {@const target = resizing}
+    <ImageResizeDialog
+      file={target.file}
+      info={target.info!}
+      value={target.maxEdge}
+      onpick={(maxEdge) => {
+        target.maxEdge = maxEdge;
+        resizing = null;
+      }}
+      onclose={() => (resizing = null)}
+    />
+  {/if}
 </div>
 
 <style>
@@ -321,8 +350,25 @@
     background: var(--surface);
     overflow: hidden;
   }
-  .composer-upload.composer-upload-error {
-    border-color: var(--danger);
+  .composer-upload .composer-upload-thumb {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: zoom-in;
+  }
+  .composer-upload-badge {
+    position: absolute;
+    left: 4px;
+    top: 4px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--bg) 80%, transparent);
+    color: var(--text);
+    font-size: 10px;
+    line-height: 1.5;
+    pointer-events: none;
   }
   .composer-upload .composer-upload-preview,
   .composer-upload-file-icon {
@@ -346,25 +392,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .composer-upload-progress {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 60px;
-    height: 4px;
-    background: var(--surface-2);
-  }
-  .composer-upload-progress .composer-upload-progress-fill {
-    height: 100%;
-    background: var(--accent);
-    transition: width 0.15s;
-  }
-  .composer-upload-error-icon {
-    position: absolute;
-    top: 22px;
-    left: 34px;
-    color: var(--danger);
   }
   .composer-upload-remove {
     position: absolute;

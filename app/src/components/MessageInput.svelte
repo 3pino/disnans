@@ -73,6 +73,12 @@
     suggest = null;
     void tick().then(resize);
   }
+  /** 本文の末尾に文章を足す（共有で受け取った本文など） */
+  export function appendText(add: string): void {
+    if (!add) return;
+    text = text === '' ? add : `${text.replace(/\s+$/, '')}\n${add}`;
+    oninput?.(text);
+  }
   export function focus(): void {
     ta?.focus();
   }

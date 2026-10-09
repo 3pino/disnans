@@ -7,6 +7,8 @@ permissions = [
   "allow-stop",
   "allow-start-call",
   "allow-stop-call",
+  "allow-take-call-actions",
+  "allow-take-shared",
   "allow-status",
   "allow-request-permission",
   "allow-open-battery-settings",

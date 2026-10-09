@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-take-call-actions"
+description = "Enables the take_call_actions command without any pre-configured scope."
+commands.allow = ["take_call_actions"]
+
+[[permission]]
+identifier = "deny-take-call-actions"
+description = "Denies the take_call_actions command without any pre-configured scope."
+commands.deny = ["take_call_actions"]

@@ -61,8 +61,8 @@
   {#if dragDepth > 0}
     <div class="chat-view-drop-overlay">
       <div class="chat-view-drop-message">
-        <Paperclip size={28} />
-        <span>ドロップして添付</span>
+        <Paperclip size={14} />
+        <span>ここに添付</span>
       </div>
     </div>
   {/if}
@@ -77,23 +77,30 @@
     min-height: 0;
     min-width: 0;
   }
+  /* ドラッグ中の受け入れ先。枠を薄く出し、上に小さなラベルを出すだけ（入力欄へ添付される） */
   .chat-view-drop-overlay {
     position: absolute;
-    inset: 8px;
+    inset: 6px;
     z-index: 40;
-    display: grid;
-    place-items: center;
-    border: 2px dashed var(--accent);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 12px;
+    border: 1px dashed color-mix(in oklch, var(--accent) 55%, transparent);
     border-radius: var(--radius);
-    background: color-mix(in oklch, var(--bg) 85%, transparent);
+    background: color-mix(in oklch, var(--bg) 35%, transparent);
     pointer-events: none;
   }
   .chat-view-drop-message {
-    display: flex;
-    flex-direction: column;
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
     color: var(--accent);
+    font-size: 12px;
     font-weight: 600;
   }
 </style>

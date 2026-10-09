@@ -227,6 +227,21 @@
       {/if}
       <MessageItem message={r.msg} grouped={r.grouped} {inThread} />
     {/each}
+    <!-- 送信中の添付のアップロードの進み（送信中の仮表示は一番下に並ぶ） -->
+    {#each timeline.pending as p (p.client_id)}
+      {#each p.files.filter((f) => !f.attachment) as f (f.key)}
+        <div class="message-list-upload" class:message-list-upload-error={!!f.error}>
+          {#if f.preview}<img class="message-list-upload-thumb" src={f.preview} alt="" />{/if}
+          <div class="message-list-upload-body">
+            <span class="message-list-upload-name">{f.file.name}</span>
+            <span class="message-list-upload-state muted">
+              {#if f.error}{f.error}{:else if f.abort}{Math.round(f.progress * 100)}%{:else}準備中…{/if}
+            </span>
+            <div class="message-list-upload-bar"><div class="message-list-upload-fill" style:width="{Math.round(f.progress * 100)}%"></div></div>
+          </div>
+        </div>
+      {/each}
+    {/each}
   </div>
 </div>
 
@@ -322,5 +337,54 @@
     color: var(--text);
     box-shadow: var(--shadow);
     z-index: 6;
+  }
+  /* 送信中の添付（アップロードの進み）。自分の発言と同じ側に出す */
+  .message-list-upload {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 70%;
+    margin: 4px 16px 4px auto;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    font-size: 12px;
+  }
+  .message-list-upload.message-list-upload-error {
+    border-color: var(--danger);
+  }
+  .message-list-upload-thumb {
+    width: 40px;
+    height: 40px;
+    flex: none;
+    object-fit: cover;
+    border-radius: 6px;
+  }
+  .message-list-upload-body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    flex: 1;
+  }
+  .message-list-upload-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .message-list-upload-error .message-list-upload-state {
+    color: var(--danger);
+  }
+  .message-list-upload-bar {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .message-list-upload-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.15s;
   }
 </style>

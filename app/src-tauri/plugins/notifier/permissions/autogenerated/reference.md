@@ -6,6 +6,10 @@
 
 - `allow-start`
 - `allow-stop`
+- `allow-start-call`
+- `allow-stop-call`
+- `allow-take-call-actions`
+- `allow-take-shared`
 - `allow-status`
 - `allow-request-permission`
 - `allow-open-battery-settings`
@@ -155,6 +159,32 @@ Denies the start command without any pre-configured scope.
 <tr>
 <td>
 
+`notifier:allow-start-call`
+
+</td>
+<td>
+
+Enables the start_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:deny-start-call`
+
+</td>
+<td>
+
+Denies the start_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `notifier:allow-status`
 
 </td>
@@ -207,6 +237,58 @@ Denies the stop command without any pre-configured scope.
 <tr>
 <td>
 
+`notifier:allow-stop-call`
+
+</td>
+<td>
+
+Enables the stop_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:deny-stop-call`
+
+</td>
+<td>
+
+Denies the stop_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:allow-take-call-actions`
+
+</td>
+<td>
+
+Enables the take_call_actions command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:deny-take-call-actions`
+
+</td>
+<td>
+
+Denies the take_call_actions command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `notifier:allow-take-launch-target`
 
 </td>
@@ -226,6 +308,32 @@ Enables the take_launch_target command without any pre-configured scope.
 <td>
 
 Denies the take_launch_target command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:allow-take-shared`
+
+</td>
+<td>
+
+Enables the take_shared command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:deny-take-shared`
+
+</td>
+<td>
+
+Denies the take_shared command without any pre-configured scope.
 
 </td>
 </tr>

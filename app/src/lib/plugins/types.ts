@@ -11,7 +11,7 @@ import type { ComposerAction } from '../composerActions';
 import type { AppCommand } from '../commands.svelte';
 
 /** ホスト API のバージョン。index.d.ts を変えたら上げる */
-export const API_VERSION = 3;
+export const API_VERSION = 4;
 
 export type Manifest = Disnans.Manifest;
 export type Cleanup = Disnans.Cleanup;
@@ -58,7 +58,7 @@ export interface HostServices {
   /** 常時表示のステータス欄に要素を出す（lib/components/PluginStatusBar.svelte）。返り値の関数で外す */
   registerStatusItem(pluginId: string, el: HTMLElement): Cleanup;
   /** 画面を切っても動き続けるための常駐（Android のフォアグラウンドサービス）。返り値の関数で解除する。ほかの環境では何もしない */
-  holdBackground(opts: Disnans.BackgroundOptions): Promise<Cleanup>;
+  holdBackground(opts: Disnans.BackgroundOptions): Promise<Disnans.BackgroundHandle>;
   /** 登録物（view・カードの描画・設定タブなど）が変わったときに呼ぶ */
   changed(): void;
 }

@@ -9,11 +9,12 @@
  * 2. 画面の下端のステータス欄に、いま通話にいる人のアイコンが出る（参加していない人にも見える）。しゃべっている人は枠が光る
  * 3. ミュート、退出、相手のアイコンを押すと自分の側でだけその人を消音
  * 4. コマンド（パレット・`/vc-join` `/vc-leave` `/vc-mute`・ショートカット）と「＋」メニューからも操作できる
+ * 5. Android では、通話中の通知に「ミュート」「切断」のボタンが出る（アプリが裏にいても押せる。ミュート中は「ミュート解除」に変わり、本文に人数が出る）
  *
  * しくみ:
  * - 在室の管理とシグナリング（offer / answer / ICE）は、すべて this.broadcast / this.onBroadcast（API v3）で行う。
  *   サーバーには何も保存しない。参加者は 3 秒ごとに在室を知らせ（ハートビート）、12 秒途絶えた人は落ちたと見なして外す
- * - 常時表示は this.addStatusBarItem()（API v3）、画面を切っても通話を続けるのは this.holdBackground()（API v3。Android）
+ * - 常時表示は this.addStatusBarItem()（API v3）、画面を切っても通話を続けるのは this.holdBackground()（API v3。Android）。通知のボタンと文言の更新は holdBackground の actions / onAction / update（API v4）
  * - 同じ相手と同時に offer を出し合わないよう、peer ID が小さいほうだけが offer を出す
  *
  * 使っている API: addCommand / addComposerAction / addSettingTab / loadData / saveData / registerInterval /
@@ -165,8 +166,10 @@ export default class VoicePlugin extends Plugin {
   localMeter = null;
   /** @type {{ terminate(): void } | null} */
   worker = null;
-  /** @type {(() => void) | null} */
-  releaseBackground = null;
+  /** @type {Disnans.BackgroundHandle | null} 解除の関数。update() で通知を差し替える */
+  background = null;
+  /** 最後に通知へ渡した内容（同じなら更新しない） */
+  notifyKey = '';
   beatAt = 0;
   /** @type {string} */
   structureSig = '';
@@ -303,7 +306,17 @@ export default class VoicePlugin extends Plugin {
       }
       // マイクの許可を得たあとで常駐を始める（Android 14 以降は許可前だと失敗する）
       try {
-        this.releaseBackground = await this.holdBackground({ microphone: true, title: 'ボイスチャット', text: '通話中です' });
+        this.notifyKey = '';
+        this.background = await this.holdBackground({
+          microphone: true,
+          ...this.notificationContent(),
+          // アプリが裏にいても届く。届かないとき、切断は本体が通知を止める（dismiss）
+          onAction: (id) => {
+            if (id === 'mute') this.toggleMute();
+            else if (id === 'hangup') this.leave();
+          },
+        });
+        this.notifyKey = JSON.stringify(this.notificationContent());
       } catch (e) {
         console.error('[voice] 常駐を始められませんでした', e);
         ui.toast('画面を消すと通話が切れることがあります', 'info');
@@ -340,8 +353,8 @@ export default class VoicePlugin extends Plugin {
     this.localMeter = null;
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
-    this.releaseBackground?.();
-    this.releaseBackground = null;
+    this.background?.();
+    this.background = null;
     this.render();
   }
 
@@ -632,6 +645,30 @@ export default class VoicePlugin extends Plugin {
 
   // ---- 画面（ステータス欄） ----
 
+  /** 通話中の通知の文言とボタン（Android）。人数は自分を含む */
+  notificationContent() {
+    const count = 1 + [...this.entries.values()].length;
+    const state = this.muted ? 'ミュート中' : '通話中';
+    return {
+      title: 'ボイスチャット',
+      text: `${state} ・ ${count}人`,
+      actions: [
+        { id: 'mute', title: this.muted ? 'ミュート解除' : 'ミュート' },
+        { id: 'hangup', title: '切断', dismiss: true },
+      ],
+    };
+  }
+
+  /** 人数やミュートが変わったら、通知を差し替える */
+  updateNotification() {
+    if (!this.background) return;
+    const content = this.notificationContent();
+    const key = JSON.stringify(content);
+    if (key === this.notifyKey) return;
+    this.notifyKey = key;
+    this.background.update(content);
+  }
+
   /** 構造が変わったときだけ作り直し、しゃべっている表示は class だけ付け替える */
   render() {
     if (!this.bar) return;
@@ -647,6 +684,7 @@ export default class VoicePlugin extends Plugin {
     if (sig !== this.structureSig) {
       this.structureSig = sig;
       this.buildBar(entries, showMe);
+      this.updateNotification();
     }
     this.bar.querySelector('[data-peer="me"]')?.classList.toggle('voice-speaking', !!this.localMeter?.speaking && !this.muted);
     for (const e of entries) {

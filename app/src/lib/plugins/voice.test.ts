@@ -88,7 +88,7 @@ function makeClient(userId: string): Env {
   const me = users.find((u) => u.id === userId)!;
   const commands = new Map<string, HostCommand>();
   const bar = document.createElement('div');
-  const hold = vi.fn(async () => () => {});
+  const hold = vi.fn(async () => Object.assign(() => {}, { update: () => {} }));
   const services = {
     app: { me, users, user: (id: string) => users.find((u) => u.id === id), nameOf: (id: string) => id, isMobile: false, theme: 'light' },
     api: {},
@@ -116,7 +116,7 @@ function makeClient(userId: string): Env {
     holdBackground: hold,
     changed: () => {},
   } as unknown as HostServices;
-  const r = new PluginRuntime({ id: 'voice', name: 'ボイスチャット', version: '0.1.0', description: '', author: '', minApiVersion: 3 }, services);
+  const r = new PluginRuntime({ id: 'voice', name: 'ボイスチャット', version: '0.1.0', description: '', author: '', minApiVersion: 4 }, services);
   const env = { me, r, commands, bar, hold };
   clients.push(env);
   return env;

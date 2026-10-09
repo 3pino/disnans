@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "いつでも出入りできる、みんなで1つのグループ音声通話",
   "author": "sanpino",
-  "minApiVersion": 3,
+  "minApiVersion": 4,
   "icon": "headphones"
 }

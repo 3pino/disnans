@@ -355,6 +355,18 @@
           "markdownDescription": "Denies the start command without any pre-configured scope."
         },
         {
+          "description": "Enables the start_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-call",
+          "markdownDescription": "Enables the start_call command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-call",
+          "markdownDescription": "Denies the start_call command without any pre-configured scope."
+        },
+        {
           "description": "Enables the status command without any pre-configured scope.",
           "type": "string",
           "const": "allow-status",
@@ -379,6 +391,30 @@
           "markdownDescription": "Denies the stop command without any pre-configured scope."
         },
         {
+          "description": "Enables the stop_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-call",
+          "markdownDescription": "Enables the stop_call command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-call",
+          "markdownDescription": "Denies the stop_call command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the take_call_actions command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-take-call-actions",
+          "markdownDescription": "Enables the take_call_actions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the take_call_actions command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-take-call-actions",
+          "markdownDescription": "Denies the take_call_actions command without any pre-configured scope."
+        },
+        {
           "description": "Enables the take_launch_target command without any pre-configured scope.",
           "type": "string",
           "const": "allow-take-launch-target",
@@ -391,10 +427,22 @@
           "markdownDescription": "Denies the take_launch_target command without any pre-configured scope."
         },
         {
-          "description": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Enables the take_shared command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-take-shared",
+          "markdownDescription": "Enables the take_shared command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the take_shared command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-take-shared",
+          "markdownDescription": "Denies the take_shared command without any pre-configured scope."
+        },
+        {
+          "description": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-take-call-actions`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-take-call-actions`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`"
         }
       ]
     }

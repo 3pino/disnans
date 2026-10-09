@@ -170,10 +170,39 @@ declare global {
        * 画面を消したり別のアプリに切り替えたりしても動き続けられるようにする（API v3。通話など）。
        * Android ではフォアグラウンドサービスを動かし、通知欄に「動いています」と出す。
        * デスクトップなど、ほかの環境では何もしない。戻り値の関数で解除する（外すときにも自動で解除される）。
-       * `microphone` を使うときは、先にマイクの許可を得ておく（getUserMedia のあとに呼ぶ）
+       * `microphone` を使うときは、先にマイクの許可を得ておく（getUserMedia のあとに呼ぶ）。
+       * 戻り値は解除の関数で、`update()` で通知の文言とボタンを差し替えられる（API v4）。
+       * `actions` と `onAction` で通知にボタンを付けられる（API v4。Android）
        */
-      holdBackground(opts?: BackgroundOptions): Promise<Cleanup>;
+      holdBackground(opts?: BackgroundOptions): Promise<BackgroundHandle>;
     }
+
+    /** 通知のボタン（API v4） */
+    type BackgroundAction = {
+      /** `onAction` に渡る ID */
+      id: string;
+      /** ボタンの文言 */
+      title: string;
+      /**
+       * true にすると、アプリの WebView が止まっていて `onAction` を呼べないときに、
+       * 通知とサービスをその場で止める（「切断」のように、必ず効かせたいボタン用）。
+       * 呼べるときは `onAction` に任せる
+       */
+      dismiss?: boolean;
+    };
+
+    /** `holdBackground` の戻り値。関数として呼ぶと解除する */
+    type BackgroundHandle = Cleanup & {
+      /** 通知の文言・ボタンを差し替える（渡した項目だけ変わる）。解除したあとは何もしない（API v4） */
+      update(patch: BackgroundUpdate): void;
+    };
+
+    type BackgroundUpdate = {
+      title?: string;
+      text?: string;
+      /** 空配列にするとボタンを外す */
+      actions?: BackgroundAction[];
+    };
 
     type BackgroundOptions = {
       /** マイクを使い続ける（Android の microphone 型のサービス） */
@@ -182,6 +211,13 @@ declare global {
       title?: string;
       /** 通知欄の本文 */
       text?: string;
+      /** 通知欄のボタン（最大3つ。API v4。Android だけ。ほかの環境では何も出ない） */
+      actions?: BackgroundAction[];
+      /**
+       * ボタンが押されたときに呼ばれる（アプリが裏にいても届く。API v4）。
+       * 複数のプラグインが同時に頼んだときは、通知に出ている（最後に頼んだ）ものにだけ届く
+       */
+      onAction?: (id: string) => void;
     };
 
     // ---- 入力欄 ----

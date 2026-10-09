@@ -372,6 +372,8 @@
 
 <style>
   .message-item {
+    /* 自分の吹き出しの左に残す幅（時刻を含む） */
+    --mine-gap: 72px;
     position: relative;
     display: flex;
     gap: 8px;
@@ -431,6 +433,8 @@
   }
   .message-line time {
     flex: none;
+    -webkit-user-select: none;
+    user-select: none;
     font-size: 11px;
     line-height: 1;
     color: var(--text-muted);
@@ -451,8 +455,19 @@
     min-width: 0;
     max-width: 75%;
   }
+  /* 自分の発言は横幅を固定する（右寄せで幅が揃わないと読みにくいので）。左に --mine-gap だけ空け、文字は左寄せ。
+     吹き出しとカードは幅いっぱいに広げ、写真などはそのままの大きさで右に寄せる */
   .message-item-mine .message-stack {
     align-items: flex-end;
+    width: calc(100% - var(--mine-gap));
+    max-width: none;
+  }
+  .message-item-mine .message-bubble {
+    align-self: stretch;
+  }
+  .message-item-mine .message-stack > :global(.message-card) {
+    align-self: stretch;
+    max-width: none;
   }
   .message-stack.message-stack-editing {
     max-width: 100%;
@@ -472,7 +487,7 @@
     border-radius: 16px;
     overflow-wrap: anywhere;
   }
-  /* 自分の発言：アクセント色を薄く混ぜた、右寄せの吹き出し */
+  /* 自分の発言：アクセント色を薄く混ぜた、右側の吹き出し */
   .message-bubble.message-bubble-mine {
     background: color-mix(in oklch, var(--accent) 16%, var(--surface));
     border-bottom-right-radius: 4px;

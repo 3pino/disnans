@@ -4,6 +4,8 @@ const COMMANDS: &[&str] = &[
     "stop",
     "start_call",
     "stop_call",
+    "take_call_actions",
+    "take_shared",
     "status",
     "request_permission",
     "open_battery_settings",

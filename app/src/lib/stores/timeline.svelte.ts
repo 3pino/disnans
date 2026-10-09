@@ -1,6 +1,28 @@
 import { api } from '../api';
 import type { Message } from '../protocol/Message';
 import type { Reaction } from '../protocol/Reaction';
+import type { Attachment } from '../protocol/Attachment';
+
+/** 送るときにまとめてアップロードするファイル（送る前は手元に File だけ持つ） */
+export type OutgoingFile = {
+  file: File;
+  /** 送る前に縮小する長辺（null は元のまま） */
+  maxEdge: number | null;
+};
+
+/** 送信中のメッセージが持つ、アップロード中（または待ち・失敗）のファイル */
+export type PendingFile = OutgoingFile & {
+  key: number;
+  /** 一覧に出す小さな見本（画像のみ。作ったら破棄するまで残す） */
+  preview: string | null;
+  /** アップロードの進み（0〜1）。アップロード中のときだけ意味がある */
+  progress: number;
+  /** アップロードできたもの。できるまで null */
+  attachment: Attachment | null;
+  error: string | null;
+  /** 送信中のアップロードを中止する */
+  abort: (() => void) | null;
+};
 
 /** 送信中（仮表示）のメッセージ */
 export type PendingMessage = Message & {
@@ -8,9 +30,13 @@ export type PendingMessage = Message & {
   /** サーバーに送った（キューではない） */
   sent: boolean;
   failed: boolean;
-  /** 再送用 */
+  /** 再送用（アップロードが済んだファイルの ID。送るときに決まる） */
   attachment_ids: string[];
   start_thread: boolean;
+  /** 送るファイル。送信のたびに、まだ上げていないものを上げる */
+  files: PendingFile[];
+  /** アップロードと送信の途中（二重に動かさない） */
+  busy: boolean;
 };
 
 const PAGE = 50;
@@ -86,7 +112,7 @@ export class Timeline {
 
   /** 作成・更新。ID 順に挿入する */
   upsert(msg: Message, clientId?: string | null): void {
-    if (clientId) this.pending = this.pending.filter((p) => p.client_id !== clientId);
+    if (clientId) this.dropPending(clientId);
     const idx = this.messages.findIndex((m) => m.id === msg.id);
     if (idx !== -1) {
       this.messages[idx] = msg;
@@ -130,7 +156,20 @@ export class Timeline {
     for (const p of this.pending) if (p.sent) p.failed = true;
   }
 
+  /** 取り消す。アップロード中のものは中止する */
   discardPending(clientId: string): void {
+    for (const p of this.pending) {
+      if (p.client_id === clientId) for (const f of p.files) f.abort?.();
+    }
+    this.dropPending(clientId);
+  }
+
+  /** 仮表示を外し、一覧用の見本の URL を破棄する */
+  private dropPending(clientId: string): void {
+    for (const p of this.pending) {
+      if (p.client_id !== clientId) continue;
+      for (const f of p.files) if (f.preview) URL.revokeObjectURL(f.preview);
+    }
     this.pending = this.pending.filter((p) => p.client_id !== clientId);
   }
 }

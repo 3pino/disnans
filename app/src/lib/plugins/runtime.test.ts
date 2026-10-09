@@ -104,7 +104,7 @@ function fakeServices() {
       pluginIcon: () => 'puzzle',
       registerIcon,
       registerStatusItem: () => () => {},
-      holdBackground: async () => () => {},
+      holdBackground: async () => Object.assign(() => {}, { update: () => {} }),
       changed: vi.fn(),
     } as unknown as HostServices,
   };
@@ -444,12 +444,37 @@ describe('Session', () => {
   it('holdBackground は解除の関数を返し、外すときに自動で解除する', async () => {
     const { r, f } = await setup();
     const release = vi.fn();
-    f.services.holdBackground = vi.fn(async () => release);
+    f.services.holdBackground = vi.fn(async () => Object.assign(release, { update: vi.fn() }));
     const off = await r.holdBackground({ microphone: true });
     expect(f.services.holdBackground).toHaveBeenCalledWith({ microphone: true, title: 'ダイス' });
     off();
     off();
     expect(release).toHaveBeenCalledOnce();
+  });
+
+  it('holdBackground の update と onAction は本体に中継し、解除後は呼ばない', async () => {
+    const { r, f } = await setup();
+    const update = vi.fn();
+    let hostOnAction: ((id: string) => void) | undefined;
+    f.services.holdBackground = vi.fn(async (o) => {
+      hostOnAction = o.onAction;
+      return Object.assign(() => {}, { update });
+    });
+    const onAction = vi.fn();
+    const handle = await r.holdBackground({ actions: [{ id: 'a', title: 'A' }], onAction });
+    hostOnAction?.('a');
+    expect(onAction).toHaveBeenCalledWith('a');
+    handle.update({ text: 'x' });
+    expect(update).toHaveBeenCalledWith({ text: 'x' });
+    handle();
+    handle.update({ text: 'y' });
+    expect(update).toHaveBeenCalledOnce();
+    // 例外はプラグインの中に閉じ込める
+    onAction.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    r.stop();
+    expect(() => hostOnAction?.('a')).not.toThrow();
   });
 
   it('プラグインを外すと購読は捨てる', async () => {
