@@ -4,6 +4,7 @@
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import ChatView from './ChatView.svelte';
   import MessageItem from './MessageItem.svelte';
+  import IconButton from './ui/IconButton.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { threads } from '../lib/stores/threads.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -44,14 +45,14 @@
   <header class="thread-panel-header">
     {#if ui.isMobile}
       <!-- モバイルは戻るボタンだけ -->
-      <button type="button" class="icon-btn thread-panel-back" aria-label="戻る" onclick={() => ui.closePanel()}><ArrowLeft size={20} /></button>
+      <IconButton class="thread-panel-back" label="戻る" onclick={() => ui.closePanel()}><ArrowLeft size={20} /></IconButton>
     {:else}
       <div class="thread-panel-title">
         <MessagesSquare size={16} />
         <span>スレッド</span>
         {#if root}<span class="muted thread-panel-root-author">{client.nameOf(root.author_id)}</span>{/if}
       </div>
-      <button type="button" class="icon-btn thread-panel-close" aria-label="閉じる" onclick={() => ui.closePanel()}><X size={18} /></button>
+      <IconButton class="thread-panel-close" label="閉じる" onclick={() => ui.closePanel()}><X size={18} /></IconButton>
     {/if}
   </header>
 
@@ -134,7 +135,7 @@
       height: auto;
       border-bottom: none;
     }
-    .thread-panel-back {
+    .thread-panel-header > :global(.thread-panel-back) {
       width: 40px;
       height: 40px;
     }

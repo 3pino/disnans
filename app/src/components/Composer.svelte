@@ -5,12 +5,18 @@
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import FileIcon from '@lucide/svelte/icons/file';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
+  import Puzzle from '@lucide/svelte/icons/puzzle';
   import MessageInput from './MessageInput.svelte';
+  import IconButton from './ui/IconButton.svelte';
+  import Menu from './ui/Menu.svelte';
+  import MenuItem from './ui/MenuItem.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { uploadFile } from '../lib/api';
   import type { Attachment } from '../lib/protocol/Attachment';
-  import type { ComposerAction } from '../lib/composerActions';
+  import { composerActions, type BuiltinComposerAction, type ComposerAction } from '../lib/composerActions';
+  import { parseSlashInput, runSlashCommand } from '../lib/slashCommands.svelte';
+  import '../lib/suggest/builtinCommands';
   import { formatSize } from '../lib/format';
   import { MAX_BODY } from '../lib/errors';
 
@@ -31,19 +37,33 @@
   let uploads = $state<Upload[]>([]);
   let menuOpen = $state(false);
   let hasText = $state(false);
+  /** コマンドを実行中（終わるまで次を送らない） */
+  let running = $state(false);
   let seq = 0;
 
   const uploading = $derived(uploads.some((u) => !u.attachment && !u.error));
   const ready = $derived(uploads.filter((u) => u.attachment));
   const canSend = $derived(!uploading && (hasText || ready.length > 0) && client.ready);
 
-  const actions: ComposerAction[] = [
+  const builtinActions: BuiltinComposerAction[] = [
     { id: 'file', label: 'ファイルを添付', icon: Paperclip, run: (c) => c.pickFiles() },
   ];
-  const ctx = $derived({
-    threadId,
-    pickFiles: () => fileEl?.click(),
-  });
+  // 本体の項目のあとに、登録された項目を並べる
+  const actions = $derived(
+    [...builtinActions.map((a) => ({ ...a, builtin: true as const })), ...composerActions()].filter(
+      (a) => !a.when || a.when({ threadId }),
+    ),
+  );
+
+  async function runAction(a: BuiltinComposerAction | ComposerAction, builtin: boolean) {
+    menuOpen = false;
+    try {
+      if (builtin) (a as BuiltinComposerAction).run({ threadId, pickFiles: () => fileEl?.click() });
+      else await (a as ComposerAction).run({ threadId });
+    } catch (e) {
+      ui.toast(`${a.label}: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  }
 
   export function addFiles(files: File[]) {
     for (const file of files) {
@@ -82,8 +102,15 @@
   }
 
   function submit() {
-    if (!input || !canSend) return;
-    const body = input.getBody();
+    if (!input || running) return;
+    const parsed = parseSlashInput(input.getBody());
+    // コマンドは送らずに実行する。添付はそのまま残す
+    if (parsed.kind === 'command') {
+      if (client.ready) void runCommand(parsed.name, parsed.args);
+      return;
+    }
+    if (!canSend) return;
+    const body = parsed.body;
     const attachments = ready.map((u) => u.attachment!);
     if (!body && attachments.length === 0) return;
     if (body.length > MAX_BODY) {
@@ -96,6 +123,19 @@
     // プレビュー用の blob URL は、仮表示が終わるまで残しておく必要がないので破棄する
     for (const u of uploads) if (u.preview) URL.revokeObjectURL(u.preview);
     uploads = uploads.filter((u) => !u.attachment);
+  }
+
+  async function runCommand(name: string, args: string) {
+    running = true;
+    try {
+      await runSlashCommand(name, args, threadId);
+      input?.clear();
+      hasText = false;
+    } catch (e) {
+      ui.toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally {
+      running = false;
+    }
   }
 
   function editLast() {
@@ -135,40 +175,38 @@
 
   <div class="composer-row">
     <div class="composer-plus">
-      <button
-        type="button"
-        class="icon-btn composer-plus-button"
-        class:active={menuOpen}
-        aria-label="その他の操作"
+      <IconButton
+        class="composer-plus-button"
+        active={menuOpen}
+        label="その他の操作"
         aria-expanded={menuOpen}
         onclick={() => (menuOpen = !menuOpen)}
       >
         <Plus size={20} />
-      </button>
+      </IconButton>
       {#if menuOpen}
-        <button type="button" class="composer-menu-backdrop" aria-label="閉じる" onclick={() => (menuOpen = false)}></button>
-        <div class="composer-menu" role="menu">
-          {#each actions.filter((a) => !a.when || a.when(ctx)) as a (a.id)}
-            <button
-              type="button"
+        <Menu class="composer-menu" onclose={() => (menuOpen = false)}>
+          {#each actions as a (('builtin' in a ? 'builtin:' : '') + a.id)}
+            <MenuItem
               class="composer-menu-item"
-              role="menuitem"
-              onclick={() => {
-                menuOpen = false;
-                a.run(ctx);
-              }}
+              icon={a.icon ?? (a.iconSvg ? undefined : Puzzle)}
+              onclick={() => void runAction(a, 'builtin' in a)}
             >
-              <a.icon size={18} />
+              {#if !a.icon && a.iconSvg}
+                <!-- プラグインのアイコン（SVG 文字列） -->
+                <span class="composer-menu-icon" aria-hidden="true">{@html a.iconSvg}</span>
+              {/if}
               {a.label}
-            </button>
+            </MenuItem>
           {/each}
-        </div>
+        </Menu>
       {/if}
     </div>
 
     <MessageInput
       bind:this={input}
       {placeholder}
+      commands
       enterSends={!ui.isMobile}
       onsubmit={submit}
       onfiles={addFiles}
@@ -220,39 +258,23 @@
   .composer-plus {
     position: relative;
   }
-  .composer-menu-backdrop {
-    position: fixed;
-    inset: 0;
-    background: transparent;
-    border: none;
-    z-index: 29;
-    cursor: default;
-  }
-  .composer-menu {
+  /* メニューの見た目は .menu（app.css）。ここでは ＋ ボタンの上に出す位置だけを決める */
+  .composer-plus > :global(.composer-menu) {
     position: absolute;
     bottom: calc(100% + 8px);
     left: -4px;
-    z-index: 30;
-    min-width: 200px;
-    padding: 4px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
   }
-  .composer-menu .composer-menu-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+  /* プラグインの SVG のアイコンを、lucide のアイコンと同じ大きさにそろえる */
+  .composer-menu-icon {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    flex: none;
+  }
+  .composer-menu-icon > :global(svg) {
     width: 100%;
-    padding: 8px 10px;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    text-align: left;
-  }
-  .composer-menu .composer-menu-item:hover {
-    background: var(--surface-2);
+    height: 100%;
   }
   .composer-send {
     display: grid;

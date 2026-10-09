@@ -12,9 +12,14 @@
   import Download from '@lucide/svelte/icons/download';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import Avatar from './Avatar.svelte';
   import Markdown from './Markdown.svelte';
+  import Button from './ui/Button.svelte';
+  import TextInput from './ui/TextInput.svelte';
+  import Section from './ui/Section.svelte';
+  import SettingRow from './ui/SettingRow.svelte';
+  import StatusLine from './ui/StatusLine.svelte';
+  import PluginSettings from './PluginSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui, type ThemePref } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
@@ -96,8 +101,7 @@
 
   <div class="scroll settings-body">
     <div class="settings-content">
-      <section class="settings-section settings-profile">
-        <h2 class="settings-section-title">プロフィール</h2>
+      <Section title="プロフィール" class="settings-profile">
         {#if client.me}
           <div class="settings-profile-card">
             <Avatar user={client.me} id={client.me.id} size={44} />
@@ -108,18 +112,17 @@
           </div>
         {/if}
         <form class="settings-display-name-form" onsubmit={save}>
-          <label class="settings-field-label" for="settings-display-name-input">表示名</label>
+          <label class="field-label" for="settings-display-name-input">表示名</label>
           <div class="settings-display-name-row">
-            <input id="settings-display-name-input" class="input settings-display-name-input" bind:value={name} maxlength="32" autocomplete="nickname" />
-            <button class="btn primary settings-display-name-save" disabled={!changed || saving}>保存</button>
+            <TextInput id="settings-display-name-input" class="settings-display-name-input" bind:value={name} maxlength={32} autocomplete="nickname" />
+            <Button type="submit" variant="primary" class="settings-display-name-save" disabled={!changed || saving}>保存</Button>
           </div>
           {#if error}<p class="settings-display-name-error">{error}</p>{/if}
         </form>
-      </section>
+      </Section>
 
-      <section class="settings-section settings-appearance">
-        <h2 class="settings-section-title">外観</h2>
-        <span class="settings-field-label">テーマ</span>
+      <Section title="外観" class="settings-appearance">
+        <span class="field-label">テーマ</span>
         <div class="settings-theme-picker" role="radiogroup" aria-label="テーマ">
           {#each themes as t (t.id)}
             <button type="button" class="settings-theme-option" role="radio" aria-checked={ui.theme === t.id} class:settings-theme-option-selected={ui.theme === t.id} onclick={() => ui.setTheme(t.id)}>
@@ -127,110 +130,110 @@
             </button>
           {/each}
         </div>
-      </section>
+      </Section>
 
-      <section class="settings-section settings-notifications">
-        <h2 class="settings-section-title">通知</h2>
+      <Section title="通知" class="settings-notifications">
         {#if notifications.backend === 'android'}
           {#if android && !android.permission}
-            <p class="settings-status settings-status-warn"><BellOff size={15} />通知が許可されていません</p>
-            <button type="button" class="btn" onclick={() => notifications.requestPermission()}>
+            <StatusLine kind="warn" icon={BellOff}>通知が許可されていません</StatusLine>
+            <Button onclick={() => notifications.requestPermission()}>
               <Bell size={15} />通知を許可する
-            </button>
+            </Button>
           {:else if android && !android.connected}
-            <p class="settings-status muted"><LoaderCircle size={15} class="spin" />通知用の接続を再試行しています…</p>
+            <StatusLine kind="muted" busy>通知用の接続を再試行しています…</StatusLine>
           {/if}
           {#if android && !android.batteryUnrestricted}
             <p class="muted settings-small-text">電池の最適化を解除すると、省電力中も接続が切れにくくなり、通知が遅れにくくなります。</p>
-            <button type="button" class="btn" onclick={() => notifications.openBatterySettings()}>
+            <Button onclick={() => notifications.openBatterySettings()}>
               <BatteryCharging size={15} />電池の最適化を解除
-            </button>
+            </Button>
           {/if}
         {:else if perm === 'unsupported'}
           <p class="muted settings-small-text">この環境ではシステム通知を使えません。アプリ内に表示します。</p>
         {:else if perm === 'denied'}
           <p class="muted settings-small-text">通知はブロックされています。{isTauri() ? 'OS' : 'ブラウザー'}の設定から許可できます。</p>
         {:else if perm === 'default'}
-          <button type="button" class="btn" onclick={() => notifications.requestPermission()}>
+          <Button onclick={() => notifications.requestPermission()}>
             <Bell size={15} />通知を許可する
-          </button>
+          </Button>
         {/if}
-        <button type="button" class="btn" disabled={notifications.sendingSample} onclick={() => notifications.sendSample()}>
+        <Button disabled={notifications.sendingSample} onclick={() => notifications.sendSample()}>
           <Send size={15} />サンプル通知を送信
-        </button>
-      </section>
+        </Button>
+      </Section>
+
+      <PluginSettings />
 
       {#if isTauri() || devUser}
-        <section class="settings-section settings-connection">
-          <h2 class="settings-section-title">接続</h2>
+        <Section title="接続" class="settings-connection">
           <p class="muted settings-small-text settings-server-line">
             <Server size={13} />
             <span class="settings-server-url">{getServerUrl() || '同じオリジン（開発用プロキシ）'}</span>
           </p>
           {#if devUser}<p class="muted settings-small-text">開発ユーザー: {devUser}</p>{/if}
           {#if isTauri()}
-            <button type="button" class="btn settings-change-server" onclick={changeServer}>サーバーを変更</button>
+            <Button class="settings-change-server" onclick={changeServer}>サーバーを変更</Button>
           {/if}
-        </section>
+        </Section>
       {/if}
 
-      <section class="settings-section settings-app">
-        <h2 class="settings-section-title">アプリ</h2>
-        <div class="settings-version-row">
-          <span class="muted settings-version-label">バージョン</span>
-          <span class="settings-version">{updater.supported ? (updater.version ? `v${updater.version}` : '…') : '開発版'}</span>
-        </div>
+      <Section title="アプリ" class="settings-app">
+        <SettingRow name="バージョン" class="settings-version-row">
+          {#snippet control()}
+            <span class="settings-version">{updater.supported ? (updater.version ? `v${updater.version}` : '…') : '開発版'}</span>
+          {/snippet}
+        </SettingRow>
 
         {#if updater.supported}
           <div class="settings-update">
             {#if st.kind === 'latest'}
-              <p class="settings-status settings-status-ok"><CircleCheck size={15} />最新です</p>
+              <StatusLine kind="ok" icon={CircleCheck}>最新です</StatusLine>
             {:else if st.kind === 'checking'}
-              <p class="settings-status muted"><LoaderCircle size={15} class="spin" />確認中…</p>
+              <StatusLine kind="muted" busy>確認中…</StatusLine>
             {:else if st.kind === 'available'}
-              <p class="settings-status settings-status-new">新しいバージョンがあります: v{st.version} が利用できます</p>
+              <StatusLine kind="accent">新しいバージョンがあります: v{st.version} が利用できます</StatusLine>
               {#if st.notes}
                 <div class="settings-update-notes scroll"><Markdown body={st.notes} /></div>
               {/if}
             {:else if st.kind === 'permission'}
-              <p class="settings-status settings-status-new">インストールの許可が必要です</p>
+              <StatusLine kind="accent">インストールの許可が必要です</StatusLine>
               <p class="muted settings-small-text">
                 アップデートを入れるには、一度だけ「不明なアプリのインストール」で disnans を許可してください。開いた設定画面で許可したら、戻って「続ける」を押してください。
               </p>
             {:else if st.kind === 'downloading'}
-              <p class="settings-status muted">
-                <LoaderCircle size={15} class="spin" />ダウンロード中…
+              <StatusLine kind="muted" busy>
+                ダウンロード中…
                 {#if st.total}{Math.floor((st.downloaded / st.total) * 100)}%{:else}{mb(st.downloaded)} MB{/if}
-              </p>
+              </StatusLine>
               <progress class="settings-update-progress" max={st.total ?? undefined} value={st.total ? st.downloaded : undefined}></progress>
             {:else if st.kind === 'installing'}
-              <p class="settings-status muted"><LoaderCircle size={15} class="spin" />インストールしています…</p>
+              <StatusLine kind="muted" busy>インストールしています…</StatusLine>
             {:else if st.kind === 'error'}
-              <p class="settings-status settings-status-error">エラー: {st.message}</p>
+              <StatusLine kind="error">エラー: {st.message}</StatusLine>
               <p class="muted settings-small-text">うまくいかないときは、リリースページから直接ダウンロードできます。</p>
             {/if}
 
             <div class="settings-update-actions">
               {#if st.kind === 'available'}
-                <button type="button" class="btn primary" onclick={() => updater.install()}>
+                <Button variant="primary" onclick={() => updater.install()}>
                   <Download size={15} />ダウンロードしてインストール
-                </button>
+                </Button>
               {:else if st.kind === 'permission'}
-                <button type="button" class="btn primary" onclick={() => updater.install()}>続ける</button>
+                <Button variant="primary" onclick={() => updater.install()}>続ける</Button>
               {:else}
-                <button type="button" class="btn" disabled={busy} onclick={() => updater.check()}>
+                <Button disabled={busy} onclick={() => updater.check()}>
                   <RefreshCw size={15} />アップデートを確認
-                </button>
+                </Button>
               {/if}
               {#if st.kind === 'error'}
-                <button type="button" class="btn" onclick={() => updater.openReleasePage()}>
+                <Button onclick={() => updater.openReleasePage()}>
                   <ExternalLink size={15} />リリースページを開く
-                </button>
+                </Button>
               {/if}
             </div>
           </div>
         {/if}
-      </section>
+      </Section>
     </div>
   </div>
 </div>
@@ -254,26 +257,6 @@
     max-width: 640px;
     margin: 0 auto;
     padding: 8px 16px 32px;
-  }
-  /* カードにはせず、見出し + 区切り線だけのセクションにする */
-  .settings-section {
-    padding: 18px 2px;
-  }
-  .settings-section + .settings-section {
-    border-top: 1px solid var(--border);
-  }
-  .settings-section:first-child {
-    padding-top: 4px;
-  }
-  .settings-section-title {
-    margin: 0 0 12px;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: var(--text-muted);
-  }
-  .settings-section > :global(* + *) {
-    margin-top: 10px;
   }
   .settings-profile-card {
     display: flex;
@@ -300,18 +283,11 @@
   .settings-server-url {
     overflow-wrap: anywhere;
   }
-  .settings-field-label {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--text-muted);
-  }
   .settings-display-name-row {
     display: flex;
     gap: 8px;
   }
-  .settings-display-name-row .btn {
+  .settings-display-name-row > :global(.btn) {
     height: 40px;
   }
   .settings-display-name-error {
@@ -344,11 +320,9 @@
     background: var(--bg);
     color: var(--text);
   }
-  .settings-version-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 14px;
+  /* バージョンの行は、名前を控えめな色にする */
+  .settings-content :global(.settings-version-row .setting-row-name) {
+    color: var(--text-muted);
   }
   .settings-version {
     font-family: var(--mono);
@@ -360,29 +334,6 @@
   }
   .settings-update > :global(* + *) {
     margin-top: 10px;
-  }
-  .settings-status {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-  }
-  .settings-status.settings-status-ok {
-    color: var(--success);
-  }
-  .settings-status.settings-status-new {
-    color: var(--accent);
-  }
-  .settings-status.settings-status-warn {
-    color: var(--warning);
-  }
-  .settings-status.settings-status-error {
-    color: var(--danger);
-    font-weight: 500;
-    overflow-wrap: anywhere;
   }
   .settings-update-notes {
     max-height: 220px;

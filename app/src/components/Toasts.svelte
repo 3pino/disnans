@@ -1,5 +1,6 @@
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
+  import IconButton from './ui/IconButton.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 </script>
 
@@ -18,7 +19,7 @@
           }}>{action.label}</button
         >
       {/if}
-      <button type="button" class="icon-btn toast-close" aria-label="閉じる" onclick={() => ui.dismiss(t.id)}><X size={14} /></button>
+      <IconButton class="toast-close" label="閉じる" onclick={() => ui.dismiss(t.id)}><X size={14} /></IconButton>
     </div>
   {/each}
 </div>
@@ -68,7 +69,7 @@
     color: var(--accent);
     font-weight: 600;
   }
-  .toast-close {
+  .toast > :global(.toast-close) {
     width: 26px;
     height: 26px;
   }

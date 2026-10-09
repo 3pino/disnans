@@ -3,8 +3,11 @@ import { syncSystemBars } from '../systemBars';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
-/** 右側のパネル（モバイルでは全画面）。将来プラグインの view もここに出す */
-export type Panel = { kind: 'thread'; id: string } | null;
+/** 右側のパネル（モバイルでは全画面）。スレッドか、プラグインの view */
+export type Panel =
+  | { kind: 'thread'; id: string }
+  | { kind: 'plugin'; plugin: string; view: string; sessionId: string }
+  | null;
 
 export type Toast = { id: number; text: string; kind: 'info' | 'error'; action?: { label: string; run: () => void } };
 
@@ -56,6 +59,12 @@ class Ui {
   openThread(id: string): void {
     if (!this.isMobile && this.tab === 'settings') this.tab = 'chat';
     this.panel = { kind: 'thread', id };
+  }
+
+  /** プラグインの view でセッションを開く */
+  openPluginView(plugin: string, view: string, sessionId: string): void {
+    if (!this.isMobile && this.tab === 'settings') this.tab = 'chat';
+    this.panel = { kind: 'plugin', plugin, view, sessionId };
   }
 
   openSettings(): void {

@@ -52,7 +52,7 @@ class Client {
     this.socket?.reconnectNow();
   }
 
-  /** 生のサーバーイベントを購読する（将来のプラグイン中継用） */
+  /** 生のサーバーイベントを購読する（プラグインのホストが使う） */
   subscribe(fn: Listener): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
@@ -127,6 +127,7 @@ class Client {
       created_at: Date.now(),
       edited_at: null,
       thread: null,
+      card: null,
       sent: false,
       failed: false,
       attachment_ids: ids,
@@ -264,6 +265,12 @@ class Client {
         ui.toast(handled ? `送信できませんでした: ${text}` : text, 'error');
         break;
       }
+      case 'plugin.updated':
+      case 'plugin.removed':
+      case 'session.updated':
+      case 'session.event':
+        // プラグインのホスト（lib/plugins/host.svelte.ts）が subscribe で受け取る
+        break;
       case 'pong':
         break;
     }

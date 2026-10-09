@@ -64,6 +64,53 @@ impl TestServer {
         res.json().await.unwrap()
     }
 
+    /// `user` として JSON を POST する。
+    pub fn post_json(
+        &self,
+        user: &str,
+        path: &str,
+        body: &impl serde::Serialize,
+    ) -> reqwest::RequestBuilder {
+        self.http
+            .post(self.url(path))
+            .header("X-Dev-User", user)
+            .json(body)
+    }
+
+    /// `user` として JSON を PUT する。
+    pub fn put_json(
+        &self,
+        user: &str,
+        path: &str,
+        body: &impl serde::Serialize,
+    ) -> reqwest::RequestBuilder {
+        self.http
+            .put(self.url(path))
+            .header("X-Dev-User", user)
+            .json(body)
+    }
+
+    /// `user` として DELETE する。
+    pub fn delete(&self, user: &str, path: &str) -> reqwest::RequestBuilder {
+        self.http.delete(self.url(path)).header("X-Dev-User", user)
+    }
+
+    /// `user` としてプラグインを配布する（multipart、フィールド名 `file` に (ファイル名, 中身) を並べる）。
+    pub async fn upload_plugin(&self, user: &str, files: &[(&str, &[u8])]) -> reqwest::Response {
+        let mut form = reqwest::multipart::Form::new();
+        for (name, data) in files {
+            let part = reqwest::multipart::Part::bytes(data.to_vec()).file_name(name.to_string());
+            form = form.part("file", part);
+        }
+        self.http
+            .post(self.url("/api/plugins"))
+            .header("X-Dev-User", user)
+            .multipart(form)
+            .send()
+            .await
+            .unwrap()
+    }
+
     pub async fn messages(&self, query: &str) -> Vec<Message> {
         self.get_json("alice@test", &format!("/api/messages{query}"))
             .await

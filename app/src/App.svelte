@@ -9,6 +9,7 @@
   import { client } from './lib/stores/client.svelte';
   import { ui } from './lib/stores/ui.svelte';
   import { notifications } from './lib/stores/notifications.svelte';
+  import { pluginHost } from './lib/plugins/host.svelte';
 
   let setup = $state(needsServerSetup());
 
@@ -17,6 +18,7 @@
   $effect(() => {
     if (setup) return;
     client.start();
+    pluginHost.start();
     void notifications.init();
   });
 

@@ -3,7 +3,7 @@
 //! WebSocket の `ClientEvent` から呼ばれる。DB を書き換えたあと、結果を全員に配信し、
 //! 必要なら通知を送る。
 
-use disnans_shared::{Id, ServerEvent, User};
+use disnans_shared::{Id, Message, ServerEvent, User};
 
 use crate::db;
 use crate::error::{AppError, AppResult};
@@ -12,7 +12,7 @@ use crate::hub::ConnId;
 use crate::notify;
 use crate::state::AppState;
 use crate::store::messages::{self, MessageRow};
-use crate::store::{files as file_store, users};
+use crate::store::{files as file_store, sessions, users};
 
 /// 本文の最大文字数。
 const MAX_BODY_CHARS: usize = 10_000;
@@ -45,24 +45,10 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
         if req.start_thread {
             return Err(nested_thread());
         }
-        if !messages::thread_exists(&state.pool, thread_id).await? {
-            return Err(AppError::new(
-                axum::http::StatusCode::NOT_FOUND,
-                "thread_not_found",
-                "スレッドが見つかりません",
-            ));
-        }
+        ensure_thread_exists(state, thread_id).await?;
     }
 
-    let ulid = db::new_ulid();
-    let row = MessageRow {
-        id: ulid.to_string(),
-        author_id: actor.user.id.clone(),
-        thread_id: req.thread_id.clone(),
-        body: req.body,
-        created_at: ulid.timestamp_ms() as i64,
-        edited_at: None,
-    };
+    let row = new_row(&actor.user.id, req.thread_id.clone(), req.body);
 
     let mut tx = state.pool.begin().await?;
     messages::insert(&mut tx, &row).await?;
@@ -79,28 +65,10 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
     }
     tx.commit().await?;
 
-    let message = messages::get(&state.pool, &row.id)
-        .await?
-        .ok_or_else(|| AppError::internal("作ったメッセージが見つかりません"))?;
-
-    // client_id は送信者本人の接続にだけ入れる
-    let created = |client_id| ServerEvent::MessageCreated {
-        client_id,
-        message: message.clone(),
-    };
-    match actor.conn {
-        Some(conn) => {
-            state.hub.send_to_conn(conn, &created(Some(req.client_id)));
-            state.hub.broadcast_except(&created(None), conn);
-        }
-        None => state.hub.broadcast(&created(None)),
-    }
-
+    let sender = actor.conn.map(|conn| (conn, req.client_id));
+    let message = broadcast_created(state, &row.id, sender).await?;
     if req.start_thread {
         broadcast_thread(state, &message.id).await?;
-    }
-    if let Some(thread_id) = &message.thread_id {
-        broadcast_thread(state, thread_id).await?;
     }
 
     // 通知
@@ -123,6 +91,12 @@ pub async fn edit_message(
 ) -> AppResult<()> {
     let _guard = state.write_lock().await;
     let row = own_message(state, actor, message_id).await?;
+    if sessions::is_card(&state.pool, message_id).await? {
+        return Err(AppError::bad_request(
+            "card_not_editable",
+            "カードのメッセージは編集できません",
+        ));
+    }
     validate_body(
         &body,
         messages::has_attachments(&state.pool, message_id).await?,
@@ -222,6 +196,54 @@ pub async fn remove_reaction(
     broadcast_reactions(state, message_id).await
 }
 
+// ---- メッセージの作成（プラグインのアナウンスやカードと共通） ----
+
+/// 新しいメッセージの行を作る。ID と作成時刻は同じ ULID から決める。
+pub(crate) fn new_row(author_id: &str, thread_id: Option<Id>, body: String) -> MessageRow {
+    let ulid = db::new_ulid();
+    MessageRow {
+        id: ulid.to_string(),
+        author_id: author_id.to_owned(),
+        thread_id,
+        body,
+        created_at: ulid.timestamp_ms() as i64,
+        edited_at: None,
+    }
+}
+
+/// 作ったメッセージを読み直し、全員に `message.created` を配信する。
+/// スレッドの返信なら、そのスレッドの `thread.updated` も配信する。
+///
+/// `sender` は送信者の接続と client_id。client_id は送信者本人の接続にだけ入れる。
+/// サーバーが作るメッセージ（アナウンス、カード）では `None`。
+/// write_lock を持ったまま呼ぶこと。
+pub(crate) async fn broadcast_created(
+    state: &AppState,
+    message_id: &str,
+    sender: Option<(ConnId, String)>,
+) -> AppResult<Message> {
+    let message = messages::get(&state.pool, message_id)
+        .await?
+        .ok_or_else(|| AppError::internal("作ったメッセージが見つかりません"))?;
+
+    let created = |client_id| ServerEvent::MessageCreated {
+        client_id,
+        message: message.clone(),
+    };
+    match sender {
+        Some((conn, client_id)) => {
+            state.hub.send_to_conn(conn, &created(Some(client_id)));
+            state.hub.broadcast_except(&created(None), conn);
+        }
+        None => state.hub.broadcast(&created(None)),
+    }
+
+    if let Some(thread_id) = &message.thread_id {
+        broadcast_thread(state, thread_id).await?;
+    }
+    Ok(message)
+}
+
 // ---- 補助 ----
 
 async fn find_message(state: &AppState, id: &str) -> AppResult<MessageRow> {
@@ -241,7 +263,19 @@ async fn own_message(state: &AppState, actor: &Actor<'_>, id: &str) -> AppResult
     Ok(row)
 }
 
-async fn broadcast_thread(state: &AppState, thread_id: &str) -> AppResult<()> {
+/// スレッドがなければ `thread_not_found`。
+pub(crate) async fn ensure_thread_exists(state: &AppState, thread_id: &str) -> AppResult<()> {
+    if !messages::thread_exists(&state.pool, thread_id).await? {
+        return Err(AppError::new(
+            axum::http::StatusCode::NOT_FOUND,
+            "thread_not_found",
+            "スレッドが見つかりません",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) async fn broadcast_thread(state: &AppState, thread_id: &str) -> AppResult<()> {
     if let Some(thread) = messages::get_thread(&state.pool, thread_id).await? {
         state.hub.broadcast(&ServerEvent::ThreadUpdated { thread });
     }

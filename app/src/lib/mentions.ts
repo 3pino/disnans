@@ -1,4 +1,5 @@
 import type { User } from './protocol/User';
+import { tokenBefore } from './suggest';
 
 /** 入力欄では `@表示名` で見せ、送るときに `<@user_id>` に置き換える */
 export function bodyToDraft(body: string, users: Record<string, User>, map: Map<string, string>): string {
@@ -21,10 +22,7 @@ export function draftToBody(draft: string, map: Map<string, string>): string {
 
 /** キャレットの直前にある `@query` を探す */
 export function mentionQuery(text: string, caret: number): { start: number; query: string } | null {
-  const before = text.slice(0, caret);
-  const m = /(^|[\s(（])@([^\s@<>]{0,32})$/.exec(before);
-  if (!m) return null;
-  return { start: caret - m[2].length - 1, query: m[2] };
+  return tokenBefore(text, caret, '@', '[^\\s@<>]');
 }
 
 export function filterUsers(users: User[], query: string, limit = 8): User[] {

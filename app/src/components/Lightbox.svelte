@@ -1,6 +1,7 @@
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
   import Download from '@lucide/svelte/icons/download';
+  import IconButton from './ui/IconButton.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 </script>
 
@@ -16,7 +17,7 @@
       <a class="icon-btn lightbox-download" href={lb.downloadUrl} download={lb.alt} target="_blank" rel="noopener" aria-label="ダウンロード"
         ><Download size={20} /></a
       >
-      <button type="button" class="icon-btn lightbox-close" aria-label="閉じる" onclick={() => (ui.lightbox = null)}><X size={22} /></button>
+      <IconButton class="lightbox-close" label="閉じる" onclick={() => (ui.lightbox = null)}><X size={22} /></IconButton>
     </div>
   </div>
 {/if}
@@ -57,10 +58,10 @@
     gap: 4px;
     color: oklch(0.93 0.015 248);
   }
-  .lightbox-toolbar .icon-btn {
+  .lightbox-toolbar > :global(.icon-btn) {
     color: inherit;
   }
-  .lightbox-toolbar .icon-btn:hover {
+  .lightbox-toolbar > :global(.icon-btn:hover) {
     background: oklch(1 0 0 / 0.1);
   }
   .lightbox-file-name {

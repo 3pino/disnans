@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Component } from 'svelte';
   import SmilePlus from '@lucide/svelte/icons/smile-plus';
+  import MenuItem from './ui/MenuItem.svelte';
 
   type Item = { label: string; icon: Component<{ size?: number }>; danger?: boolean; run: () => void };
 
@@ -48,20 +49,22 @@
       {/if}
     </div>
   {/if}
-  {#each items as it (it.label)}
-    <button
-      type="button"
-      class="action-sheet-item"
-      class:action-sheet-item-danger={it.danger}
-      onclick={() => {
-        onclose();
-        it.run();
-      }}
-    >
-      <it.icon size={20} />
-      {it.label}
-    </button>
-  {/each}
+  <div class="action-sheet-items" role="menu">
+    {#each items as it (it.label)}
+      <MenuItem
+        class="action-sheet-item"
+        icon={it.icon}
+        iconSize={20}
+        danger={it.danger}
+        onclick={() => {
+          onclose();
+          it.run();
+        }}
+      >
+        {it.label}
+      </MenuItem>
+    {/each}
+  </div>
 </div>
 
 <style>
@@ -106,24 +109,12 @@
     place-items: center;
     color: var(--text-muted);
   }
-  .action-sheet-item {
-    display: flex;
-    align-items: center;
+  /* 項目の見た目は .menu-item（app.css）。指で押しやすいよう大きくする */
+  .action-sheet-items > :global(.action-sheet-item) {
     gap: 14px;
-    width: 100%;
     height: 50px;
     padding: 0 12px;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
     font-size: 16px;
-    text-align: left;
-  }
-  .action-sheet-item:active {
-    background: var(--surface-2);
-  }
-  .action-sheet-item.action-sheet-item-danger {
-    color: var(--danger);
   }
   @keyframes fade {
     from {

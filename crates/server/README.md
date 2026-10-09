@@ -7,7 +7,7 @@ disnans のサーバー（axum + SQLite）。API は [`docs/API.md`](../../docs/
 | 変数 | 既定値 | 内容 |
 |---|---|---|
 | `DISNANS_BIND` | `127.0.0.1:8080` | 待ち受けるアドレス。本番では Tailscale の IP（`100.x.y.z:8080`）にする |
-| `DISNANS_DATA_DIR` | `./data` | DB（`disnans.db`）とアップロードされたファイル（`files/`）の置き場所 |
+| `DISNANS_DATA_DIR` | `./data` | DB（`disnans.db`）、アップロードされたファイル（`files/`）、配布されたプラグイン（`plugins/`）の置き場所 |
 | `DISNANS_DEV` | なし | `1` で開発モード（whois を使わない。下記） |
 | `DISNANS_TAILSCALE_SOCKET` | `/var/run/tailscale/tailscaled.sock`（なければ snap 版の `/var/snap/tailscale/common/socket/tailscaled.sock`） | tailscaled の LocalAPI のソケット |
 | `RUST_LOG` | `info,disnans_server=debug` | ログの出し方（`tracing-subscriber` の書式） |
@@ -74,5 +74,7 @@ cargo test -p disnans-server
 | `src/chat.rs` | メッセージ・スレッド・リアクションの操作 |
 | `src/notify.rs` | 通知（`Notifier` で送り方を抽象化。今は WebSocket だけ） |
 | `src/files.rs` / `src/image_proc.rs` | ファイルの保存、画像の WebP 変換、未投稿ファイルの掃除 |
+| `src/plugins.rs` | プラグインの配布・更新・削除（manifest の検証、ファイルの入れ替え、アナウンス） |
+| `src/sessions.rs` | プラグインのセッションとカード、一時的なイベントの中継、プラグインからの通知 |
 | `src/store/` | DB の読み書き |
 | `migrations/` | SQLite のスキーマ（起動時に自動で適用） |

@@ -9,7 +9,9 @@ pub mod files;
 pub mod hub;
 pub mod image_proc;
 pub mod notify;
+pub mod plugins;
 pub mod routes;
+pub mod sessions;
 pub mod state;
 pub mod store;
 pub mod tailscale;
@@ -32,6 +34,7 @@ pub async fn build(
     config: Config,
 ) -> Result<(Router, SharedState), Box<dyn std::error::Error + Send + Sync>> {
     std::fs::create_dir_all(config.files_dir())?;
+    std::fs::create_dir_all(config.plugins_dir())?;
     // 前回の途中で残った一時ファイルは捨てる
     let _ = std::fs::remove_dir_all(config.tmp_dir());
     std::fs::create_dir_all(config.tmp_dir())?;

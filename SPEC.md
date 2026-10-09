@@ -359,7 +359,7 @@ export default class DicePlugin extends Plugin {
 | `session.update(state, { card? })` | 楽観ロック付きで state（とカード）を保存する |
 | `session.onChange(cb)` / `session.emit(name, payload)` / `session.on(name, cb)` | 変更の購読、一時的なイベント |
 | `this.notify(userIds, text, { session? })` | 通知を送る（「あなたの番です」） |
-| `this.registerEvent(...)` / `this.register(cleanup)` | 後始末を自動で行う購読 |
+| `this.registerDomEvent(...)` / `this.registerInterval(id)` / `this.register(cleanup)` | 外すときに自動で片付く購読・タイマー・後始末 |
 | `disnans.ui.*` | 本体と同じ見た目の部品（ボタン、トグル、入力欄、設定の行、トースト、確認ダイアログ） |
 | `disnans.apiVersion` | ホスト API のバージョン（いまは 1） |
 

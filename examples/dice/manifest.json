@@ -1,0 +1,8 @@
+{
+  "id": "dice",
+  "name": "ダイス",
+  "version": "1.0.0",
+  "description": "サイコロを振って、結果をみんなに見せる",
+  "author": "sanpino",
+  "minApiVersion": 1
+}

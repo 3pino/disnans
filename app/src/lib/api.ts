@@ -1,8 +1,13 @@
 import type { ApiError } from './protocol/ApiError';
 import type { Attachment } from './protocol/Attachment';
+import type { CreateSession } from './protocol/CreateSession';
 import type { Message } from './protocol/Message';
+import type { PluginInfo } from './protocol/PluginInfo';
+import type { PluginNotify } from './protocol/PluginNotify';
+import type { Session } from './protocol/Session';
 import type { Thread } from './protocol/Thread';
 import type { UpdateMe } from './protocol/UpdateMe';
+import type { UpdateSession } from './protocol/UpdateSession';
 import type { User } from './protocol/User';
 import { apiUrl, authHeaders } from './config';
 import { errorText } from './errors';
@@ -69,6 +74,33 @@ export const api = {
   thread: (id: string) => request<Thread>('GET', `/api/threads/${encodeURIComponent(id)}`),
   /** 自分にサンプルの通知を送る */
   sampleNotification: () => request<void>('POST', '/api/notify/sample'),
+
+  // ---- プラグイン ----
+  plugins: () => request<PluginInfo[]>('GET', '/api/plugins'),
+  /** 配布・更新。files は manifest.json / main.js / styles.css（ファイル名で見分ける） */
+  publishPlugin: async (files: { name: string; data: Blob }[]): Promise<PluginInfo> => {
+    const fd = new FormData();
+    for (const f of files) fd.append('file', f.data, f.name);
+    const res = await fetch(apiUrl('/api/plugins'), { method: 'POST', headers: authHeaders(), body: fd });
+    if (!res.ok) throw await toError(res);
+    return (await res.json()) as PluginInfo;
+  },
+  deletePlugin: (id: string) => request<void>('DELETE', `/api/plugins/${encodeURIComponent(id)}`),
+  /** 配布されたファイルの中身（hash を付けてキャッシュを区別する） */
+  pluginFile: async (id: string, name: string, hash: string): Promise<string> => {
+    const res = await fetch(apiUrl(`/api/plugins/${encodeURIComponent(id)}/files/${encodeURIComponent(name)}${qs({ v: hash })}`), {
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw await toError(res);
+    return await res.text();
+  },
+  pluginNotify: (id: string, body: PluginNotify) => request<void>('POST', `/api/plugins/${encodeURIComponent(id)}/notify`, body),
+
+  // ---- セッション ----
+  createSession: (body: CreateSession) => request<Session>('POST', '/api/sessions', body),
+  session: (id: string) => request<Session>('GET', `/api/sessions/${encodeURIComponent(id)}`),
+  /** version が合わなければ 409 version_conflict */
+  updateSession: (id: string, body: UpdateSession) => request<Session>('PUT', `/api/sessions/${encodeURIComponent(id)}`, body),
 };
 
 export type UploadHandle = { promise: Promise<Attachment>; abort: () => void };

@@ -1,6 +1,6 @@
 //! WebSocket（`/api/ws`）。
 //!
-//! `ClientEvent` を受け取って `chat` の操作を呼び、`ServerEvent` を送る。
+//! `ClientEvent` を受け取って `chat`（と `sessions`）の操作を呼び、`ServerEvent` を送る。
 //! 送信はすべて `Hub` のキューを通す（書き込みタスクが1つだけソケットに書く）。
 
 use std::net::{IpAddr, SocketAddr};
@@ -19,6 +19,7 @@ use crate::chat::{self, Actor, SendMessage};
 use crate::db;
 use crate::error::AppError;
 use crate::hub::ConnId;
+use crate::sessions;
 use crate::state::SharedState;
 use crate::store::users;
 
@@ -161,6 +162,11 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
         ClientEvent::ReactionRemove { message_id, emoji } => {
             chat::remove_reaction(state, actor, &message_id, &emoji).await
         }
+        ClientEvent::SessionEmit {
+            session_id,
+            name,
+            payload,
+        } => sessions::emit(state, actor, session_id, name, payload).await,
         ClientEvent::Ping => {
             state.hub.send_to_conn(conn, &ServerEvent::Pong);
             Ok(())

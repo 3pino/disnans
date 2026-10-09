@@ -2,6 +2,7 @@
   import Sidebar from './Sidebar.svelte';
   import ChatView from './ChatView.svelte';
   import ThreadPanel from './ThreadPanel.svelte';
+  import PluginPanel from './PluginPanel.svelte';
   import SettingsView from './SettingsView.svelte';
   import ConnectionBanner from './ConnectionBanner.svelte';
   import NavBar from './NavBar.svelte';
@@ -40,6 +41,11 @@
   {#if ui.panel?.kind === 'thread'}
     <div class="shell-thread-panel">
       <ThreadPanel threadId={ui.panel.id} />
+    </div>
+  {:else if ui.panel?.kind === 'plugin'}
+    <!-- プラグインの view。枠はスレッドのパネルと同じ -->
+    <div class="shell-thread-panel">
+      <PluginPanel plugin={ui.panel.plugin} view={ui.panel.view} sessionId={ui.panel.sessionId} />
     </div>
   {/if}
 

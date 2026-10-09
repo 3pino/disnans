@@ -1,0 +1,78 @@
+/* ダイスの view。本体の CSS 変数（app/src/app.css の :root）を使うので、ライト・ダークどちらでも本体に合う */
+
+.dice-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.dice-spec {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.dice-faces {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  max-width: 100%;
+}
+
+.dice-face {
+  display: grid;
+  place-items: center;
+  min-width: 72px;
+  height: 72px;
+  padding: 0 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 36px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* 振る前 */
+.dice-face-pending {
+  border-style: dashed;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+/* 最大の目・1 の目 */
+.dice-face-max {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.dice-face-min {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.dice-total {
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dice-status {
+  margin: 0;
+}
+
+.dice-roll {
+  min-width: 140px;
+  height: 44px;
+  font-size: 17px;
+}

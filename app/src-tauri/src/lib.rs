@@ -5,6 +5,9 @@ fn open_devtools(window: tauri::WebviewWindow) {
     window.open_devtools();
 }
 
+#[cfg(desktop)]
+mod dev_plugins;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[allow(unused_mut)]
@@ -18,7 +21,11 @@ pub fn run() {
             .plugin(tauri_plugin_updater::Builder::new().build())
             .plugin(tauri_plugin_process::init())
             .plugin(tauri_plugin_notification::init())
-            .invoke_handler(tauri::generate_handler![open_devtools]);
+            .invoke_handler(tauri::generate_handler![
+                open_devtools,
+                dev_plugins::dev_plugins_scan,
+                dev_plugins::dev_plugin_read
+            ]);
     }
     // Android: システムバーのアイコンの明暗をアプリのテーマに合わせる
     #[cfg(target_os = "android")]

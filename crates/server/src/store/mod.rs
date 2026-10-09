@@ -4,6 +4,8 @@
 
 pub mod files;
 pub mod messages;
+pub mod plugins;
+pub mod sessions;
 pub mod users;
 
 /// ID の一覧を、SQLite の `json_each` で使える JSON 配列の文字列にする。

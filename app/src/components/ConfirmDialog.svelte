@@ -1,5 +1,6 @@
 <script lang="ts">
-  import Modal from './Modal.svelte';
+  import Modal from './ui/Modal.svelte';
+  import Button from './ui/Button.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 </script>
 
@@ -7,9 +8,9 @@
   {@const req = ui.confirmReq}
   <Modal title={req.title} onclose={() => req.resolve(false)} width={380}>
     {#if req.body}<p class="confirm-dialog-message">{req.body}</p>{/if}
-    <div class="confirm-dialog-actions">
-      <button type="button" class="btn confirm-dialog-cancel" onclick={() => req.resolve(false)}>キャンセル</button>
-      <button type="button" class="btn primary confirm-dialog-ok" class:danger={req.danger} onclick={() => req.resolve(true)}>{req.okLabel}</button>
+    <div class="modal-actions confirm-dialog-actions">
+      <Button class="confirm-dialog-cancel" onclick={() => req.resolve(false)}>キャンセル</Button>
+      <Button class="confirm-dialog-ok" variant={req.danger ? 'danger' : 'primary'} onclick={() => req.resolve(true)}>{req.okLabel}</Button>
     </div>
   </Modal>
 {/if}
@@ -20,10 +21,5 @@
     white-space: pre-line;
     color: var(--text-muted);
     font-size: 14px;
-  }
-  .confirm-dialog-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
   }
 </style>

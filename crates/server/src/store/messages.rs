@@ -1,13 +1,13 @@
 //! messages / threads / reactions テーブル。
 //!
-//! `Message` は添付ファイル・リアクション・スレッドの情報をまとめて組み立てる。
+//! `Message` は添付ファイル・リアクション・スレッド・カードの情報をまとめて組み立てる。
 
 use std::collections::HashMap;
 
 use disnans_shared::{Attachment, Message, Reaction, Thread, ThreadInfo};
 use sqlx::{SqliteConnection, SqlitePool};
 
-use super::{files, json_ids};
+use super::{files, json_ids, sessions};
 
 /// messages テーブルの1行（添付ファイルなどを含まない）。
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -67,6 +67,7 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
     let mut attachments = files::attachments_for(pool, &ids_json).await?;
     let mut reactions = reactions_for(pool, &ids_json).await?;
     let mut threads = thread_infos_for(pool, &ids_json).await?;
+    let mut cards = sessions::cards_for(pool, &ids_json).await?;
 
     let mut by_id: HashMap<String, MessageRow> =
         rows.into_iter().map(|r| (r.id.clone(), r)).collect();
@@ -77,6 +78,7 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
             attachments: attachments.remove(&row.id).unwrap_or_default(),
             reactions: reactions.remove(&row.id).unwrap_or_default(),
             thread: threads.remove(&row.id),
+            card: cards.remove(&row.id),
             id: row.id,
             author_id: row.author_id,
             thread_id: row.thread_id,

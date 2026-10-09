@@ -3,6 +3,7 @@
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import MessageItem from './MessageItem.svelte';
+  import Button from './ui/Button.svelte';
   import type { Message } from '../lib/protocol/Message';
   import type { Timeline } from '../lib/stores/timeline.svelte';
   import { dayLabel, sameDay } from '../lib/format';
@@ -106,7 +107,7 @@
     {#if timeline.error && !timeline.loaded}
       <div class="message-list-error">
         読み込めませんでした（{timeline.error}）
-        <button type="button" class="btn" onclick={() => timeline.load()}>再試行</button>
+        <Button onclick={() => timeline.load()}>再試行</Button>
       </div>
     {/if}
     {#if timeline.loaded && all.length === 0 && empty}

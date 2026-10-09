@@ -45,6 +45,11 @@ impl Config {
         self.data_dir.join("files")
     }
 
+    /// 配布されたプラグインのファイル（`plugins/<id>/`）。
+    pub fn plugins_dir(&self) -> PathBuf {
+        self.data_dir.join("plugins")
+    }
+
     /// アップロード中の一時ファイル。
     pub fn tmp_dir(&self) -> PathBuf {
         self.data_dir.join("tmp")

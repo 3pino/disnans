@@ -1,6 +1,8 @@
 <script lang="ts">
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import AppIcon from './AppIcon.svelte';
+  import Button from './ui/Button.svelte';
+  import TextInput from './ui/TextInput.svelte';
   import { api } from '../lib/api';
   import { normalizeServerUrl, setServerUrl } from '../lib/config';
 
@@ -45,10 +47,10 @@
     <p class="muted setup-intro">
       接続するサーバーのアドレスを入力してください。Tailscale の IP アドレスか MagicDNS の名前が使えます。
     </p>
-    <label class="setup-server-label" for="setup-server-url">サーバー</label>
-    <input
+    <label class="field-label setup-server-label" for="setup-server-url">サーバー</label>
+    <TextInput
       id="setup-server-url"
-      class="input setup-server-input"
+      class="setup-server-input"
       bind:value={url}
       placeholder="http://homeserver:8080"
       autocapitalize="off"
@@ -60,12 +62,12 @@
     {#if error}
       <p class="setup-error">接続できませんでした: {error}<br />Tailscale に接続しているか確かめてください。</p>
     {/if}
-    <button class="btn primary setup-connect" disabled={checking || !url.trim()}>
+    <Button type="submit" variant="primary" class="setup-connect" disabled={checking || !url.trim()}>
       {#if checking}<LoaderCircle size={16} class="spin" />{/if}
       接続する
-    </button>
+    </Button>
     {#if failedOnce}
-      <button type="button" class="btn setup-save-anyway" onclick={saveAnyway}>確認せずに保存</button>
+      <Button class="setup-save-anyway" onclick={saveAnyway}>確認せずに保存</Button>
     {/if}
   </form>
 </div>
@@ -100,20 +102,19 @@
     margin: 0 0 6px;
     font-size: 14px;
   }
+  /* フォームの縦の間隔は gap で取るので、見出しの下の余白はなくす */
   .setup-server-label {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--text-muted);
+    margin-bottom: 0;
   }
   .setup-error {
     color: var(--danger);
     font-size: 13px;
   }
-  .btn {
+  .setup-card > :global(.btn) {
     height: 42px;
     margin-top: 6px;
   }
-  .setup-save-anyway {
+  .setup-card > :global(.setup-save-anyway) {
     background: transparent;
     margin-top: 0;
   }

@@ -14,6 +14,9 @@
   import EmojiPicker from './EmojiPicker.svelte';
   import MessageInput from './MessageInput.svelte';
   import ActionSheet from './ActionSheet.svelte';
+  import MessageCard from './MessageCard.svelte';
+  import Button from './ui/Button.svelte';
+  import IconButton from './ui/IconButton.svelte';
   import type { Message } from '../lib/protocol/Message';
   import type { PendingMessage } from '../lib/stores/timeline.svelte';
   import { client } from '../lib/stores/client.svelte';
@@ -38,9 +41,11 @@
   const author = $derived(client.user(message.author_id));
   const isMine = $derived(client.me?.id === message.author_id);
   const mentionsMe = $derived(!!client.me && extractMentions(message.body).includes(client.me.id));
-  const editing = $derived(ui.editing === message.id && !pending);
+  const editing = $derived(ui.editing === message.id && !pending && !message.card);
   const canThread = $derived(!inThread && !pending && message.thread_id === null);
   const unread = $derived(threads.unread[message.id] ?? 0);
+  /** プラグインのカードは本文を編集できない（削除はできる） */
+  const canEdit = $derived(isMine && !message.card);
 
   let picker = $state<DOMRect | null>(null);
   let sheet = $state(false);
@@ -69,7 +74,9 @@
       title: 'メッセージを削除しますか？',
       body: message.thread
         ? 'このメッセージから始まったスレッドの返信もすべて削除されます。元には戻せません。'
-        : '削除すると元には戻せません。',
+        : message.card
+          ? 'このカードのセッション（プラグインの状態）も削除されます。元には戻せません。'
+          : '削除すると元には戻せません。',
       okLabel: '削除',
       danger: true,
     });
@@ -158,15 +165,18 @@
       </div>
       <div class="message-edit-hint">
         {#if ui.isMobile}
-          <button type="button" class="btn" onclick={() => (ui.editing = null)}>キャンセル</button>
-          <button type="button" class="btn primary" onclick={saveEdit}>保存</button>
+          <Button onclick={() => (ui.editing = null)}>キャンセル</Button>
+          <Button variant="primary" onclick={saveEdit}>保存</Button>
         {:else}
           Esc で<button type="button" class="message-link-button" onclick={() => (ui.editing = null)}>キャンセル</button>・Enter
           で<button type="button" class="message-link-button" onclick={saveEdit}>保存</button>
         {/if}
       </div>
     {:else}
-      {#if message.body}
+      {#if message.card}
+        <!-- プラグインのセッションのカード。本文の代わりに出す -->
+        <MessageCard card={message.card} />
+      {:else if message.body}
         <div class="message-body">
           <Markdown body={message.body} suffix={message.edited_at ? edited : undefined} />
         </div>
@@ -174,7 +184,6 @@
       {#if message.attachments.length > 0}
         <Attachments attachments={message.attachments} />
       {/if}
-      <!-- 将来: プラグインのカード（message.card）はここに描画する -->
     {/if}
 
     {#if pending?.failed}
@@ -213,33 +222,23 @@
   {#if !pending && !editing}
     <div class="message-toolbar" role="toolbar" aria-label="メッセージの操作">
       {#each QUICK_REACTIONS.slice(0, 3) as e (e)}
-        <button type="button" class="icon-btn message-toolbar-emoji" aria-label="{e} でリアクション" onclick={() => client.toggleReaction(message, e)}
-          >{e}</button
-        >
+        <IconButton class="message-toolbar-emoji" label="{e} でリアクション" onclick={() => client.toggleReaction(message, e)}>{e}</IconButton>
       {/each}
-      <button
-        type="button"
-        class="icon-btn"
-        aria-label="リアクション"
-        title="リアクション"
-        onclick={(e) => (picker = e.currentTarget.getBoundingClientRect())}><SmilePlus size={17} /></button
+      <IconButton label="リアクション" title="リアクション" onclick={(e) => (picker = e.currentTarget.getBoundingClientRect())}
+        ><SmilePlus size={17} /></IconButton
       >
       {#if canThread}
-        <button
-          type="button"
-          class="icon-btn"
-          aria-label={message.thread ? 'スレッドを開く' : 'スレッドを作る'}
+        <IconButton
+          label={message.thread ? 'スレッドを開く' : 'スレッドを作る'}
           title={message.thread ? 'スレッドを開く' : 'スレッドで返信'}
-          onclick={() => client.openThreadFrom(message)}><MessageSquare size={17} /></button
+          onclick={() => client.openThreadFrom(message)}><MessageSquare size={17} /></IconButton
         >
       {/if}
+      {#if canEdit}
+        <IconButton label="編集" title="編集" onclick={() => (ui.editing = message.id)}><Pencil size={16} /></IconButton>
+      {/if}
       {#if isMine}
-        <button type="button" class="icon-btn" aria-label="編集" title="編集" onclick={() => (ui.editing = message.id)}
-          ><Pencil size={16} /></button
-        >
-        <button type="button" class="icon-btn message-toolbar-delete" aria-label="削除" title="削除" onclick={remove}
-          ><Trash2 size={16} /></button
-        >
+        <IconButton class="message-toolbar-delete" label="削除" title="削除" onclick={remove}><Trash2 size={16} /></IconButton>
       {/if}
     </div>
   {/if}
@@ -266,12 +265,8 @@
       ...(canThread
         ? [{ label: message.thread ? 'スレッドを開く' : 'スレッドで返信', icon: MessageSquare, run: () => client.openThreadFrom(message) }]
         : []),
-      ...(isMine
-        ? [
-            { label: '編集', icon: Pencil, run: () => (ui.editing = message.id) },
-            { label: '削除', icon: Trash2, danger: true, run: remove },
-          ]
-        : []),
+      ...(canEdit ? [{ label: '編集', icon: Pencil, run: () => (ui.editing = message.id) }] : []),
+      ...(isMine ? [{ label: '削除', icon: Trash2, danger: true, run: remove }] : []),
     ]}
   />
 {/if}
@@ -362,7 +357,7 @@
     font-size: 12px;
     color: var(--text-muted);
   }
-  .message-edit-hint .btn {
+  .message-edit-hint > :global(.btn) {
     height: 32px;
     margin-right: 6px;
   }
@@ -421,14 +416,14 @@
     box-shadow: var(--shadow);
     z-index: 5;
   }
-  .message-toolbar .icon-btn {
+  .message-toolbar > :global(.icon-btn) {
     width: 30px;
     height: 30px;
   }
-  .message-toolbar .message-toolbar-emoji {
+  .message-toolbar > :global(.message-toolbar-emoji) {
     font-size: 16px;
   }
-  .message-toolbar .message-toolbar-delete:hover {
+  .message-toolbar > :global(.message-toolbar-delete:hover) {
     color: var(--danger);
     background: var(--danger-soft);
   }

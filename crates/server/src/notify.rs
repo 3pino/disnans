@@ -196,6 +196,7 @@ mod tests {
             created_at: 0,
             edited_at: None,
             thread: None,
+            card: None,
         }
     }
 
