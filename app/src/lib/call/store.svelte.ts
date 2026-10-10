@@ -5,9 +5,7 @@ import type { ServerEvent } from '../protocol/ServerEvent';
 import type { IconRef } from '../icons.svelte';
 import { startCapture, type Capture } from './capture';
 import {
-  CONNECT_TIMEOUT_MS,
   EV_AUDIO,
-  EV_SIGNAL,
   Framer,
   LEVEL_MS,
   OUTPUTS_REFRESH_TICKS,
@@ -17,27 +15,22 @@ import {
   Resampler,
   base64ToPcm,
   byteLevel,
-  classifyOffer,
   diffPeers,
   floatToInt16,
   int16ToFloat,
-  isPolite,
   notificationContent,
   pcmToBase64,
   pickOutput,
   randomId,
   rms,
-  rtcConfig,
   scheduleFrame,
-  shouldOffer,
   updateSpeaking,
-  usesRelay,
 } from './pure';
 import type { CallSettings } from './settings.svelte';
 
-// 通話（みんな共通の1部屋）。参加者の一覧・kick・シグナリングの中継はサーバー（call.* イベント）が受け持ち、
-// 音声・映像は WebRTC で直接つなぐ（メッシュ）。WebRTC を使えない環境（Linux の WebKitGTK など）は、その相手とのあいだだけ
-// 音声をサーバー経由（call.emit の audio）で流す。ここは画面に触れず、画面は participants などを読む
+// 通話（みんな共通の1部屋）。参加者の一覧・kick・音声の中継はサーバー（call.* イベント）が受け持つ。
+// 音声は全員のあいだをサーバー経由（call.emit の audio。16kHz モノラル PCM）で流す（WebRTC は使わない）。
+// ここは画面に触れず、画面は participants などを読む
 
 /** 本体から借りる機能（テストで差し替える） */
 export type CallDeps = {
@@ -54,7 +47,6 @@ export type CallDeps = {
   deviceKind(): string;
   /** 通話の設定画面を開く */
   openSettings(): void;
-  hasRtc(): boolean;
   now(): number;
 };
 
@@ -65,8 +57,6 @@ export type CallParticipant = {
   self: boolean;
   muted: boolean;
   deafened: boolean;
-  /** 映像を送受信できる（WebRTC を使える） */
-  canVideo: boolean;
   connected: boolean;
   speaking: boolean;
   /** 自分の側だけで消音している */
@@ -74,66 +64,33 @@ export type CallParticipant = {
   device: string | null;
 };
 
-/** 相手から届いたメディアのトラック */
-export type CallRemoteTrack = { peer: string; userId: string; track: MediaStreamTrack; stream: MediaStream };
+/** 参加者から届いた、プラグインのデータ（call.emit） */
+export type CallDataEvent = { peer: string; userId: string; payload: unknown };
+
+/** プラグインが使えるイベント名。audio は本体の音声が使う */
+const RESERVED_EVENTS = new Set([EV_AUDIO]);
 
 /** 通話のバーに足すボタン */
 export type BarButtonDef = { icon: IconRef; label: string; onClick: () => void; active?: boolean; disabled?: boolean };
 export type BarButton = BarButtonDef & { id: number };
 
-type PeerView = { connected: boolean; speaking: boolean; localMuted: boolean };
+type PeerView = { speaking: boolean; localMuted: boolean };
 
 type Meter = { analyser: AnalyserNode; buf: Uint8Array; lastLoud: number; speaking: boolean };
 
 type RelayIn = { gain: GainNode; meter: Meter | null; st: { next: number } };
 
-/** 通話にいる自分以外の接続1つ分の、接続の状態 */
+/** 通話にいる自分以外の接続1つ分の状態 */
 type Entry = {
   peer: string;
   userId: string;
   status: CallStatus;
-  pc: RTCPeerConnection | null;
-  /** いまの接続の世代 ID。最初の offer を出す側が決め、両方の signal に付く */
-  sid: string | null;
-  pcStartedAt: number;
-  pendingIce: RTCIceCandidateInit[];
-  makingOffer: boolean;
-  /** 送っているトラックの RTCRtpSender（トラックを外すときに使う） */
-  senders: Map<MediaStreamTrack, RTCRtpSender>;
-  stream: MediaStream | null;
-  /** 声として扱っている音声トラック（最初に届いた音声） */
-  voiceTrack: MediaStreamTrack | null;
   relay: RelayIn | null;
-  audio: HTMLAudioElement | null;
-  audioDetach: (() => void) | null;
-  meter: Meter | null;
   localMuted: boolean;
-  connected: boolean;
-  /** この時刻までは接続し直さない（失敗が続いても連打しない） */
-  nextCallAt: number;
 };
 
 function makeEntry(m: CallMember): Entry {
-  return {
-    peer: m.peer,
-    userId: m.user_id,
-    status: m.status,
-    pc: null,
-    sid: null,
-    pcStartedAt: 0,
-    pendingIce: [],
-    makingOffer: false,
-    senders: new Map(),
-    stream: null,
-    voiceTrack: null,
-    relay: null,
-    audio: null,
-    audioDetach: null,
-    meter: null,
-    localMuted: false,
-    connected: false,
-    nextCallAt: 0,
-  };
+  return { peer: m.peer, userId: m.user_id, status: m.status, relay: null, localMuted: false };
 }
 
 function makeMeter(analyser: AnalyserNode): Meter {
@@ -164,8 +121,6 @@ export class CallStore {
   private peerId = '';
   private entries = new Map<string, Entry>();
   private localStream: MediaStream | null = null;
-  /** 相手に送る音（マイクの音量を通したもの。通せなければマイクそのもの） */
-  private sendStream: MediaStream | null = null;
   private micGain: GainNode | null = null;
   private captureSrc: AudioNode | null = null;
   private capture: Capture | null = null;
@@ -182,12 +137,8 @@ export class CallStore {
   private background: Disnans.BackgroundHandle | null = null;
   private notifyKey = '';
   private buttonSeq = 0;
-  /** プラグインが通話に足した映像などのトラック */
-  private extraTracks: { track: MediaStreamTrack; stream: MediaStream }[] = [];
-  private remote = new Map<MediaStreamTrack, CallRemoteTrack>();
+  private eventListeners = new Map<string, Set<(e: CallDataEvent) => void>>();
   private changeListeners = new Set<() => void>();
-  private trackListeners = new Set<(t: CallRemoteTrack) => void>();
-  private trackEndListeners = new Set<(t: CallRemoteTrack) => void>();
   private changeSig = '';
 
   constructor(private deps: CallDeps) {}
@@ -213,11 +164,6 @@ export class CallStore {
     return this.joined || this.joining || this.others.length > 0;
   }
 
-  /** この環境で映像を送受信できるか（WebRTC を使えない環境の中継は音声だけ） */
-  get canVideo(): boolean {
-    return this.deps.hasRtc();
-  }
-
   /** 参加者。参加中なら自分が先頭 */
   get participants(): CallParticipant[] {
     const out: CallParticipant[] = [];
@@ -228,7 +174,6 @@ export class CallStore {
         self: true,
         muted: this.muted,
         deafened: this.deafened,
-        canVideo: this.canVideo,
         connected: this.joined,
         speaking: this.selfSpeaking && !this.muted,
         localMuted: false,
@@ -243,18 +188,13 @@ export class CallStore {
         self: false,
         muted: m.status.muted,
         deafened: m.status.deafened,
-        canVideo: m.status.rtc,
-        connected: v?.connected ?? false,
+        connected: true,
         speaking: (v?.speaking ?? false) && !m.status.muted && !v?.localMuted,
         localMuted: v?.localMuted ?? false,
         device: m.status.device,
       });
     }
     return out;
-  }
-
-  get remoteTracks(): CallRemoteTrack[] {
-    return [...this.remote.values()];
   }
 
   // ---- サーバーからのイベント ----
@@ -280,10 +220,9 @@ export class CallStore {
     }
   }
 
-  /** つなぎ直したら、サーバーは自分を通話から外している。入り直し、WebRTC の接続もやり直す */
+  /** つなぎ直したら、サーバーは自分を通話から外している。入り直す */
   private onReconnect(): void {
     if (!this.joined) return;
-    for (const e of this.entries.values()) this.closePc(e);
     this.deps.send({ type: 'call.join', peer: this.peerId, status: this.status() });
   }
 
@@ -303,7 +242,7 @@ export class CallStore {
     );
     for (const peer of removed) {
       const e = this.entries.get(peer);
-      if (e) this.closePeer(e);
+      if (e) e.relay = null;
       this.entries.delete(peer);
     }
     for (const m of others) {
@@ -314,21 +253,25 @@ export class CallStore {
       }
       e.userId = m.user_id;
       e.status = m.status;
-      if (this.usesRelay(e)) e.connected = true;
-      this.maybeCall(e);
     }
   }
 
   private onCallEvent(peer: string, name: string, payload: unknown): void {
     if (!this.joined) return;
-    if (name === EV_AUDIO) this.onRelayAudio(peer, payload);
-    else if (name === EV_SIGNAL) void this.onSignal(peer, payload);
+    if (name === EV_AUDIO) {
+      this.onRelayAudio(peer, payload);
+      return;
+    }
+    const e = this.entries.get(peer);
+    const set = this.eventListeners.get(name);
+    if (!e || !set) return;
+    for (const cb of [...set]) this.safe(() => cb({ peer, userId: e.userId, payload }));
   }
 
   // ---- 状態の送信 ----
 
   private status(): CallStatus {
-    return { muted: this.muted, deafened: this.deafened, rtc: this.deps.hasRtc(), device: this.deps.deviceKind() };
+    return { muted: this.muted, deafened: this.deafened, device: this.deps.deviceKind() };
   }
 
   private sendStatus(): void {
@@ -409,15 +352,12 @@ export class CallStore {
     this.deafened = false;
     this.outputs = [];
     this.stopWorker();
-    for (const e of this.entries.values()) this.closePeer(e);
     this.entries.clear();
-    this.extraTracks = [];
     this.peerView = {};
     this.selfSpeaking = false;
     this.peerId = '';
     this.localStream?.getTracks().forEach((t) => t.stop());
     this.localStream = null;
-    this.sendStream = null;
     this.micGain = null;
     this.captureSrc = null;
     this.stopCapture();
@@ -445,22 +385,18 @@ export class CallStore {
     return await navigator.mediaDevices.getUserMedia({ audio: base, video: false });
   }
 
-  /** マイク → 音量（GainNode）→ 送る音、と通す。通せないとき（AudioContext が動かない環境）は、マイクをそのまま送る */
+  /** マイク → 音量（GainNode）→ 取り出す。通せないとき（AudioContext が動かない環境）は、マイクをそのまま取り出す */
   private async setupSend(stream: MediaStream, ctx: AudioContext, meter: Meter): Promise<void> {
-    this.sendStream = stream;
     this.micGain = null;
     this.captureSrc = null;
     try {
       await ctx.resume();
-      if (ctx.state !== 'running' || !ctx.createGain || !ctx.createMediaStreamDestination) throw new Error('AudioContext が動いていません');
+      if (ctx.state !== 'running' || !ctx.createGain) throw new Error('AudioContext が動いていません');
       const gain = ctx.createGain();
-      const dest = ctx.createMediaStreamDestination();
       ctx.createMediaStreamSource(stream).connect(gain);
-      gain.connect(dest);
       gain.connect(meter.analyser);
       this.micGain = gain;
       this.captureSrc = gain;
-      this.sendStream = dest.stream;
       this.applyMicVolume();
     } catch (e) {
       console.warn('[call] マイクの音量を調整できません。そのまま送ります', e);
@@ -480,13 +416,9 @@ export class CallStore {
     for (const e of this.entries.values()) this.applyEntryAudio(e);
   }
 
-  /** 相手1人分の音（WebRTC の <audio> とリレーの GainNode）に、音量・消音を反映する */
+  /** 相手1人分の音（GainNode）に、音量・消音を反映する */
   private applyEntryAudio(e: Entry): void {
     const silent = e.localMuted || this.deafened;
-    if (e.audio) {
-      e.audio.muted = silent;
-      e.audio.volume = this.settings.outVolume;
-    }
     if (e.relay) e.relay.gain.gain.value = silent ? 0 : this.settings.outVolume;
   }
 
@@ -502,8 +434,7 @@ export class CallStore {
   }
 
   private applyMute(): void {
-    // 送る音（マイクの音量を通したもの）と、マイクそのものの両方を止める
-    this.sendStream?.getAudioTracks().forEach((t) => (t.enabled = !this.muted));
+    // 送る音は onCapture でも止める。マイクそのものも止める
     this.localStream?.getAudioTracks().forEach((t) => (t.enabled = !this.muted));
   }
 
@@ -623,30 +554,19 @@ export class CallStore {
     this.worker = null;
   }
 
-  /** LEVEL_MS ごと。つながらない接続のやり直し・足りない接続を張る・出力先の取り直し・音量を見る */
+  /** LEVEL_MS ごと。出力先の取り直し・声の取り出しを始める・音量を見る */
   tick(): void {
     if (!this.joined) return;
     const now = this.deps.now();
     let changed = false;
-    for (const e of this.entries.values()) {
-      if (e.pc && !e.connected && now - e.pcStartedAt > CONNECT_TIMEOUT_MS) this.closePc(e);
-    }
     if (++this.outputsTick >= OUTPUTS_REFRESH_TICKS) {
       this.outputsTick = 0;
       void this.refreshOutputs();
     }
-    // 足りない接続を張る。リレーで話す相手は、つながっていることにする
-    for (const e of this.entries.values()) {
-      this.maybeCall(e);
-      if (this.usesRelay(e) && !e.connected) {
-        e.connected = true;
-        changed = true;
-      }
-    }
-    if (this.needRelay()) this.ensureCapture();
+    if (this.entries.size > 0) this.ensureCapture();
     if (this.localMeter && this.updateMeter(this.localMeter, now, this.muted)) changed = true;
     for (const e of this.entries.values()) {
-      const m = e.meter ?? e.relay?.meter;
+      const m = e.relay?.meter;
       if (m && this.updateMeter(m, now, e.status.muted || e.localMuted)) changed = true;
     }
     if (changed) this.refresh();
@@ -661,18 +581,7 @@ export class CallStore {
     return updateSpeaking(m, level, now, silent);
   }
 
-  // ---- リレー（WebRTC を使えない相手との音声。サーバーの call.emit を通す） ----
-
-  /** この相手とは WebRTC ではなくリレーで話す（どちらかが WebRTC を使えない） */
-  private usesRelay(e: Entry): boolean {
-    return usesRelay(this.deps.hasRtc(), e.status.rtc);
-  }
-
-  /** 自分の声をリレーで送る必要があるか（1人でもリレーの相手がいる） */
-  private needRelay(): boolean {
-    for (const e of this.entries.values()) if (this.usesRelay(e)) return true;
-    return false;
-  }
+  // ---- 音声（サーバーの call.emit を通す。相手がいる間だけ送る） ----
 
   private ensureCapture(): void {
     const ctx = this.ctx;
@@ -695,7 +604,7 @@ export class CallStore {
 
   /** マイクの音（AudioContext の周波数）を 16kHz に直して送る */
   private onCapture(chunk: Float32Array): void {
-    if (!this.joined || !this.resampler || !this.needRelay()) return;
+    if (!this.joined || !this.resampler || this.entries.size === 0) return;
     const volume = this.micGain ? 1 : this.settings.micVolume;
     const out = this.resampler.push(chunk);
     for (const frame of this.framer.push(out)) {
@@ -712,8 +621,7 @@ export class CallStore {
     const p = payload as { pcm?: unknown } | null;
     const ctx = this.ctx;
     const e = this.entries.get(peer);
-    // 双方が WebRTC を使えるなら、そちらで聞こえている
-    if (!ctx || !p || !e || !this.usesRelay(e) || e.status.muted || e.localMuted || this.deafened) return;
+    if (!ctx || !p || !e || e.status.muted || e.localMuted || this.deafened) return;
     const pcm = base64ToPcm(p.pcm);
     if (!pcm) return;
     try {
@@ -738,246 +646,27 @@ export class CallStore {
     }
   }
 
-  // ---- WebRTC ----
-
-  private makePc(e: Entry, sid: string): RTCPeerConnection {
-    this.closePc(e);
-    const pc = new RTCPeerConnection(rtcConfig(this.settings.stun));
-    e.pc = pc;
-    e.sid = sid;
-    e.pcStartedAt = this.deps.now();
-    e.pendingIce = [];
-    e.makingOffer = false;
-    e.connected = false;
-    const peer = e.peer;
-    const send = this.sendStream ?? this.localStream;
-    for (const t of send?.getTracks() ?? []) pc.addTrack(t, send as MediaStream);
-    for (const x of this.extraTracks) e.senders.set(x.track, pc.addTrack(x.track, x.stream));
-    pc.onicecandidate = (ev) => {
-      if (ev.candidate) this.signal(peer, { kind: 'ice', sid, candidate: ev.candidate.toJSON() });
-    };
-    pc.onnegotiationneeded = () => void this.negotiate(e, pc);
-    pc.ontrack = (ev) => {
-      if (e.pc !== pc) return;
-      this.onRemoteTrack(e, ev.track, ev.streams[0] ?? new MediaStream([ev.track]));
-    };
-    pc.onconnectionstatechange = () => {
-      if (e.pc !== pc) return;
-      e.connected = pc.connectionState === 'connected';
-      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') this.closePc(e);
-      this.refresh();
-    };
-    return pc;
-  }
-
-  /** 自分の peer ID が小さい相手にだけ、最初の offer を出す（接続を作ると negotiationneeded で offer が出る） */
-  private maybeCall(e: Entry): void {
-    if (!this.joined || !this.localStream || e.pc || !shouldOffer(this.peerId, e.peer) || this.usesRelay(e)) return;
-    if (this.deps.now() < e.nextCallAt) return;
-    this.makePc(e, randomId());
-  }
-
-  /** offer を作って送る（最初の接続も、トラックを足し引きしたときの再ネゴシエーションも） */
-  private async negotiate(e: Entry, pc: RTCPeerConnection): Promise<void> {
-    try {
-      e.makingOffer = true;
-      const offer = await pc.createOffer();
-      if (pc.signalingState !== 'stable' || e.pc !== pc) return;
-      await pc.setLocalDescription(offer);
-      this.signal(e.peer, { kind: 'offer', sid: e.sid, sdp: pc.localDescription?.sdp ?? offer.sdp });
-    } catch (err) {
-      console.error('[call] offer を作れませんでした', err);
-      if (e.pc === pc && !e.connected && pc.signalingState === 'stable') this.closePc(e);
-    } finally {
-      e.makingOffer = false;
-    }
-  }
-
-  private signal(to: string, body: Record<string, unknown>): void {
-    this.deps.send({ type: 'call.emit', name: EV_SIGNAL, payload: { to, ...body } });
-  }
-
-  private async onSignal(peer: string, payload: unknown): Promise<void> {
-    const p = payload as { to?: unknown; kind?: unknown; sid?: unknown; sdp?: unknown; candidate?: unknown } | null;
-    if (!this.deps.hasRtc() || !p || p.to !== this.peerId || typeof p.sid !== 'string') return;
-    // 一覧にいない人（まだ届いていない・もう抜けた）は相手にしない
-    const e = this.entries.get(peer);
-    if (!e) return;
-    const sid = p.sid;
-    try {
-      if (p.kind === 'offer' && typeof p.sdp === 'string') {
-        const action = classifyOffer({
-          sid,
-          currentSid: e.pc ? e.sid : null,
-          fromInitiator: shouldOffer(peer, this.peerId),
-          collision: e.makingOffer || (e.pc?.signalingState ?? 'stable') !== 'stable',
-          polite: isPolite(this.peerId, peer),
-        });
-        if (action === 'ignore') return;
-        // 新しい世代の offer は、古い接続を置き換える（相手がやり直した）。同じ世代なら再ネゴシエーション
-        const pc = action === 'replace' ? this.makePc(e, sid) : e.pc;
-        if (!pc) return;
-        await pc.setRemoteDescription({ type: 'offer', sdp: p.sdp });
-        await this.flushIce(e, pc);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        this.signal(peer, { kind: 'answer', sid, sdp: pc.localDescription?.sdp ?? answer.sdp });
-      } else if (p.kind === 'answer' && typeof p.sdp === 'string' && e.pc && e.sid === sid) {
-        const pc = e.pc;
-        if (pc.signalingState !== 'have-local-offer') return;
-        await pc.setRemoteDescription({ type: 'answer', sdp: p.sdp });
-        await this.flushIce(e, pc);
-      } else if (p.kind === 'ice' && p.candidate && typeof p.candidate === 'object' && e.sid === sid) {
-        const cand = p.candidate as RTCIceCandidateInit;
-        if (e.pc && e.pc.remoteDescription) await e.pc.addIceCandidate(cand);
-        else if (e.pc) e.pendingIce.push(cand);
-      }
-    } catch (err) {
-      console.error('[call] シグナリングで例外', err);
-    }
-    this.refresh();
-  }
-
-  private async flushIce(e: Entry, pc: RTCPeerConnection): Promise<void> {
-    const list = e.pendingIce;
-    e.pendingIce = [];
-    for (const c of list) {
-      try {
-        await pc.addIceCandidate(c);
-      } catch (err) {
-        console.warn('[call] ICE を追加できません', err);
-      }
-    }
-  }
-
-  /** 相手のトラックが届いた。最初の音声は声として鳴らし、ほかの音声・映像はプラグインに渡す */
-  private onRemoteTrack(e: Entry, track: MediaStreamTrack, stream: MediaStream): void {
-    if (track.kind === 'audio' && !e.voiceTrack) {
-      e.voiceTrack = track;
-      this.attachRemote(e, stream);
-      return;
-    }
-    const info: CallRemoteTrack = { peer: e.peer, userId: e.userId, track, stream };
-    if (this.remote.has(track)) return;
-    this.remote.set(track, info);
-    const end = () => this.dropRemote(track);
-    track.addEventListener?.('ended', end);
-    stream.addEventListener?.('removetrack', (ev) => {
-      if ((ev as MediaStreamTrackEvent).track === track) end();
-    });
-    for (const cb of [...this.trackListeners]) this.safe(() => cb(info));
-  }
-
-  private dropRemote(track: MediaStreamTrack): void {
-    const info = this.remote.get(track);
-    if (!info) return;
-    this.remote.delete(track);
-    for (const cb of [...this.trackEndListeners]) this.safe(() => cb(info));
-  }
-
-  private attachRemote(e: Entry, stream: MediaStream): void {
-    e.stream = stream;
-    if (!e.audio) {
-      const audio = new Audio();
-      audio.autoplay = true;
-      e.audio = audio;
-    }
-    e.audio.srcObject = stream;
-    this.applyEntryAudio(e);
-    e.audioDetach ??= this.deps.audio.attach(e.audio);
-    void e.audio.play().catch((err) => console.warn('[call] 再生できません', err));
-    if (this.ctx) {
-      try {
-        e.meter = makeMeter(this.ctx.createAnalyser());
-        this.ctx.createMediaStreamSource(stream).connect(e.meter.analyser);
-      } catch (err) {
-        console.warn('[call] 音量を見られません', err);
-      }
-    }
-  }
-
-  private closePc(e: Entry): void {
-    const pc = e.pc;
-    if (pc) e.nextCallAt = this.deps.now() + 3000;
-    e.pc = null;
-    e.sid = null;
-    e.connected = false;
-    e.makingOffer = false;
-    e.pendingIce = [];
-    e.senders.clear();
-    if (pc) {
-      pc.onicecandidate = null;
-      pc.ontrack = null;
-      pc.onnegotiationneeded = null;
-      pc.onconnectionstatechange = null;
-      try {
-        pc.close();
-      } catch {
-        /* すでに閉じている */
-      }
-    }
-    e.audioDetach?.();
-    e.audioDetach = null;
-    if (e.audio) {
-      e.audio.srcObject = null;
-      e.audio = null;
-    }
-    e.stream = null;
-    e.voiceTrack = null;
-    e.meter = null;
-    for (const info of [...this.remote.values()]) if (info.peer === e.peer) this.dropRemote(info.track);
-  }
-
-  private closePeer(e: Entry): void {
-    this.closePc(e);
-    e.relay = null;
-  }
-
   // ---- 拡張 API（プラグインから: disnans.call） ----
 
-  /** 映像などのトラックを通話に足す。WebRTC の相手には再ネゴシエーションで届く。返り値の関数で外す */
-  addTrack(track: MediaStreamTrack, stream?: MediaStream): Disnans.Cleanup {
+  /** 通話の参加者全員に、データを送る（サーバー経由。保存しない）。通話に参加していなければ例外 */
+  emit(name: string, payload: unknown): void {
     if (!this.joined) throw new Error('通話に参加していません');
-    if (!this.canVideo) throw new Error('この環境ではトラックを送れません（WebRTC を使えません）');
-    if (this.extraTracks.some((x) => x.track === track)) return () => this.removeTrack(track);
-    const s = stream ?? new MediaStream([track]);
-    this.extraTracks.push({ track, stream: s });
-    for (const e of this.entries.values()) {
-      if (e.pc && !this.usesRelay(e)) e.senders.set(track, e.pc.addTrack(track, s));
-    }
-    return () => this.removeTrack(track);
+    if (typeof name !== 'string' || name.length === 0 || name.length > 64) throw new Error('イベント名は 1〜64 文字にしてください');
+    if (RESERVED_EVENTS.has(name)) throw new Error(`イベント名 ${name} は本体が使います`);
+    this.deps.send({ type: 'call.emit', name, payload });
   }
 
-  removeTrack(track: MediaStreamTrack): void {
-    const i = this.extraTracks.findIndex((x) => x.track === track);
-    if (i < 0) return;
-    this.extraTracks.splice(i, 1);
-    for (const e of this.entries.values()) {
-      const sender = e.senders.get(track);
-      e.senders.delete(track);
-      if (sender && e.pc && e.pc.signalingState !== 'closed') {
-        try {
-          e.pc.removeTrack(sender);
-        } catch (err) {
-          console.warn('[call] トラックを外せません', err);
-        }
-      }
-    }
+  /** 参加者が emit したデータを受け取る。戻り値の関数で外す */
+  onEvent(name: string, cb: (e: CallDataEvent) => void): Disnans.Cleanup {
+    let set = this.eventListeners.get(name);
+    if (!set) this.eventListeners.set(name, (set = new Set()));
+    set.add(cb);
+    return () => void this.eventListeners.get(name)?.delete(cb);
   }
 
   onChange(cb: () => void): Disnans.Cleanup {
     this.changeListeners.add(cb);
     return () => void this.changeListeners.delete(cb);
-  }
-
-  onTrack(cb: (t: CallRemoteTrack) => void): Disnans.Cleanup {
-    this.trackListeners.add(cb);
-    return () => void this.trackListeners.delete(cb);
-  }
-
-  onTrackEnd(cb: (t: CallRemoteTrack) => void): Disnans.Cleanup {
-    this.trackEndListeners.add(cb);
-    return () => void this.trackEndListeners.delete(cb);
   }
 
   /** 通話のバーにボタンを足す。返り値で更新・削除 */
@@ -1022,7 +711,7 @@ export class CallStore {
   private syncView(): void {
     const view: Record<string, PeerView> = {};
     for (const e of this.entries.values()) {
-      view[e.peer] = { connected: e.connected, speaking: !!(e.meter ?? e.relay?.meter)?.speaking, localMuted: e.localMuted };
+      view[e.peer] = { speaking: !!e.relay?.meter?.speaking, localMuted: e.localMuted };
     }
     if (JSON.stringify(view) !== JSON.stringify(this.peerView)) this.peerView = view;
     const me = !!this.localMeter?.speaking;
@@ -1032,7 +721,7 @@ export class CallStore {
   private refresh(): void {
     this.syncView();
     this.updateNotification();
-    const sig = JSON.stringify([this.joined, this.joining, this.participants.map((p) => [p.peer, p.userId, p.muted, p.deafened, p.connected, p.localMuted, p.speaking, p.canVideo, p.device])]);
+    const sig = JSON.stringify([this.joined, this.joining, this.participants.map((p) => [p.peer, p.userId, p.muted, p.deafened, p.connected, p.localMuted, p.speaking, p.device])]);
     if (sig === this.changeSig) return;
     this.changeSig = sig;
     for (const cb of [...this.changeListeners]) this.safe(cb);

@@ -168,11 +168,11 @@
 - `session.emit` は保存せず、送信した接続以外の全員（同じユーザーの別の接続を含む）に `session.event` として中継する。`from` は送信者のユーザー ID
   - セッションがなければ `not_found`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）
 - 通話（みんな共通の1部屋。SPEC 9.11）。参加者はサーバーがメモリ上で持つ（接続ごと。保存しない）
-  - `call.join { peer, status }` で参加する（`peer` は参加者が決める英数字・`-`・`_` の 1〜64 文字、`status` は `muted` `deafened` `rtc` `device`）。同じ接続で呼び直すと置き換わる。別の接続がすでに使っている `peer` は `peer_in_use`
+  - `call.join { peer, status }` で参加する（`peer` は参加者が決める英数字・`-`・`_` の 1〜64 文字、`status` は `muted` `deafened` `device`）。同じ接続で呼び直すと置き換わる。別の接続がすでに使っている `peer` は `peer_in_use`
   - `call.update { status }`（ミュートなどの更新）、`call.leave`（抜ける。接続が切れても自動で抜ける）
   - 参加・退出・更新のたびに `call.state { members }` を**全員に**配る。接続した直後も、通話中なら送る
   - `call.kick { peer }` で参加者を外す（参加者だけが送れる。自分は外せない: `invalid_kick`、いない人: `peer_not_found`）。外された接続に `call.kicked { by }` を送り、一覧から外して `call.state` を配る
-  - `call.emit { name, payload }` は、参加者だけが送れ、ほかの参加者全員に `call.event { peer, from, name, payload }` として中継する（保存しない。`peer` は送った接続の ID でサーバーが付ける）。参加していなければ `not_in_call`。`name` と `payload` の制限は `session.emit` と同じ。使っている `name` は `signal`（WebRTC のシグナリング）と `audio`（WebRTC を使えない相手向けの音声）
+  - `call.emit { name, payload }` は、参加者だけが送れ、ほかの参加者全員（自分以外）に `call.event { peer, from, name, payload }` として中継する（保存しない。`peer` は送った接続の ID でサーバーが付ける）。参加していなければ `not_in_call`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）。`audio` は本体の音声（`{ seq, pcm }`。16kHz モノラル Int16 PCM の base64）が使い、それ以外の名前は拡張 API（`disnans.call.emit`）のデータ。送り手ごとに量を制限していて（トークンバケット: 容量 400・毎秒 300 回復、1回の重さは `1 + payload の KB`）、超えた分は**エラーを返さずに捨てる**。送信待ちが詰まっている受け手には、切断せずに捨てる
 - `prefs.updated` は、`PUT /api/me/prefs` で設定が変わったとき、そのユーザーのすべての接続にだけ送る
 - `read.updated` は、`PUT /api/me/read` で既読の位置が進んだとき、そのユーザーのすべての接続にだけ送る（`unread_count` はその時点の値）
 - 失敗したら、送信者に `error` を返す

@@ -96,11 +96,29 @@ impl Hub {
         self.deliver(event, |_, c| c.user_id == user_id && c.ip == ip);
     }
 
+    /// 指定した接続に送るが、送信待ちが半分以上たまっている接続には送らずに捨てる（切断しない）。
+    /// 通話の音声のように、遅れて届くより捨てたほうがよいもの用。
+    pub fn send_lossy_to_conns(&self, conns: &[ConnId], event: &ServerEvent) {
+        self.deliver_with(event, |id, _| conns.contains(&id), true);
+    }
+
     fn deliver(&self, event: &ServerEvent, filter: impl Fn(ConnId, &Conn) -> bool) {
+        self.deliver_with(event, filter, false);
+    }
+
+    fn deliver_with(
+        &self,
+        event: &ServerEvent,
+        filter: impl Fn(ConnId, &Conn) -> bool,
+        lossy: bool,
+    ) {
         let text = encode(event);
         let mut conns = self.lock();
         let mut dead = Vec::new();
         for (&id, conn) in conns.iter().filter(|(id, c)| filter(**id, c)) {
+            if lossy && conn.tx.capacity() < QUEUE_SIZE / 2 {
+                continue;
+            }
             if let Err(err) = conn.tx.try_send(text.clone()) {
                 if matches!(err, mpsc::error::TrySendError::Full(_)) {
                     tracing::warn!(conn = id, user = %conn.user_id, "送信が詰まったので切断します");

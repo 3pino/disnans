@@ -4,11 +4,9 @@
   import MicOff from '@lucide/svelte/icons/mic-off';
   import Volume2 from '@lucide/svelte/icons/volume-2';
   import Headphones from '@lucide/svelte/icons/headphones';
-  import Server from '@lucide/svelte/icons/server';
   import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import Toggle from './ui/Toggle.svelte';
-  import TextInput from './ui/TextInput.svelte';
   import { call } from '../lib/call/instance.svelte';
   import { callSettings } from '../lib/call/settings.svelte';
   import { MIC_VOLUME_MAX, OUT_VOLUME_MAX } from '../lib/call/pure';
@@ -108,16 +106,6 @@
     </SettingRow>
   {/if}
 
-  <SettingRow name="STUN サーバー（任意）" icon={Server}>
-    {#snippet control()}
-      <TextInput
-        value={s.stun}
-        placeholder="stun:…"
-        aria-label="STUN サーバー"
-        onchange={(e) => callSettings.patch({ stun: e.currentTarget.value.trim() })}
-      />
-    {/snippet}
-  </SettingRow>
 </Section>
 
 <style>

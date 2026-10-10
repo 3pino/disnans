@@ -66,11 +66,11 @@ declare global {
       readonly VersionConflictError: typeof VersionConflictError;
       /** 音の入出力の選択（API v5）。通話のプラグイン向け。環境の違い（Android・デスクトップ）はここで隠す */
       readonly audio: Audio;
-      /** 本体の通話（API v7）。画面共有などの拡張向け。通話そのもの（参加・ミュート・出力先）は本体の機能で、ここからは状態の読み取りとトラックの追加だけ */
+      /** 本体の通話（API v8）。画面共有などの拡張向け。通話そのもの（参加・ミュート・出力先）は本体の機能で、ここからは状態の読み取りと、参加者どうしのデータの送受信だけ */
       readonly call: Call;
     }
 
-    /** 通話の参加者1人分（API v7）。同じ人が2台で入れば2つ */
+    /** 通話の参加者1人分（API v7〜）。同じ人が2台で入れば2つ */
     type CallParticipant = {
       /** 接続の ID（通話の中で一意。再参加すると変わる） */
       peer: string;
@@ -81,8 +81,6 @@ declare global {
       muted: boolean;
       /** スピーカーミュート（相手の声を消している）中 */
       deafened: boolean;
-      /** 映像を送受信できる（WebRTC を使える）。`false` の人（Linux の WebKitGTK など）とは音声だけをサーバー経由で流しているので、トラックは届かない */
-      canVideo: boolean;
       /** 音声がつながっている（自分自身は参加できていれば true） */
       connected: boolean;
       /** いましゃべっている */
@@ -91,16 +89,16 @@ declare global {
       device: string | null;
     };
 
-    /** 相手から届いたメディアのトラック（API v7） */
-    type CallRemoteTrack = {
+    /** 参加者から届いたデータ（API v8） */
+    type CallDataEvent = {
       /** 送ってきた参加者の接続 ID（`CallParticipant.peer`） */
       peer: string;
       user: User;
-      track: MediaStreamTrack;
-      stream: MediaStream;
+      /** 送られた JSON の値 */
+      payload: unknown;
     };
 
-    /** 通話のバーに足すボタン（API v7） */
+    /** 通話のバーに足すボタン（API v7〜） */
     type CallButtonOptions = {
       icon: IconName;
       /** 読み上げ・ツールチップの文字 */
@@ -119,40 +117,29 @@ declare global {
     };
 
     /**
-     * 本体の通話（API v7）。みんな共通の 1 部屋で、参加者の一覧・kick はサーバーが管理し、音声・映像は WebRTC でつなぐ。
-     * コールバックの登録や `addTrack` などの返り値の関数は、プラグインが外されるときに自動では外れないので、
+     * 本体の通話（API v7、データの送受信は v8）。みんな共通の 1 部屋で、参加者の一覧・kick・音声・データの中継はすべてサーバーが行う。
+     * コールバックの登録の返り値の関数は、プラグインが外されるときに自動では外れないので、
      * `this.register(...)` に渡して片付ける。
      */
     interface Call {
       /** 参加している（自分が通話にいる） */
       readonly joined: boolean;
-      /**
-       * この環境が映像を送受信できるか。`false` なら（WebRTC を使えない環境の）サーバー経由の音声だけで、
-       * `addTrack` は例外になり、相手の映像も届かない
-       */
-      readonly canVideo: boolean;
       /** 参加者。参加していれば自分（`self: true`）が先頭。参加していなくても、いま通話にいる人が入る */
       readonly participants: CallParticipant[];
-      /** いま届いている、音声以外（と声以外）のトラック */
-      readonly remoteTracks: CallRemoteTrack[];
       /** 通話に参加する（マイクの許可などの失敗は本体がトーストで知らせる） */
       join(): Promise<void>;
       /** 通話から抜ける */
       leave(): void;
       /**
-       * 映像などのトラックを通話に足す。つながっている相手へ再ネゴシエーションで届け、あとから来た人にも送る。
-       * 通話に参加していないとき・`canVideo` が `false` のときは例外。戻り値の関数で外す（通話を抜けると自動で外れる）。
-       * 画面共有なら `navigator.mediaDevices.getDisplayMedia()` のトラックを渡す
+       * 通話の参加者全員（自分以外）に、データをサーバー経由で送る。保存はされない。
+       * `payload` は JSON にして 64 KB まで。送りすぎると（目安は 1 秒に 250 KB ほど。音声の分を含む）サーバーが黙って捨てる。
+       * `name` は 1〜64 文字で、`audio` は本体が使う。通話に参加していないときは例外
        */
-      addTrack(track: MediaStreamTrack, stream?: MediaStream): Cleanup;
-      /** `addTrack` したトラックを外す（トラックを `stop()` はしない） */
-      removeTrack(track: MediaStreamTrack): void;
-      /** 通話の状態が変わったとき（参加・退出・参加者の出入り・ミュート・つながった・しゃべり始めなど）。戻り値の関数で外す */
+      emit(name: string, payload: unknown): void;
+      /** 参加者が `emit` した `name` のデータを受け取る。戻り値の関数で外す */
+      onEvent(name: string, cb: (e: CallDataEvent) => void): Cleanup;
+      /** 通話の状態が変わったとき（参加・退出・参加者の出入り・ミュート・しゃべり始めなど）。戻り値の関数で外す */
       onChange(cb: () => void): Cleanup;
-      /** 相手からトラック（映像など）が届いたとき。戻り値の関数で外す */
-      onTrack(cb: (t: CallRemoteTrack) => void): Cleanup;
-      /** 届いていたトラックが外れた・終わった・相手が抜けたとき。戻り値の関数で外す */
-      onTrackEnd(cb: (t: CallRemoteTrack) => void): Cleanup;
       /** 通話のバー（画面上部）にボタンを足す。通話に参加している間だけ表示される */
       addButton(opts: CallButtonOptions): CallButton;
     }

@@ -454,8 +454,8 @@ export default class DicePlugin extends Plugin {
 | `this.addStatusBarItem()` | 画面上部の共通の枠（通話のバーと同じ。9.11）の常時表示のステータス欄に出す要素を足す。空の間は隠れる（API v3） |
 | `this.holdBackground({ microphone?, title?, text?, actions?, onAction? })` | 画面を切っても動き続ける。Android ではフォアグラウンドサービス（microphone 型）を動かす。ほかの環境では何もしない（API v3）。`actions`（通知のボタン、最大3つ）と `onAction(id)`、戻り値の `update({ title, text, actions })` は API v4 |
 | `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（API v5）。`listOutputs()` は `{ id, label, kind, selected }` の配列（Android: 通話中の `earpiece` `speaker` `wired` `bluetooth`。notifier プラグインの `list_audio_outputs` / `set_audio_output` コマンド＝Kotlin の AudioManager。API 31 以上は `setCommunicationDevice`、それ以前は `setSpeakerphoneOn` / `startBluetoothSco`。デスクトップ: `enumerateDevices` と `setSinkId`）。`attach` は `<audio>` や `AudioContext` を登録し、デスクトップで選んだ出力先に出す。`listInputs()` はデスクトップのマイクの一覧（Android は空）。使えない環境では空配列 / false を返す |
-| `disnans.call.*` | 本体の通話の状態の読み取り・トラック（映像など）の追加と受け取り・通話のバーのボタン（API v7。9.11） |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 7。2 で `addCommand` に `icon`・`slash`・`args`・`suggestArgs`・`run(ctx)` が、3 で `broadcast`・`addStatusBarItem`・`holdBackground` が、4 で `holdBackground` の通知ボタン `actions` / `onAction` と `update()` が、5 で `postMessage` と `disnans.audio` が、6 で `postMessage` の `notify` と `openSettings()` が、7 で通話の拡張 `disnans.call` が増えた） |
+| `disnans.call.*` | 本体の通話の状態の読み取り・通話のバーのボタン・参加者どうしのデータの送受信（API v8。9.11） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 8。2 で `addCommand` に `icon`・`slash`・`args`・`suggestArgs`・`run(ctx)` が、3 で `broadcast`・`addStatusBarItem`・`holdBackground` が、4 で `holdBackground` の通知ボタン `actions` / `onAction` と `update()` が、5 で `postMessage` と `disnans.audio` が、6 で `postMessage` の `notify` と `openSettings()` が、7 で通話の拡張 `disnans.call` が、8 でそれが WebRTC のトラックからサーバー経由のデータ送受信 `emit` / `onEvent` に変わった） |
 
 - 型定義と詳しい説明は `packages/plugin-sdk/`、作り方のガイドは `docs/PLUGINS.md` を正とする
 - 本体の CSS 変数（`--bg`, `--accent` など）と共通クラス（`.btn`, `.input` など）はプラグインからも使える
@@ -557,15 +557,14 @@ theme-sakura/
   - 参加者のアバターの右下に端末の種類（`deviceKind`: smartphone / tablet / laptop / monitor）、左下にミュート・スピーカーミュート・自分の側の消音の小さなバッジ。しゃべっている人は枠が光る。アバターを押すと、自分の側だけ消音（自分なら自分のミュート）
   - 右側にミュート、スピーカーミュート、通話の設定（設定 → 通話を開く）、一番右端に退出（`--danger`）。拡張 API で足したボタンはミュートの前に並ぶ。出力先の選択はバーに出さず、設定にだけ置く
   - 参加者を長押し（PC は右クリックでもよい）すると、確認（`ui.confirm`）のあとその人を通話から外せる（kick）。外された人の通話は切れ、トーストで知らせる。外しただけで禁止ではなく、また参加できる
-- 設定（設定 → 通話。端末ごとに保存、同期しない）: 参加したときミュート、マイクの音量（GainNode）、相手の音量（`<audio>` の volume）、音の出力先、マイク、STUN サーバー
-- WebRTC のメッシュ（10 人ほどまで）。音声は端末同士が直接つなぐ。Tailscale の中なので STUN/TURN は基本要らない
-- **参加者の管理とシグナリングはサーバー**（`crates/server/src/calls.rs`。→ `docs/API.md` の WebSocket）。サーバーは接続ごとの参加者（peer ID・ユーザー・`muted` `deafened` `rtc` `device`）をメモリで持ち、変化のたびに `call.state` を全員に配る。接続が切れれば自動で外れ、kick（`call.kick`）は対象の接続に `call.kicked` を確実に届ける。`call.emit` は参加者どうしにだけ中継する（`signal`: offer / answer / ICE、`audio`: リレー）。ハートビートや期限切れはない
-- 再接続（WebSocket が切れてつなぎ直した）では、本体が `call.join` を送り直し、WebRTC の接続もやり直す
-- 同じ相手と同時に offer を出し合わない: peer ID が小さい側だけが最初の offer を出す。そのあとの再ネゴシエーション（トラックの追加・削除）は、どちらからも出せる Perfect Negotiation（大きい側が譲る側）。接続ごとの世代 ID（`sid`）を signal に付け、新しい世代の offer は古い接続を置き換える
+- 設定（設定 → 通話。端末ごとに保存、同期しない）: 参加したときミュート、マイクの音量（GainNode）、相手の音量（GainNode）、音の出力先、マイク
+- **音声は常にサーバー経由**（WebRTC は使わない）。マイクの音を 16kHz モノラルの Int16 PCM にして 50ms ずつ、base64 で `call.emit` の `audio` として全員に送り、受け取った側が参加者ごとのジッターバッファー（`scheduleFrame`）で鳴らす。無音は送らない。Tailscale 越しでも、モバイル回線の相手とも、NAT・STUN・TURN を気にせず話せる。参加者 N 人なら N×(N-1) 本（1本は毎秒 20 回・約 1KB なので、10 人でも 1 端末の受信は毎秒 200KB ほど）。マイクの取り出しは `capture.ts`（AudioWorklet、なければ ScriptProcessor）。参加者が自分だけのあいだは何も送らない
+- **参加者の管理と中継はサーバー**（`crates/server/src/calls.rs`。→ `docs/API.md` の WebSocket）。サーバーは接続ごとの参加者（peer ID・ユーザー・`muted` `deafened` `device`）をメモリで持ち、変化のたびに `call.state` を全員に配る。接続が切れれば自動で外れ、kick（`call.kick`）は対象の接続に `call.kicked` を確実に届ける。`call.emit` は参加者どうしにだけ中継する（`audio`: 本体の音声、それ以外の名前: 拡張 API のデータ）。ハートビートや期限切れはない
+- **中継の負荷対策**: `payload` は 64 KB まで。送り手ごとにトークンバケット（容量 400、毎秒 300 回復。1回の重さは `1 + payload の KB`）で制限し、超えた分は黙って捨てる（音声は毎秒 40 ほどで余裕がある）。受け手の送信待ちが半分以上たまっていたら、その受け手への通話イベントは切断せずに捨てる（古い音を遅れて届けない）
+- 再接続（WebSocket が切れてつなぎ直した）では、本体が同じ peer ID で `call.join` を送り直す
 - Android では通話中の通知に「ミュート」「スピーカーミュート」「切断」のボタンが出る（`lib/plugins/background.ts` の `actions` / `onAction` / `update`。押すと「…解除」に変わり、本文に人数が出る）
 - 出力先は `lib/plugins/audio.ts`（Android は通話中に `MODE_IN_COMMUNICATION` にして切り替える。参加時は、Bluetooth・イヤホンがあればそれ、なければスピーカー。前に選んだものがあればそれに戻す）
-- WebRTC を使えない環境（配布元の WebKitGTK など）は、その相手とのあいだだけ音声をサーバー経由（`call.emit` の `audio`。16kHz モノラル PCM を 50ms ずつ、base64。無音は送らない）で流す。`status.rtc` で伝え合い、双方が使えるペアは WebRTC のまま。この中継は**音声だけ**で、映像は扱えない（`disnans.call.canVideo` と `participant.canVideo` で判別できる）
-- 拡張 API（`disnans.call`、API v7。→ `docs/PLUGINS.md`）: 通話中か・参加者・状態変化（`onChange`）、トラックの追加・削除（`addTrack` / `removeTrack`。WebRTC の再ネゴシエーション）、相手のトラックを受け取る（`onTrack` / `onTrackEnd` / `remoteTracks`）、通話のバーのボタン（`addButton`）、`join` / `leave`。本体は映像を送らない
+- 拡張 API（`disnans.call`、API v8。→ `docs/PLUGINS.md`）: 通話中か・参加者・状態変化（`onChange`）、参加者どうしのデータの送受信（`emit(name, payload)` / `onEvent(name, cb)`。サーバー経由。画面共有などは、縮小した画像フレームをこれで送るプラグインとして作る）、通話のバーのボタン（`addButton`）、`join` / `leave`。映像・トラックの API はない（v7 の `addTrack` `onTrack` `remoteTracks` `canVideo` は v8 で廃止）
 - マイクはアプリ版（Tauri）でのみ使える（`getUserMedia` に安全なコンテキストが要るため、`http://` で開いたブラウザー版では使えない）
 - 通話がプラグイン（`voice`）だったころの設定は、新しい保存先が空なら引き継ぐ
 
@@ -575,7 +574,7 @@ theme-sakura/
 |---|---|---|
 | Android | `RECORD_AUDIO`。WebView の許可の要求は Tauri が OS の許可へ進める | フォアグラウンドサービス（microphone 型、notifier プラグインの `CallService`）で続ける。通話中は WebView を止めない |
 | Windows | WebView2 の許可の要求を、アプリ（`on_permission_request`）がマイクだけ許可する | ウィンドウが裏に回っても続く |
-| Linux | WebKitGTK の `enable-media-stream` / `enable-webrtc` をアプリが有効にし、マイクの許可の要求を許可する。GStreamer のプラグインが要る（`.deb` の推奨パッケージ） | ウィンドウが裏に回っても続く |
+| Linux | WebKitGTK の `enable-media-stream`（`getUserMedia`）をアプリが有効にし、マイクの許可の要求を許可する。GStreamer のプラグインが要る（`.deb` の推奨パッケージ） | ウィンドウが裏に回っても続く |
 
 ## 10. 未決事項
 

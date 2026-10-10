@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-// 通話のストアを2〜3人分作り、サーバーの代わりの中継（参加者の管理・call.emit・kick）でつないで、参加・接続・kick・再ネゴシエーションを確かめる
+// 通話のストアを2〜3人分作り、サーバーの代わりの中継（参加者の管理・call.emit・kick）でつないで、
+// サーバー経由の音声（リレー）・ミュート・kick・再接続・拡張 API を確かめる
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallMember } from '../protocol/CallMember';
 import type { ClientEvent } from '../protocol/ClientEvent';
@@ -8,6 +9,9 @@ import { createCallApi } from './api';
 import { CallSettings } from './settings.svelte';
 import { CallStore, type CallDeps } from './store.svelte';
 
+// マイクの取り出しは本物の AudioContext が要るので、偽物にする（音は store の onCapture に直接渡す）
+vi.mock('./capture', () => ({ startCapture: () => ({ stop() {} }) }));
+
 // ---- 偽物 ----
 
 let seq = 0;
@@ -15,120 +19,18 @@ let seq = 0;
 class FakeTrack {
   id = `t${++seq}`;
   enabled = true;
-  listeners = new Map<string, Set<() => void>>();
   constructor(public kind: 'audio' | 'video') {}
   stop() {}
-  addEventListener(type: string, cb: () => void) {
-    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
-    this.listeners.get(type)!.add(cb);
-  }
-  fire(type: string) {
-    for (const cb of this.listeners.get(type) ?? []) cb();
-  }
 }
 
 class FakeStream {
   id = `s${++seq}`;
-  tracks: FakeTrack[];
-  constructor(tracks: FakeTrack[] = []) {
-    this.tracks = tracks;
-  }
+  constructor(public tracks: FakeTrack[] = []) {}
   getTracks() {
     return this.tracks;
   }
   getAudioTracks() {
     return this.tracks.filter((t) => t.kind === 'audio');
-  }
-  addEventListener() {}
-}
-
-/** WebRTC の偽物。SDP の代わりに「送っているトラックの一覧」を送り、相手の側でトラックが届いたことにする。negotiationneeded も模す */
-class FakePc {
-  static all: FakePc[] = [];
-  connectionState = 'new';
-  signalingState = 'stable';
-  remoteDescription: { type: string; sdp: string } | null = null;
-  localDescription: { type: string; sdp: string } | null = null;
-  onicecandidate: unknown = null;
-  ontrack: ((ev: { streams: FakeStream[]; track: FakeTrack }) => void) | null = null;
-  onconnectionstatechange: (() => void) | null = null;
-  onnegotiationneeded: (() => void) | null = null;
-  senders: { track: FakeTrack; stream: FakeStream }[] = [];
-  seen = new Map<string, FakeTrack>();
-  needsNeg = false;
-  closed = false;
-  constructor() {
-    FakePc.all.push(this);
-  }
-  addTrack(track: FakeTrack, stream: FakeStream) {
-    const s = { track, stream };
-    this.senders.push(s);
-    this.markNeg();
-    return s;
-  }
-  removeTrack(s: { track: FakeTrack; stream: FakeStream }) {
-    this.senders = this.senders.filter((x) => x !== s);
-    this.markNeg();
-  }
-  markNeg() {
-    this.needsNeg = true;
-    queueMicrotask(() => this.fireNeg());
-  }
-  fireNeg() {
-    if (this.closed || !this.needsNeg || this.signalingState !== 'stable') return;
-    this.needsNeg = false;
-    this.onnegotiationneeded?.();
-  }
-  describe() {
-    return JSON.stringify(this.senders.map((s) => ({ id: s.track.id, kind: s.track.kind, stream: s.stream.id })));
-  }
-  async createOffer() {
-    this.needsNeg = false;
-    return { type: 'offer', sdp: this.describe() };
-  }
-  async createAnswer() {
-    this.needsNeg = false;
-    return { type: 'answer', sdp: this.describe() };
-  }
-  async setLocalDescription(d: { type: string; sdp: string }) {
-    this.localDescription = d;
-    this.signalingState = d.type === 'offer' ? 'have-local-offer' : 'stable';
-    if (d.type === 'answer') this.settled();
-  }
-  async setRemoteDescription(d: { type: string; sdp: string }) {
-    this.remoteDescription = d;
-    // have-local-offer で offer を受けたら、自分の offer は取り消される（rollback）
-    this.signalingState = d.type === 'offer' ? 'have-remote-offer' : 'stable';
-    this.applyRemote(d.sdp);
-    if (d.type === 'answer') this.settled();
-  }
-  async addIceCandidate() {}
-  settled() {
-    if (this.connectionState !== 'connected') {
-      this.connectionState = 'connected';
-      this.onconnectionstatechange?.();
-    }
-    queueMicrotask(() => this.fireNeg());
-  }
-  applyRemote(sdp: string) {
-    const list = JSON.parse(sdp) as { id: string; kind: 'audio' | 'video'; stream: string }[];
-    const ids = new Set(list.map((x) => x.id));
-    for (const x of list) {
-      if (this.seen.has(x.id)) continue;
-      const track = new FakeTrack(x.kind);
-      this.seen.set(x.id, track);
-      const stream = new FakeStream([track]);
-      stream.id = x.stream;
-      this.ontrack?.({ track, streams: [stream] });
-    }
-    for (const [id, track] of [...this.seen]) {
-      if (ids.has(id)) continue;
-      this.seen.delete(id);
-      track.fire('ended');
-    }
-  }
-  close() {
-    this.closed = true;
   }
 }
 
@@ -137,6 +39,14 @@ class FakeAudioContext {
   sampleRate = 48000;
   currentTime = 0;
   destination = {};
+  /** 鳴らした音の数 */
+  plays = 0;
+  createBuffer(_ch: number, n: number) {
+    return { getChannelData: () => new Float32Array(n) };
+  }
+  createBufferSource() {
+    return { buffer: null, connect: () => {}, start: () => void this.plays++ };
+  }
   createGain() {
     return { gain: { value: 1 }, connect: () => {}, disconnect: () => {} };
   }
@@ -153,19 +63,9 @@ class FakeAudioContext {
   async close() {}
 }
 
-class FakeAudio {
-  autoplay = false;
-  muted = false;
-  volume = 1;
-  srcObject: unknown = null;
-  play() {
-    return Promise.resolve();
-  }
-}
-
 // ---- サーバーの代わり ----
 
-type Client = { store: CallStore; userId: string; conn: number; toast: ReturnType<typeof vi.fn>; confirm: ReturnType<typeof vi.fn>; hold: ReturnType<typeof vi.fn>; sent: ClientEvent[]; rtc: boolean };
+type Client = { store: CallStore; userId: string; conn: number; toast: ReturnType<typeof vi.fn>; confirm: ReturnType<typeof vi.fn>; hold: ReturnType<typeof vi.fn>; sent: ClientEvent[] };
 
 class FakeServer {
   clients: Client[] = [];
@@ -222,12 +122,11 @@ class FakeServer {
 const names: Record<string, string> = { u1: 'Alice', u2: 'Bob', u3: 'Carol' };
 let server: FakeServer;
 
-function makeClient(userId: string, opts: { rtc?: boolean; device?: string } = {}): Client {
-  const rtc = opts.rtc ?? true;
+function makeClient(userId: string, opts: { device?: string } = {}): Client {
   const toast = vi.fn();
   const confirm = vi.fn(async () => true);
   const hold = vi.fn(async () => Object.assign(() => {}, { update: vi.fn() }));
-  const client = { userId, conn: server.clients.length + 1, toast, confirm, hold, sent: [] as ClientEvent[], rtc } as Client;
+  const client = { userId, conn: server.clients.length + 1, toast, confirm, hold, sent: [] as ClientEvent[] } as Client;
   const deps: CallDeps = {
     send: (ev) => server.handle(client, ev),
     meId: () => userId,
@@ -247,7 +146,6 @@ function makeClient(userId: string, opts: { rtc?: boolean; device?: string } = {
     settings: new CallSettings(),
     deviceKind: () => opts.device ?? 'laptop',
     openSettings: () => {},
-    hasRtc: () => rtc,
     now: () => performance.now(),
   };
   client.store = new CallStore(deps);
@@ -261,14 +159,11 @@ const flush = async () => {
 
 beforeEach(() => {
   seq = 0;
-  FakePc.all = [];
   server = new FakeServer();
   localStorage.clear();
-  vi.stubGlobal('RTCPeerConnection', FakePc);
   vi.stubGlobal('AudioContext', FakeAudioContext);
   vi.stubGlobal('MediaStream', FakeStream);
   vi.stubGlobal('Worker', class { onmessage = null; terminate() {} });
-  vi.stubGlobal('Audio', FakeAudio);
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
     value: { getUserMedia: async () => new FakeStream([new FakeTrack('audio')]) },
@@ -279,45 +174,123 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** 2人が参加してつながるまで進める */
+/** 2人が参加するまで進める */
 async function connect(a: Client, b: Client) {
   await a.store.join();
   await b.store.join();
   await flush();
 }
 
-describe('参加と接続', () => {
-  it('参加すると参加していない人にも見え、片方だけが offer を出して音声がつながる。抜けると消えて接続が閉じる', async () => {
+/** 自分の声（大きい音）を送らせる。送られた audio の payload を返す */
+function speak(c: Client): { seq: number; pcm: string }[] {
+  const store = c.store as unknown as { onCapture(chunk: Float32Array): void };
+  c.store.tick(); // 相手がいれば、ここで声を取り出し始める
+  const before = c.sent.length;
+  store.onCapture(new Float32Array(48000 * 0.2).fill(0.3));
+  return c.sent
+    .slice(before)
+    .filter((e) => e.type === 'call.emit' && e.name === 'audio')
+    .map((e) => (e as { payload: { seq: number; pcm: string } }).payload);
+}
+
+const plays = (c: Client) => (c.store as unknown as { ctx: FakeAudioContext }).ctx.plays;
+const gainOf = (c: Client, peer: string) =>
+  (c.store as unknown as { entries: Map<string, { relay: { gain: { gain: { value: number } } } | null }> }).entries.get(peer)!.relay!.gain.gain.value;
+
+describe('参加と音声', () => {
+  it('参加すると参加していない人にも見え、抜けると消える。接続を作らず、双方の声がサーバー経由で届く', async () => {
     const a = makeClient('u1');
     const b = makeClient('u2');
     expect(a.store.visible).toBe(false);
-
     await a.store.join();
     await flush();
     expect(a.store.joined).toBe(true);
     expect(a.hold).toHaveBeenCalledWith(expect.objectContaining({ microphone: true }));
-    // 参加していない B にも、A がいることが見える
     expect(b.store.visible).toBe(true);
     expect(b.store.joined).toBe(false);
     expect(b.store.participants.map((p) => p.userId)).toEqual(['u1']);
 
     await b.store.join();
     await flush();
-    expect(FakePc.all).toHaveLength(2); // 双方向に作らず、1本ずつ（それぞれの端末に1つ）
-    expect(a.store.participants).toHaveLength(2);
     expect(a.store.participants[0]).toMatchObject({ self: true, userId: 'u1' });
     expect(a.store.participants[1]).toMatchObject({ self: false, userId: 'u2', connected: true });
-    expect(b.store.participants[1]).toMatchObject({ userId: 'u1', connected: true });
+
+    expect(speak(a).length).toBeGreaterThan(0);
+    expect(speak(b).length).toBeGreaterThan(0);
+    await flush();
+    expect(plays(b)).toBeGreaterThan(0);
+    expect(plays(a)).toBeGreaterThan(0);
 
     b.store.leave();
     await flush();
     expect(b.store.joined).toBe(false);
     expect(a.store.participants.map((p) => p.userId)).toEqual(['u1']);
-    expect(FakePc.all.every((p) => p.closed)).toBe(true);
-    // 最後の1人が抜ければバーも消える
     a.store.leave();
     await flush();
     expect(a.store.visible).toBe(false);
+  });
+
+  it('3人でそれぞれの声が、自分以外の全員に届く', async () => {
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    const c = makeClient('u3');
+    await a.store.join();
+    await b.store.join();
+    await c.store.join();
+    await flush();
+    speak(a);
+    await flush();
+    expect(plays(b)).toBeGreaterThan(0);
+    expect(plays(c)).toBeGreaterThan(0);
+    expect(plays(a)).toBe(0);
+  });
+
+  it('1人だけのあいだは声を送らない。無音も送らない', async () => {
+    const a = makeClient('u1');
+    await a.store.join();
+    expect(speak(a)).toHaveLength(0);
+    const b = makeClient('u2');
+    await b.store.join();
+    await flush();
+    const store = a.store as unknown as { onCapture(chunk: Float32Array): void };
+    a.store.tick();
+    const before = a.sent.length;
+    store.onCapture(new Float32Array(48000 * 2));
+    expect(a.sent.length).toBe(before);
+  });
+
+  it('ミュート中は声を送らず、スピーカーミュートや自分の側だけの消音では相手の音を鳴らさない', async () => {
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await connect(a, b);
+    a.store.toggleMute();
+    expect(speak(a)).toHaveLength(0);
+    a.store.toggleMute();
+    expect(speak(a).length).toBeGreaterThan(0);
+    await flush();
+    const peerA = a.store.myPeer;
+    expect(gainOf(b, peerA)).toBe(1);
+    b.store.toggleLocalMute(peerA);
+    expect(gainOf(b, peerA)).toBe(0);
+    b.store.toggleLocalMute(peerA);
+    b.store.toggleDeafen();
+    expect(gainOf(b, peerA)).toBe(0);
+    // 消している間は、届いても鳴らさない
+    const n = plays(b);
+    speak(a);
+    await flush();
+    expect(plays(b)).toBe(n);
+    b.store.toggleDeafen();
+    expect(gainOf(b, peerA)).toBe(1);
+    // 相手がミュートの表示なら、届いても鳴らさない
+    a.store.toggleMute();
+    await flush();
+    const m = plays(b);
+    const store = a.store as unknown as { muted: boolean };
+    store.muted = false; // 古い音声が遅れて届いた想定
+    speak(a);
+    await flush();
+    expect(plays(b)).toBe(m);
   });
 
   it('マイクを使えない環境ではトーストを出して参加しない', async () => {
@@ -346,11 +319,10 @@ describe('参加と接続', () => {
     a.store['deps'].settings.patch({ joinMuted: true });
     await a.store.join();
     expect(a.store.muted).toBe(true);
-    const join = a.sent.find((e) => e.type === 'call.join');
-    expect(join).toMatchObject({ status: { muted: true } });
+    expect(a.sent.find((e) => e.type === 'call.join')).toMatchObject({ status: { muted: true } });
   });
 
-  it('つなぎ直す（hello）と入り直し、WebRTC の接続もやり直す', async () => {
+  it('つなぎ直す（hello）と同じ peer ID で入り直し、また声が届く', async () => {
     const a = makeClient('u1');
     const b = makeClient('u2');
     await connect(a, b);
@@ -359,31 +331,24 @@ describe('参加と接続', () => {
     server.drop(a);
     await flush();
     expect(b.store.participants.map((p) => p.userId)).toEqual(['u2']);
-    // B の側の接続は閉じた。切れている A はまだ知らない
-    expect(FakePc.all.filter((p) => !p.closed)).toHaveLength(1);
-    const stale = FakePc.all.find((p) => !p.closed)!;
     a.store.onServerEvent({ type: 'hello', me: { id: 'u1' } as never, users: [] });
     await flush();
     expect(a.store.myPeer).toBe(peerA);
-    expect(stale.closed).toBe(true);
     expect(b.store.participants.map((p) => p.userId).sort()).toEqual(['u1', 'u2']);
+    speak(a);
+    await flush();
+    expect(plays(b)).toBeGreaterThan(0);
   });
 
-  it('スピーカーミュートは相手の音を消し、通知のボタンの文言も変わる。通知のボタンから操作できる', async () => {
+  it('スピーカーミュートの通知のボタンの文言が変わり、通知のボタンから操作できる', async () => {
     const a = makeClient('u1');
     const b = makeClient('u2');
     await connect(a, b);
     const first = a.hold.mock.calls[0]![0] as { actions: { id: string }[]; onAction: (id: string) => void };
     expect(first.actions.map((x) => x.id)).toEqual(['mute', 'deafen', 'hangup']);
-    const entries = (a.store as unknown as { entries: Map<string, { audio: { muted: boolean } | null }> }).entries;
-    const audioEl = [...entries.values()][0]!.audio!;
-    expect(audioEl.muted).toBe(false);
     first.onAction('deafen');
     expect(a.store.deafened).toBe(true);
-    expect(audioEl.muted).toBe(true);
     a.store.toggleDeafen();
-    expect(audioEl.muted).toBe(false);
-    // 人数やミュートが変わると通知を差し替える
     const handle = await a.hold.mock.results[0]!.value;
     first.onAction('mute');
     expect(handle.update).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('ミュート中') }));
@@ -405,7 +370,7 @@ describe('参加と接続', () => {
 });
 
 describe('kick', () => {
-  it('確認のあとで外すと、外された人の通話は切れてトーストで知らせる。相手の接続も閉じる', async () => {
+  it('確認のあとで外すと、外された人の通話は切れてトーストで知らせる', async () => {
     const a = makeClient('u1');
     const b = makeClient('u2');
     await connect(a, b);
@@ -417,7 +382,6 @@ describe('kick', () => {
     expect(b.toast).toHaveBeenCalledWith('Aliceさんに通話から外されました', 'info');
     expect(a.store.joined).toBe(true);
     expect(a.store.participants.map((p) => p.userId)).toEqual(['u1']);
-    expect(FakePc.all.every((p) => p.closed)).toBe(true);
   });
 
   it('確認で取り消せば何も起きない。参加していない人は外せない', async () => {
@@ -436,92 +400,33 @@ describe('kick', () => {
   });
 });
 
-describe('リレー（WebRTC を使えない環境）', () => {
-  it('WebRTC なしでも参加でき、rtc:false を伝え、接続は作らずつながったことにする', async () => {
-    const a = makeClient('u1', { rtc: false });
-    const b = makeClient('u2');
-    await connect(a, b);
-    a.store.tick();
-    await flush();
-    expect(FakePc.all).toHaveLength(0);
-    expect(a.sent.find((e) => e.type === 'call.join')).toMatchObject({ status: { rtc: false } });
-    expect(a.store.canVideo).toBe(false);
-    expect(b.store.participants.find((p) => p.userId === 'u1')).toMatchObject({ canVideo: false });
-    expect(a.store.participants[1]).toMatchObject({ canVideo: true, connected: true });
-    // 映像のトラックは足せない
-    expect(() => a.store.addTrack(new FakeTrack('video') as unknown as MediaStreamTrack)).toThrow(/WebRTC/);
-  });
-});
-
 describe('拡張 API', () => {
-  it('参加していないときは addTrack できない', () => {
+  it('参加していないときは emit できない。audio は本体が使う', async () => {
     const a = makeClient('u1');
-    expect(() => a.store.addTrack(new FakeTrack('video') as unknown as MediaStreamTrack)).toThrow('参加していません');
-  });
-
-  it('トラックを足すと再ネゴシエーションで相手に届き、外すと終わりが伝わる', async () => {
-    const a = makeClient('u1');
-    const b = makeClient('u2');
-    await connect(a, b);
-    const got = vi.fn();
-    const ended = vi.fn();
-    b.store.onTrack(got);
-    b.store.onTrackEnd(ended);
-    const video = new FakeTrack('video') as unknown as MediaStreamTrack;
-    const off = a.store.addTrack(video);
-    await flush();
-    expect(got).toHaveBeenCalledTimes(1);
-    expect(got.mock.calls[0]![0]).toMatchObject({ userId: 'u1', track: { kind: 'video' } });
-    expect(b.store.remoteTracks).toHaveLength(1);
-    // 声（最初の音声）はトラックとして渡さない
-    expect(got.mock.calls.every((c) => c[0].track.kind === 'video')).toBe(true);
-    off();
-    await flush();
-    expect(ended).toHaveBeenCalledTimes(1);
-    expect(b.store.remoteTracks).toHaveLength(0);
-  });
-
-  it('両方が同時にトラックを足してもぶつからずに両方に届く', async () => {
-    const a = makeClient('u1');
-    const b = makeClient('u2');
-    await connect(a, b);
-    const gotA = vi.fn();
-    const gotB = vi.fn();
-    a.store.onTrack(gotA);
-    b.store.onTrack(gotB);
-    a.store.addTrack(new FakeTrack('video') as unknown as MediaStreamTrack);
-    b.store.addTrack(new FakeTrack('video') as unknown as MediaStreamTrack);
-    await flush();
-    expect(gotA).toHaveBeenCalledTimes(1);
-    expect(gotB).toHaveBeenCalledTimes(1);
-  });
-
-  it('あとから参加した人にも、足してあるトラックが届く。抜けると足したトラックは外れる', async () => {
-    const a = makeClient('u1');
-    const b = makeClient('u2');
+    expect(() => a.store.emit('x', 1)).toThrow('参加していません');
     await a.store.join();
-    await flush();
-    a.store.addTrack(new FakeTrack('video') as unknown as MediaStreamTrack);
-    const got = vi.fn();
-    b.store.onTrack(got);
-    await b.store.join();
-    await flush();
-    expect(got).toHaveBeenCalledTimes(1);
-    a.store.leave();
-    expect((a.store as unknown as { extraTracks: unknown[] }).extraTracks).toHaveLength(0);
+    expect(() => a.store.emit('audio', 1)).toThrow(/本体/);
+    expect(() => a.store.emit('', 1)).toThrow();
   });
 
-  it('相手が抜けると届いていたトラックも終わる', async () => {
+  it('emit したデータが、参加者の onEvent に送り主付きで届く（自分には届かない）。外すと来ない', async () => {
     const a = makeClient('u1');
     const b = makeClient('u2');
     await connect(a, b);
-    const ended = vi.fn();
-    b.store.onTrackEnd(ended);
-    a.store.addTrack(new FakeTrack('video') as unknown as MediaStreamTrack);
+    const got = vi.fn();
+    const own = vi.fn();
+    const off = b.store.onEvent('frame', got);
+    a.store.onEvent('frame', own);
+    a.store.emit('frame', { n: 1 });
+    a.store.emit('other', { n: 2 });
     await flush();
-    a.store.leave();
+    expect(got).toHaveBeenCalledTimes(1);
+    expect(got).toHaveBeenCalledWith({ peer: a.store.myPeer, userId: 'u1', payload: { n: 1 } });
+    expect(own).not.toHaveBeenCalled();
+    off();
+    a.store.emit('frame', { n: 3 });
     await flush();
-    expect(ended).toHaveBeenCalledTimes(1);
+    expect(got).toHaveBeenCalledTimes(1);
   });
 
   it('通話のバーのボタンを足して、更新して、外せる', () => {
@@ -546,29 +451,28 @@ describe('拡張 API', () => {
     expect(cb).not.toHaveBeenCalled();
   });
 
-  it('disnans.call は参加者を User 付きで返し、例外を出すコールバックがあっても止まらない', async () => {
+  it('disnans.call は参加者を User 付きで返し、データの送受信ができ、例外を出すコールバックがあっても止まらない', async () => {
     const a = makeClient('u1');
     const b = makeClient('u2');
     const toUser = (id: string) => ({ id, login_name: id, display_name: names[id] ?? '?', avatar_url: null });
-    const api = createCallApi(a.store, toUser);
-    expect(api.joined).toBe(false);
+    const apiA = createCallApi(a.store, toUser);
+    const apiB = createCallApi(b.store, toUser);
+    expect(apiA.joined).toBe(false);
     await connect(a, b);
-    expect(api.joined).toBe(true);
-    expect(api.canVideo).toBe(true);
-    expect(api.participants.map((p) => [p.user.display_name, p.self])).toEqual([
+    expect(apiA.joined).toBe(true);
+    expect(apiA.participants.map((p) => [p.user.display_name, p.self])).toEqual([
       ['Alice', true],
       ['Bob', false],
     ]);
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const seen = vi.fn();
-    api.onTrack(() => {
+    apiB.onEvent('x', () => {
       throw new Error('boom');
     });
-    api.onTrack(seen);
-    b.store.addTrack(new FakeTrack('video') as unknown as MediaStreamTrack);
+    apiB.onEvent('x', seen);
+    apiA.emit('x', 'hello');
     await flush();
-    expect(seen).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ display_name: 'Bob' }) }));
+    expect(seen).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ display_name: 'Alice' }), payload: 'hello' }));
     expect(err).toHaveBeenCalled();
-    expect(api.remoteTracks).toHaveLength(1);
   });
 });

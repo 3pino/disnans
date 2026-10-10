@@ -1,11 +1,13 @@
-//! 通話（みんな共通の1部屋）の参加者の管理と、シグナリング・音声の中継。
+//! 通話（みんな共通の1部屋）の参加者の管理と、音声などの中継。
 //!
 //! 参加者は WebSocket の接続ごとに1つ。サーバーが参加者の一覧を持つので、接続が切れれば自動で外れ、
-//! 通話から外す（kick）も確実に届く。メディア（音声・映像）自体はサーバーを通らない
-//! （WebRTC を使えない環境の音声だけは `call.emit` で中継する）。
+//! 通話から外す（kick）も確実に届く。音声は全員のあいだを `call.emit` で中継する
+//! （参加者 N 人なら N×(N-1) 本。1本は 50ms ごと・1KB ほど）。
+//! 負荷を抑えるため、送り手ごとに量を制限し（[`Bucket`]）、受け手の送信待ちが詰まっていたら捨てる。
 
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::Instant;
 
 use axum::http::StatusCode;
 use disnans_shared::{CallMember, CallStatus, ServerEvent};
@@ -20,7 +22,40 @@ const MAX_EVENT_NAME_CHARS: usize = 64;
 const MAX_PEER_CHARS: usize = 64;
 const MAX_DEVICE_CHARS: usize = 32;
 
+/// 送り手ごとの制限（トークンバケット）。1回の `call.emit` の重さは `1 + payload の KB`。
+/// 音声（50ms ごと・約 1KB）は毎秒 40 ほどなので十分余る。超えた分は黙って捨てる。
+const BUCKET_CAPACITY: f64 = 400.0;
+const BUCKET_REFILL_PER_SEC: f64 = 300.0;
+
+struct Bucket {
+    tokens: f64,
+    last: Instant,
+}
+
+impl Bucket {
+    fn new(now: Instant) -> Self {
+        Self {
+            tokens: BUCKET_CAPACITY,
+            last: now,
+        }
+    }
+
+    /// `bytes` バイトの送信を許すか。許すなら消費する。
+    fn allow(&mut self, now: Instant, bytes: usize) -> bool {
+        let elapsed = now.saturating_duration_since(self.last).as_secs_f64();
+        self.last = now;
+        self.tokens = (self.tokens + elapsed * BUCKET_REFILL_PER_SEC).min(BUCKET_CAPACITY);
+        let cost = 1.0 + bytes as f64 / 1024.0;
+        if self.tokens < cost {
+            return false;
+        }
+        self.tokens -= cost;
+        true
+    }
+}
+
 struct Member {
+    bucket: Bucket,
     peer: String,
     user_id: String,
     status: CallStatus,
@@ -84,6 +119,7 @@ impl Calls {
         members.insert(
             conn,
             Member {
+                bucket: Bucket::new(Instant::now()),
                 peer,
                 user_id: actor.user.id.clone(),
                 status,
@@ -171,10 +207,14 @@ impl Calls {
                 format!("payload は {} KB までです", MAX_PAYLOAD_BYTES / 1024),
             ));
         }
-        let members = self.lock();
-        let Some(me) = members.get(&conn) else {
+        let mut members = self.lock();
+        let Some(me) = members.get_mut(&conn) else {
             return Err(not_in_call());
         };
+        // 送りすぎは黙って捨てる（音声は遅れて届くより捨てたほうがよく、エラーを返すと余計に増える）
+        if !me.bucket.allow(Instant::now(), size) {
+            return Ok(());
+        }
         let event = ServerEvent::CallEvent {
             peer: me.peer.clone(),
             from: me.user_id.clone(),
@@ -182,7 +222,7 @@ impl Calls {
             payload,
         };
         let targets: Vec<ConnId> = members.keys().copied().filter(|c| *c != conn).collect();
-        hub.send_to_conns(&targets, &event);
+        hub.send_lossy_to_conns(&targets, &event);
         Ok(())
     }
 }
@@ -228,4 +268,34 @@ fn validate_status(mut status: CallStatus) -> AppResult<CallStatus> {
         status.device = None;
     }
     Ok(status)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn bucket_allows_audio_rate_but_limits_floods() {
+        let t0 = Instant::now();
+        let mut b = Bucket::new(t0);
+        // 音声（50ms ごと・1KB）は続けて送れる
+        for i in 0..200u32 {
+            assert!(b.allow(t0 + Duration::from_millis(50 * u64::from(i)), 1100));
+        }
+        // 時間をおかずに大量に送ると途中で止まる
+        let t1 = t0 + Duration::from_secs(60);
+        let sent = (0..1000).filter(|_| b.allow(t1, 1100)).count();
+        assert!(sent > 100 && sent < 400, "sent = {sent}");
+        // 待てば戻る
+        assert!(b.allow(t1 + Duration::from_secs(2), 1100));
+    }
+
+    #[test]
+    fn bucket_limits_big_payloads_by_size() {
+        let t0 = Instant::now();
+        let mut b = Bucket::new(t0);
+        let sent = (0..100).filter(|_| b.allow(t0, 60 * 1024)).count();
+        assert!(sent <= 7, "sent = {sent}");
+    }
 }

@@ -12,7 +12,7 @@ import type { ComposerAction } from '../composerActions';
 import type { AppCommand } from '../commands.svelte';
 
 /** ホスト API のバージョン。index.d.ts を変えたら上げる */
-export const API_VERSION = 7;
+export const API_VERSION = 8;
 
 export type Manifest = Disnans.Manifest;
 export type Cleanup = Disnans.Cleanup;

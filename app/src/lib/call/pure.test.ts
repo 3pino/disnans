@@ -6,24 +6,19 @@ import {
   SPEAK_HOLD_MS,
   base64ToPcm,
   byteLevel,
-  classifyOffer,
   clampVolume,
   diffPeers,
   floatToInt16,
   int16ToFloat,
-  isPolite,
   normalizeDevice,
   notificationContent,
   parseCallSettings,
   pcmToBase64,
   pickOutput,
   rms,
-  rtcConfig,
   scheduleFrame,
-  shouldOffer,
   statusBadges,
   updateSpeaking,
-  usesRelay,
 } from './pure';
 import { describeDevices } from '../plugins/audio';
 
@@ -67,51 +62,23 @@ describe('設定の読み込み', () => {
     expect(parseCallSettings(null)).toEqual(DEFAULT_CALL_SETTINGS);
     expect(parseCallSettings('x')).toEqual(DEFAULT_CALL_SETTINGS);
     const s = parseCallSettings({
-      stun: 'stun:a',
+      stun: 'stun:a', // 古い保存値は無視する
+      relayOnly: true,
       joinMuted: true,
       micVolume: 9,
       outVolume: -1,
       inputId: 5,
       output: { id: 'speaker', kind: 'speaker', label: 'スピーカー' },
     });
-    expect(s).toEqual({ stun: 'stun:a', joinMuted: true, micVolume: 2, outVolume: 0, inputId: '', output: { id: 'speaker', kind: 'speaker', label: 'スピーカー' } });
+    expect(s).toEqual({ joinMuted: true, micVolume: 2, outVolume: 0, inputId: '', output: { id: 'speaker', kind: 'speaker', label: 'スピーカー' } });
     expect(parseCallSettings({ output: { id: 1 } }).output).toBeNull();
   });
 });
 
-describe('接続の判断', () => {
-  it('peer ID が小さい側だけが最初の offer を出し、もう一方が譲る側', () => {
-    expect(shouldOffer('aaa', 'bbb')).toBe(true);
-    expect(shouldOffer('bbb', 'aaa')).toBe(false);
-    expect(isPolite('bbb', 'aaa')).toBe(true);
-    expect(isPolite('aaa', 'bbb')).toBe(false);
-  });
-
-  it('どちらかが WebRTC を使えなければリレー', () => {
-    expect(usesRelay(true, true)).toBe(false);
-    expect(usesRelay(false, true)).toBe(true);
-    expect(usesRelay(true, false)).toBe(true);
-  });
-
-  it('classifyOffer: 新しい世代は最初の offer を出す側からだけ置き換え、同じ世代はぶつかったとき譲る側だけが受ける', () => {
-    const base = { sid: 's1', currentSid: null, fromInitiator: true, collision: false, polite: true };
-    expect(classifyOffer(base)).toBe('replace');
-    expect(classifyOffer({ ...base, currentSid: 's0' })).toBe('replace');
-    expect(classifyOffer({ ...base, fromInitiator: false })).toBe('ignore');
-    expect(classifyOffer({ ...base, currentSid: 's1' })).toBe('accept');
-    expect(classifyOffer({ ...base, currentSid: 's1', collision: true, polite: true })).toBe('accept');
-    expect(classifyOffer({ ...base, currentSid: 's1', collision: true, polite: false })).toBe('ignore');
-    expect(classifyOffer({ ...base, currentSid: 's1', fromInitiator: false, collision: false, polite: false })).toBe('accept');
-  });
-
+describe('参加者の増減', () => {
   it('diffPeers は自分を除いた増減を返す', () => {
     expect(diffPeers(['a', 'b'], ['b', 'c', 'me'], 'me')).toEqual({ added: ['c'], removed: ['a'] });
     expect(diffPeers([], [], 'me')).toEqual({ added: [], removed: [] });
-  });
-
-  it('rtcConfig は STUN が空なら使わない', () => {
-    expect(rtcConfig('  ')).toEqual({ iceServers: [] });
-    expect(rtcConfig(' stun:x ')).toEqual({ iceServers: [{ urls: 'stun:x' }] });
   });
 });
 

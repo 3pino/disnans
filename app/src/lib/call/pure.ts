@@ -1,18 +1,16 @@
-// 通話の純粋な処理（DOM・WebRTC・ストアに触れないもの）。テストしやすいように store.svelte.ts から分けてある
+// 通話の純粋な処理（DOM・ストアに触れないもの）。テストしやすいように store.svelte.ts から分けてある
 
 import type { CallStatus } from '../protocol/CallStatus';
 
 // ---- 定数 ----
 
-/** つながらないまま待つ長さ（ミリ秒）。超えたらやり直す */
-export const CONNECT_TIMEOUT_MS = 20000;
 /** 音量を見る間隔 */
 export const LEVEL_MS = 100;
 /** しゃべっていると見なす音量（0〜1 の RMS）と、そのあと光らせ続ける長さ */
 export const SPEAK_THRESHOLD = 0.02;
 export const SPEAK_HOLD_MS = 350;
 
-/** サーバー経由（リレー）の音声: 16kHz・モノラル・Int16 の PCM を 50ms ずつ。WebRTC を使えない相手とのあいだだけで使う */
+/** サーバー経由（リレー）の音声: 16kHz・モノラル・Int16 の PCM を 50ms ずつ。通話の音声はすべてこれで流す */
 export const RELAY_RATE = 16000;
 export const RELAY_FRAME = 800;
 /** 受け取った音を鳴らし始めるまでためる長さと、これ以上たまったら捨てる長さ（秒） */
@@ -24,7 +22,6 @@ export const RELAY_SILENCE = 0.004;
 
 /** call.emit のイベント名 */
 export const EV_AUDIO = 'audio';
-export const EV_SIGNAL = 'signal';
 
 /** マイクの音量（倍率）の範囲と、相手の音量（0〜1）の範囲 */
 export const MIC_VOLUME_MAX = 2;
@@ -38,7 +35,6 @@ export type SavedOutput = { id: string; kind: string; label: string };
 
 /** 通話の設定。端末ごとに保存する（同期されない） */
 export type CallSettingsData = {
-  stun: string;
   joinMuted: boolean;
   /** マイクの音量。1 が等倍 */
   micVolume: number;
@@ -50,7 +46,7 @@ export type CallSettingsData = {
   output: SavedOutput | null;
 };
 
-export const DEFAULT_CALL_SETTINGS: CallSettingsData = { stun: '', joinMuted: false, micVolume: 1, outVolume: 1, inputId: '', output: null };
+export const DEFAULT_CALL_SETTINGS: CallSettingsData = { joinMuted: false, micVolume: 1, outVolume: 1, inputId: '', output: null };
 
 /** 音量の値を範囲に収める。数でなければ既定値 */
 export function clampVolume(v: unknown, max: number, fallback = 1): number {
@@ -63,7 +59,6 @@ export function parseCallSettings(saved: unknown): CallSettingsData {
   const s: CallSettingsData = { ...DEFAULT_CALL_SETTINGS };
   if (!saved || typeof saved !== 'object') return s;
   const r = saved as Record<string, unknown>;
-  if (typeof r.stun === 'string') s.stun = r.stun;
   if (typeof r.joinMuted === 'boolean') s.joinMuted = r.joinMuted;
   s.micVolume = clampVolume(r.micVolume, MIC_VOLUME_MAX, 1);
   s.outVolume = clampVolume(r.outVolume, OUT_VOLUME_MAX, 1);
@@ -86,41 +81,6 @@ export function pickOutput(outputs: Disnans.AudioOutput[], saved: SavedOutput | 
 }
 
 // ---- 参加者・接続の判断 ----
-
-/** 自分の peer ID が小さい相手にだけ、最初の offer を出す（同時に出し合わない） */
-export function shouldOffer(myPeer: string, otherPeer: string): boolean {
-  return myPeer < otherPeer;
-}
-
-/** 再ネゴシエーションで offer がぶつかったとき、譲る側（最初に offer を出さない側） */
-export function isPolite(myPeer: string, otherPeer: string): boolean {
-  return !shouldOffer(myPeer, otherPeer);
-}
-
-/** この相手とは WebRTC ではなくリレーで話す（どちらかが WebRTC を使えない） */
-export function usesRelay(localRtc: boolean, remoteRtc: boolean): boolean {
-  return !localRtc || !remoteRtc;
-}
-
-/** 受け取った offer をどうするか。replace: 新しい接続に置き換える、accept: 今の接続で再ネゴシエーション、ignore: 捨てる */
-export type OfferAction = 'replace' | 'accept' | 'ignore';
-
-export function classifyOffer(o: {
-  /** offer に付いていた、接続の世代 ID */
-  sid: string;
-  /** いま持っている接続の世代 ID（接続がなければ null） */
-  currentSid: string | null;
-  /** 送ってきた相手が、最初の offer を出す側か */
-  fromInitiator: boolean;
-  /** 自分が offer を作っている途中、または stable でない */
-  collision: boolean;
-  /** 自分が譲る側か */
-  polite: boolean;
-}): OfferAction {
-  if (o.sid !== o.currentSid) return o.fromInitiator ? 'replace' : 'ignore';
-  if (o.collision && !o.polite) return 'ignore';
-  return 'accept';
-}
 
 /** 参加者を通話の一覧に見せるときの状態アイコン（アバターの左下） */
 export type StatusBadge = 'muted' | 'deafened' | 'local-muted';
@@ -151,12 +111,6 @@ export function notificationContent(s: { muted: boolean; deafened: boolean; coun
       { id: 'hangup', title: '切断', dismiss: true },
     ],
   };
-}
-
-/** WebRTC の設定。STUN は空なら使わない（Tailscale 内なら不要） */
-export function rtcConfig(stun: string): { iceServers: { urls: string }[] } {
-  const s = stun.trim();
-  return { iceServers: s ? [{ urls: s }] : [] };
 }
 
 /** 前回と今回の参加者の peer ID の差（自分は除く） */

@@ -16,7 +16,6 @@ fn status(muted: bool) -> CallStatus {
     CallStatus {
         muted,
         deafened: false,
-        rtc: true,
         device: Some("laptop".into()),
     }
 }
@@ -104,7 +103,7 @@ async fn emit_reaches_only_other_members_with_the_sender_peer() {
 
     alice
         .send(ClientEvent::CallEmit {
-            name: "signal".into(),
+            name: "data".into(),
             payload: json!({ "to": "bbb" }),
         })
         .await;
@@ -121,7 +120,7 @@ async fn emit_reaches_only_other_members_with_the_sender_peer() {
     };
     assert_eq!(peer, "aaa");
     assert_eq!(from, alice_user.id);
-    assert_eq!(name, "signal");
+    assert_eq!(name, "data");
     assert_eq!(payload, json!({ "to": "bbb" }));
     // 参加していない人と、送った本人には届かない
     carol.assert_silent(Duration::from_millis(200)).await;
@@ -130,7 +129,7 @@ async fn emit_reaches_only_other_members_with_the_sender_peer() {
     // 参加していない人は送れない
     carol
         .send(ClientEvent::CallEmit {
-            name: "signal".into(),
+            name: "data".into(),
             payload: json!(null),
         })
         .await;
@@ -176,7 +175,7 @@ async fn kick_removes_the_target_and_notifies_it() {
     assert_eq!(m[0].0, "aaa");
     // 外された人は、もう中継を受け取れない・送れない
     bob.send(ClientEvent::CallEmit {
-        name: "signal".into(),
+        name: "data".into(),
         payload: json!(null),
     })
     .await;

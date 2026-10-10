@@ -329,8 +329,6 @@ pub struct CallStatus {
     pub muted: bool,
     /// スピーカーミュート（相手の声を消している）。
     pub deafened: bool,
-    /// WebRTC を使える。`false` ならサーバー経由（リレー）で音声を送る。
-    pub rtc: bool,
     /// 端末の種類（smartphone / tablet / laptop / monitor）。
     #[serde(default)]
     pub device: Option<String>,

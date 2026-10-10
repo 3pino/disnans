@@ -13,10 +13,6 @@ muted: boolean,
  */
 deafened: boolean, 
 /**
- * WebRTC を使える。`false` ならサーバー経由（リレー）で音声を送る。
- */
-rtc: boolean, 
-/**
  * 端末の種類（smartphone / tablet / laptop / monitor）。
  */
 device: string | null, };

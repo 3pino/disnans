@@ -23,7 +23,7 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
 - UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](PLUGIN_UI.md)
 - ホスト API のバージョン: **7**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から。`holdBackground` の通知のボタン `actions` / `onAction` と `update()` は 4 から。`disnans.audio` は 5、`postMessage` の `notify` と `openSettings` は 6、`disnans.call`（通話の拡張）は 7 から）
-- 通話（ボイスチャット）は**アプリ本体の機能**です。画面共有などの拡張は `disnans.call` で作れます（→ [通話の拡張 API](#通話の拡張-apidisnanscallv7)）
+- 通話（ボイスチャット）は**アプリ本体の機能**です。画面共有などの拡張は `disnans.call` で作れます（→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)）
 
 ## 目次
 
@@ -247,8 +247,8 @@ app/node_modules/.bin/tsc -p examples/dice
 | `disnans.ui.*` | 本体と同じ見た目の部品とアイコン（→ [PLUGIN_UI.md](PLUGIN_UI.md)） |
 | `disnans.VersionConflictError` | `session.update` がぶつかったときのエラー |
 | `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（v5）。Android は通話中の出力先（受話口・スピーカー・イヤホン・Bluetooth）、デスクトップは `setSinkId`。使えない環境では一覧が空 |
-| `disnans.call.*` | 本体の通話の状態の読み取りと、トラック（映像など）の追加・受け取り、通話のバーのボタン（v7。→ [通話の拡張 API](#通話の拡張-apidisnanscallv7)） |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 7） |
+| `disnans.call.*` | 本体の通話の状態の読み取りと、参加者どうしのデータの送受信、通話のバーのボタン（v8。→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 8） |
 
 ### コマンド（パレット・ショートカット・スラッシュコマンド）
 
@@ -544,7 +544,7 @@ const release = await this.holdBackground({ microphone: true, title: 'ボイス�
 release();
 ```
 
-- **Android**: フォアグラウンドサービス（`microphone` 型）を動かし、通知欄に「通話中」を出します。画面を消す・別のアプリに切り替えるときに、WebView を止めない（タイマーと WebRTC が続く）ようにもします。`microphone: true` は、**マイクの許可を得たあと、アプリが前面にあるときに**呼びます（Android 14 以降の決まり）
+- **Android**: フォアグラウンドサービス（`microphone` 型）を動かし、通知欄に「通話中」を出します。画面を消す・別のアプリに切り替えるときに、WebView を止めない（タイマーが続く）ようにもします。`microphone: true` は、**マイクの許可を得たあと、アプリが前面にあるときに**呼びます（Android 14 以降の決まり）
 - **デスクトップ・ブラウザー**: ウィンドウが裏に回っても動くので、何もしません
 - 複数のプラグインが頼んでもよく、最後の1つが解除されたら止まります。プラグインを外すと自動で解除されます
 
@@ -676,47 +676,40 @@ ui.button({ text: '振る', icon: 'dices', variant: 'primary', onClick: () => th
 ui.toast('設定を初期値に戻しました');
 ```
 
-### 通話の拡張 API（disnans.call、v7）
+### 通話の拡張 API（disnans.call、v8）
 
 通話（ボイスチャット）は**アプリ本体の機能**で、プラグインではありません（参加・ミュート・出力先などは本体の画面と設定にあります）。
 画面共有のような機能を足せるように、本体の通話に次の API を用意しています。型は [`index.d.ts`](../packages/plugin-sdk/index.d.ts) の `Disnans.Call`。
+音声はすべてサーバー経由で、WebRTC は使いません。v7 にあった `addTrack` `removeTrack` `onTrack` `onTrackEnd` `remoteTracks` `canVideo`（と参加者の `canVideo`）は v8 で外れました。
 
 ```js
 const { call } = disnans;
 
 call.joined;        // 参加しているか
-call.canVideo;      // この環境で映像を送受信できるか
-call.participants;  // [{ peer, user, self, muted, deafened, canVideo, connected, speaking, device }]
-call.remoteTracks;  // いま届いている音声以外のトラック [{ peer, user, track, stream }]
+call.participants;  // [{ peer, user, self, muted, deafened, connected, speaking, device }]
 await call.join();  // 参加（失敗はトーストで知らされる）
 call.leave();
 ```
 
-- **状態の変化**: `call.onChange(cb)`（参加・退出・参加者の出入り・ミュート・つながった・しゃべり始めなど。しゃべっている人の変化も含むので、重い処理はしない）
-- **トラックを送る**: `call.addTrack(track, stream?)` で映像などを通話に足します。つながっている相手へは WebRTC の**再ネゴシエーション**で届き、あとから参加した人にも自動で送ります。戻り値の関数（か `call.removeTrack(track)`）で外します。`track.stop()` は呼ばないので、止めるのはプラグインの役目です。通話を抜けると足したトラックは外れます
-- **トラックを受け取る**: `call.onTrack(({ peer, user, track, stream }) => ...)`。相手の声（最初の音声）は本体が鳴らすので渡さず、映像と、そのほかの音声が届きます。`call.onTrackEnd(cb)` は、相手が外した・終わった・通話を抜けたとき
+- **状態の変化**: `call.onChange(cb)`（参加・退出・参加者の出入り・ミュート・しゃべり始めなど。しゃべっている人の変化も含むので、重い処理はしない）
+- **データを送る**: `call.emit(name, payload)` で、通話の参加者全員（自分以外）にサーバー経由で送ります（保存されません）。`payload` は JSON にして 64 KB まで、`name` は 1〜64 文字（`audio` は本体が使うので使えません）。通話に参加していないときは例外です。送りすぎるとサーバーが黙って捨てます（目安は 1 秒に 250 KB ほどまで。音声の分を含む）。画像を送るなら、縮小して JPEG などにしてフレームレートを抑えてください
+- **データを受け取る**: `call.onEvent(name, ({ peer, user, payload }) => ...)`。自分が送ったものは届きません。戻り値の関数で外します
 - **バーのボタン**: `call.addButton({ icon, label, onClick, active?, disabled? })` で、通話のバー（参加中だけ表示）にボタンを足します。戻り値の `update(patch)` / `remove()` で変えたり外したりします
-- **映像を扱えない環境**: Linux の WebKitGTK など WebRTC を使えない環境の相手とは、音声をサーバー経由で流す中継（**音声だけ**）になります。自分が使えないなら `call.canVideo === false`（`addTrack` は例外）、相手が使えないなら `participant.canVideo === false`（その相手にはトラックを送らず、届きません）で判別できます
-- コールバックの登録や `addTrack` の戻り値の関数は、プラグインが外されるときに自動では外れないので、`this.register(...)` に渡して片付けます
+- コールバックの登録の戻り値の関数は、プラグインが外されるときに自動では外れないので、`this.register(...)` に渡して片付けます
 
 ```js
-// 画面共有のひな形
-const off = [];
+// 画面共有のひな形（縮小したフレームを送る）
 const btn = call.addButton({ icon: 'monitor-up', label: '画面を共有', onClick: () => share() });
 this.register(() => btn.remove());
 async function share() {
   if (!call.joined) return disnans.ui.toast('通話に参加していません', 'error');
-  if (!call.canVideo) return disnans.ui.toast('この環境では映像を送れません', 'error');
   const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-  const [track] = stream.getVideoTracks();
-  off.push(call.addTrack(track, stream));
-  track.addEventListener('ended', () => off.pop()?.());
+  // …1 秒に数回、canvas に縮小して描き、toDataURL('image/jpeg', 0.5) を call.emit('screen', { img }) で送る
 }
-this.register(call.onTrack(({ user, stream }) => { /* <video> に stream を出す */ }));
-this.register(call.onTrackEnd(({ track }) => { /* 片付ける */ }));
+this.register(call.onEvent('screen', ({ user, payload }) => { /* <img> に payload.img を出す */ }));
 ```
 
-本体の通話のしくみ（参加者の管理と kick はサーバー、メディアは WebRTC のメッシュ）は [`SPEC.md`](../SPEC.md) の 9.11、サーバーの経路は [`API.md`](API.md) の WebSocket を参照してください。
+本体の通話のしくみ（参加者の管理と kick はサーバー、音声とデータもサーバー経由）は [`SPEC.md`](../SPEC.md) の 9.11、サーバーの経路は [`API.md`](API.md) の WebSocket を参照してください。
 マイクを使うには**アプリ版（Tauri）が必要**です（WebView の `getUserMedia` は安全なコンテキストでしか動かないため、`http://` で開いたブラウザー版では使えません）。
 
 ---

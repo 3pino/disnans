@@ -20,7 +20,6 @@ export const call = new CallStore({
   settings: callSettings,
   deviceKind: () => deviceKind.value,
   openSettings: () => ui.openSettingsSub('call'),
-  hasRtc: () => typeof RTCPeerConnection !== 'undefined',
   now: () => performance.now(),
 });
 
