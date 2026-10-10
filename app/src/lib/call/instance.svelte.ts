@@ -21,6 +21,7 @@ export const call = new CallStore({
   deviceKind: () => deviceKind.value,
   openSettings: () => ui.openSettingsSub('call'),
   now: () => performance.now(),
+  buffered: () => client.sendBuffered,
 });
 
 /** プラグイン向けの disnans.call */

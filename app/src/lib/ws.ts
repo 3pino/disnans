@@ -40,6 +40,11 @@ export class Socket {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
+  /** まだ送り出せていないバイト数（WebSocket の bufferedAmount）。回線が細いと増える。未接続なら 0 */
+  get bufferedAmount(): number {
+    return this.ws?.bufferedAmount ?? 0;
+  }
+
   start(): void {
     this.stopped = false;
     this.connect();

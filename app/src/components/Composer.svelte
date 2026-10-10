@@ -2,6 +2,7 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Send from '@lucide/svelte/icons/send';
   import X from '@lucide/svelte/icons/x';
+  import Search from '@lucide/svelte/icons/search';
     import FileIcon from '@lucide/svelte/icons/file';
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import BellOff from '@lucide/svelte/icons/bell-off';
@@ -10,7 +11,8 @@
   import IconButton from './ui/IconButton.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
+  import { messageSearch } from '../lib/stores/search.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -58,6 +60,32 @@
     const t = draftText;
     untrack(() => (hasText = t.trim() !== ''));
   });
+
+  /** 検索モード（メインチャットの入力欄だけ）。通常の入力欄は隠すだけにして、下書きと添付を残す */
+  const searching = $derived(threadId === null && ui.searchOpen);
+  let searchEl: HTMLInputElement | undefined = $state();
+
+  // 検索モードに入ったとき、もう一度コマンドを実行したときに、検索欄へフォーカスする
+  $effect(() => {
+    void ui.searchFocusTick;
+    if (!searching) return;
+    void tick().then(() => searchEl?.focus());
+  });
+
+  function onsearchkeydown(e: KeyboardEvent) {
+    // IME 変換中の Esc・Enter は変換の操作なので触らない
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeSearch();
+    }
+  }
+
+  function closeSearch() {
+    ui.closeSearch();
+    // 通常の入力欄に戻ったら、続きを書けるようにフォーカスする
+    void tick().then(() => input?.focus());
+  }
 
   const canSend = $derived((hasText || staged.length > 0) && client.ready);
 
@@ -231,9 +259,11 @@
 </script>
 
 <div class="composer" class:composer-in-thread={threadId !== null}>
-  <ReplyBar {threadId} />
+  {#if !searching}
+    <ReplyBar {threadId} />
+  {/if}
 
-  {#if staged.length > 0}
+  {#if staged.length > 0 && !searching}
     <div class="composer-upload-tray">
       {#each staged as s (s.key)}
         <div class="composer-upload" title={s.file.name}>
@@ -257,7 +287,25 @@
     </div>
   {/if}
 
-  <div class="composer-row">
+  {#if searching}
+    <div class="composer-row composer-search" role="search">
+      <span class="composer-search-icon" aria-hidden="true"><Search size={18} /></span>
+      <input
+        class="input composer-search-input"
+        bind:this={searchEl}
+        value={messageSearch.query}
+        oninput={(e) => messageSearch.setQuery(e.currentTarget.value)}
+        placeholder="メッセージを検索（空白で区切ると、すべて含むものを探します）"
+        aria-label="メッセージを検索"
+        autocomplete="off"
+        spellcheck="false"
+        onkeydown={onsearchkeydown}
+      />
+      <IconButton class="composer-search-close" label="検索を閉じる" onclick={closeSearch}><X size={18} /></IconButton>
+    </div>
+  {/if}
+
+  <div class="composer-row" class:composer-row-hidden={searching}>
     <div class="composer-plus">
       <IconButton
         class="composer-plus-button"
@@ -367,6 +415,31 @@
     transition:
       border-color 0.12s,
       background-color 0.12s;
+  }
+  .composer-row-hidden {
+    display: none;
+  }
+  .composer-search {
+    align-items: center;
+    padding: 4px 6px 4px 12px;
+  }
+  .composer-search-icon {
+    display: grid;
+    place-items: center;
+    color: var(--text-muted);
+    flex: none;
+  }
+  /* 枠は .composer-row が描くので、入力そのものは枠なしにする */
+  .composer-search > .composer-search-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+  }
+  .composer-search > :global(.icon-btn) {
+    margin-bottom: 0;
   }
   .composer .composer-row > :global(.message-input) {
     position: static;

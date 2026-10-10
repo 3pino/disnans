@@ -56,7 +56,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 9） */
+      /** ホスト API のバージョン（いまは 10） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -66,7 +66,7 @@ declare global {
       readonly VersionConflictError: typeof VersionConflictError;
       /** 音の入出力の選択（API v5）。通話のプラグイン向け。環境の違い（Android・デスクトップ）はここで隠す */
       readonly audio: Audio;
-      /** 本体の通話（API v8）。画面共有などの拡張向け。通話そのもの（参加・ミュート・出力先）は本体の機能で、ここからは状態の読み取りと、参加者どうしのデータの送受信だけ */
+      /** 本体の通話（API v8。`addPanel` と `bufferedAmount` は v10）。画面共有などの拡張向け。通話そのもの（参加・ミュート・出力先）は本体の機能で、ここからは状態の読み取りと、参加者どうしのデータの送受信だけ */
       readonly call: Call;
       /** 画面のキャプチャ（API v9。Android のネイティブ）。画面共有向け。`supported` が false の環境では `getDisplayMedia` を使う */
       readonly screenCapture: ScreenCapture;
@@ -111,7 +111,10 @@ declare global {
      */
     interface ScreenCapture {
       readonly supported: boolean;
-      /** 許可を求めて撮り始める。断られたら例外。フレームは `onFrame` に届く（変化が無い間は届かない） */
+      /**
+       * 許可を求めて撮り始める。断られたら例外。フレームは `onFrame` に届く（変化が無い間は届かない）。
+       * ユーザーが許可のダイアログでキャンセルしたときの例外は `name` が `AbortError`（API v10。何も知らせずに終えてよい）
+       */
       start(opts: ScreenCaptureOptions, onFrame: (frame: ScreenCaptureFrame) => void): Promise<void>;
       /** 撮りながら品質を変える。`scale` は取得した画像をさらに縮める倍率（0〜1） */
       update(patch: { quality?: number; scale?: number }): Promise<void>;
@@ -180,8 +183,34 @@ declare global {
       remove(): void;
     };
 
+    /** 通話の画面に足す領域の設定（API v10） */
+    type CallPanelOptions = {
+      /** 読み上げ用の名前（例: 「画面共有」） */
+      label: string;
+      /** 並び順（小さいほど上。既定は 0） */
+      order?: number;
+    };
+
     /**
-     * 本体の通話（API v7、データの送受信は v8）。みんな共通の 1 部屋で、参加者の一覧・kick・音声・データの中継はすべてサーバーが行う。
+     * 通話の画面（「通話を開く」で出る全画面の通話タブ）に、プラグインが足す領域（API v10）。
+     * 参加者のアバターの一覧の上に出る。中身は `el` にプラグインが書く。
+     */
+    interface CallPanel {
+      /** 中身を書く要素。通話の画面が開いている間（かつ `visible` の間）だけ文書に入る。外れても中身は保たれる */
+      readonly el: HTMLElement;
+      /** いま文書に入っている（画面に出ている） */
+      readonly mounted: boolean;
+      /** 出すか。既定は false（作っただけでは出ない）。通話に参加している間だけ出る */
+      readonly visible: boolean;
+      setVisible(visible: boolean): void;
+      /** 文書に入った・外れたとき（大きさを測り直すなど）。戻り値の関数で外す */
+      onMount(cb: (mounted: boolean) => void): Cleanup;
+      /** 領域を外す */
+      remove(): void;
+    }
+
+    /**
+     * 本体の通話（API v7、データの送受信は v8、通話の画面の領域と送信待ちの量は v10）。みんな共通の 1 部屋で、参加者の一覧・kick・音声・データの中継はすべてサーバーが行う。
      * コールバックの登録の返り値の関数は、プラグインが外されるときに自動では外れないので、
      * `this.register(...)` に渡して片付ける。
      */
@@ -204,8 +233,15 @@ declare global {
       onEvent(name: string, cb: (e: CallDataEvent) => void): Cleanup;
       /** 通話の状態が変わったとき（参加・退出・参加者の出入り・ミュート・しゃべり始めなど）。戻り値の関数で外す */
       onChange(cb: () => void): Cleanup;
-      /** 通話のバー（画面上部）にボタンを足す。通話に参加している間だけ表示される */
+      /** 通話のバー（画面上部）と通話の画面にボタンを足す。通話に参加している間だけ表示される */
       addButton(opts: CallButtonOptions): CallButton;
+      /** 通話の画面（全画面の通話タブ）に領域を足す（API v10）。`remove()` で外す */
+      addPanel(opts: CallPanelOptions): CallPanel;
+      /**
+       * サーバーへまだ送り出せていないバイト数（WebSocket の `bufferedAmount`。API v10）。
+       * 回線が細いと増え、そのぶん届くのが遅れる。映像のように新しいものだけが大事なデータは、多いあいだ送るのを待つとよい
+       */
+      readonly bufferedAmount: number;
     }
 
     /** 音の出力先（API v5） */

@@ -6,6 +6,7 @@ import { createUi } from './ui';
 import { setLucideForTest } from '../icons.svelte';
 import { API_VERSION, type HostServices, type PluginClass } from './types';
 import { VersionConflictError } from './sessions';
+import { toCaptureError } from './nativeScreen';
 
 type Mod = typeof import('../../../../examples/screenshare/main.js');
 const load = () => import('../../../../examples/screenshare/main.js') as Promise<Mod & { default: PluginClass }>;
@@ -15,7 +16,7 @@ const load = () => import('../../../../examples/screenshare/main.js') as Promise
   apiVersion: API_VERSION,
   Plugin: PluginBase,
   ui: createUi({
-    toast: () => {},
+    toast: (text, kind) => hooks.toast(text, kind),
     confirm: async () => true,
     onBack: (run) => hooks.onBack(run),
     setImmersive: (on) => hooks.setImmersive(on),
@@ -25,6 +26,7 @@ const load = () => import('../../../../examples/screenshare/main.js') as Promise
 
 // ui.onBack / ui.setImmersive の差し替え（main.js は読み込み時の ui を使うので、ここを書き換える）
 const hooks = {
+  toast: (_text: string, _kind?: 'info' | 'error'): void => {},
   onBack: (_run: () => void): (() => void) => () => {},
   setImmersive: async (_on: boolean): Promise<boolean> => false,
 };
@@ -137,6 +139,34 @@ describe('間隔・画質の調整', () => {
     expect(shouldSend({ diff: 0, sinceSentMs: 100, force: true })).toBe(true);
   });
 
+  it('framePeakDiff / shouldSend: 平均では埋もれる小さな変化（1 画素）も送る', async () => {
+    const { frameDiff, framePeakDiff, shouldSend, PEAK_THRESHOLD } = await load();
+    const a = new Uint8ClampedArray(64 * 36 * 4);
+    const b = a.slice();
+    b[0] = b[1] = b[2] = 200; // 1 画素だけ大きく変わる（文字の入力など）
+    expect(frameDiff(a, b)).toBeLessThan(1);
+    expect(framePeakDiff(a, b)).toBe(200);
+    expect(framePeakDiff(null, b)).toBe(Infinity);
+    expect(shouldSend({ diff: frameDiff(a, b), peak: framePeakDiff(a, b), sinceSentMs: 100, force: false })).toBe(true);
+    expect(shouldSend({ diff: 0, peak: PEAK_THRESHOLD, sinceSentMs: 100, force: false })).toBe(false);
+  });
+
+  it('isBlankFrame: 全部透明なら空', async () => {
+    const { isBlankFrame } = await load();
+    expect(isBlankFrame(new Uint8ClampedArray(16))).toBe(true);
+    expect(isBlankFrame(new Uint8ClampedArray([0, 0, 0, 255]))).toBe(false);
+  });
+
+  it('isCancelError: 選択・許可のキャンセルだけを見分ける', async () => {
+    const { isCancelError, describeError } = await load();
+    expect(isCancelError(new DOMException('x', 'NotAllowedError'))).toBe(true);
+    expect(isCancelError(Object.assign(new Error('x'), { name: 'AbortError' }))).toBe(true);
+    expect(isCancelError(new Error('x'))).toBe(false);
+    expect(isCancelError({ message: 'x' })).toBe(false);
+    expect(describeError(new DOMException('だめ', 'NotReadableError'))).toBe('NotReadableError: だめ');
+    expect(describeError({ message: 'native' })).toBe('native');
+  });
+
   it('hasAudience / canShareScreen / parseSettings', async () => {
     const { hasAudience, canShareScreen, parseSettings } = await load();
     expect(hasAudience([{ self: true }])).toBe(false);
@@ -242,6 +272,20 @@ describe('画像の形式・色数・見積もり', () => {
   });
 });
 
+describe('本体: ネイティブの取得のエラー', () => {
+  it('toCaptureError: キャンセル（code: cancelled）は AbortError、ほかは message の Error にする', () => {
+    const c = toCaptureError({ message: '画面の共有がキャンセルされました (cancelled)', code: 'cancelled' });
+    expect(c).toBeInstanceOf(Error);
+    expect(c.name).toBe('AbortError');
+    // 古い版のネイティブ（code なし・denied）もキャンセル扱い
+    expect(toCaptureError({ message: '画面の共有が許可されませんでした (denied)' }).name).toBe('AbortError');
+    const other = toCaptureError({ message: 'サービスを始められません' });
+    expect(other.name).toBe('Error');
+    expect(other.message).toBe('サービスを始められません');
+    expect(toCaptureError('文字列').message).toBe('文字列');
+  });
+});
+
 describe('拡大縮小・パン', () => {
   const stage = { w: 800, h: 600 };
   const img = { w: 800, h: 450 };
@@ -281,6 +325,46 @@ describe('拡大縮小・パン', () => {
     expect(clampView({ scale: 20, x: 0, y: 0 }, stage, img).scale).toBe(8);
   });
 
+  it('containSize: 縦長の画面も全体が収まる（はみ出さない）', async () => {
+    const { containSize } = await load();
+    // スマホの縦長（720×1600）を横長の舞台（1200×700）に: 高さで合わせる
+    const s = containSize({ w: 720, h: 1600 }, { w: 1200, h: 700 });
+    expect(s.h).toBe(700);
+    expect(s.w).toBeCloseTo(315);
+    // 横長は幅で合わせる。小さい画像は舞台いっぱいまで広げる
+    expect(containSize({ w: 640, h: 360 }, { w: 1280, h: 1000 })).toEqual({ w: 1280, h: 720 });
+    expect(containSize({ w: 0, h: 0 }, { w: 100, h: 100 })).toEqual({ w: 0, h: 0 });
+  });
+
+  it('wheelAction: Ctrl+ホイール（ピンチ）は拡大縮小、拡大中のホイールは移動、等倍で上に回すと拡大', async () => {
+    const { wheelAction } = await load();
+    const ev = (o: Partial<{ deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }>) => ({
+      deltaX: 0,
+      deltaY: 0,
+      deltaMode: 0,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      ...o,
+    });
+    const at = (scale: number, embedded = false) => ({ scale, embedded, pageHeight: 800 });
+    const pinch = wheelAction(ev({ deltaY: -10, ctrlKey: true }), at(1));
+    expect(pinch).toMatchObject({ kind: 'zoom' });
+    expect((pinch as { factor: number }).factor).toBeGreaterThan(1.05);
+    // マウスの Ctrl+ホイール（大きな delta）でも、1 回で極端に動かない
+    expect((wheelAction(ev({ deltaY: 100, ctrlKey: true }), at(2)) as { factor: number }).factor).toBeGreaterThan(0.7);
+    expect(wheelAction(ev({ deltaX: 5, deltaY: 20 }), at(2))).toEqual({ kind: 'pan', dx: 5, dy: 20 });
+    // Shift は横に
+    expect(wheelAction(ev({ deltaY: 30, shiftKey: true }), at(2))).toEqual({ kind: 'pan', dx: 30, dy: 0 });
+    // 行単位はピクセルに
+    expect(wheelAction(ev({ deltaY: 3, deltaMode: 1 }), at(2))).toEqual({ kind: 'pan', dx: 0, dy: 48 });
+    // 等倍: 上で拡大、下は何もしない。埋め込みの表示ではページのスクロールに譲る
+    expect(wheelAction(ev({ deltaY: -100 }), at(1))).toMatchObject({ kind: 'zoom' });
+    expect(wheelAction(ev({ deltaY: 100 }), at(1))).toBeNull();
+    expect(wheelAction(ev({ deltaY: -100 }), at(1, true))).toBeNull();
+    expect(wheelAction(ev({ deltaY: -10, ctrlKey: true }), at(1, true))).toMatchObject({ kind: 'zoom' });
+  });
+
   it('isDoubleTap は短い間隔で近い 2 回のタップ', async () => {
     const { isDoubleTap } = await load();
     expect(isDoubleTap(null, { t: 100, x: 0, y: 0 })).toBe(false);
@@ -302,8 +386,21 @@ function makeCall() {
   const handlers = new Map<string, Handler>();
   let change: () => void = () => {};
   let buttonOpts: Disnans.CallButtonOptions | null = null;
+  const panelEl = document.createElement('div');
+  const panel = {
+    el: panelEl,
+    mounted: false,
+    visible: false,
+    setVisible(v: boolean) {
+      panel.visible = v;
+    },
+    onMount: vi.fn(() => () => {}),
+    remove: vi.fn(),
+  };
   const call = {
     joined: true,
+    bufferedAmount: 0,
+    addPanel: vi.fn(() => panel),
     participants: [
       { peer: 'me', self: true },
       { peer: 'pa', self: false },
@@ -329,6 +426,7 @@ function makeCall() {
   };
   return {
     call,
+    panel,
     button: () => buttonOpts,
     fire: (name: string, peer: string, userKey: 'a' | 'b', payload: unknown) => handlers.get(name)!({ peer, user: users[userKey], payload }),
     changed: () => change(),
@@ -354,6 +452,7 @@ async function setup(opts: { display: boolean; native?: Partial<Disnans.ScreenCa
   Object.defineProperty(nav, 'mediaDevices', { configurable: true, value: opts.display ? { getDisplayMedia } : undefined });
   const status: HTMLElement[] = [];
   const toast = vi.fn();
+  hooks.toast = toast;
   const services = {
     app: { me: { id: 'u1' }, users: [], user: () => undefined, nameOf: () => '', isMobile: false, theme: 'light' },
     api: {},
@@ -381,6 +480,9 @@ async function setup(opts: { display: boolean; native?: Partial<Disnans.ScreenCa
   );
   const mod = await load();
   await r.start(mod.default);
+  // 読み込んだときに、共有中の人を問い合わせる（screen.query）。ほかのテストの邪魔にならないよう、ここで確かめて消す
+  expect(c.call.emit).toHaveBeenCalledWith('screen.query', {});
+  c.call.emit.mockClear();
   return { ...c, r, fs, getDisplayMedia, status: () => status[0], toast };
 }
 
@@ -390,7 +492,8 @@ const emitted = (c: ReturnType<typeof makeCall>['call'], name: string) =>
 beforeEach(() => {
   vi.useFakeTimers();
   setLucideForTest({} as never);
-  const ctx = { drawImage: () => {}, getImageData: () => ({ data: new Uint8ClampedArray(32 * 18 * 4) }) };
+  // 取り込んだ画像は不透明（全部透明だと「映像が空」として送らない）
+  const ctx = { drawImage: () => {}, getImageData: () => ({ data: new Uint8ClampedArray(64 * 36 * 4).fill(255) }) };
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,/9j/QUJDRA==');
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
@@ -711,8 +814,8 @@ describe('examples/screenshare', () => {
     s.r.stop();
   });
 
-  it('設定画面: 説明は無く、FPS は 5 と 20、画質は解像度と品質、色数を選べる。プレビューを出す', async () => {
-    const s = await setup({ display: false });
+  it('設定画面: 説明は無く、FPS は 5 と 20、画質は解像度と品質、色数を選べる。自分の画面を取り込んでプレビューを出す（サンプルは無い）', async () => {
+    const s = await setup({ display: true });
     const container = document.createElement('div');
     document.body.append(container);
     // 設定タブの描画（addSettingTab で登録されたもの）。プレビューの符号化は jsdom の canvas に合わせて差し替える
@@ -727,7 +830,163 @@ describe('examples/screenshare', () => {
     expect(options(0)).toEqual(['5', '20']);
     expect(options(1)).toEqual(['480p・品質 50%', '720p・品質 60%', '1080p・品質 80%']);
     expect(options(2)).toEqual(['フルカラー', '256 色', 'グレースケール']);
-    expect(container.querySelector('.screenshare-preview-info')!.textContent).toMatch(/1280×720.*JPEG.*1 フレーム 約 \d+ KB.*5 FPS/);
+    // 開いたときに 1 回だけ自動で画面を取り込む（取り込んだら止める）
+    await vi.advanceTimersByTimeAsync(500);
+    expect(s.getDisplayMedia).toHaveBeenCalledOnce();
+    expect(s.fs.track.stop).toHaveBeenCalled();
+    const info = container.querySelector('.screenshare-preview-info')!.textContent;
+    expect(info).toMatch(/1280×720.*JPEG.*1 フレーム 約 \d+ KB.*5 FPS/);
+    expect(info).not.toContain('サンプル');
+    // 開き直しても、取り込んだ画面を使い回す（何度も選ばせない）
+    container.replaceChildren();
+    s.r.settingTabs[0].display(container);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(s.getDisplayMedia).toHaveBeenCalledOnce();
+    expect(container.querySelector('.screenshare-preview-info')!.textContent).toMatch(/1280×720/);
     s.r.stop();
+  });
+
+  it('設定画面: 取り込めない環境ではプレビューが無いと書く', async () => {
+    const s = await setup({ display: false });
+    const container = document.createElement('div');
+    document.body.append(container);
+    s.r.settingTabs[0].display(container);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(container.querySelector('.screenshare-preview-info')!.textContent).toContain('プレビューはありません');
+    expect(container.querySelector<HTMLImageElement>('.screenshare-preview-img')!.hidden).toBe(true);
+    s.r.stop();
+  });
+
+  it('Android: 許可のダイアログでキャンセル（AbortError）したら、何も知らせずに終える', async () => {
+    const s = await setup({
+      display: false,
+      native: {
+        supported: true,
+        start: async () => Promise.reject(Object.assign(new Error('画面の共有がキャンセルされました (cancelled)'), { name: 'AbortError' })),
+        stop: async () => {},
+        update: async () => {},
+      },
+    });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.toast).not.toHaveBeenCalled();
+    expect(s.button()!.active).toBeFalsy();
+    s.r.stop();
+  });
+
+  it('Android: キャンセル以外の失敗は理由つきで知らせる', async () => {
+    const s = await setup({
+      display: false,
+      native: { supported: true, start: async () => Promise.reject(new Error('サービスを始められません')), stop: async () => {}, update: async () => {} },
+    });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.toast).toHaveBeenCalledWith(expect.stringContaining('サービスを始められません'), 'error');
+    s.r.stop();
+  });
+
+  it('共有ボタンを押したら、フォーカスを外す', async () => {
+    const s = await setup({ display: true });
+    const b = document.createElement('button');
+    document.body.append(b);
+    b.focus();
+    expect(document.activeElement).toBe(b);
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(document.activeElement).not.toBe(b);
+    s.r.stop();
+  });
+
+  it('共有中に問い合わせ（screen.query）が来たら、すぐに state とフレームを送り直す', async () => {
+    const s = await setup({ display: true });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(emitted(s.call, 'screen.frame')).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    s.call.emit.mockClear();
+    s.fire('screen.query', 'pa', 'a', {});
+    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true }]);
+    await vi.advanceTimersByTimeAsync(1);
+    // 画面が変わっていなくても、問い合わせた人のために送る
+    expect(emitted(s.call, 'screen.frame')).toHaveLength(1);
+    s.r.stop();
+  });
+
+  it('共有中に新しい人が来たら、ハートビートを待たずに知らせる', async () => {
+    const s = await setup({ display: true });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1000);
+    s.call.emit.mockClear();
+    s.call.participants = [...s.call.participants, { peer: 'pb', self: false }];
+    s.changed();
+    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true }]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(emitted(s.call, 'screen.frame')).toHaveLength(1);
+    s.r.stop();
+  });
+
+  it('通話に入ったときに、共有中の人を問い合わせる', async () => {
+    const s = await setup({ display: false });
+    s.call.joined = false;
+    s.changed();
+    s.call.joined = true;
+    s.changed();
+    expect(s.call.emit).toHaveBeenCalledWith('screen.query', {});
+    // 参加中の onChange（しゃべり始めなど）では問い合わせ直さない
+    s.call.emit.mockClear();
+    s.changed();
+    expect(s.call.emit).not.toHaveBeenCalled();
+    s.r.stop();
+  });
+
+  it('送信待ち（bufferedAmount）が多いあいだは、新しいフレームを作らずに待つ', async () => {
+    const s = await setup({ display: true });
+    s.call.bufferedAmount = 10 * 1024 * 1024;
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(emitted(s.call, 'screen.frame')).toHaveLength(0);
+    s.call.bufferedAmount = 0;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(emitted(s.call, 'screen.frame')).toHaveLength(1);
+    s.r.stop();
+  });
+
+  it('映像が空（canvas に描けない）なら送らず、続いたら理由を知らせる', async () => {
+    const s = await setup({ display: true });
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue({
+      drawImage: () => {},
+      getImageData: () => ({ data: new Uint8ClampedArray(64 * 36 * 4) }),
+    } as never);
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(emitted(s.call, 'screen.frame')).toHaveLength(0);
+    expect(s.toast).toHaveBeenCalledOnce();
+    expect(s.toast.mock.calls[0][0]).toContain('相手には映っていません');
+    // 取り込み用の <video> は文書に入れている（WebKitGTK で描けるように）
+    expect(document.querySelector('video.screenshare-capture-video')).not.toBeNull();
+    s.button()!.onClick();
+    expect(document.querySelector('video.screenshare-capture-video')).toBeNull();
+    s.r.stop();
+  });
+
+  it('通話の画面の領域（call.addPanel）に、共有者の画面を出す', async () => {
+    const s = await setup({ display: false });
+    expect(s.call.addPanel).toHaveBeenCalledOnce();
+    expect(s.panel.visible).toBe(false);
+    s.fire('screen.state', 'pa', 'a', { on: true });
+    expect(s.panel.visible).toBe(true);
+    expect(s.panel.el.textContent).toContain('アリス');
+    // 通話の画面が開いている（mounted）ときだけ描く
+    s.panel.mounted = true;
+    s.fire('screen.frame', 'pa', 'a', { f: 0, i: 0, n: 1, d: '/9j/QUJDRA==' });
+    expect(s.panel.el.querySelector('img')!.getAttribute('src')).toBe('data:image/jpeg;base64,/9j/QUJDRA==');
+    // 「大きく見る」で全画面の閲覧表示を開く
+    s.panel.el.querySelector<HTMLButtonElement>('[aria-label="大きく見る"]')!.click();
+    expect(document.querySelector('.screenshare-overlay img')).not.toBeNull();
+    // 共有が止まれば領域も隠れる
+    s.fire('screen.state', 'pa', 'a', { on: false });
+    expect(s.panel.visible).toBe(false);
+    s.r.stop();
+    expect(s.panel.remove).toHaveBeenCalled();
   });
 });

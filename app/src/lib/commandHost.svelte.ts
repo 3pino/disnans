@@ -39,8 +39,8 @@ class CommandHost {
   recording = $state(false);
   private started = false;
 
-  /** パレットとホットキーを使えるか（Android では使わない） */
-  get available(): boolean {
+  /** ホットキーを使えるか（Android では使わない。コマンドパレットは Android でも開ける） */
+  get hotkeysAvailable(): boolean {
     return !isAndroid();
   }
 
@@ -74,7 +74,7 @@ class CommandHost {
   }
 
   private onKeydown(e: KeyboardEvent): void {
-    if (!this.available || this.recording || e.repeat || e.isComposing || e.defaultPrevented) return;
+    if (!this.hotkeysAvailable || this.recording || e.repeat || e.isComposing || e.defaultPrevented) return;
     const cmd = commandForKey(commandList(), prefs.hotkeys, e, { typing: isTyping(e.target) });
     if (!cmd) return;
     e.preventDefault();
@@ -108,8 +108,9 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       icon: Command,
       // Ctrl+P（macOS では Cmd+P）に加えて F2 でも開ける
       defaultHotkey: ['Mod+P', 'F2'],
+      // Android でも開ける（ナビゲーションバーの「コマンドパレットを開く」から）
       run: () => {
-        if (host.available) host.paletteOpen = !host.paletteOpen;
+        host.paletteOpen = !host.paletteOpen;
       },
     },
     {

@@ -4,6 +4,7 @@
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import Button from './ui/Button.svelte';
+  import TextInput from './ui/TextInput.svelte';
   import IconButton from './ui/IconButton.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
@@ -11,12 +12,13 @@
   import SettingRow from './ui/SettingRow.svelte';
   import SortableList from './ui/SortableList.svelte';
   import { commandList, type AppCommand } from '../lib/commands.svelte';
-  import { addNavItem, NAV_REQUIRED_IDS, removeNavItem, reorderNavItem } from '../lib/navBar';
+  import { addNavItem, DEFAULT_NAV_LABELS, NAV_REQUIRED_IDS, removeNavItem, reorderNavItem } from '../lib/navBar';
   import { navBar } from '../lib/stores/navBar.svelte';
 
   // 設定の「ナビゲーションバー」: 下（デスクトップではサイドバーの下）に出すコマンドを、並べ替え・追加・削除で決める。
   // 並べ替えは共通の SortableList（左のつまみをドラッグ。つまみにフォーカスして上下キーでも動かせる）。
   // 保存はこの端末だけ（localStorage）。チャットと設定は外せない（設定に戻れるように）
+  // 表示名は項目ごとに入力欄で決める（空欄で保存するとコマンド名になる。入力欄を空のままにすると既定の名前）
 
   let pickerOpen = $state(false);
   /** 登録されているコマンド（本体・プラグインのもの） */
@@ -41,6 +43,11 @@
     pickerOpen = false;
     navBar.set(addNavItem(navBar.items, id));
   }
+
+  /** 入力欄の見本（未設定なら既定の短い名前、なければコマンド名。設定済みで空欄ならコマンド名） */
+  function labelPlaceholder(c: AppCommand): string {
+    return navBar.labels[c.id] === undefined ? (DEFAULT_NAV_LABELS[c.id] ?? c.name) : c.name;
+  }
 </script>
 
 <Section title="ナビゲーションバー" class="nav-bar-settings">
@@ -52,6 +59,15 @@
     {#snippet row(c)}
       <SettingRow name={c.name} description={c.source ?? '本体'} icon={c.icon ?? Puzzle}>
         {#snippet control()}
+          <TextInput
+            class="nav-bar-settings-label"
+            aria-label="{c.name}の表示名"
+            placeholder={labelPlaceholder(c)}
+            value={navBar.labels[c.id] ?? ''}
+            spellcheck={false}
+            autocomplete="off"
+            onchange={(e) => navBar.setLabel(c.id, e.currentTarget.value)}
+          />
           {#if !NAV_REQUIRED_IDS.includes(c.id)}
             <IconButton label="ナビゲーションバーから外す" class="nav-bar-settings-remove" onclick={() => remove(c.id)}>
               <X size={16} />
@@ -77,7 +93,8 @@
         </Menu>
       {/if}
     </span>
-    <Button icon={RotateCcw} onclick={() => navBar.reset()}>既定に戻す</Button>
+    <Button icon={RotateCcw} onclick={() => navBar.resetLabels()}>表示名を既定に戻す</Button>
+    <Button icon={RotateCcw} onclick={() => navBar.reset()}>項目を既定に戻す</Button>
   </div>
 </Section>
 
@@ -105,6 +122,11 @@
     min-width: 240px;
     max-height: 320px;
     overflow-y: auto;
+  }
+  :global(.nav-bar-settings-list .nav-bar-settings-label) {
+    width: 9em;
+    max-width: 40vw;
+    min-width: 0;
   }
   .nav-bar-settings-source {
     font-size: 12px;

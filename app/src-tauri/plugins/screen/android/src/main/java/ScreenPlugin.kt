@@ -116,7 +116,8 @@ class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
     pendingArgs = null
     val data = result.data
     if (result.resultCode != Activity.RESULT_OK || data == null || args == null) {
-      invoke.reject("画面の共有が許可されませんでした (denied)")
+      // ユーザーがダイアログで「キャンセル」を押した。JS 側は code で見分けて、何も知らせずに終える
+      invoke.reject("画面の共有がキャンセルされました (cancelled)", "cancelled")
       return
     }
     try {

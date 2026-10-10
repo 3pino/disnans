@@ -5,7 +5,7 @@
   import UiNavBar, { type NavBarItem } from './ui/NavBar.svelte';
   import { commandList, findCommand } from '../lib/commands.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
-  import { NAV_CALL_ID, NAV_CHAT_ID, NAV_SETTINGS_ID, NAV_THREADS_ID, visibleNavItems } from '../lib/navBar';
+  import { NAV_BUILTIN_IDS, NAV_CALL_ID, NAV_CHAT_ID, NAV_SETTINGS_ID, NAV_THREADS_ID, navItemLabel, visibleNavItems } from '../lib/navBar';
   import { navBar } from '../lib/stores/navBar.svelte';
   import { unread } from '../lib/stores/unread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -23,16 +23,18 @@
   const available = $derived(new Set(commandList().map((c) => c.id)));
   const ids = $derived(visibleNavItems(navBar.items, available, { withThreads }));
 
-  /** 項目の見た目。本体の3つは専用のアイコンとバッジ、ほかはコマンドのアイコンと名前 */
+  /** 項目の見た目。表示名は設定どおり（lib/navBar.ts の navItemLabel）。本体の3つは専用のアイコンとバッジ、ほかはコマンドのアイコン */
   function toItem(id: string): NavBarItem | null {
+    const c = findCommand(id);
+    if (!c && !NAV_BUILTIN_IDS.includes(id)) return null;
+    const label = navItemLabel(id, c?.name, navBar.labels);
     if (id === NAV_CHAT_ID) {
       // Chat はアプリのロゴ（disnans-logo）
-      return { id, label: 'Chat', icon: 'disnans-logo', badge: unread.main };
+      return { id, label, icon: 'disnans-logo', badge: unread.main };
     }
-    if (id === NAV_THREADS_ID) return { id, label: 'Threads', icon: MessagesSquare, badge: unread.threadTotal };
-    if (id === NAV_SETTINGS_ID) return { id, label: 'Settings', icon: Settings };
-    const c = findCommand(id);
-    return c ? { id, label: c.name, icon: c.icon ?? Puzzle } : null;
+    if (id === NAV_THREADS_ID) return { id, label, icon: MessagesSquare, badge: unread.threadTotal };
+    if (id === NAV_SETTINGS_ID) return { id, label, icon: Settings };
+    return { id, label, icon: c?.icon ?? Puzzle };
   }
 
   const items = $derived(ids.map(toItem).filter((x): x is NavBarItem => x !== null));

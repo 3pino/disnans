@@ -41,7 +41,7 @@
   - メンション
   - 編集（自分のメッセージのみ。編集履歴は残さない）
   - 削除（自分のメッセージのみ。完全に削除し、跡も残さない）
-- メッセージの検索: メインチャットとスレッドの本文を、新しい順に探す。日本語の部分一致も引ける（FTS5 の trigram）。デスクトップは Ctrl+F・コマンドパレット、モバイルはコマンド（ナビゲーションバーにも置ける）から開く。入力が止まると結果を出し、一致の部分を強調する。選ぶとそのメッセージへ移る（スレッドのものはスレッドを開く）。削除したものは出ない
+- メッセージの検索: メインチャットとスレッドの本文を探す。日本語の部分一致も引ける（FTS5 の trigram）。デスクトップは Ctrl+F・コマンドパレット、モバイルはコマンド（ナビゲーションバーにも置ける）で、メインチャットの入力欄が検索モード（虫眼鏡付きの入力）に切り替わり、タイムラインが当たったメッセージだけに絞り込まれる。並びはチャットと同じ（古いものが上、新しいものが下）で、上へスクロールするとさらに古い結果を読む。入力が止まると検索し、ヒット箇所を強調する。×・Esc・戻る操作で通常に戻る（入力中の下書き・添付は残る）。結果を押すと検索を抜けてそのメッセージへ移る（スレッドのものはスレッドを開く）。削除したものは出ない
 - 既読表示（自分が読んだことを他の人に見せる機能）: **なし**（当面）。自分用の未読の管理はある（→ 未読）
 - 下書き: 打ちかけの文章は、メインチャットとスレッドごとに端末へ残す（ユーザーごと。画面やスレッドを切り替えても、アプリを再起動しても残る）。送信したら消す
 - 画面の表示
@@ -463,8 +463,8 @@ export default class DicePlugin extends Plugin {
 | `this.addStatusBarItem()` | 画面上部の共通の枠（通話のバーと同じ。9.11）の常時表示のステータス欄に出す要素を足す。空の間は隠れる（API v3） |
 | `this.holdBackground({ microphone?, title?, text?, actions?, onAction? })` | 画面を切っても動き続ける。Android ではフォアグラウンドサービス（microphone 型）を動かす。ほかの環境では何もしない（API v3）。`actions`（通知のボタン、最大3つ）と `onAction(id)`、戻り値の `update({ title, text, actions })` は API v4 |
 | `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（API v5）。`listOutputs()` は `{ id, label, kind, selected }` の配列（Android: 通話中の `earpiece` `speaker` `wired` `bluetooth`。notifier プラグインの `list_audio_outputs` / `set_audio_output` コマンド＝Kotlin の AudioManager。API 31 以上は `setCommunicationDevice`、それ以前は `setSpeakerphoneOn` / `startBluetoothSco`。デスクトップ: `enumerateDevices` と `setSinkId`）。`attach` は `<audio>` や `AudioContext` を登録し、デスクトップで選んだ出力先に出す。`listInputs()` はデスクトップのマイクの一覧（Android は空）。使えない環境では空配列 / false を返す |
-| `disnans.call.*` | 本体の通話の状態の読み取り・通話のバーのボタン・参加者どうしのデータの送受信（API v8。9.11） |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 8。2 で `addCommand` に `icon`・`slash`・`args`・`suggestArgs`・`run(ctx)` が、3 で `broadcast`・`addStatusBarItem`・`holdBackground` が、4 で `holdBackground` の通知ボタン `actions` / `onAction` と `update()` が、5 で `postMessage` と `disnans.audio` が、6 で `postMessage` の `notify` と `openSettings()` が、7 で通話の拡張 `disnans.call` が、8 でそれが WebRTC のトラックからサーバー経由のデータ送受信 `emit` / `onEvent` に変わった） |
+| `disnans.call.*` | 本体の通話の状態の読み取り・通話のバーのボタン・参加者どうしのデータの送受信（API v8）、通話の画面の領域 `addPanel` と送信待ちの量 `bufferedAmount`（API v10。9.11） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 10。2 で `addCommand` に `icon`・`slash`・`args`・`suggestArgs`・`run(ctx)` が、3 で `broadcast`・`addStatusBarItem`・`holdBackground` が、4 で `holdBackground` の通知ボタン `actions` / `onAction` と `update()` が、5 で `postMessage` と `disnans.audio` が、6 で `postMessage` の `notify` と `openSettings()` が、7 で通話の拡張 `disnans.call` が、8 でそれが WebRTC のトラックからサーバー経由のデータ送受信 `emit` / `onEvent` に変わった。9 で `addMessageAction` / `openTimeline` と画面共有向けのネイティブ（`screenCapture` / `pip` / `ui.onBack` / `ui.setImmersive`）が、10 で通話の画面の領域 `call.addPanel` と送信待ちの量 `call.bufferedAmount` が入り、`screenCapture.start` のキャンセルが `AbortError` になった） |
 
 - 型定義と詳しい説明は `packages/plugin-sdk/`、作り方のガイドは `docs/PLUGINS.md` を正とする
 - 本体の CSS 変数（`--bg`, `--accent` など）と共通クラス（`.btn`, `.input` など）はプラグインからも使える
@@ -573,7 +573,7 @@ theme-sakura/
 - 再接続（WebSocket が切れてつなぎ直した）では、本体が同じ peer ID で `call.join` を送り直す
 - Android では通話中の通知に「ミュート」「スピーカーミュート」「切断」のボタンが出る（`lib/plugins/background.ts` の `actions` / `onAction` / `update`。押すと「…解除」に変わり、本文に人数が出る）
 - 出力先は `lib/plugins/audio.ts`（Android は通話中に `MODE_IN_COMMUNICATION` にして切り替える。参加時は、Bluetooth・イヤホンがあればそれ、なければスピーカー。前に選んだものがあればそれに戻す）
-- 拡張 API（`disnans.call`、API v8。→ `docs/PLUGINS.md`）: 通話中か・参加者・状態変化（`onChange`）、参加者どうしのデータの送受信（`emit(name, payload)` / `onEvent(name, cb)`。サーバー経由。画面共有などは、縮小した画像フレームをこれで送るプラグインとして作る）、通話のバーのボタン（`addButton`）、`join` / `leave`。映像・トラックの API はない（v7 の `addTrack` `onTrack` `remoteTracks` `canVideo` は v8 で廃止）
+- 拡張 API（`disnans.call`、API v8。→ `docs/PLUGINS.md`）: 通話中か・参加者・状態変化（`onChange`）、参加者どうしのデータの送受信（`emit(name, payload)` / `onEvent(name, cb)`。サーバー経由。画面共有などは、縮小した画像フレームをこれで送るプラグインとして作る）、通話のバーのボタン（`addButton`）、通話の画面（`CallView`）の参加者の上に出す領域（`addPanel`。API v10。要素はプラグインが持ち、画面が開いている間だけ文書に入れる）、送信待ちのバイト数（`bufferedAmount`。API v10。映像を送るプラグインが、溜まっているあいだ次のフレームを待って遅延を抑える）、`join` / `leave`。映像・トラックの API はない（v7 の `addTrack` `onTrack` `remoteTracks` `canVideo` は v8 で廃止）
 - マイクはアプリ版（Tauri）でのみ使える（`getUserMedia` に安全なコンテキストが要るため、`http://` で開いたブラウザー版では使えない）
 - 通話がプラグイン（`voice`）だったころの設定は、新しい保存先が空なら引き継ぐ
 

@@ -18,6 +18,11 @@ pub type ConnId = u64;
 /// （クライアントは再接続して履歴を取り直す）。
 const QUEUE_SIZE: usize = 1024;
 
+/// 間引いてよいもの（通話の音声・映像）を、送信待ちがこれより多い接続には送らずに捨てる。
+/// 映像は 1 回 40KB ほどあるので、たまった分だけ届くのが遅れる。遅れて届くより捨てたほうがよいので、
+/// キューの半分（512 件）まで待たずに、少しでも詰まったら捨てる。
+const LOSSY_BACKLOG: usize = 32;
+
 struct Conn {
     user_id: String,
     /// 接続元の IP アドレス。Tailscale では端末ごとに決まるので、端末の識別に使う。
@@ -96,7 +101,7 @@ impl Hub {
         self.deliver(event, |_, c| c.user_id == user_id && c.ip == ip);
     }
 
-    /// 指定した接続に送るが、送信待ちが半分以上たまっている接続には送らずに捨てる（切断しない）。
+    /// 指定した接続に送るが、送信待ちが [`LOSSY_BACKLOG`] 件より多い接続には送らずに捨てる（切断しない）。
     /// 通話の音声のように、遅れて届くより捨てたほうがよいもの用。
     pub fn send_lossy_to_conns(&self, conns: &[ConnId], event: &ServerEvent) {
         self.deliver_with(event, |id, _| conns.contains(&id), true);
@@ -116,7 +121,7 @@ impl Hub {
         let mut conns = self.lock();
         let mut dead = Vec::new();
         for (&id, conn) in conns.iter().filter(|(id, c)| filter(**id, c)) {
-            if lossy && conn.tx.capacity() < QUEUE_SIZE / 2 {
+            if lossy && QUEUE_SIZE - conn.tx.capacity() > LOSSY_BACKLOG {
                 continue;
             }
             if let Err(err) = conn.tx.try_send(text.clone()) {
@@ -140,4 +145,37 @@ impl Hub {
 fn encode(event: &ServerEvent) -> Utf8Bytes {
     // ServerEvent は必ず JSON にできる
     serde_json::to_string(event).unwrap_or_default().into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    #[test]
+    fn lossy_drops_when_backlog_grows_but_keeps_others() {
+        let hub = Hub::new();
+        let ev = ServerEvent::CallKicked { by: "u".into() };
+        let (id, mut rx) = hub.register("u1", IpAddr::V4(Ipv4Addr::LOCALHOST), &ev);
+        // hello の 1 件がたまっている。送信待ちが LOSSY_BACKLOG 件を超えるまでは入る
+        for _ in 0..100 {
+            hub.send_lossy_to_conns(&[id], &ev);
+        }
+        let mut n = 0;
+        while rx.try_recv().is_ok() {
+            n += 1;
+        }
+        assert_eq!(n, LOSSY_BACKLOG + 1);
+        // 間引かないものは、詰まっていても入る
+        for _ in 0..100 {
+            hub.send_lossy_to_conns(&[id], &ev);
+        }
+        hub.send_to_conn(id, &ev);
+        let mut n = 0;
+        while rx.try_recv().is_ok() {
+            n += 1;
+        }
+        // 間引いてよいもの LOSSY_BACKLOG + 1 件と、間引かないもの 1 件
+        assert_eq!(n, LOSSY_BACKLOG + 2);
+    }
 }

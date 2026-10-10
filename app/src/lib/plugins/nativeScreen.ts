@@ -43,6 +43,19 @@ function listen<T>(event: string, cb: (payload: T) => void): () => void {
 
 // ---- 画面のキャプチャ ----
 
+/**
+ * ネイティブのプラグインのエラー（`{ message, code }` のオブジェクトで届く）を Error にする。
+ * ユーザーが許可のダイアログで断った（code が `cancelled`）ときは name を `AbortError` にする（API v10）
+ */
+export function toCaptureError(e: unknown): Error {
+  if (e instanceof Error) return e;
+  const o = typeof e === 'object' && e !== null ? (e as { message?: unknown; code?: unknown }) : null;
+  const message = typeof o?.message === 'string' ? o.message : typeof e === 'string' ? e : '画面を取得できませんでした';
+  const err = new Error(message);
+  if (o?.code === 'cancelled' || /\((?:denied|cancelled)\)/.test(message)) err.name = 'AbortError';
+  return err;
+}
+
 type CaptureFramePayload = { data: string; mime: string; width: number; height: number };
 type CaptureEndPayload = { reason?: string };
 
@@ -84,7 +97,7 @@ export const screenCaptureApi: Disnans.ScreenCapture = {
       });
     } catch (e) {
       cleanup();
-      throw e;
+      throw toCaptureError(e);
     }
   },
   async update(patch) {

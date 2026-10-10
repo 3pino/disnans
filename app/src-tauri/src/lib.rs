@@ -99,7 +99,18 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[allow(unused_mut)]
-    let mut builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    let mut builder = tauri::Builder::default();
+
+    // 単一インスタンス（デスクトップ）: 2つ目の起動は新しく立ち上げず、既存のウィンドウを出して前面に持ってくる。
+    // ほかのプラグインより先に登録する（先に登録しないと、2つ目のプロセスが立ち上がってしまうため）
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }));
+    }
+
+    builder = builder.plugin(tauri_plugin_opener::init());
 
     // アップデート: デスクトップは公式の updater、Android は自前のプラグイン
     // 通知: デスクトップは公式の notification、Android は常駐サービスを持つ自前のプラグイン

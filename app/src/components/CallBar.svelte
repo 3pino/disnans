@@ -6,7 +6,8 @@
   import Monitor from '@lucide/svelte/icons/monitor';
   import Mic from '@lucide/svelte/icons/mic';
   import MicOff from '@lucide/svelte/icons/mic-off';
-  import Volume2 from '@lucide/svelte/icons/volume-2';
+  import HeadphonesIcon from '@lucide/svelte/icons/headphones';
+  import HeadphoneOff from '@lucide/svelte/icons/headphone-off';
   import VolumeX from '@lucide/svelte/icons/volume-x';
   import Settings from '@lucide/svelte/icons/settings';
   import Phone from '@lucide/svelte/icons/phone';
@@ -24,7 +25,7 @@
   // 退出ボタンはバーの右端。参加者の長押し（PC は右クリック）で、その人を通話から外せる
 
   const deviceIcons = { smartphone: Smartphone, tablet: Tablet, laptop: Laptop, monitor: Monitor };
-  const badgeIcons: Record<StatusBadge, typeof Mic> = { muted: MicOff, deafened: VolumeX, 'local-muted': VolumeX };
+  const badgeIcons: Record<StatusBadge, typeof Mic> = { muted: MicOff, deafened: HeadphoneOff, 'local-muted': VolumeX };
   const badgeLabels: Record<StatusBadge, string> = { muted: 'ミュート中', deafened: 'スピーカーミュート中', 'local-muted': 'この端末では消音中' };
 
   const people = $derived(call.participants);
@@ -93,21 +94,18 @@
           title={b.label}
           icon={b.icon}
           disabled={b.disabled}
-          onclick={() => b.onClick()}
+          onclick={(e) => {
+            // 押したらフォーカスを外す（許可のダイアログから戻ったあとも明るいままにならないように）
+            e.currentTarget.blur();
+            b.onClick();
+          }}
         />
       {/each}
-      <IconButton
-        class={call.muted ? 'call-active' : ''}
-        label={call.muted ? 'ミュートを解除' : 'ミュート'}
-        title={call.muted ? 'ミュートを解除' : 'ミュート'}
-        icon={call.muted ? MicOff : Mic}
-        onclick={() => call.toggleMute()}
-      />
       <IconButton
         class={call.deafened ? 'call-active' : ''}
         label={call.deafened ? 'スピーカーミュートを解除' : 'スピーカーミュート'}
         title={call.deafened ? 'スピーカーミュートを解除' : 'スピーカーミュート（相手の声を全部消す）'}
-        icon={call.deafened ? VolumeX : Volume2}
+        icon={call.deafened ? HeadphoneOff : HeadphonesIcon}
         onclick={() => call.toggleDeafen()}
       />
       <IconButton label="通話の設定" title="通話の設定" icon={Settings} onclick={() => ui.openSettingsSub('call')} />
@@ -154,7 +152,7 @@
     flex: 1 1 0;
     gap: 10px;
     min-width: 0;
-    padding: 4px 6px 6px 2px;
+    padding: 4px 6px 6px 8px;
     overflow-x: auto;
     scrollbar-width: none;
   }

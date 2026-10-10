@@ -28,3 +28,17 @@ describe('ui.backLayers', () => {
     expect(ui.backLayers()).toHaveLength(0);
   });
 });
+
+describe('ui.openSearch / closeSearch', () => {
+  it('検索を始めるとチャットに戻り、閉じると戻る操作の層も消える', () => {
+    ui.tab = 'settings';
+    const tick = ui.searchFocusTick;
+    ui.openSearch();
+    expect(ui.tab).toBe('chat');
+    expect(ui.searchOpen).toBe(true);
+    expect(ui.searchFocusTick).toBe(tick + 1);
+    ui.closeSearch();
+    expect(ui.searchOpen).toBe(false);
+    expect(ui.backLayers()).toHaveLength(0);
+  });
+});

@@ -202,9 +202,12 @@ a {
   color: var(--text-muted);
   flex: none;
 }
-.icon-btn:hover {
-  background: var(--hover);
-  color: var(--text);
+/* タッチ端末では、押したあとも :hover が残って明るいままになるので、ホバーできる環境だけにする */
+@media (hover: hover) {
+  .icon-btn:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
 }
 .icon-btn:disabled {
   opacity: 0.45;
@@ -771,4 +774,12 @@ a {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* メッセージ検索で、本文の中のヒット箇所を強調する（SearchResults が CSS.highlights に登録する） */
+::highlight(search-hit) {
+  background-color: var(--mention-soft);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--mention);
 }

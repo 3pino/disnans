@@ -48,6 +48,8 @@ export type CallDeps = {
   /** 通話の設定画面を開く */
   openSettings(): void;
   now(): number;
+  /** WebSocket でまだ送り出せていないバイト数（無ければ 0 とみなす） */
+  buffered?(): number;
 };
 
 /** 画面・プラグインに見せる参加者1人分 */
@@ -73,6 +75,11 @@ const RESERVED_EVENTS = new Set([EV_AUDIO]);
 /** 通話のバーに足すボタン */
 export type BarButtonDef = { icon: IconRef; label: string; onClick: () => void; active?: boolean; disabled?: boolean };
 export type BarButton = BarButtonDef & { id: number };
+
+/** 通話の画面（CallView）に、プラグインが足す領域 */
+export type CallPanelDef = { label: string; order?: number };
+export type CallPanelEntry = { id: number; label: string; order: number; el: HTMLElement; visible: boolean };
+type PanelState = { mounted: boolean; listeners: Set<(mounted: boolean) => void> };
 
 type PeerView = { speaking: boolean; localMuted: boolean };
 
@@ -114,6 +121,8 @@ export class CallStore {
   /** 選べる出力先 */
   outputs = $state.raw<Disnans.AudioOutput[]>([]);
   barButtons = $state.raw<BarButton[]>([]);
+  /** 通話の画面に出す、プラグインの領域（order の順） */
+  panels = $state.raw<CallPanelEntry[]>([]);
   private peerView = $state.raw<Record<string, PeerView>>({});
   private selfSpeaking = $state(false);
 
@@ -137,6 +146,8 @@ export class CallStore {
   private background: Disnans.BackgroundHandle | null = null;
   private notifyKey = '';
   private buttonSeq = 0;
+  private panelSeq = 0;
+  private panelState = new Map<number, PanelState>();
   private eventListeners = new Map<string, Set<(e: CallDataEvent) => void>>();
   private changeListeners = new Set<() => void>();
   private changeSig = '';
@@ -693,6 +704,63 @@ export class CallStore {
         this.barButtons = this.barButtons.filter((b) => b.id !== id);
       },
     };
+  }
+
+  /** WebSocket でまだ送り出せていないバイト数。映像を送るプラグインは、多いあいだ次のフレームを待つ */
+  get bufferedAmount(): number {
+    try {
+      return this.deps.buffered?.() ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * 通話の画面（全画面の通話タブ）に、プラグインの領域を足す。el はプラグインが中身を書く要素で、
+   * 通話の画面が開いている間だけ文書に入る（閉じても中身は保たれる）。
+   */
+  addPanel(def: CallPanelDef): Disnans.CallPanel {
+    const id = ++this.panelSeq;
+    const el = document.createElement('div');
+    el.className = 'call-plugin-panel';
+    const state: PanelState = { mounted: false, listeners: new Set() };
+    this.panelState.set(id, state);
+    const entry: CallPanelEntry = { id, label: String(def.label ?? ''), order: Number(def.order ?? 0) || 0, el, visible: false };
+    this.panels = [...this.panels, entry].sort((a, b) => a.order - b.order || a.id - b.id);
+    const set = (patch: Partial<CallPanelEntry>) => {
+      this.panels = this.panels.map((p) => (p.id === id ? { ...p, ...patch } : p));
+    };
+    return {
+      el,
+      get mounted() {
+        return state.mounted;
+      },
+      get visible() {
+        return entry.visible;
+      },
+      setVisible: (v) => {
+        entry.visible = !!v;
+        set({ visible: entry.visible });
+      },
+      onMount: (cb) => {
+        state.listeners.add(cb);
+        return () => void state.listeners.delete(cb);
+      },
+      remove: () => {
+        this.panels = this.panels.filter((p) => p.id !== id);
+        this.panelState.delete(id);
+        state.listeners.clear();
+        el.remove();
+      },
+    };
+  }
+
+  /** 通話の画面が、領域の要素を文書に入れた・外した（CallView から呼ぶ） */
+  panelMounted(id: number, mounted: boolean): void {
+    const state = this.panelState.get(id);
+    if (!state || state.mounted === mounted) return;
+    state.mounted = mounted;
+    for (const cb of [...state.listeners]) this.safe(() => cb(mounted));
   }
 
   private safe(fn: () => void): void {

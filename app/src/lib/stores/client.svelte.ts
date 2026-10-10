@@ -68,6 +68,11 @@ class Client {
     return this.socket.send(ev);
   }
 
+  /** WebSocket でまだ送り出せていないバイト数（通話の映像の間引きに使う） */
+  get sendBuffered(): number {
+    return this.socket?.bufferedAmount ?? 0;
+  }
+
   timeline(threadId: string | null): Timeline {
     const key = threadId ?? MAIN;
     let t = this.timelines.get(key);

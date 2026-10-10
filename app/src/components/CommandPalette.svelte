@@ -65,7 +65,7 @@
             <span class="command-palette-icon">{#if c.icon}<Icon icon={c.icon} size={18} />{/if}</span>
             <span class="suggest-list-item-title command-palette-name">{c.name}</span>
             {#if c.source}<span class="suggest-list-item-detail command-palette-source">{c.source}</span>{/if}
-            {#if hotkeys.length > 0}
+            {#if hotkeys.length > 0 && commandHost.hotkeysAvailable}
               <span class="command-palette-hotkeys">
                 {#each hotkeys as hk (hk)}<kbd class="kbd command-palette-hotkey">{formatHotkey(hk)}</kbd>{/each}
               </span>

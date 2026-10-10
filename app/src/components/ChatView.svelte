@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte';
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import MessageList from './MessageList.svelte';
+  import SearchResults from './SearchResults.svelte';
   import Composer from './Composer.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -99,7 +100,12 @@
     if (files.length) composer?.addFiles(files);
   }}
 >
-  <MessageList {timeline} inThread={threadId !== null} {header} {empty} {active} />
+  <!-- 検索中は、メインのタイムラインを検索に当たったメッセージだけに絞り込む（入力欄は Composer が検索モードになる） -->
+  {#if threadId === null && ui.searchOpen}
+    <SearchResults />
+  {:else}
+    <MessageList {timeline} inThread={threadId !== null} {header} {empty} {active} />
+  {/if}
   <Composer bind:this={composer} {threadId} {placeholder} />
 
   {#if dragDepth > 0 || nativeOver}

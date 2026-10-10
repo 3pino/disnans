@@ -6,9 +6,10 @@
   import Monitor from '@lucide/svelte/icons/monitor';
   import Mic from '@lucide/svelte/icons/mic';
   import MicOff from '@lucide/svelte/icons/mic-off';
-  import Volume2 from '@lucide/svelte/icons/volume-2';
+  import HeadphonesIcon from '@lucide/svelte/icons/headphones';
+  import HeadphoneOff from '@lucide/svelte/icons/headphone-off';
+  import Speaker from '@lucide/svelte/icons/speaker';
   import VolumeX from '@lucide/svelte/icons/volume-x';
-  import Headphones from '@lucide/svelte/icons/headphones';
   import Settings from '@lucide/svelte/icons/settings';
   import Phone from '@lucide/svelte/icons/phone';
   import PhoneOff from '@lucide/svelte/icons/phone-off';
@@ -25,7 +26,7 @@
   // 参加者を押すとミュート（自分）/ 自分の側だけ消音（相手）、長押し（PC は右クリック）で通話から外す。CallBar と同じ操作
 
   const deviceIcons = { smartphone: Smartphone, tablet: Tablet, laptop: Laptop, monitor: Monitor };
-  const badgeIcons: Record<StatusBadge, typeof Mic> = { muted: MicOff, deafened: VolumeX, 'local-muted': VolumeX };
+  const badgeIcons: Record<StatusBadge, typeof Mic> = { muted: MicOff, deafened: HeadphoneOff, 'local-muted': VolumeX };
   const badgeLabels: Record<StatusBadge, string> = { muted: 'ミュート中', deafened: 'スピーカーミュート中', 'local-muted': 'この端末では消音中' };
 
   const people = $derived(call.participants);
@@ -47,6 +48,35 @@
   }
 
   const outputLabel = $derived(call.outputs.find((o) => o.selected)?.label ?? '出力先');
+
+  // プラグインの領域（call.addPanel。API v10）。要素はプラグインが持ち、この画面が開いている間だけここに入れる
+  const panels = $derived(call.joined ? call.panels.filter((p) => p.visible) : []);
+
+  function mountPanel(node: HTMLElement, p: { id: number; el: HTMLElement }) {
+    let cur = p;
+    node.append(cur.el);
+    call.panelMounted(cur.id, true);
+    return {
+      update(next: { id: number; el: HTMLElement }) {
+        if (next.id === cur.id && next.el === cur.el) return;
+        call.panelMounted(cur.id, false);
+        cur.el.remove();
+        cur = next;
+        node.append(cur.el);
+        call.panelMounted(cur.id, true);
+      },
+      destroy() {
+        cur.el.remove();
+        call.panelMounted(cur.id, false);
+      },
+    };
+  }
+
+  // プラグインのボタンは、押したらフォーカスを外す（許可のダイアログから戻ったあとも明るいままにならないように）
+  function pressPluginButton(e: MouseEvent, run: () => void) {
+    (e.currentTarget as HTMLElement | null)?.blur();
+    run();
+  }
 </script>
 
 <section class="call-view" aria-label="通話">
@@ -57,6 +87,9 @@
   </header>
 
   <div class="call-view-body">
+    {#each panels as p (p.id)}
+      <section class="call-view-panel" aria-label={p.label || undefined} use:mountPanel={{ id: p.id, el: p.el }}></section>
+    {/each}
     {#if people.length === 0}
       <p class="muted call-view-empty">いま通話にいる人はいません</p>
     {:else}
@@ -101,25 +134,17 @@
   <div class="call-view-controls" role="group" aria-label="通話の操作">
     {#if call.joined}
       {#each call.barButtons as b (b.id)}
-        <IconButton class={b.active ? 'call-active' : ''} label={b.label} title={b.label} icon={b.icon} disabled={b.disabled} onclick={() => b.onClick()} />
+        <IconButton class={b.active ? 'call-active' : ''} label={b.label} title={b.label} icon={b.icon} disabled={b.disabled} onclick={(e) => pressPluginButton(e, b.onClick)} />
       {/each}
-      <IconButton
-        class={call.muted ? 'call-active' : ''}
-        label={call.muted ? 'ミュートを解除' : 'ミュート'}
-        title={call.muted ? 'ミュートを解除' : 'ミュート'}
-        icon={call.muted ? MicOff : Mic}
-        iconSize={22}
-        onclick={() => call.toggleMute()}
-      />
       <IconButton
         class={call.deafened ? 'call-active' : ''}
         label={call.deafened ? 'スピーカーミュートを解除' : 'スピーカーミュート'}
         title={call.deafened ? 'スピーカーミュートを解除' : 'スピーカーミュート（相手の声を全部消す）'}
-        icon={call.deafened ? VolumeX : Volume2}
+        icon={call.deafened ? HeadphoneOff : HeadphonesIcon}
         iconSize={22}
         onclick={() => call.toggleDeafen()}
       />
-      <IconButton label="音の出力先を切り替える" title={`出力先: ${outputLabel}（押すと次へ）`} icon={Headphones} iconSize={22} onclick={() => call.cycleOutput()} />
+      <IconButton label="音の出力先を切り替える" title={`出力先: ${outputLabel}（押すと次へ）`} icon={Speaker} iconSize={22} onclick={() => call.cycleOutput()} />
       <IconButton label="通話の設定" title="通話の設定" icon={Settings} iconSize={22} onclick={() => ui.openSettingsSub('call')} />
       <IconButton class="call-leave" label="通話から抜ける" title="通話から抜ける" icon={PhoneOff} iconSize={22} onclick={() => call.leave()} />
     {:else}
@@ -160,6 +185,9 @@
     min-height: 0;
     overflow-y: auto;
     padding: 16px;
+  }
+  .call-view-panel {
+    margin: 0 0 16px;
   }
   .call-view-empty {
     margin: 40px 0;

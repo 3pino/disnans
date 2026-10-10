@@ -5,8 +5,7 @@
   import ConfirmDialog from './components/ConfirmDialog.svelte';
   import Toasts from './components/Toasts.svelte';
   import Lightbox from './components/Lightbox.svelte';
-  import MessageSearch from './components/MessageSearch.svelte';
-  import { needsServerSetup, isAndroid, isTauri } from './lib/config';
+    import { needsServerSetup, isAndroid, isTauri } from './lib/config';
   import { isMac } from './lib/plugins/hotkey';
   import { startViewportSync, startZoomGuard } from './lib/viewport';
   import { client } from './lib/stores/client.svelte';
@@ -118,8 +117,5 @@
   <Shell />
   <ConfirmDialog />
   <Lightbox />
-  {#if ui.searchOpen}
-    <MessageSearch onclose={() => (ui.searchOpen = false)} />
-  {/if}
 {/if}
 <Toasts />

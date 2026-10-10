@@ -54,8 +54,10 @@ class Ui {
   /** 設定で開いている「操作」のサブページ。設定のタブでだけ使う */
   settingsSub = $state<SettingsSubpage | null>(null);
   lightbox = $state<{ src: string; alt: string; downloadUrl: string } | null>(null);
-  /** メッセージ検索の画面を開いているか（コマンドから開く。モバイルでは全画面の代わりに出す） */
+  /** メッセージ検索中か（コマンドで入る。メインチャットの入力欄が検索モードになり、タイムラインが結果に絞り込まれる） */
   searchOpen = $state(false);
+  /** 検索中にもう一度コマンドを実行したとき、検索欄にフォーカスを戻すための合図 */
+  searchFocusTick = $state(0);
   toasts = $state<Toast[]>([]);
   confirmReq = $state<ConfirmRequest | null>(null);
   /** インライン編集中のメッセージ */
@@ -114,9 +116,21 @@ class Ui {
     this.panel = { kind: 'plugin', plugin, view, sessionId };
   }
 
-  /** メッセージ検索を開く */
+  /** メッセージ検索を始める（メインチャットを見せる。モバイルでパネルが開いていれば閉じる） */
   openSearch(): void {
+    if (this.tab !== 'chat') {
+      this.tab = 'chat';
+      this.pluginSettings = null;
+      this.settingsSub = null;
+    }
+    if (this.isMobile) this.panel = null;
     this.searchOpen = true;
+    this.searchFocusTick++;
+  }
+
+  /** 検索を終えて通常の入力欄・タイムラインに戻る */
+  closeSearch(): void {
+    this.searchOpen = false;
   }
 
   /** 設定を開く。設定を開いているときにもう一度押したら、プラグインの設定画面から一覧に戻る */
@@ -173,7 +187,7 @@ class Ui {
     if (this.tab === 'settings' && this.settingsSub) layers.push(() => this.closeSettingsSub());
     if (this.panel) layers.push(() => this.closePanel());
     for (const b of this.pluginBack) layers.push(b.run);
-    if (this.searchOpen) layers.push(() => (this.searchOpen = false));
+    if (this.searchOpen) layers.push(() => this.closeSearch());
     // 画像の全画面は一番上（戻る操作で、まず全画面を解除する）
     if (this.lightbox) layers.push(() => (this.lightbox = null));
     return layers;

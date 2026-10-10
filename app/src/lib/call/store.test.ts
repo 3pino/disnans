@@ -439,6 +439,30 @@ describe('拡張 API', () => {
     expect(a.store.barButtons).toHaveLength(0);
   });
 
+  it('通話の画面の領域（addPanel）を足して、出し入れ・外せる。文書に入った・外れたことが届く', () => {
+    const a = makeClient('u1');
+    const api = createCallApi(a.store, (id) => ({ id, login_name: id, display_name: id, avatar_url: null }));
+    const p2 = api.addPanel({ label: '後', order: 5 });
+    const p1 = api.addPanel({ label: '先' });
+    expect(a.store.panels.map((p) => p.label)).toEqual(['先', '後']);
+    expect(a.store.panels.every((p) => !p.visible)).toBe(true);
+    p1.setVisible(true);
+    expect(p1.visible).toBe(true);
+    expect(a.store.panels[0]).toMatchObject({ label: '先', visible: true, el: p1.el });
+    const seen = vi.fn();
+    p1.onMount(seen);
+    a.store.panelMounted(a.store.panels[0].id, true);
+    expect(p1.mounted).toBe(true);
+    expect(seen).toHaveBeenLastCalledWith(true);
+    a.store.panelMounted(a.store.panels[0].id, false);
+    expect(seen).toHaveBeenLastCalledWith(false);
+    p1.remove();
+    p2.remove();
+    expect(a.store.panels).toHaveLength(0);
+    // 送信待ちは、渡されていなければ 0
+    expect(api.bufferedAmount).toBe(0);
+  });
+
   it('状態の変化を onChange で受け取れて、外すと来なくなる', async () => {
     const a = makeClient('u1');
     const cb = vi.fn();

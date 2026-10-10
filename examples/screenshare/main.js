@@ -2,18 +2,23 @@
 /// <reference path="../../packages/plugin-sdk/index.d.ts" />
 
 /*
- * 画面共有: 通話の拡張の実例（API v9 の disnans.call / screenCapture / pip / ui.onBack / ui.setImmersive）。
+ * 画面共有: 通話の拡張の実例（API v10 の disnans.call / screenCapture / pip / ui.onBack / ui.setImmersive）。
  *
  * できること:
  * 1. 通話のバーの [画面を共有] を押すと画面を選び、縮小した画像（JPEG / WebP / PNG）を一定間隔で call.emit（サーバー中継）に流す。
  *    もう一度押すと止まる。OS 側で止めた・通話から抜けたときも止まる。
  *    取得は、getDisplayMedia があればそれ（デスクトップ）、無ければ本体のネイティブ（disnans.screenCapture。Android の MediaProjection）
  * 2. 誰かが共有を始めると、ステータス欄に [○○の画面を見る] が出る。押すと全画面の表示が開き、共有者が複数なら上のタブで切り替えられる。
- *    ピンチ・ホイールで拡大縮小、ドラッグでパン、ダブルタップ（ダブルクリック）で元に戻す。
+ *    通話の画面（「通話を開く」）にも、参加者の上に配信が出る（call.addPanel）。
+ *    既定は画面全体が収まる表示。ピンチ・Ctrl+ホイール（トラックパッドのピンチ）でカーソルの位置を中心に拡大縮小、
+ *    拡大中はドラッグ・ホイールで移動、ダブルタップ（ダブルクリック）で拡大／元に戻す。
+ *    あとから通話に入った人は、入ったときに問い合わせ（screen.query）を送り、共有中の人がすぐに知らせ直す。
  *    [全画面]（Android は没入モード、ほかは Fullscreen API）、[PiP]（Android は Activity の PiP、デスクトップは canvas の captureStream を <video> の PiP に）、
  *    [閉じる]（Esc・戻るジェスチャーでも閉じる）。共有者が止めた・通話から抜けたら自動で消える
  * 3. 設定で、FPS（5 / 20）・画質（解像度と品質）・色数（フルカラー / 256 色 / グレースケール）を選べる。
- *    今の設定で、エンコード後の画像と 1 フレームのおおよそのサイズ・帯域をプレビューできる
+ *    今の設定で、エンコード後の画像と 1 フレームのおおよそのサイズ・帯域をプレビューできる。
+ *    プレビューの元は自分の実際の画面（共有中ならその画面、そうでなければ設定を開いたときに 1 回だけ取り込む。
+ *    デスクトップは画面の選択、Android は許可のダイアログが出る）
  *
  * 映像も WebRTC ではなくサーバー経由（友達は別ネットワークで、P2P がつながらないため）。
  * サーバーは送り手ごとに「容量 4000・毎秒 3000 回復・1 回の重さ = 1 + payload の KB」で流量を制限し、超えた分を黙って捨てる
@@ -22,12 +27,14 @@
  * 色数を減らす設定では、減色したあとの画像を JPEG / WebP / PNG の候補のうち小さいもので送る（JPEG は減色の効果が薄いため）。
  *
  * 使っている API（→ docs/PLUGINS.md）:
- * - call.addButton / update / onChange / onEvent / emit / participants / joined
+ * - call.addButton / addPanel / update / onChange / onEvent / emit / participants / joined / bufferedAmount
  * - addStatusBarItem ............ 見る入口
  * - addSettingTab / loadData / saveData ... FPS・画質・色数の設定とプレビュー
  * - registerInterval / registerDomEvent / register ... 見張りのタイマー、Esc キー、後片付け
  * - ui.setting / segmented / button / icon / toast / onBack / setImmersive
  * - screenCapture / pip ......... Android のネイティブ（画面の取得と PiP）
+ *
+ * 遅延を抑えるため、送信待ち（call.bufferedAmount）が多いあいだは次のフレームを作らずに待つ（古いフレームを溜めない）。
  *
  * 純粋な関数（分割・組み立て・調整・拡大縮小の計算）は、テストのためにここから export している（main.js の default だけがプラグイン）。
  */
@@ -39,6 +46,8 @@ const { Plugin, ui } = disnans;
 /** call.emit のイベント名（`audio` は本体が使う） */
 const EVENT_FRAME = 'screen.frame';
 const EVENT_STATE = 'screen.state';
+/** 通話に入った人が「いま共有している人はいるか」と聞く。共有中の人は state とフレームを送り直す */
+const EVENT_QUERY = 'screen.query';
 
 /** 1 回の payload に入れる base64 の文字数。上限の 64 KB に JSON の枠の余裕を見て、40 KB にしておく */
 export const CHUNK_CHARS = 40 * 1024;
@@ -60,11 +69,23 @@ export const MAX_DELAY_MS = 5000;
 /** 動画がまだ始まっていない（videoWidth が 0）ときのやり直しの間隔（ミリ秒） */
 const VIDEO_WAIT_MS = 100;
 
-/** 変化の判定に使う縮小画像の大きさ */
-const DIFF_W = 32;
-const DIFF_H = 18;
+/** 変化の判定に使う縮小画像の大きさ。細かい変化（文字の入力・カーソル）も拾えるよう、小さすぎない大きさにしている */
+const DIFF_W = 64;
+const DIFF_H = 36;
 /** 縮小画像の 1 画素・1 色あたりの差の平均がこれ以下なら「変わっていない」（0〜255） */
 export const DIFF_THRESHOLD = 1.5;
+/** 縮小画像の 1 画素でも、RGB の平均の差がこれを超えたら「変わった」（平均では埋もれる小さな変化のため） */
+export const PEAK_THRESHOLD = 24;
+
+/**
+ * 送信待ち（call.bufferedAmount）がこれより多いあいだは、次のフレームを作らずに待つ（バイト）。
+ * 回線より速く送ると WebSocket の中にフレームが溜まり、そのぶん遅れて届くため
+ */
+export const BACKLOG_LIMIT = 192 * 1024;
+/** 送信待ちが減るのを待つ間隔（ミリ秒） */
+const BACKLOG_RETRY_MS = 30;
+/** 共有を始めてから、これだけたっても画面の映像が取れなければ知らせる（ミリ秒） */
+const VIDEO_STALL_MS = 5000;
 
 /** 画質を下げるときの下限 */
 const MIN_QUALITY = 0.35;
@@ -117,6 +138,12 @@ export const MIN_ZOOM = 1;
 export const MAX_ZOOM = 8;
 /** ダブルタップで拡大する倍率 */
 const DOUBLE_TAP_ZOOM = 2.5;
+/** Ctrl+ホイール（トラックパッドのピンチ）の拡大の速さ（1 ピクセルあたり）と、1 回の上限 */
+const PINCH_ZOOM_RATE = 0.01;
+const PINCH_MAX_DELTA = 30;
+/** 修飾キーなしのホイールで拡大するときの速さと、1 回の上限 */
+const WHEEL_ZOOM_RATE = 0.002;
+const WHEEL_MAX_DELTA = 120;
 
 // ---- 純粋な関数（テストする） ----
 
@@ -297,11 +324,59 @@ export function frameDiff(a, b) {
 }
 
 /**
- * フレームを送るか。画面が変わったときと、強制のとき、しばらく送っていないとき（あとから来た人のため）だけ送る。
- * @param {{ diff: number; sinceSentMs: number; force: boolean }} o
+ * 2 枚の縮小画像（RGBA）で、いちばん変わった画素の差（RGB の平均。0〜255）。小さな変化（文字の入力など）を拾う。
+ * @param {ArrayLike<number> | null} a
+ * @param {ArrayLike<number> | null} b
  */
-export function shouldSend({ diff, sinceSentMs, force }) {
-  return force || diff > DIFF_THRESHOLD || sinceSentMs >= KEEPALIVE_FRAME_MS;
+export function framePeakDiff(a, b) {
+  if (!a || !b || a.length !== b.length) return Infinity;
+  let peak = 0;
+  for (let i = 0; i + 3 < a.length; i += 4) {
+    const d = (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3;
+    if (d > peak) peak = d;
+  }
+  return peak;
+}
+
+/**
+ * 取り込んだ画像が空（全部透明）か。映像がまだ来ていない・canvas に描けない環境（一部の WebKitGTK など）で起きる。
+ * @param {ArrayLike<number>} data RGBA
+ */
+export function isBlankFrame(data) {
+  for (let i = 3; i < data.length; i += 4) if (data[i] !== 0) return false;
+  return true;
+}
+
+/**
+ * フレームを送るか。画面が変わったときと、強制のとき、しばらく送っていないとき（あとから来た人のため）だけ送る。
+ * diff は平均の差（frameDiff）、peak はいちばん変わった画素の差（framePeakDiff）。
+ * @param {{ diff: number; peak?: number; sinceSentMs: number; force: boolean }} o
+ */
+export function shouldSend({ diff, peak = 0, sinceSentMs, force }) {
+  return force || diff > DIFF_THRESHOLD || peak > PEAK_THRESHOLD || sinceSentMs >= KEEPALIVE_FRAME_MS;
+}
+
+/**
+ * 許可のダイアログ・画面の選択でキャンセルされたときの例外か（知らせずに終える）。
+ * getDisplayMedia は NotAllowedError（WebKit は AbortError のことも）、本体のネイティブ（API v10）は AbortError。
+ * @param {unknown} e
+ */
+export function isCancelError(e) {
+  const name = typeof e === 'object' && e !== null && 'name' in e ? String(/** @type {{ name: unknown }} */ (e).name) : '';
+  return name === 'NotAllowedError' || name === 'AbortError';
+}
+
+/**
+ * 例外を短い文字にする（トースト・ログ用）。
+ * @param {unknown} e
+ */
+export function describeError(e) {
+  if (typeof e === 'object' && e !== null && 'message' in e) {
+    // Error・DOMException（環境によっては Error を継承していない）・ネイティブの { message } のどれも
+    const { name, message } = /** @type {{ name?: unknown; message: unknown }} */ (e);
+    return typeof name === 'string' && name && name !== 'Error' ? `${name}: ${String(message)}` : String(message);
+  }
+  return String(e);
 }
 
 /**
@@ -420,6 +495,40 @@ function clamp(v, lo, hi) {
 }
 
 /**
+ * 画像を舞台に「全体が収まる」ように置いたときの大きさ（倍率 1 のときの表示の大きさ）。小さい画像は舞台いっぱいまで広げる。
+ * @param {{ w: number; h: number }} natural 画像の元の大きさ
+ * @param {{ w: number; h: number }} stage 舞台の大きさ
+ */
+export function containSize(natural, stage) {
+  if (natural.w <= 0 || natural.h <= 0 || stage.w <= 0 || stage.h <= 0) return { w: 0, h: 0 };
+  const r = Math.min(stage.w / natural.w, stage.h / natural.h);
+  return { w: natural.w * r, h: natural.h * r };
+}
+
+/**
+ * ホイールの操作を、拡大縮小か移動に読み替える。
+ * - Ctrl（Mac は ⌘）+ ホイール: 拡大縮小。トラックパッドのピンチもブラウザーがこれにして渡してくる
+ * - 拡大中のホイール: 移動（Shift なら横）
+ * - 等倍のときに上へ回す: 拡大（埋め込みの表示では、ページのスクロールに譲る）
+ * @param {{ deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }} e
+ * @param {{ scale: number; embedded: boolean; pageHeight: number }} o
+ * @returns {{ kind: 'zoom'; factor: number } | { kind: 'pan'; dx: number; dy: number } | null}
+ */
+export function wheelAction(e, o) {
+  // 行・ページ単位（Firefox のマウスなど）をピクセルにそろえる
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? Math.max(1, o.pageHeight) : 1;
+  let dx = e.deltaX * unit;
+  let dy = e.deltaY * unit;
+  if (e.ctrlKey || e.metaKey) return { kind: 'zoom', factor: Math.exp(-clamp(dy, -PINCH_MAX_DELTA, PINCH_MAX_DELTA) * PINCH_ZOOM_RATE) };
+  if (o.scale > MIN_ZOOM + 1e-6) {
+    if (e.shiftKey && dx === 0) [dx, dy] = [dy, 0];
+    return { kind: 'pan', dx, dy };
+  }
+  if (!o.embedded && dy < 0) return { kind: 'zoom', factor: Math.exp(-clamp(dy, -WHEEL_MAX_DELTA, WHEEL_MAX_DELTA) * WHEEL_ZOOM_RATE) };
+  return null;
+}
+
+/**
  * 画像が舞台からはみ出さない範囲にパンを収める（小さければ中央）。
  * @param {ViewState} v
  * @param {{ w: number; h: number }} stage 舞台の大きさ
@@ -524,69 +633,219 @@ export function encodeFrame(cv, source, w, h, o) {
 }
 
 /**
- * プレビュー用のサンプルの画面を描く（文字・図・写真のような部分が混ざった、よくある画面のつもり）。決まった絵になる。
- * @param {CanvasRenderingContext2D} ctx
- * @param {number} w
- * @param {number} h
+ * base64 の画像を読み込んで canvas に描く（ネイティブの取得のフレームを、プレビューの元にするため）。
+ * @param {string} b64
+ * @param {string} mime
+ * @returns {Promise<HTMLCanvasElement>}
  */
-export function drawSample(ctx, w, h) {
-  let seed = 12345;
-  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-  const u = h / 720;
-  ctx.fillStyle = '#eef1f6';
-  ctx.fillRect(0, 0, w, h);
-  // 上のバーと左のサイドバー
-  ctx.fillStyle = '#2f5d9e';
-  ctx.fillRect(0, 0, w, 48 * u);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `${20 * u}px sans-serif`;
-  ctx.fillText('disnans  画面共有のサンプル', 20 * u, 31 * u);
-  ctx.fillStyle = '#dfe5ef';
-  ctx.fillRect(0, 48 * u, 220 * u, h);
-  for (let i = 0; i < 12; i++) {
-    ctx.fillStyle = i === 2 ? '#2f5d9e' : '#9aa7bd';
-    ctx.fillRect(20 * u, (80 + i * 44) * u, (110 + rnd() * 70) * u, 12 * u);
-  }
-  // 本文（文字のような細い線）
-  for (let i = 0; i < 14; i++) {
-    ctx.fillStyle = '#31384a';
-    let x = 250 * u;
-    const y = (92 + i * 22) * u;
-    while (x < 640 * u) {
-      const len = (14 + rnd() * 54) * u;
-      ctx.fillRect(x, y, len, 6 * u);
-      x += len + 8 * u;
+function imageToCanvas(b64, mime) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = img.naturalWidth;
+      cv.height = img.naturalHeight;
+      cv.getContext('2d')?.drawImage(img, 0, 0);
+      resolve(cv);
+    };
+    img.onerror = () => reject(new Error('画像を読み込めません'));
+    img.src = `data:${mime};base64,${b64}`;
+  });
+}
+
+/** @param {number} ms */
+const sleep = (ms) => new Promise((r) => setTimeout(() => r(undefined), ms));
+
+// ---- 表示の舞台（拡大縮小・パン） ----
+
+/**
+ * 共有された画面を 1 枚出す舞台。全画面の閲覧表示と、通話の画面の領域の両方で使う。
+ * 既定は画面全体が収まる表示（contain）。ピンチ・Ctrl+ホイールで拡大縮小、拡大中はドラッグ・ホイールで移動、ダブルタップで拡大／元に戻す。
+ */
+class ScreenStage {
+  /** @type {ViewState} */
+  view = { scale: 1, x: 0, y: 0 };
+  /** @type {HTMLImageElement | null} */
+  img = null;
+  /** @type {ResizeObserver | null} */
+  ro = null;
+
+  /**
+   * @param {{ embedded: boolean }} opts embedded=通話の画面の中（ホイールをページのスクロールに譲ることがある）
+   */
+  constructor(opts) {
+    this.embedded = opts.embedded;
+    this.el = document.createElement('div');
+    this.el.className = 'screenshare-stage';
+    this.attachGestures();
+    // 舞台の大きさが変わったら（ウィンドウの大きさ・全画面・回転）、収まる大きさを測り直す
+    if (typeof ResizeObserver === 'function') {
+      this.ro = new ResizeObserver(() => this.applyView());
+      this.ro.observe(this.el);
     }
   }
-  // 写真のような部分（なだらかな色の変化と細かいノイズ）
-  const px = 680 * u;
-  const py = 80 * u;
-  const pw = 520 * u;
-  const ph = 300 * u;
-  const g = ctx.createLinearGradient(px, py, px + pw, py + ph);
-  g.addColorStop(0, '#1d3b6e');
-  g.addColorStop(0.5, '#e08a3c');
-  g.addColorStop(1, '#3d8f5a');
-  ctx.fillStyle = g;
-  ctx.fillRect(px, py, pw, ph);
-  for (let i = 0; i < 700; i++) {
-    ctx.fillStyle = `rgba(${Math.floor(rnd() * 255)},${Math.floor(rnd() * 255)},${Math.floor(rnd() * 255)},0.35)`;
-    const r = (2 + rnd() * 9) * u;
-    ctx.fillRect(px + rnd() * (pw - r), py + rnd() * (ph - r), r, r);
+
+  /** @param {string} text */
+  showWaiting(text) {
+    this.img = null;
+    const p = document.createElement('p');
+    p.className = 'screenshare-wait';
+    p.textContent = text;
+    this.el.replaceChildren(p);
   }
-  // コードのような色つきの行
-  ctx.fillStyle = '#1b1f2a';
-  ctx.fillRect(250 * u, 420 * u, 950 * u, 260 * u);
-  const colors = ['#e06c75', '#98c379', '#61afef', '#d19a66', '#c8ccd4'];
-  for (let i = 0; i < 10; i++) {
-    let x = 270 * u;
-    const y = (440 + i * 24) * u;
-    for (let k = 0; k < 6; k++) {
-      ctx.fillStyle = colors[Math.floor(rnd() * colors.length)];
-      const len = (30 + rnd() * 90) * u;
-      ctx.fillRect(x, y, len, 8 * u);
-      x += len + 10 * u;
+
+  /**
+   * @param {string} src data: URL
+   * @param {string} alt
+   */
+  showImage(src, alt) {
+    let img = this.img;
+    if (!img || !img.isConnected || img.parentElement !== this.el) {
+      img = document.createElement('img');
+      img.className = 'screenshare-img';
+      img.draggable = false;
+      // 大きさが決まったら（最初のフレーム・縦横が変わったとき）、収まる大きさを合わせる
+      img.addEventListener('load', () => this.applyView());
+      this.el.replaceChildren(img);
+      this.img = img;
     }
+    img.alt = alt;
+    if (img.getAttribute('src') !== src) img.src = src;
+    this.applyView();
+  }
+
+  reset() {
+    this.view = { scale: 1, x: 0, y: 0 };
+    this.applyView();
+  }
+
+  /** 舞台と、倍率 1 のときの画像の表示の大きさ */
+  measure() {
+    const img = this.img;
+    if (!img) return null;
+    const stage = { w: this.el.clientWidth, h: this.el.clientHeight };
+    const shown = containSize({ w: img.naturalWidth, h: img.naturalHeight }, stage);
+    if (shown.w <= 0) return null;
+    return { stage, img: shown };
+  }
+
+  /** 拡大の状態を画像に反映する（はみ出さないように収める） */
+  applyView() {
+    const img = this.img;
+    if (!img) return;
+    const m = this.measure();
+    if (!m) return;
+    this.view = clampView(this.view, m.stage, m.img);
+    img.style.width = `${m.img.w}px`;
+    img.style.height = `${m.img.h}px`;
+    img.style.transform = `translate(-50%, -50%) translate(${this.view.x}px, ${this.view.y}px) scale(${this.view.scale})`;
+    this.el.classList.toggle('screenshare-zoomed', this.view.scale > MIN_ZOOM + 1e-6);
+  }
+
+  /**
+   * 点 (px, py)（舞台の中心から）を中心に、倍率を factor 倍にする。
+   * @param {number} factor
+   * @param {number} px
+   * @param {number} py
+   */
+  zoomBy(factor, px = 0, py = 0) {
+    this.view = zoomAt(this.view, this.view.scale * factor, px, py);
+    this.applyView();
+  }
+
+  destroy() {
+    this.ro?.disconnect();
+    this.ro = null;
+    this.el.remove();
+  }
+
+  /** ピンチ・ドラッグ・ホイール・ダブルタップ（Pointer Events。マウスもタッチも同じ） */
+  attachGestures() {
+    const stage = this.el;
+    /** @type {Map<number, { x: number; y: number }>} */
+    const pointers = new Map();
+    /** ジェスチャーを始めたときの表示と、指の中点・間隔 */
+    let start = { view: this.view, mid: { x: 0, y: 0 }, dist: 1 };
+    /** @type {{ t: number; x: number; y: number } | null} */
+    let lastTap = null;
+    let moved = false;
+
+    /** 舞台の中心を原点にした位置 */
+    const local = (/** @type {{ clientX: number; clientY: number }} */ e) => {
+      const r = stage.getBoundingClientRect();
+      return { x: e.clientX - r.left - r.width / 2, y: e.clientY - r.top - r.height / 2 };
+    };
+    const geometry = () => {
+      const p = [...pointers.values()];
+      if (p.length >= 2) {
+        return { mid: { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 }, dist: Math.max(1, Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y)) };
+      }
+      return { mid: p[0] ?? { x: 0, y: 0 }, dist: 1 };
+    };
+    const restart = () => {
+      const g = geometry();
+      start = { view: this.view, mid: g.mid, dist: g.dist };
+    };
+
+    stage.addEventListener('pointerdown', (e) => {
+      // マウスは左ボタンだけ
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      pointers.set(e.pointerId, local(e));
+      try {
+        stage.setPointerCapture(e.pointerId);
+      } catch {
+        // 取れなくても動く
+      }
+      if (pointers.size === 1) moved = false;
+      restart();
+      stage.classList.toggle('screenshare-dragging', true);
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, local(e));
+      const g = geometry();
+      if (Math.hypot(g.mid.x - start.mid.x, g.mid.y - start.mid.y) > 6 || pointers.size > 1) moved = true;
+      this.view = pinchView(start.view, start.mid, start.dist, g.mid, g.dist);
+      this.applyView();
+    });
+    const end = (/** @type {PointerEvent} */ e) => {
+      if (!pointers.delete(e.pointerId)) return;
+      if (pointers.size > 0) {
+        restart();
+        return;
+      }
+      stage.classList.toggle('screenshare-dragging', false);
+      if (e.type === 'pointerup' && !moved) {
+        const tap = { t: Date.now(), ...local(e) };
+        if (isDoubleTap(lastTap, tap)) {
+          // 拡大していれば元に戻し、していなければタップした点を拡大する
+          if (this.view.scale > MIN_ZOOM + 1e-6) this.reset();
+          else this.zoomBy(DOUBLE_TAP_ZOOM, tap.x, tap.y);
+          lastTap = null;
+        } else {
+          lastTap = tap;
+        }
+      }
+    };
+    stage.addEventListener('pointerup', end);
+    stage.addEventListener('pointercancel', end);
+    stage.addEventListener(
+      'wheel',
+      (e) => {
+        if (!this.img) return;
+        const a = wheelAction(e, { scale: this.view.scale, embedded: this.embedded, pageHeight: stage.clientHeight });
+        if (!a) return;
+        e.preventDefault();
+        if (a.kind === 'zoom') {
+          const p = local(e);
+          this.zoomBy(a.factor, p.x, p.y);
+        } else {
+          this.view = { ...this.view, x: this.view.x - a.dx, y: this.view.y - a.dy };
+          this.applyView();
+        }
+      },
+      { passive: false },
+    );
   }
 }
 
@@ -605,6 +864,11 @@ export function drawSample(ctx, w, h) {
 
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 
+/**
+ * 取り込んだ 1 枚（canvas に描ける元と、その大きさ）。
+ * @typedef {{ source: CanvasImageSource; w: number; h: number; close?: () => void }} Grabbed
+ */
+
 export default class ScreenSharePlugin extends Plugin {
   /** @type {ShareSettings} */
   settings = { ...DEFAULT_SETTINGS };
@@ -613,6 +877,8 @@ export default class ScreenSharePlugin extends Plugin {
 
   // 共有する側
   sharing = false;
+  /** 共有を始めるたびに増える（非同期の処理が、止めたあとの古い共有に触らないように） */
+  shareSeq = 0;
   /** 画面の取り方（共有中だけ） */
   /** @type {'web' | 'native' | null} */
   backend = null;
@@ -620,19 +886,34 @@ export default class ScreenSharePlugin extends Plugin {
   stream = null;
   /** @type {HTMLVideoElement | null} */
   video = null;
+  /** getDisplayMedia の映像を <video> に描けないときの代わり（ImageCapture があれば） */
+  /** @type {{ grabFrame(): Promise<ImageBitmap> } | null} */
+  imageCapture = null;
   /** @type {HTMLCanvasElement | null} */
   canvas = null;
   /** @type {HTMLCanvasElement | null} */
   diffCanvas = null;
   /** @type {ReturnType<typeof setTimeout> | null} */
   timer = null;
+  /** フレームの処理の途中（非同期の取り込みを待っている） */
+  ticking = false;
   frameId = 0;
   lastHeartbeat = 0;
   lastSentAt = 0;
+  /** 最後に映像が取れた時刻と、共有を始めた時刻（映像が来ないことに気づくため） */
+  lastGrabAt = 0;
+  shareStartedAt = 0;
+  /** 映像が来ないことを、この共有ですでに知らせた */
+  stallReported = false;
   /** @type {Uint8ClampedArray | null} */
   lastDiffData = null;
   /** 見ている人の顔ぶれ（変わったら画面が同じでも送る） */
   audienceKey = '';
+  /** 通話の参加者（新しく来た人に、すぐ共有を知らせるため） */
+  /** @type {Set<string>} */
+  knownPeers = new Set();
+  /** 前に見たときに通話に参加していたか（参加した瞬間に問い合わせるため） */
+  wasJoined = false;
   tuned = { quality: 0.6, scale: 1 };
   /** 画像の形式（null なら次のフレームで候補を試して決める） */
   format = /** @type {string | null} */ (null);
@@ -655,8 +936,9 @@ export default class ScreenSharePlugin extends Plugin {
   viewing = /** @type {string | null} */ (null);
   /** @type {HTMLElement | null} */
   overlay = null;
-  /** 拡大縮小の状態 */
-  view = /** @type {ViewState} */ ({ scale: 1, x: 0, y: 0 });
+  /** 閲覧表示の舞台 */
+  /** @type {ScreenStage | null} */
+  stage = null;
   /** 全画面の方法（なければ null）。immersive=Android の没入モード、dom=Fullscreen API */
   fullscreen = /** @type {'immersive' | 'dom' | null} */ (null);
   /** @type {(() => void) | null} */
@@ -673,11 +955,26 @@ export default class ScreenSharePlugin extends Plugin {
   /** @type {Disnans.CallButton | null} */
   button = null;
 
+  // 通話の画面の領域（call.addPanel）
+  /** @type {Disnans.CallPanel | null} */
+  panel = null;
+  /** @type {ScreenStage | null} */
+  panelStage = null;
+  /** @type {HTMLElement | null} */
+  panelBar = null;
+  /** 領域で見ている共有者 */
+  panelPeer = /** @type {string | null} */ (null);
+
   // 設定のプレビュー
+  /** プレビューの元（自分の画面を取り込んだもの） */
   /** @type {HTMLCanvasElement | null} */
   previewSource = null;
-  previewCustom = false;
+  /** 設定を開いたときの自動の取り込みを、もう試した（断られたら何度も出さない） */
+  previewAutoTried = false;
+  previewBusy = false;
   previewSeq = 0;
+  /** @type {{ img: HTMLImageElement; info: HTMLElement } | null} */
+  previewEls = null;
 
   async onload() {
     this.call = disnans.call;
@@ -696,16 +993,16 @@ export default class ScreenSharePlugin extends Plugin {
 
     this.statusEl = this.addStatusBarItem();
     this.statusEl.classList.add('screenshare-status');
+    this.setupPanel();
 
     this.register(this.call.onChange(() => this.onCallChange()));
     this.register(this.call.onEvent(EVENT_STATE, (e) => this.onState(e)));
     this.register(this.call.onEvent(EVENT_FRAME, (e) => this.onFrame(e)));
+    this.register(this.call.onEvent(EVENT_QUERY, () => this.onQuery()));
 
     // 共有中の知らせと、消えた共有者の見張り
     this.registerInterval(window.setInterval(() => this.watch(), WATCH_MS));
-    this.registerDomEvent(document, 'keydown', (ev) => {
-      if (ev.key === 'Escape' && this.viewing !== null) this.closeViewer();
-    });
+    this.registerDomEvent(document, 'keydown', (ev) => this.onKey(ev));
     // Fullscreen API で全画面にしているとき、Esc や F11 で解除されたら表示も合わせる
     this.registerDomEvent(document, 'fullscreenchange', () => {
       if (this.fullscreen === 'dom' && !document.fullscreenElement) this.setFullscreenState(null);
@@ -719,10 +1016,15 @@ export default class ScreenSharePlugin extends Plugin {
       this.stopShare(true);
       this.closeViewer();
       this.stopWebPip();
+      this.panelStage?.destroy();
+      this.panel?.remove();
+      this.panel = null;
     });
 
     this.addSettingTab({ display: (el) => this.displaySettings(el) });
     this.renderStatus();
+    // 通話の途中でプラグインを読み込んだ（更新・有効化）ときも、共有中の人を聞く
+    this.onCallChange();
   }
 
   onunload() {
@@ -753,6 +1055,8 @@ export default class ScreenSharePlugin extends Plugin {
       ui.toast('通話に参加していません', 'error');
       return;
     }
+    // 押したボタンのフォーカスを外す（許可のダイアログから戻ったときに明るいまま残らないように）
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     this.starting = true;
     try {
       if (backend === 'web') await this.startWeb();
@@ -762,38 +1066,81 @@ export default class ScreenSharePlugin extends Plugin {
     }
   }
 
+  /**
+   * getDisplayMedia で画面を選ぶ。キャンセルされたら null（知らせない）。
+   * 制約を受け付けない環境（古い WebKit など）のために、だめなら制約なしでもう一度試す
+   * @param {number} fps
+   * @returns {Promise<MediaStream | null>}
+   */
+  async pickDisplay(fps) {
+    try {
+      return await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: fps, max: 30 } }, audio: false });
+    } catch (e) {
+      if (isCancelError(e)) return null;
+      if (!(e instanceof DOMException && (e.name === 'OverconstrainedError' || e.name === 'TypeError' || e.name === 'NotSupportedError'))) throw e;
+      console.warn('[screenshare] 制約つきの getDisplayMedia に失敗。制約なしで試します', e);
+    }
+    try {
+      return await navigator.mediaDevices.getDisplayMedia({ video: true });
+    } catch (e) {
+      if (isCancelError(e)) return null;
+      throw e;
+    }
+  }
+
+  /**
+   * getDisplayMedia の映像を映す <video>。WebKitGTK などは、文書に入っていない <video> のフレームを canvas に描けないことがあるので、
+   * 見えない大きさで文書に入れておく
+   * @param {MediaStream} stream
+   */
+  makeCaptureVideo(stream) {
+    const video = document.createElement('video');
+    video.className = 'screenshare-capture-video';
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute('aria-hidden', 'true');
+    video.srcObject = stream;
+    document.body.append(video);
+    void Promise.resolve(video.play()).catch((e) => console.warn('[screenshare] 取り込み用の映像を再生できません', e));
+    return video;
+  }
+
   /** getDisplayMedia で画面を選んで始める */
   async startWeb() {
-    /** @type {MediaStream} */
+    /** @type {MediaStream | null} */
     let stream;
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: this.settings.fps, max: 30 } },
-        audio: false,
-      });
+      stream = await this.pickDisplay(this.settings.fps);
     } catch (e) {
-      // 選択画面でキャンセルしたとき（NotAllowedError）は知らせなくてよい
-      if (!(e instanceof DOMException && e.name === 'NotAllowedError')) ui.toast('画面を取得できませんでした', 'error');
+      console.error('[screenshare] 画面を取得できません', e);
+      ui.toast(`画面を取得できませんでした（${describeError(e)}）`, 'error');
       return;
     }
+    if (!stream) return;
     // 許可待ちのあいだに通話を抜けた・プラグインが外れた場合は使わない
     if (!this.call.joined) {
       for (const t of stream.getTracks()) t.stop();
       return;
     }
 
-    const video = document.createElement('video');
-    video.muted = true;
-    video.playsInline = true;
-    video.srcObject = stream;
-    void Promise.resolve(video.play()).catch(() => {});
+    const track = stream.getVideoTracks()[0];
+    try {
+      console.info('[screenshare] 画面の取得を始めます', track?.label, track?.getSettings?.());
+    } catch {
+      // getSettings が無い環境
+    }
     this.stream = stream;
-    this.video = video;
+    this.video = this.makeCaptureVideo(stream);
+    this.imageCapture = null;
     this.backend = 'web';
     this.beginSharing();
     // OS の「共有を停止」ボタンなどで止められたとき
-    for (const t of stream.getVideoTracks()) t.addEventListener('ended', () => this.stopShare(true));
-    this.timer = setTimeout(() => this.frameTick(), 0);
+    for (const t of stream.getVideoTracks()) {
+      t.addEventListener('ended', () => {
+        if (this.stream === stream) this.stopShare(true);
+      });
+    }
+    this.scheduleTick(0);
   }
 
   /** 本体のネイティブ（Android の MediaProjection）で始める。許可のダイアログが出る */
@@ -814,9 +1161,11 @@ export default class ScreenSharePlugin extends Plugin {
         (f) => this.onNativeFrame(f),
       );
     } catch (e) {
-      // 許可のダイアログで断られたときも、ここに来る
-      const msg = e instanceof Error ? e.message : String(e);
-      if (!/cancel|denied|拒否|キャンセル/i.test(msg)) ui.toast('画面を取得できませんでした', 'error');
+      // 許可のダイアログでキャンセルしたとき（AbortError）は知らせない
+      const msg = describeError(e);
+      if (isCancelError(e) || /cancel|denied|拒否|キャンセル/i.test(msg)) return;
+      console.error('[screenshare] 画面を取得できません', e);
+      ui.toast(`画面を取得できませんでした（${msg}）`, 'error');
       return;
     }
     if (!this.call.joined) {
@@ -830,8 +1179,12 @@ export default class ScreenSharePlugin extends Plugin {
   /** 共有の開始の共通の処理 */
   beginSharing() {
     this.sharing = true;
+    this.shareSeq++;
     this.lastDiffData = null;
     this.lastSentAt = 0;
+    this.lastGrabAt = 0;
+    this.shareStartedAt = Date.now();
+    this.stallReported = false;
     this.audienceKey = '';
     this.lastNative = null;
     this.pendingNative = null;
@@ -856,12 +1209,17 @@ export default class ScreenSharePlugin extends Plugin {
     const was = this.sharing;
     const backend = this.backend;
     this.sharing = false;
+    this.shareSeq++;
     this.backend = null;
     if (backend === 'native') void disnans.screenCapture.stop().catch(() => {});
     if (this.stream) for (const t of this.stream.getTracks()) t.stop();
     this.stream = null;
-    if (this.video) this.video.srcObject = null;
+    if (this.video) {
+      this.video.srcObject = null;
+      this.video.remove();
+    }
     this.video = null;
+    this.imageCapture = null;
     this.canvas = null;
     this.diffCanvas = null;
     this.lastDiffData = null;
@@ -876,63 +1234,170 @@ export default class ScreenSharePlugin extends Plugin {
     try {
       this.call.emit(EVENT_STATE, { on });
       this.lastHeartbeat = Date.now();
-    } catch {
+    } catch (e) {
       // 通話から抜けた直後など。次の onChange で片付く
+      console.warn('[screenshare] 共有の状態を送れません', e);
     }
   }
 
+  /**
+   * 次のフレームの処理を予約する（予約済みなら、早いほうに付け替える）。
+   * @param {number} delay
+   */
+  scheduleTick(delay) {
+    if (!this.sharing || this.backend !== 'web') return;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = setTimeout(() => void this.frameTick(), Math.max(0, delay));
+  }
+
   /** 1 フレームぶんの処理。次の呼び出しを自分で予約する */
-  frameTick() {
+  async frameTick() {
     this.timer = null;
-    if (!this.sharing) return;
+    if (!this.sharing || this.ticking) return;
+    const seq = this.shareSeq;
     const t0 = performance.now();
     /** @type {number} */
     let delay;
+    this.ticking = true;
     try {
       if (!this.call.joined) {
         this.stopShare(false);
         return;
       }
-      delay = hasAudience(this.call.participants) ? this.captureAndSend() : IDLE_MS;
+      if (!hasAudience(this.call.participants)) delay = IDLE_MS;
+      // 送信待ちが溜まっているあいだは、新しいフレームを作らない（作っても遅れて届くだけ）
+      else if ((this.call.bufferedAmount ?? 0) > BACKLOG_LIMIT) delay = BACKLOG_RETRY_MS;
+      else delay = await this.captureAndSend(seq);
     } catch (e) {
+      if (seq !== this.shareSeq) return;
       console.error('[screenshare] フレームの送信に失敗', e);
-      this.stopShare(false);
-      ui.toast('画面共有を止めました', 'error');
+      this.stopShare(true);
+      ui.toast(`画面共有を止めました（${describeError(e)}）`, 'error');
       return;
+    } finally {
+      this.ticking = false;
     }
-    this.timer = setTimeout(() => this.frameTick(), Math.max(0, delay - (performance.now() - t0)));
+    if (seq !== this.shareSeq || !this.sharing) return;
+    if (this.timer === null) this.timer = setTimeout(() => void this.frameTick(), Math.max(0, delay - (performance.now() - t0)));
+  }
+
+  /**
+   * 画面を 1 枚取り込む。<video> に描けなければ ImageCapture（あれば）を使う。まだ映像が来ていなければ null。
+   * @returns {Promise<Grabbed | null>}
+   */
+  async grab() {
+    const video = this.video;
+    if (this.imageCapture) {
+      const bmp = await this.imageCapture.grabFrame();
+      return { source: bmp, w: bmp.width, h: bmp.height, close: () => bmp.close() };
+    }
+    if (!video || !video.videoWidth || !video.videoHeight) return null;
+    return { source: video, w: video.videoWidth, h: video.videoHeight };
+  }
+
+  /**
+   * 映像が取れない（来ない・描けない）状態が続いたら、代わりの取り込み方に替え、それでもだめならログとトーストで知らせる。
+   * @param {string} why
+   */
+  noteStall(why) {
+    const now = Date.now();
+    const since = now - (this.lastGrabAt || this.shareStartedAt);
+    if (since < VIDEO_STALL_MS) return;
+    const track = this.stream?.getVideoTracks()[0];
+    const Ctor = /** @type {{ ImageCapture?: new (t: MediaStreamTrack) => { grabFrame(): Promise<ImageBitmap> } }} */ (/** @type {unknown} */ (globalThis)).ImageCapture;
+    if (!this.imageCapture && track && typeof Ctor === 'function') {
+      console.warn(`[screenshare] <video> から画面を取り込めません（${why}）。ImageCapture に替えます`);
+      try {
+        this.imageCapture = new Ctor(track);
+        this.lastGrabAt = now;
+        return;
+      } catch (e) {
+        console.warn('[screenshare] ImageCapture を使えません', e);
+      }
+    }
+    if (this.stallReported) return;
+    this.stallReported = true;
+    const v = this.video;
+    let settings = '';
+    try {
+      settings = JSON.stringify(track?.getSettings?.() ?? {});
+    } catch {
+      // 読めなくてもよい
+    }
+    console.error('[screenshare] 画面の映像を取り込めません', {
+      why,
+      readyState: v?.readyState,
+      videoWidth: v?.videoWidth,
+      paused: v?.paused,
+      track: track && { label: track.label, readyState: track.readyState, muted: track.muted, enabled: track.enabled },
+      settings,
+    });
+    ui.toast(`画面の映像を取り込めないため、相手には映っていません（${why}）。共有を止めて、もう一度試してください`, 'error');
   }
 
   /**
    * 画面を縮小して送る。
+   * @param {number} seq 共有の番号（途中で止められたら何もしない）
+   * @returns {Promise<number>} 次のフレームまでの間隔（ミリ秒）
+   */
+  async captureAndSend(seq) {
+    const g = await this.grab();
+    if (seq !== this.shareSeq) {
+      g?.close?.();
+      return VIDEO_WAIT_MS;
+    }
+    if (!g) {
+      this.noteStall('映像が始まりません');
+      return VIDEO_WAIT_MS;
+    }
+    try {
+      return this.encodeAndSend(g);
+    } finally {
+      g.close?.();
+    }
+  }
+
+  /**
+   * @param {Grabbed} g
    * @returns {number} 次のフレームまでの間隔（ミリ秒）
    */
-  captureAndSend() {
-    const video = this.video;
-    if (!video || !video.videoWidth) return VIDEO_WAIT_MS;
+  encodeAndSend(g) {
     const preset = QUALITY_PRESETS[this.settings.quality];
     const minInterval = 1000 / this.settings.fps;
 
-    // 変化の判定は、とても小さい画像どうしで比べる
+    // 変化の判定は、小さい画像どうしで比べる
     const dc = this.diffCanvas ?? (this.diffCanvas = document.createElement('canvas'));
-    dc.width = DIFF_W;
-    dc.height = DIFF_H;
+    if (dc.width !== DIFF_W) dc.width = DIFF_W;
+    if (dc.height !== DIFF_H) dc.height = DIFF_H;
     const dctx = dc.getContext('2d', { willReadFrequently: true });
     if (!dctx) throw new Error('canvas を使えません');
-    dctx.drawImage(video, 0, 0, DIFF_W, DIFF_H);
+    dctx.clearRect?.(0, 0, DIFF_W, DIFF_H);
+    dctx.drawImage(g.source, 0, 0, DIFF_W, DIFF_H);
     const data = dctx.getImageData(0, 0, DIFF_W, DIFF_H).data;
-    const key = this.call.participants.map((p) => p.peer).join(',');
+    // 何も描けていない（全部透明）なら送らない。続くなら知らせる
+    if (isBlankFrame(data)) {
+      this.noteStall('映像が空です');
+      return VIDEO_WAIT_MS;
+    }
     const now = Date.now();
+    this.lastGrabAt = now;
+    const key = this.call.participants.map((p) => p.peer).join(',');
     const force = key !== this.audienceKey;
-    if (!shouldSend({ diff: frameDiff(this.lastDiffData, data), sinceSentMs: now - this.lastSentAt, force })) return minInterval;
+    const decide = {
+      diff: frameDiff(this.lastDiffData, data),
+      peak: framePeakDiff(this.lastDiffData, data),
+      sinceSentMs: now - this.lastSentAt,
+      force,
+    };
+    if (!shouldSend(decide)) return minInterval;
     this.lastDiffData = data;
     this.audienceKey = key;
 
-    const size = fitSize(video.videoWidth, video.videoHeight, preset.maxEdge, this.tuned.scale);
+    const size = fitSize(g.w, g.h, preset.maxEdge, this.tuned.scale);
     const cv = this.canvas ?? (this.canvas = document.createElement('canvas'));
     // 色数を減らす設定では、ときどき候補の形式を全部試して小さいものを選び直す
     const probe = this.format === null || this.framesSinceProbe >= PROBE_EVERY;
-    const out = encodeFrame(cv, video, size.w, size.h, {
+    const out = encodeFrame(cv, g.source, size.w, size.h, {
       color: this.settings.color,
       quality: this.tuned.quality,
       format: probe ? null : this.format,
@@ -940,6 +1405,7 @@ export default class ScreenSharePlugin extends Plugin {
     if (probe) this.framesSinceProbe = 0;
     this.framesSinceProbe++;
     this.format = out.mime;
+    if (!out.b64) throw new Error('画像にできません（toDataURL が空）');
 
     const chunks = this.emitFrame(out.b64);
     this.lastSentAt = now;
@@ -964,6 +1430,20 @@ export default class ScreenSharePlugin extends Plugin {
     return chunks.length;
   }
 
+  /** 見る人が増えた・問い合わせが来た: 共有中なら、すぐに知らせて画面も送り直す */
+  announce() {
+    if (!this.sharing || !this.call.joined) return;
+    this.sendState(true);
+    if (this.backend === 'web') {
+      this.audienceKey = '';
+      if (!this.ticking) this.scheduleTick(0);
+    } else if (this.backend === 'native' && this.lastNative && hasAudience(this.call.participants)) {
+      this.audienceKey = '';
+      this.pendingNative = this.lastNative;
+      this.flushNative();
+    }
+  }
+
   // ---- 共有する側（ネイティブの取得） ----
 
   /**
@@ -980,7 +1460,9 @@ export default class ScreenSharePlugin extends Plugin {
 
   flushNative() {
     if (this.nativeTimer !== null || !this.pendingNative) return;
-    const wait = this.nativeNextAt - Date.now();
+    let wait = this.nativeNextAt - Date.now();
+    // 送信待ちが溜まっているあいだは待つ（そのあいだに新しいフレームが来たら、そちらに替わる）
+    if (wait <= 0 && (this.call.bufferedAmount ?? 0) > BACKLOG_LIMIT) wait = BACKLOG_RETRY_MS;
     if (wait > 0) {
       this.nativeTimer = setTimeout(() => {
         this.nativeTimer = null;
@@ -1014,7 +1496,7 @@ export default class ScreenSharePlugin extends Plugin {
     } catch (e) {
       console.error('[screenshare] フレームの送信に失敗', e);
       this.stopShare(false);
-      ui.toast('画面共有を止めました', 'error');
+      ui.toast(`画面共有を止めました（${describeError(e)}）`, 'error');
     }
   }
 
@@ -1046,6 +1528,11 @@ export default class ScreenSharePlugin extends Plugin {
     }
   }
 
+  /** 通話に入った人からの問い合わせ */
+  onQuery() {
+    this.announce();
+  }
+
   /** @param {Disnans.CallDataEvent} e */
   onFrame(e) {
     const c = parseChunk(e.payload);
@@ -1059,7 +1546,8 @@ export default class ScreenSharePlugin extends Plugin {
     s.frame = data;
     s.mime = mime;
     if (this.viewing === e.peer) this.showFrame();
-    if (this.webPip?.peer === e.peer) this.drawWebPip(s);
+    if (this.panelPeer === e.peer) this.showPanelFrame();
+    if (this.webPip?.peer === e.peer) void this.drawWebPip(s);
   }
 
   /** @param {string} peer */
@@ -1078,6 +1566,8 @@ export default class ScreenSharePlugin extends Plugin {
   /** 通話の状態が変わったとき */
   onCallChange() {
     if (!this.call.joined) {
+      this.wasJoined = false;
+      this.knownPeers.clear();
       // 通話から抜けた: 共有を止め、見ていたものも消す
       this.stopShare(false);
       this.closeViewer();
@@ -1089,6 +1579,19 @@ export default class ScreenSharePlugin extends Plugin {
       return;
     }
     const peers = new Set(this.call.participants.map((p) => p.peer));
+    if (!this.wasJoined) {
+      this.wasJoined = true;
+      // 入った直後: 共有中の人に知らせ直してもらう（ハートビートを待たずに「〜の画面を見る」を出す）
+      try {
+        this.call.emit(EVENT_QUERY, {});
+      } catch (e) {
+        console.warn('[screenshare] 共有中の人を問い合わせられません', e);
+      }
+    }
+    // 新しく来た人がいれば、共有中なら待たずに知らせる
+    const added = [...peers].some((p) => !this.knownPeers.has(p));
+    this.knownPeers = peers;
+    if (added) this.announce();
     for (const peer of [...this.sharers.keys()]) if (!peers.has(peer)) this.removeSharer(peer);
   }
 
@@ -1109,23 +1612,41 @@ export default class ScreenSharePlugin extends Plugin {
     }
   }
 
+  /** @param {KeyboardEvent} ev */
+  onKey(ev) {
+    if (this.viewing === null || !this.stage) return;
+    if (ev.key === 'Escape') {
+      this.closeViewer();
+      return;
+    }
+    // 拡大縮小のキー（+ / - / 0）
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (ev.key === '+' || ev.key === '=') this.stage.zoomBy(1.25);
+    else if (ev.key === '-') this.stage.zoomBy(0.8);
+    else if (ev.key === '0') this.stage.reset();
+    else return;
+    ev.preventDefault();
+  }
+
   // ---- 表示 ----
 
-  /** ステータス欄: 誰かが共有中なら見るボタン */
+  /** ステータス欄: 誰かが共有中なら見るボタン。通話の画面の領域も合わせる */
   renderStatus() {
     const el = this.statusEl;
-    if (!el) return;
-    el.replaceChildren();
-    for (const s of this.sharers.values()) {
-      el.append(
-        ui.button({
-          text: `${s.user.display_name} の画面を見る`,
-          icon: 'monitor-play',
-          variant: 'ghost',
-          onClick: () => this.openViewer(s.peer),
-        }),
-      );
+    if (el) {
+      el.replaceChildren();
+      for (const s of this.sharers.values()) {
+        el.append(
+          ui.button({
+            text: `${s.user.display_name} の画面を見る`,
+            icon: 'monitor-play',
+            variant: 'ghost',
+            onClick: () => this.openViewer(s.peer),
+          }),
+        );
+      }
     }
+    this.renderPanel();
   }
 
   /** @param {string} peer */
@@ -1138,6 +1659,7 @@ export default class ScreenSharePlugin extends Plugin {
       overlay.setAttribute('aria-label', '画面共有');
       document.body.append(overlay);
       this.overlay = overlay;
+      this.stage = new ScreenStage({ embedded: false });
       // 戻る操作（Android の戻るジェスチャーなど）で閉じる
       this.offBackViewer = ui.onBack(() => this.closeViewer());
     }
@@ -1147,24 +1669,30 @@ export default class ScreenSharePlugin extends Plugin {
   /** @param {string} peer */
   selectSharer(peer) {
     this.viewing = peer;
-    this.view = { scale: 1, x: 0, y: 0 };
+    if (this.stage) this.stage.view = { scale: 1, x: 0, y: 0 };
     this.renderViewer();
   }
 
   closeViewer() {
+    const wasOpen = this.overlay !== null;
     this.viewing = null;
     this.exitFullscreen();
     this.offBackViewer?.();
     this.offBackViewer = null;
     this.nativePip = false;
+    this.stage?.destroy();
+    this.stage = null;
     this.overlay?.remove();
     this.overlay = null;
+    // 閲覧表示のあいだ止めていた、通話の画面の領域を最新にする
+    if (wasOpen) this.showPanelFrame();
   }
 
   /** 閲覧表示を作り直す（共有者の増減・切り替えのとき） */
   renderViewer() {
     const overlay = this.overlay;
-    if (!overlay || this.viewing === null) return;
+    const stage = this.stage;
+    if (!overlay || !stage || this.viewing === null) return;
 
     const tabs = document.createElement('div');
     tabs.className = 'screenshare-tabs';
@@ -1189,10 +1717,7 @@ export default class ScreenSharePlugin extends Plugin {
     const exit = ui.button({ icon: 'shrink', label: '全画面を解除', variant: 'ghost', onClick: () => this.exitFullscreen() });
     exit.classList.add('screenshare-float');
 
-    const stage = document.createElement('div');
-    stage.className = 'screenshare-stage';
-    this.attachGestures(stage);
-    overlay.replaceChildren(bar, stage, exit);
+    overlay.replaceChildren(bar, stage.el, exit);
     overlay.classList.toggle('screenshare-fullscreen', this.fullscreen !== null);
     overlay.classList.toggle('screenshare-pip', this.nativePip);
     this.showFrame();
@@ -1200,130 +1725,76 @@ export default class ScreenSharePlugin extends Plugin {
 
   /** 見ている共有者の最新のフレームを出す */
   showFrame() {
-    const stage = this.overlay?.querySelector('.screenshare-stage');
+    const stage = this.stage;
     const s = this.viewing === null ? undefined : this.sharers.get(this.viewing);
     if (!stage || !s) return;
-    if (!s.frame) {
-      if (!stage.querySelector('.screenshare-wait')) {
-        const p = document.createElement('p');
-        p.className = 'screenshare-wait';
-        p.textContent = `${s.user.display_name} の画面を待っています…`;
-        stage.replaceChildren(p);
-      }
-      return;
-    }
-    let img = stage.querySelector('img');
-    if (!img) {
-      img = document.createElement('img');
-      img.className = 'screenshare-img';
-      img.alt = `${s.user.display_name} の共有画面`;
-      img.draggable = false;
-      // 最初のフレームで大きさが決まったら、拡大の範囲を合わせる
-      img.addEventListener('load', () => this.applyView());
-      stage.replaceChildren(img);
-    }
-    img.src = `data:${s.mime ?? 'image/jpeg'};base64,${s.frame}`;
-    this.applyView();
+    if (!s.frame) stage.showWaiting(`${s.user.display_name} の画面を待っています…`);
+    else stage.showImage(`data:${s.mime ?? 'image/jpeg'};base64,${s.frame}`, `${s.user.display_name} の共有画面`);
   }
 
-  // ---- 拡大縮小・パン ----
+  // ---- 通話の画面の領域（call.addPanel） ----
 
-  /** 舞台と画像の大きさ（倍率 1 のとき）。DOM から読む */
-  measure() {
-    const stage = this.overlay?.querySelector('.screenshare-stage');
-    const img = stage?.querySelector('img');
-    if (!stage || !img) return null;
-    return { stage: { w: stage.clientWidth, h: stage.clientHeight }, img: { w: img.offsetWidth, h: img.offsetHeight } };
-  }
-
-  /** 拡大の状態を画像に反映する（はみ出さないように収める） */
-  applyView() {
-    const img = this.overlay?.querySelector('.screenshare-stage img');
-    if (!(img instanceof HTMLImageElement)) return;
-    const m = this.measure();
-    if (m && m.stage.w > 0) this.view = clampView(this.view, m.stage, m.img);
-    img.style.transform = this.view.scale === 1 ? '' : `translate(${this.view.x}px, ${this.view.y}px) scale(${this.view.scale})`;
-  }
-
-  /**
-   * ピンチ・ドラッグ・ホイール・ダブルタップで拡大縮小とパンをする（Pointer Events。マウスもタッチも同じ）。
-   * @param {HTMLElement} stage
-   */
-  attachGestures(stage) {
-    /** @type {Map<number, { x: number; y: number }>} */
-    const pointers = new Map();
-    /** ジェスチャーを始めたときの表示と、指の中点・間隔 */
-    let start = { view: this.view, mid: { x: 0, y: 0 }, dist: 1 };
-    /** @type {{ t: number; x: number; y: number } | null} */
-    let lastTap = null;
-    let moved = false;
-
-    /** 舞台の中心を原点にした位置 */
-    const local = (/** @type {{ clientX: number; clientY: number }} */ e) => {
-      const r = stage.getBoundingClientRect();
-      return { x: e.clientX - r.left - r.width / 2, y: e.clientY - r.top - r.height / 2 };
-    };
-    const pts = () => [...pointers.values()];
-    const geometry = () => {
-      const p = pts();
-      if (p.length >= 2) {
-        return { mid: { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 }, dist: Math.max(1, Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y)) };
-      }
-      return { mid: p[0] ?? { x: 0, y: 0 }, dist: 1 };
-    };
-    const restart = () => {
-      const g = geometry();
-      start = { view: this.view, mid: g.mid, dist: g.dist };
-    };
-
-    stage.addEventListener('pointerdown', (e) => {
-      pointers.set(e.pointerId, local(e));
-      try {
-        stage.setPointerCapture(e.pointerId);
-      } catch {
-        // 取れなくても動く
-      }
-      if (pointers.size === 1) moved = false;
-      restart();
-    });
-    stage.addEventListener('pointermove', (e) => {
-      if (!pointers.has(e.pointerId)) return;
-      pointers.set(e.pointerId, local(e));
-      const g = geometry();
-      if (Math.hypot(g.mid.x - start.mid.x, g.mid.y - start.mid.y) > 6 || pointers.size > 1) moved = true;
-      this.view = pinchView(start.view, start.mid, start.dist, g.mid, g.dist);
-      this.applyView();
-    });
-    const end = (/** @type {PointerEvent} */ e) => {
-      if (!pointers.delete(e.pointerId)) return;
-      if (pointers.size > 0) {
-        restart();
-        return;
-      }
-      if (e.type === 'pointerup' && !moved) {
-        const tap = { t: Date.now(), ...local(e) };
-        if (isDoubleTap(lastTap, tap)) {
-          // 拡大していれば元に戻し、していなければタップした点を拡大する
-          this.view = this.view.scale > 1 ? { scale: 1, x: 0, y: 0 } : zoomAt(this.view, DOUBLE_TAP_ZOOM, tap.x, tap.y);
-          this.applyView();
-          lastTap = null;
-        } else {
-          lastTap = tap;
-        }
-      }
-    };
-    stage.addEventListener('pointerup', end);
-    stage.addEventListener('pointercancel', end);
-    stage.addEventListener(
-      'wheel',
-      (e) => {
-        e.preventDefault();
-        const p = local(e);
-        this.view = zoomAt(this.view, this.view.scale * Math.exp(-e.deltaY * 0.0015), p.x, p.y);
-        this.applyView();
-      },
-      { passive: false },
+  setupPanel() {
+    if (typeof this.call.addPanel !== 'function') return;
+    const panel = this.call.addPanel({ label: '画面共有' });
+    this.panel = panel;
+    panel.el.classList.add('screenshare-panel');
+    const bar = document.createElement('div');
+    bar.className = 'screenshare-panel-bar';
+    const stage = new ScreenStage({ embedded: true });
+    panel.el.append(bar, stage.el);
+    this.panelBar = bar;
+    this.panelStage = stage;
+    // 通話の画面が開いたら、最新のフレームを出して大きさを測り直す
+    this.register(
+      panel.onMount((mounted) => {
+        if (mounted) this.showPanelFrame();
+      }),
     );
+  }
+
+  /** 通話の画面の領域を、共有者に合わせて作り直す */
+  renderPanel() {
+    const panel = this.panel;
+    const bar = this.panelBar;
+    if (!panel || !bar) return;
+    if (this.panelPeer === null || !this.sharers.has(this.panelPeer)) {
+      const first = this.sharers.keys().next();
+      this.panelPeer = first.done ? null : first.value;
+      this.panelStage?.reset();
+    }
+    panel.setVisible(this.panelPeer !== null);
+    bar.replaceChildren();
+    if (this.panelPeer === null) return;
+    const tabs = document.createElement('div');
+    tabs.className = 'screenshare-tabs';
+    for (const s of this.sharers.values()) {
+      const b = ui.button({
+        text: `${s.user.display_name} の画面`,
+        icon: 'monitor-play',
+        variant: 'ghost',
+        onClick: () => {
+          this.panelPeer = s.peer;
+          this.panelStage?.reset();
+          this.renderPanel();
+        },
+      });
+      b.classList.add('screenshare-tab');
+      if (s.peer === this.panelPeer) b.classList.add('screenshare-tab-selected');
+      tabs.append(b);
+    }
+    const peer = this.panelPeer;
+    bar.append(tabs, ui.button({ icon: 'maximize-2', label: '大きく見る', variant: 'ghost', onClick: () => this.openViewer(peer) }));
+    this.showPanelFrame();
+  }
+
+  /** 通話の画面の領域に、選んでいる共有者の最新のフレームを出す（画面に出ていない・閲覧表示が上にあるあいだは省く） */
+  showPanelFrame() {
+    const stage = this.panelStage;
+    const s = this.panelPeer === null ? undefined : this.sharers.get(this.panelPeer);
+    if (!stage || !s || !this.panel?.mounted || this.overlay) return;
+    if (!s.frame) stage.showWaiting(`${s.user.display_name} の画面を待っています…`);
+    else stage.showImage(`data:${s.mime ?? 'image/jpeg'};base64,${s.frame}`, `${s.user.display_name} の共有画面`);
   }
 
   // ---- 全画面 ----
@@ -1340,8 +1811,8 @@ export default class ScreenSharePlugin extends Plugin {
       this.offBackFullscreen?.();
       this.offBackFullscreen = null;
     }
-    // 画面の大きさが変わるので、拡大の範囲を合わせ直す
-    setTimeout(() => this.applyView(), 50);
+    // 画面の大きさが変わるので、拡大の範囲を合わせ直す（ResizeObserver が無い環境のため）
+    setTimeout(() => this.stage?.applyView(), 50);
   }
 
   async toggleFullscreen() {
@@ -1401,9 +1872,9 @@ export default class ScreenSharePlugin extends Plugin {
     if (active) {
       // 小窓では全画面の状態を解く（没入モードのままだと戻ったときに混乱する）
       this.exitFullscreen();
-      this.view = { scale: 1, x: 0, y: 0 };
+      this.stage?.reset();
     }
-    setTimeout(() => this.applyView(), 100);
+    setTimeout(() => this.stage?.applyView(), 100);
   }
 
   /**
@@ -1508,104 +1979,177 @@ export default class ScreenSharePlugin extends Plugin {
       }),
     });
 
-    // プレビュー: 今の設定で符号化した画像と、1 フレームのおおよそのサイズ・帯域
+    // プレビュー: 自分の実際の画面を今の設定で符号化した画像と、1 フレームのおおよそのサイズ・帯域
     const box = document.createElement('div');
     box.className = 'screenshare-preview';
-    const actions = document.createElement('div');
-    actions.className = 'screenshare-preview-actions';
-    if (canShareScreen(navigator)) {
-      actions.append(
-        ui.button({ text: '自分の画面で試す', icon: 'monitor-up', onClick: () => void this.capturePreview() }),
-        ui.button({ text: 'サンプルに戻す', icon: 'image', variant: 'ghost', onClick: () => this.resetPreview() }),
-      );
-    }
     const img = document.createElement('img');
     img.className = 'screenshare-preview-img';
     img.alt = '今の設定での見え方';
+    img.hidden = true;
     const info = document.createElement('p');
     info.className = 'screenshare-preview-info';
-    box.append(img, info, actions);
+    box.append(img, info);
+    if (shareBackend(navigator, disnans.screenCapture)) {
+      const actions = document.createElement('div');
+      actions.className = 'screenshare-preview-actions';
+      actions.append(ui.button({ text: '画面を取り込み直す', icon: 'refresh-cw', variant: 'ghost', onClick: () => void this.capturePreview() }));
+      box.append(actions);
+    }
     containerEl.append(box);
     this.previewEls = { img, info };
-    this.refreshPreview();
+    if (this.previewSource) this.refreshPreview();
+    else void this.autoPreview();
   }
 
-  /** @type {{ img: HTMLImageElement; info: HTMLElement } | null} */
-  previewEls = null;
-
-  /** プレビューの元の画面（自分の画面を取っていなければサンプル） */
-  getPreviewSource() {
-    if (this.previewSource) return this.previewSource;
-    const cv = document.createElement('canvas');
-    cv.width = 1920;
-    cv.height = 1080;
-    const ctx = cv.getContext('2d');
-    if (ctx) drawSample(ctx, cv.width, cv.height);
-    this.previewSource = cv;
-    return cv;
-  }
-
-  resetPreview() {
-    this.previewSource = null;
-    this.previewCustom = false;
-    this.refreshPreview();
-  }
-
-  /** 自分の画面を一度だけ取り込んで、プレビューの元にする */
-  async capturePreview() {
-    /** @type {MediaStream} */
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-    } catch {
+  /** 設定を開いたとき: 共有中ならその画面、そうでなければ 1 回だけ自動で取り込む */
+  async autoPreview() {
+    const els = this.previewEls;
+    if (!els) return;
+    if (!shareBackend(navigator, disnans.screenCapture)) {
+      els.info.textContent = 'この環境では画面を取り込めないため、プレビューはありません';
       return;
     }
+    if (await this.previewFromSharing()) return;
+    if (this.previewAutoTried) {
+      els.info.textContent = '「画面を取り込み直す」を押すと、自分の画面で今の設定の見え方を確かめられます';
+      return;
+    }
+    this.previewAutoTried = true;
+    await this.capturePreview();
+  }
+
+  /** 共有中なら、いま共有している画面をプレビューの元にする。できたら true */
+  async previewFromSharing() {
+    if (!this.sharing) return false;
     try {
-      const video = document.createElement('video');
-      video.muted = true;
-      video.playsInline = true;
-      video.srcObject = stream;
-      await video.play();
-      // 最初のフレームが来るまで待つ（最大 2 秒）
-      for (let i = 0; i < 20 && !video.videoWidth; i++) await new Promise((r) => setTimeout(() => r(undefined), 100));
-      await new Promise((r) => setTimeout(() => r(undefined), 150));
-      if (!video.videoWidth) throw new Error('画面が取れません');
-      const size = fitSize(video.videoWidth, video.videoHeight, 1920);
-      const cv = document.createElement('canvas');
-      cv.width = size.w;
-      cv.height = size.h;
-      cv.getContext('2d')?.drawImage(video, 0, 0, size.w, size.h);
-      this.previewSource = cv;
-      this.previewCustom = true;
+      if (this.backend === 'web') {
+        const g = await this.grab();
+        if (!g) return false;
+        try {
+          this.setPreviewSource(g.source, g.w, g.h);
+        } finally {
+          g.close?.();
+        }
+      } else if (this.backend === 'native' && this.lastNative) {
+        const cv = await imageToCanvas(this.lastNative.data, this.lastNative.mime);
+        this.previewSource = cv;
+      } else {
+        return false;
+      }
     } catch (e) {
-      ui.toast('画面を取り込めませんでした', 'error');
-      console.warn('[screenshare] プレビューの取り込みに失敗', e);
-    } finally {
-      for (const t of stream.getTracks()) t.stop();
+      console.warn('[screenshare] 共有中の画面をプレビューにできません', e);
+      return false;
     }
     this.refreshPreview();
+    return true;
+  }
+
+  /**
+   * @param {CanvasImageSource} source
+   * @param {number} w
+   * @param {number} h
+   */
+  setPreviewSource(source, w, h) {
+    const size = fitSize(w, h, 1920);
+    const cv = document.createElement('canvas');
+    cv.width = size.w;
+    cv.height = size.h;
+    cv.getContext('2d')?.drawImage(source, 0, 0, size.w, size.h);
+    this.previewSource = cv;
+  }
+
+  /** 自分の画面を一度だけ取り込んで、プレビューの元にする（デスクトップは画面の選択、Android は許可のダイアログが出る） */
+  async capturePreview() {
+    if (this.previewBusy) return;
+    if (await this.previewFromSharing()) return;
+    const backend = shareBackend(navigator, disnans.screenCapture);
+    if (!backend || this.starting) return;
+    const els = this.previewEls;
+    if (els?.img.isConnected) els.info.textContent = '画面を取り込んでいます…';
+    this.previewBusy = true;
+    try {
+      const ok = backend === 'web' ? await this.capturePreviewWeb() : await this.capturePreviewNative();
+      if (!ok) {
+        if (els?.img.isConnected && !this.previewSource) els.info.textContent = '「画面を取り込み直す」を押すと、自分の画面で今の設定の見え方を確かめられます';
+        return;
+      }
+    } catch (e) {
+      console.warn('[screenshare] プレビューの取り込みに失敗', e);
+      if (els?.img.isConnected) els.info.textContent = `画面を取り込めませんでした（${describeError(e)}）`;
+      return;
+    } finally {
+      this.previewBusy = false;
+    }
+    this.refreshPreview();
+  }
+
+  /** getDisplayMedia で 1 枚だけ取る。キャンセルされたら false */
+  async capturePreviewWeb() {
+    const stream = await this.pickDisplay(5);
+    if (!stream) return false;
+    const video = this.makeCaptureVideo(stream);
+    try {
+      // 最初のフレームが来るまで待つ（最大 3 秒）
+      for (let i = 0; i < 30 && !video.videoWidth; i++) await sleep(100);
+      await sleep(150);
+      if (!video.videoWidth) throw new Error('映像が始まりません');
+      this.setPreviewSource(video, video.videoWidth, video.videoHeight);
+      return true;
+    } finally {
+      for (const t of stream.getTracks()) t.stop();
+      video.srcObject = null;
+      video.remove();
+    }
+  }
+
+  /** 本体のネイティブ（Android）で 1 枚だけ取る。キャンセルされたら false */
+  async capturePreviewNative() {
+    const sc = disnans.screenCapture;
+    /** @type {(f: Disnans.ScreenCaptureFrame) => void} */
+    let got = () => {};
+    /** @type {Promise<Disnans.ScreenCaptureFrame | null>} */
+    const first = new Promise((resolve) => {
+      got = resolve;
+      setTimeout(() => resolve(null), 5000);
+    });
+    try {
+      await sc.start({ maxEdge: 1920, quality: 0.9, fps: 5, format: 'jpeg', color: 'full', keepaliveMs: 500 }, (f) => got(f));
+    } catch (e) {
+      if (isCancelError(e) || /cancel|denied|キャンセル/i.test(describeError(e))) return false;
+      throw e;
+    }
+    let f;
+    try {
+      f = await first;
+    } finally {
+      // 共有を始めていなければ止める（取り込みの途中で共有を始めたら、そのまま使う）
+      if (!this.sharing) await sc.stop().catch(() => {});
+    }
+    if (!f) throw new Error('画面が届きません');
+    this.previewSource = await imageToCanvas(f.data, f.mime);
+    return true;
   }
 
   /** 今の設定でプレビューを作り直す */
   refreshPreview() {
     const els = this.previewEls;
-    if (!els || !els.img.isConnected) return;
+    const src = this.previewSource;
+    if (!els || !els.img.isConnected || !src) return;
     const seq = ++this.previewSeq;
     try {
-      const src = this.getPreviewSource();
       const preset = QUALITY_PRESETS[this.settings.quality];
       const size = fitSize(src.width, src.height, preset.maxEdge);
       const cv = document.createElement('canvas');
       const out = encodeFrame(cv, src, size.w, size.h, { color: this.settings.color, quality: preset.quality, format: null });
       if (seq !== this.previewSeq) return;
       els.img.src = `data:${out.mime};base64,${out.b64}`;
+      els.img.hidden = false;
       const est = estimateBandwidth(out.b64.length, this.settings.fps);
       const kind = out.mime.replace('image/', '').toUpperCase();
       els.info.textContent =
         `${size.w}×${size.h}・${kind}・1 フレーム 約 ${formatBytes(est.imageBytes)}` +
         `・${this.settings.fps} FPS で動き続けると 約 ${formatBytes(est.bytesPerSec)}/秒` +
-        (est.capped ? '（上限で間引かれます）' : '') +
-        (this.previewCustom ? '' : '・サンプル画面');
+        (est.capped ? '（上限で間引かれます）' : '');
     } catch (e) {
       els.info.textContent = 'プレビューを作れませんでした';
       console.warn('[screenshare] プレビューに失敗', e);

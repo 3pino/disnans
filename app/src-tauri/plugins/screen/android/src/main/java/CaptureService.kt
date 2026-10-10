@@ -70,8 +70,11 @@ class CaptureService : Service() {
     private const val ACTION_STOP = "dev.disnans.screen.STOP_CAPTURE"
     /** 形式を選び直す間隔（フレーム数）。減色・グレースケールのとき、候補を全部試して小さいものを選ぶ */
     private const val PROBE_EVERY = 30
-    private const val DIFF_W = 32
-    private const val DIFF_H = 18
+    /** 変化の判定の標本の数。細かい変化（文字の入力など）も拾えるよう、格子を細かめにしている */
+    private const val DIFF_W = 64
+    private const val DIFF_H = 36
+    /** 標本の 1 点でもこれより変わったら（0〜255、RGB の平均）、全体の平均が小さくても「変わった」とする */
+    private const val PEAK_THRESHOLD = 24
 
     @Volatile var running = false
     var frameSink: ((CapturedFrame) -> Unit)? = null
@@ -278,7 +281,8 @@ class CaptureService : Service() {
     lastProcessAt = now
     val sample = sampleOf(bmp)
     val diff = diffOf(prevSample, sample)
-    if (!force && diff <= c.diffThreshold && now - lastSentAt < c.keepaliveMs) return
+    val changed = diff > c.diffThreshold || peakOf(prevSample, sample) > PEAK_THRESHOLD
+    if (!force && !changed && now - lastSentAt < c.keepaliveMs) return
     prevSample = sample
     val sink = frameSink ?: return
     val frame = encode(bmp, c) ?: return
@@ -306,6 +310,19 @@ class CaptureService : Service() {
         abs((a[i] and 0xff) - (b[i] and 0xff))
     }
     return sum.toDouble() / (b.size * 3)
+  }
+
+  /** 標本の 1 点ごとの差（RGB の平均）の最大 */
+  private fun peakOf(a: IntArray?, b: IntArray): Int {
+    if (a == null || a.size != b.size) return Int.MAX_VALUE
+    var peak = 0
+    for (i in b.indices) {
+      val d = (abs(((a[i] shr 16) and 0xff) - ((b[i] shr 16) and 0xff)) +
+        abs(((a[i] shr 8) and 0xff) - ((b[i] shr 8) and 0xff)) +
+        abs((a[i] and 0xff) - (b[i] and 0xff))) / 3
+      if (d > peak) peak = d
+    }
+    return peak
   }
 
   private fun encode(src: Bitmap, c: CaptureConfig): CapturedFrame? {

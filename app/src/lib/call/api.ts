@@ -1,6 +1,6 @@
 import type { CallStore } from './store.svelte';
 
-// プラグイン向けの通話 API（disnans.call。API v8）。型は packages/plugin-sdk/index.d.ts の Disnans.Call
+// プラグイン向けの通話 API（disnans.call。API v8、addPanel と bufferedAmount は v10）。型は packages/plugin-sdk/index.d.ts の Disnans.Call
 
 type ToUser = (id: string) => Disnans.User;
 
@@ -8,6 +8,9 @@ export function createCallApi(call: CallStore, toUser: ToUser): Disnans.Call {
   return {
     get joined() {
       return call.joined;
+    },
+    get bufferedAmount() {
+      return call.bufferedAmount;
     },
     get participants() {
       return call.participants.map((p) => ({
@@ -27,5 +30,6 @@ export function createCallApi(call: CallStore, toUser: ToUser): Disnans.Call {
     onEvent: (name, cb) => call.onEvent(name, (e) => cb({ peer: e.peer, user: toUser(e.userId), payload: e.payload })),
     onChange: (cb) => call.onChange(cb),
     addButton: (opts) => call.addBarButton(opts),
+    addPanel: (opts) => call.addPanel(opts),
   };
 }
