@@ -22,8 +22,8 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 - 設計: [`SPEC.md`](../SPEC.md) の 3.3 と 9章
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
 - UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](PLUGIN_UI.md)
-- ホスト API のバージョン: **4**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から。`holdBackground` の通知のボタン `actions` / `onAction` と `update()` は 4 から）
-- もう1つの実例 **ボイスチャット**（[`examples/voice/`](../examples/voice/)）は、v3 の API で作った通話のプラグインです（→ [ボイスチャットの作り](#実例ボイスチャットv3-の-api)）
+- ホスト API のバージョン: **7**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から。`holdBackground` の通知のボタン `actions` / `onAction` と `update()` は 4 から。`disnans.audio` は 5、`postMessage` の `notify` と `openSettings` は 6、`disnans.call`（通話の拡張）は 7 から）
+- 通話（ボイスチャット）は**アプリ本体の機能**です。画面共有などの拡張は `disnans.call` で作れます（→ [通話の拡張 API](#通話の拡張-apidisnanscallv7)）
 
 ## 目次
 
@@ -114,7 +114,7 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `6`（`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `7`（`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -238,7 +238,7 @@ app/node_modules/.bin/tsc -p examples/dice
 | `this.postMessage({ body, threadId?, name?, notify? })` | ボットとしてメッセージを投稿する（v5）。投稿者は自分のままで、名前は `name`（省略するとプラグインの名前）。`notify: true`（v6）なら、通常の宛先に加えて投稿した本人にも通知が届く（文言はボットの名前）。省略すると通知は送らない。例: `examples/bot` |
 | `this.openSettings()` | このプラグインの設定画面を開く（v6）。設定タブに切り替える |
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント（v3）。いまつながっている人に届く |
-| `this.addStatusBarItem()` | 常時表示のステータス欄に出す要素（v3） |
+| `this.addStatusBarItem()` | 常時表示のステータス欄（画面上部の枠。通話のバーと同じ）に出す要素（v3） |
 | `this.holdBackground({ microphone, actions, onAction })` | 画面を切っても動き続ける（v3。Android のフォアグラウンドサービス）。通知のボタンと `update()` は v4 |
 | `this.addSettingTab(tab)` | プラグインの設定画面（設定 → プラグインの一覧で、トグルの右の歯車から開く） |
 | `this.addIcon(name, svg)` | 独自のアイコンを登録する（→ [PLUGIN_UI.md](PLUGIN_UI.md#addicon独自のアイコン)） |
@@ -247,7 +247,8 @@ app/node_modules/.bin/tsc -p examples/dice
 | `disnans.ui.*` | 本体と同じ見た目の部品とアイコン（→ [PLUGIN_UI.md](PLUGIN_UI.md)） |
 | `disnans.VersionConflictError` | `session.update` がぶつかったときのエラー |
 | `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（v5）。Android は通話中の出力先（受話口・スピーカー・イヤホン・Bluetooth）、デスクトップは `setSinkId`。使えない環境では一覧が空 |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 6） |
+| `disnans.call.*` | 本体の通話の状態の読み取りと、トラック（映像など）の追加・受け取り、通話のバーのボタン（v7。→ [通話の拡張 API](#通話の拡張-apidisnanscallv7)） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 7） |
 
 ### コマンド（パレット・ショートカット・スラッシュコマンド）
 
@@ -506,7 +507,7 @@ this.registerDomEvent(document, 'visibilitychange', () => {
 
 ### プラグイン全体の一時的なイベント（broadcast、v3）
 
-`session.emit` は、先にセッション（とチャットのカード）を作らないと使えません。通話の在室やシグナリングのように、**カードを作らず、いまつながっている人に届けばよいもの**には `broadcast` を使います。
+`session.emit` は、先にセッション（とチャットのカード）を作らないと使えません。ちょっとした合図のように、**カードを作らず、いまつながっている人に届けばよいもの**には `broadcast` を使います。
 
 ```js
 // 送る。自分には届かない（自分の別の端末には届く）。payload は JSON にできる値で、64 KB まで
@@ -522,16 +523,17 @@ const off = this.onBroadcast('presence', (payload, from) => { /* ... */ });
 
 ### ステータス欄（addStatusBarItem、v3）
 
-アプリの下端（モバイルでは下のナビゲーションの上）にある、プラグイン共通の**常時表示の帯**に要素を足します。画面（チャット・設定・スレッド）を切り替えても出ています。
+画面の最上部の共通の枠（トップバーのスロット。通話のバーも同じ枠に出ます）に、プラグイン共通の**常時表示の帯**として要素を足します。画面（チャット・設定・スレッド）を切り替えても出ています。
 
 ```js
 const el = this.addStatusBarItem(); // 空の <div>。外すときに自動で消える
-el.replaceChildren(ui.icon('headphones'), 'ボイスチャット');
+el.replaceChildren(ui.icon('headphones'), 'ステータス');
 ```
 
 - 中身は自由に描きます。**何も入れていない（`:empty`）間は項目も帯も隠れる**ので、出したいときだけ描いてください
 - 帯は小さいので、アイコンと短い文字、小さなボタンだけにします。大きな画面は view を使います
 - 色や大きさは CSS 変数と共通クラスを使います（帯の背景は `--surface`）
+- 通話のバーにボタンを足したいときは、これではなく `disnans.call.addButton`（下）を使います
 
 ### 画面を切っても動き続ける（holdBackground、v3）
 
@@ -674,35 +676,48 @@ ui.button({ text: '振る', icon: 'dices', variant: 'primary', onClick: () => th
 ui.toast('設定を初期値に戻しました');
 ```
 
-### 実例: ボイスチャット（v3 の API）
+### 通話の拡張 API（disnans.call、v7）
 
-[`examples/voice/`](../examples/voice/) は、みんな共通の1部屋の音声通話です。**本体に通話の機能はなく、すべてプラグインの中**で動きます。
+通話（ボイスチャット）は**アプリ本体の機能**で、プラグインではありません（参加・ミュート・出力先などは本体の画面と設定にあります）。
+画面共有のような機能を足せるように、本体の通話に次の API を用意しています。型は [`index.d.ts`](../packages/plugin-sdk/index.d.ts) の `Disnans.Call`。
 
-| やりたいこと | 使っている API |
-|---|---|
-| 参加・退出・ミュート・スピーカーミュート・出力先（パレット、`/vc-join` `/vc-leave` `/vc-mute` `/vc-deafen` `/vc-output`、Ctrl+Shift+M） | `addCommand` |
-| 「＋」メニューの「ボイスチャットに参加」 | `addComposerAction` |
-| いま通話にいる人のアイコンを常に出す・しゃべっている人の枠が光る・押すと自分の側だけ消音 | `addStatusBarItem`（v3） |
-| 在室の管理（3 秒ごとに知らせ、12 秒途絶えたら落ちたと見なす）と、offer / answer / ICE のやり取り | `broadcast` / `onBroadcast`（v3） |
-| 画面を消しても通話を続ける（Android）。通知の「ミュート」「スピーカーミュート」「切断」ボタン | `holdBackground`（v3）、`actions` / `onAction` / `update()`（v4） |
-| スピーカーミュート・出力先の切り替え（受話口・スピーカー・イヤホン・Bluetooth）・マイク / 相手の音量 | `disnans.audio`（v5）、設定タブのスライダー |
-| WebRTC を使えない環境の相手とは、サーバー経由で音声を流す（`audio` イベント） | `broadcast` / `onBroadcast` |
-| 設定（参加時にミュート、STUN サーバー） | `addSettingTab`、`loadData` / `saveData`、`ui.setting` / `ui.toggle` / `ui.input` |
+```js
+const { call } = disnans;
 
-しくみ:
+call.joined;        // 参加しているか
+call.canVideo;      // この環境で映像を送受信できるか
+call.participants;  // [{ peer, user, self, muted, deafened, canVideo, connected, speaking, device }]
+call.remoteTracks;  // いま届いている音声以外のトラック [{ peer, user, track, stream }]
+await call.join();  // 参加（失敗はトーストで知らされる）
+call.leave();
+```
 
-- 参加すると `getUserMedia` でマイクを開き、`presence`（自分の peer ID とミュート）を 3 秒ごとに `broadcast` します。参加していない人も受け取って「通話中」の表示に使います
-- 新しい peer を見つけたら、**peer ID が小さいほうだけ**が WebRTC の offer を出します（同時に出し合わない）。`signal` イベントに `to`（相手の peer ID）を入れ、宛先でない人は無視します
-- 音声は端末同士が直接つなぐメッシュ（10 人ほどまで）。Tailscale の中なので STUN / TURN は要りません
-- 落ちた人（ハートビートが 12 秒途絶えた人）の接続は閉じて表示から外します。つながらない接続は 20 秒で作り直します
-- 画面が裏に回ってもハートビートが止まらないよう、タイマーは Web Worker で回しています
+- **状態の変化**: `call.onChange(cb)`（参加・退出・参加者の出入り・ミュート・つながった・しゃべり始めなど。しゃべっている人の変化も含むので、重い処理はしない）
+- **トラックを送る**: `call.addTrack(track, stream?)` で映像などを通話に足します。つながっている相手へは WebRTC の**再ネゴシエーション**で届き、あとから参加した人にも自動で送ります。戻り値の関数（か `call.removeTrack(track)`）で外します。`track.stop()` は呼ばないので、止めるのはプラグインの役目です。通話を抜けると足したトラックは外れます
+- **トラックを受け取る**: `call.onTrack(({ peer, user, track, stream }) => ...)`。相手の声（最初の音声）は本体が鳴らすので渡さず、映像と、そのほかの音声が届きます。`call.onTrackEnd(cb)` は、相手が外した・終わった・通話を抜けたとき
+- **バーのボタン**: `call.addButton({ icon, label, onClick, active?, disabled? })` で、通話のバー（参加中だけ表示）にボタンを足します。戻り値の `update(patch)` / `remove()` で変えたり外したりします
+- **映像を扱えない環境**: Linux の WebKitGTK など WebRTC を使えない環境の相手とは、音声をサーバー経由で流す中継（**音声だけ**）になります。自分が使えないなら `call.canVideo === false`（`addTrack` は例外）、相手が使えないなら `participant.canVideo === false`（その相手にはトラックを送らず、届きません）で判別できます
+- コールバックの登録や `addTrack` の戻り値の関数は、プラグインが外されるときに自動では外れないので、`this.register(...)` に渡して片付けます
 
-必要なもの（環境ごと）:
+```js
+// 画面共有のひな形
+const off = [];
+const btn = call.addButton({ icon: 'monitor-up', label: '画面を共有', onClick: () => share() });
+this.register(() => btn.remove());
+async function share() {
+  if (!call.joined) return disnans.ui.toast('通話に参加していません', 'error');
+  if (!call.canVideo) return disnans.ui.toast('この環境では映像を送れません', 'error');
+  const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+  const [track] = stream.getVideoTracks();
+  off.push(call.addTrack(track, stream));
+  track.addEventListener('ended', () => off.pop()?.());
+}
+this.register(call.onTrack(({ user, stream }) => { /* <video> に stream を出す */ }));
+this.register(call.onTrackEnd(({ track }) => { /* 片付ける */ }));
+```
 
-- **マイクを使うには、アプリ版（Tauri）が必要**です。WebView の `getUserMedia` は安全なコンテキストでしか動かないため、`http://` で開いたブラウザー版（Tailscale の IP など）では使えません
-- Android: マイクの許可（初回の参加で聞かれる）と、通話中のフォアグラウンドサービスをアプリが持っています
-- Linux: GStreamer のプラグイン（`gstreamer1.0-plugins-good` / `-bad` / `gstreamer1.0-nice`）が要ります
-- Windows: 追加の準備は要りません
+本体の通話のしくみ（参加者の管理と kick はサーバー、メディアは WebRTC のメッシュ）は [`SPEC.md`](../SPEC.md) の 9.11、サーバーの経路は [`API.md`](API.md) の WebSocket を参照してください。
+マイクを使うには**アプリ版（Tauri）が必要**です（WebView の `getUserMedia` は安全なコンテキストでしか動かないため、`http://` で開いたブラウザー版では使えません）。
 
 ---
 

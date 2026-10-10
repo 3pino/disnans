@@ -1,0 +1,14 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "disnans",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 360,
+        "minHeight": 480,
+        "dragDropEnabled": true
+      }
+    ]
+  }
+}

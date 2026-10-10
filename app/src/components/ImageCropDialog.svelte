@@ -85,10 +85,6 @@
 </script>
 
 <Modal title="切り抜き" {onclose} width={460}>
-  <p class="image-crop-source muted">
-    元の画像: {info.width} × {info.height} · 切り抜き後: {rect.w} × {rect.h}
-  </p>
-
   <div class="image-crop-area" bind:clientWidth={areaW} style:height="{boxH}px">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
@@ -121,17 +117,12 @@
     <Button onclick={onclose}>キャンセル</Button>
     <Button variant="primary" onclick={decide}>決定</Button>
   </div>
-  <p class="image-crop-note muted">
-    送るときに切り抜きます。形式は JPEG（透過がある画像は PNG）になります。
-  </p>
 </Modal>
 
 <style>
-  .image-crop-source {
-    margin: -6px 0 12px;
-    font-size: 13px;
-  }
+  /* 上の見出しと下のボタンから少し離す */
   .image-crop-area {
+    margin: 10px 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -200,9 +191,7 @@
     top: 100%;
     cursor: nwse-resize;
   }
-  .image-crop-note {
-    margin: 12px 0 0;
-    font-size: 12px;
-    line-height: 1.6;
+  .modal-actions {
+    margin: 10px 0 0;
   }
 </style>

@@ -1,6 +1,7 @@
 import { api, uploadFile } from '../api';
 import { prepareUpload } from '../imageCrop';
 import { mentionsToText } from '../markdown';
+import { authorOf } from '../author';
 import type { ClientEvent } from '../protocol/ClientEvent';
 import type { Message } from '../protocol/Message';
 import type { ServerEvent } from '../protocol/ServerEvent';
@@ -9,10 +10,12 @@ import { Socket, type SocketStatus } from '../ws';
 import { wsUrl } from '../config';
 import { Timeline, type OutgoingFile } from './timeline.svelte';
 import { threads } from './threads.svelte';
-import { ui } from './ui.svelte';
+import { ui, type ToastAvatar } from './ui.svelte';
 import { notifications } from './notifications.svelte';
 import { page, unread } from './unread.svelte';
 import { errorText } from '../errors';
+import { replyPreviewOf } from '../reply';
+import { reply } from './reply.svelte';
 
 type Listener = (ev: ServerEvent) => void;
 
@@ -87,6 +90,13 @@ class Client {
     return this.users[id]?.display_name ?? '不明なユーザー';
   }
 
+  /** 通知のもとのメッセージを送った人の見た目（読み込まれていなければ null） */
+  senderOf(messageId: string | null): ToastAvatar | null {
+    const m = messageId ? this.findMessage(messageId) : undefined;
+    if (!m) return null;
+    return { author: authorOf(m, this.users), user: this.users[m.author_id], id: m.author_id };
+  }
+
   /** どこかに読み込まれているメッセージを探す */
   findMessage(id: string): Message | undefined {
     for (const t of this.timelines.values()) {
@@ -102,7 +112,7 @@ class Client {
    * メッセージを送る。添付は送るときにアップロードし、そのあとでメッセージを送る（送信中は仮表示）。
    * 失敗したら仮表示を「送信できませんでした」にして、再送・取り消しに任せる
    */
-  sendMessage(opts: { threadId: string | null; body: string; files: OutgoingFile[]; startThread?: boolean }): void {
+  sendMessage(opts: { threadId: string | null; body: string; files: OutgoingFile[]; startThread?: boolean; replyTo?: Message | null; silent?: boolean }): void {
     const me = this.me;
     if (!me) return;
     const clientId = `c-${Date.now().toString(36)}-${(++this.seq).toString(36)}`;
@@ -112,6 +122,8 @@ class Client {
       client_id: clientId,
       author_id: me.id,
       thread_id: opts.threadId,
+      reply_to: opts.replyTo?.id ?? null,
+      reply_preview: opts.replyTo ? replyPreviewOf(opts.replyTo) : null,
       body: opts.body,
       attachments: [],
       reactions: [],
@@ -124,6 +136,7 @@ class Client {
       failed: false,
       attachment_ids: [],
       start_thread: opts.startThread ?? false,
+      silent: opts.silent ?? false,
       files: opts.files.map((f) => ({
         key: ++this.seq,
         file: f.file,
@@ -189,6 +202,8 @@ class Client {
         body: p.body,
         attachment_ids: ids,
         start_thread: p.start_thread,
+        reply_to: p.reply_to,
+        silent: p.silent,
       });
     } finally {
       p.busy = false;
@@ -273,6 +288,7 @@ class Client {
         const m = ev.message;
         this.timeline(m.thread_id).upsert(m);
         threads.updateRoot(m);
+        for (const t of this.timelines.values()) t.setReplyPreview(m.id, replyPreviewOf(m));
         break;
       }
       case 'message.deleted': {
@@ -280,12 +296,14 @@ class Client {
         // 未読に数えていたものなら減らす（読み込んでいなければ投稿者が分からないので、他人のものとみなす）
         unread.onDeleted(ev.message_id, ev.thread_id, tl?.find(ev.message_id)?.author_id);
         tl?.remove(ev.message_id);
+        for (const t of this.timelines.values()) t.setReplyPreview(ev.message_id, null);
         if (threads.get(ev.message_id) || this.timelines.has(ev.message_id)) {
           threads.remove(ev.message_id);
           unread.removeScope(ev.message_id);
           this.timelines.delete(ev.message_id);
           if (ui.panel?.kind === 'thread' && ui.panel.id === ev.message_id) ui.closePanel();
         }
+        reply.drop(ev.message_id);
         break;
       }
       case 'thread.updated': {
@@ -308,7 +326,7 @@ class Client {
       }
       case 'notify': {
         const body = mentionsToText(ev.body, (id) => this.nameOf(id));
-        notifications.show({ title: ev.title, body, threadId: ev.thread_id, sample: ev.sample });
+        notifications.show({ title: ev.title, body, threadId: ev.thread_id, sample: ev.sample, from: this.senderOf(ev.message_id) });
         break;
       }
       case 'error': {

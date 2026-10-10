@@ -50,6 +50,10 @@ async fn run(state: SharedState, user: User, ip: IpAddr, socket: WebSocket) {
         users,
     };
     let (conn, mut queue) = state.hub.register(&user.id, ip, &hello);
+    // 通話中なら、いまの参加者を知らせる
+    if let Some(call) = state.calls.state_for_new_conn() {
+        state.hub.send_to_conn(conn, &call);
+    }
     tracing::info!(conn, user = %user.login_name, "WebSocket 接続");
 
     let (mut sink, mut stream) = socket.split();
@@ -109,6 +113,8 @@ async fn run(state: SharedState, user: User, ip: IpAddr, socket: WebSocket) {
     }
 
     state.hub.unregister(conn);
+    // 切れた接続は通話からも外す
+    state.calls.leave(&state.hub, conn);
     writer.abort();
     tracing::info!(conn, user = %user.login_name, "WebSocket 切断");
 }
@@ -136,6 +142,8 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
             body,
             attachment_ids,
             start_thread,
+            reply_to,
+            silent,
         } => {
             client_id = Some(id.clone());
             let req = SendMessage {
@@ -144,6 +152,8 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
                 body,
                 attachment_ids,
                 start_thread,
+                reply_to,
+                silent,
             };
             chat::send_message(state, actor, req).await
         }
@@ -154,7 +164,7 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
             chat::delete_message(state, actor, &message_id).await
         }
         ClientEvent::ThreadCreate { root_message_id } => {
-            chat::create_thread(state, &root_message_id).await
+            chat::create_thread(state, actor, &root_message_id).await
         }
         ClientEvent::ReactionAdd { message_id, emoji } => {
             chat::add_reaction(state, actor, &message_id, &emoji).await
@@ -172,6 +182,18 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
             name,
             payload,
         } => sessions::emit_plugin(state, actor, plugin, name, payload),
+        ClientEvent::CallJoin { peer, status } => state.calls.join(&state.hub, actor, peer, status),
+        ClientEvent::CallLeave => {
+            if let Some(conn) = actor.conn {
+                state.calls.leave(&state.hub, conn);
+            }
+            Ok(())
+        }
+        ClientEvent::CallUpdate { status } => state.calls.update(&state.hub, actor, status),
+        ClientEvent::CallKick { peer } => state.calls.kick(&state.hub, actor, &peer),
+        ClientEvent::CallEmit { name, payload } => {
+            state.calls.emit(&state.hub, actor, name, payload)
+        }
         ClientEvent::Ping => {
             state.hub.send_to_conn(conn, &ServerEvent::Pong);
             Ok(())

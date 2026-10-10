@@ -36,6 +36,7 @@
   import EnterKeySettings from './EnterKeySettings.svelte';
   import HotkeySettings from './HotkeySettings.svelte';
   import ComposerMenuSettings from './ComposerMenuSettings.svelte';
+  import CallSettings from './CallSettings.svelte';
   import DeviceKindSettings from './DeviceKindSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
@@ -77,6 +78,7 @@
     { value: 'enterKeys', name: '入力欄のキー' },
     ...(isAndroid() ? [] : [{ value: 'hotkeys' as const, name: 'ホットキー' }]),
     { value: 'composerMenu', name: '＋メニュー' },
+    { value: 'call', name: '通話' },
   ];
 
   const themes: { value: ThemePref; label: string; icon: typeof Sun }[] = [
@@ -225,6 +227,8 @@
             <EnterKeySettings />
           {:else if ui.settingsSub === 'hotkeys'}
             <HotkeySettings />
+          {:else if ui.settingsSub === 'call'}
+            <CallSettings />
           {:else}
             <ComposerMenuSettings />
           {/if}
@@ -314,21 +318,14 @@
           value={prefs.messageLayout}
           onchange={(v) => prefs.setMessageLayout(v)}
         />
-        <p class="muted settings-small-text">リストは名前と時刻を上に並べます。吹き出しは自分の発言を右に、ほかの人の発言を左に並べます。</p>
       </Section>
 
       <Section title="操作" class="settings-operations">
         {#each operations as op (op.value)}
-          <SettingRow name={op.name} class="settings-operation-row">
+          <!-- 行全体がボタン。右のアイコンは飾り（読み上げは行の名前） -->
+          <SettingRow name={op.name} class="settings-operation-row" onclick={() => ui.openSettingsSub(op.value)}>
             {#snippet control()}
-              <IconButton
-                class="settings-operation-open"
-                label="{op.name}の設定"
-                title="設定"
-                onclick={() => ui.openSettingsSub(op.value)}
-              >
-                <Settings size={18} />
-              </IconButton>
+              <span class="settings-operation-icon" aria-hidden="true"><Settings size={18} /></span>
             {/snippet}
           </SettingRow>
         {/each}
@@ -631,5 +628,10 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+  }
+  /* 「操作」の行の右の飾りのアイコン */
+  .settings-operation-icon {
+    display: flex;
+    color: var(--text-muted);
   }
 </style>

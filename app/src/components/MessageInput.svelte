@@ -10,7 +10,9 @@
   import { emojiProvider } from '../lib/suggest/emoji';
   import { commandHint, slashProvider } from '../lib/suggest/slash';
   import { slashCommands } from '../lib/slashCommands.svelte';
-  import { isAndroid } from '../lib/config';
+  import { isAndroid, isLinuxDesktop } from '../lib/config';
+  import { readClipboardImage } from '../lib/clipboardImage';
+  import { ui } from '../lib/stores/ui.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { enterComboOf, insertNewline, insertsNewlineByDefault } from '../lib/enterKeys';
 
@@ -171,6 +173,21 @@
     if (files.length && onfiles) {
       e.preventDefault();
       onfiles(files);
+      return;
+    }
+    // Linux の WebKitGTK は、画像のペーストで clipboardData.files が空になることがある。
+    // 文字のペーストは今まで通り（テキストが入っているときは、ネイティブのクリップボードを見ない）
+    if (onfiles && isLinuxDesktop() && (e.clipboardData?.getData('text/plain') ?? '') === '') {
+      void pasteNativeImage();
+    }
+  }
+
+  async function pasteNativeImage() {
+    try {
+      const file = await readClipboardImage();
+      if (file && onfiles) onfiles([file]);
+    } catch (e) {
+      ui.toast(`画像を貼り付けられませんでした: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }
   }
 </script>

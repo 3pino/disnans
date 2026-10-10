@@ -19,7 +19,7 @@
 | `Toggle` | `.toggle` / `.toggle-thumb`（`.toggle-on`） | `<Toggle bind:checked label="有効" onchange={...} />`。`<button role="switch">` |
 | `TextInput` | `.input` | `<TextInput bind:value placeholder="..." />`。ほかの属性はそのまま `<input>` に渡る |
 | `Section` | `.setting-section` / `.setting-section-divider` / `.setting-section-title` | `<Section title="通知">...</Section>`。区切り線（Divider。前にもセクションがあるときだけ出る） + 見出し。中身の縦の間隔は 10px |
-| `SettingRow` | `.setting-row` / `-icon` / `-info` / `-name` / `-description` / `-control` | `<SettingRow name="..." description="..." icon="...">{#snippet control()}<Toggle ... />{/snippet}</SettingRow>`。`icon` は任意 |
+| `SettingRow` | `.setting-row` / `-icon` / `-info` / `-name` / `-description` / `-control` | `<SettingRow name="..." description="..." icon="...">{#snippet control()}<Toggle ... />{/snippet}</SettingRow>`。`icon` は任意。`onclick` を渡すと行全体が ghost ボタンになる（`.setting-row-button`。読み上げの名前は `name`、`control` は飾りだけにする） |
 | `StatusLine` | `.status-line`（`-muted` / `-ok` / `-accent` / `-warn` / `-error`） | `<StatusLine kind="ok" icon={CircleCheck}>最新です</StatusLine>`。`busy` で回るアイコン |
 | `Menu` / `MenuItem` | `.menu` / `.menu-backdrop` / `.menu-item`（`.menu-item-danger`） | `<Menu class="..." onclose={...}><MenuItem icon={Paperclip} onclick={...}>添付</MenuItem></Menu>`。位置は使う側で決める。`icon` は名前でもよい |
 | `SuggestList` | `.suggest-list` / `.suggest-list-item`（`-selected`） / `-item-title` / `-item-detail` | 入力欄の補完候補。下を参照 |

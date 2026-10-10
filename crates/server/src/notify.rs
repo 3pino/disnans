@@ -108,11 +108,14 @@ pub enum Sender<'a> {
 /// - スレッドへの返信なら、そのスレッドに関わっている人（`participants`: 起点の投稿者と返信した人）
 /// - `Sender::Bot` のときは、投稿した本人
 ///
+/// `reply_author` は返信先の作者。返信なら、その人にも通知する。
+///
 /// `Sender::User` では本人には送らない。1つのメッセージで同じ人に送るのは1回だけ（メンションを優先する）。
 pub fn plan(
     message: &Message,
     users: &[User],
     participants: &[String],
+    reply_author: Option<&str>,
     sender: Sender,
 ) -> Vec<(String, Notification)> {
     let names: HashMap<&str, &str> = users
@@ -153,6 +156,12 @@ pub fn plan(
         if names.contains_key(id) && sent.insert(id) {
             push(id, format!("{author} さんからのメンション"));
         }
+    }
+    if let Some(id) = reply_author
+        && names.contains_key(id)
+        && sent.insert(id)
+    {
+        push(id, format!("{author} さんが返信"));
     }
     if message.thread_id.is_some() {
         for id in participants {
@@ -213,6 +222,8 @@ mod tests {
             id: "M1".into(),
             author_id: author.into(),
             thread_id: thread_id.map(Into::into),
+            reply_to: None,
+            reply_preview: None,
             body: body.into(),
             attachments: vec![],
             reactions: vec![],
@@ -242,6 +253,7 @@ mod tests {
             &msg,
             &users,
             &["B".into(), "C".into(), "A".into()],
+            None,
             Sender::User,
         );
 
@@ -261,10 +273,27 @@ mod tests {
     }
 
     #[test]
+    fn notifies_reply_target_unless_self_or_already_notified() {
+        let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
+        let msg = message("A", None, "了解");
+        let p = plan(&msg, &users, &[], Some("B"), Sender::User);
+        assert_eq!(p.len(), 1);
+        assert_eq!(
+            (p[0].0.as_str(), p[0].1.title.as_str()),
+            ("B", "alice さんが返信")
+        );
+        // 自分への返信には通知しない
+        assert!(plan(&msg, &users, &[], Some("A"), Sender::User).is_empty());
+        // メンション済みの人には1回だけ
+        let msg = message("A", None, "<@B> 了解");
+        assert_eq!(plan(&msg, &users, &[], Some("B"), Sender::User).len(), 1);
+    }
+
+    #[test]
     fn bot_notifies_the_poster_with_the_bot_name() {
         let users = [user("A", "alice"), user("B", "bob")];
         let msg = message("A", None, "hello");
-        let plan = plan(&msg, &users, &[], Sender::Bot("ダイス"));
+        let plan = plan(&msg, &users, &[], None, Sender::Bot("ダイス"));
         assert_eq!(plan.len(), 1);
         assert_eq!(plan[0].0, "A");
         assert_eq!(plan[0].1.title, "ダイス からのメッセージ");
@@ -276,7 +305,7 @@ mod tests {
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
         let msg = message("A", Some("ROOT"), "<@B> 見て");
         // 投稿者（A）はスレッドの参加者に入っていないので、本人への通知になる
-        let plan = plan(&msg, &users, &["C".into()], Sender::Bot("ダイス"));
+        let plan = plan(&msg, &users, &["C".into()], None, Sender::Bot("ダイス"));
         let targets: Vec<_> = plan
             .iter()
             .map(|(u, n)| (u.as_str(), n.title.as_str()))
@@ -295,7 +324,7 @@ mod tests {
     fn bot_poster_gets_one_notification_even_if_mentioned() {
         let users = [user("A", "alice")];
         let msg = message("A", None, "<@A> 自分宛て");
-        let plan = plan(&msg, &users, &[], Sender::Bot("ダイス"));
+        let plan = plan(&msg, &users, &[], None, Sender::Bot("ダイス"));
         assert_eq!(plan.len(), 1);
         assert_eq!(plan[0].1.title, "ダイス さんからのメンション");
     }
@@ -304,6 +333,6 @@ mod tests {
     fn no_thread_notifications_in_main_chat() {
         let users = [user("A", "alice"), user("B", "bob")];
         let msg = message("A", None, "hello");
-        assert!(plan(&msg, &users, &["B".into()], Sender::User).is_empty());
+        assert!(plan(&msg, &users, &["B".into()], None, Sender::User).is_empty());
     }
 }

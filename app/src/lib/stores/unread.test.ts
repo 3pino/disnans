@@ -12,6 +12,8 @@ function msg(id: string, author: string, threadId: string | null = null): Messag
     id,
     author_id: author,
     thread_id: threadId,
+    reply_to: null,
+    reply_preview: null,
     body: '',
     attachments: [],
     reactions: [],

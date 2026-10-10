@@ -524,6 +524,30 @@ a {
   gap: 8px;
   flex: none;
 }
+/* 行全体を押せるボタンにした設定の行（SettingRow に onclick を渡したとき）。ghost ボタンと同じ色 */
+.setting-row-button {
+  width: calc(100% + 20px);
+  margin: 0 -10px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.setting-row-button:hover,
+.setting-row-button:focus-visible {
+  background: var(--hover);
+}
+.setting-row-button:active {
+  background: var(--surface-2);
+}
+.setting-row-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
 
 /* アイコン付きの1行の状態表示（「最新です」「確認中…」など） */
 .status-line {

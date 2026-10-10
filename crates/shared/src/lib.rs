@@ -50,6 +50,60 @@ pub struct Reaction {
 pub struct ThreadInfo {
     pub reply_count: u32,
     pub last_reply_at: Option<Timestamp>,
+    /// スレッドを立てた人。タイトルとアーカイブの設定ができるのはこの人だけ。
+    pub created_by: Id,
+    /// スレッドのタイトル。`null` なら起点のメッセージの冒頭を見出しにする。
+    pub title: Option<String>,
+    /// タグ（表示の順）。
+    pub tags: Vec<ThreadTag>,
+    /// アーカイブされているか（一覧でグレーアウトするだけ。返信はできる）。
+    pub archived: bool,
+}
+
+/// スレッドのタグ。好きな文字列（絵文字を含む）と、0 か 1 個の Lucide アイコン名。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ThreadTag {
+    pub label: String,
+    /// Lucide のアイコン名（英小文字・数字・ハイフン）。
+    pub icon: Option<String>,
+}
+
+/// `PATCH /api/threads/{id}`。指定した項目だけ変える（スレッドを立てた人だけ）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateThread {
+    /// 新しいタイトル。空文字なら消す（起点の冒頭を見出しにする）。
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub archived: Option<bool>,
+}
+
+/// `PUT /api/threads/{id}/tags`。タグ全体を置き換える（誰でもできる）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SetThreadTags {
+    pub tags: Vec<ThreadTag>,
+}
+
+/// `GET /api/thread-tags` の1件。すでに使われているタグと、使っているスレッドの数。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ThreadTagUsage {
+    pub tag: ThreadTag,
+    pub count: u32,
+}
+
+/// 返信先のメッセージの要約（引用の表示用）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ReplyPreview {
+    pub author_id: Id,
+    /// 本文の冒頭（改行を空白にして切ったもの）。添付だけなら空。
+    pub body: String,
+    pub has_attachments: bool,
+    pub bot: Option<BotInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -59,6 +113,10 @@ pub struct Message {
     pub author_id: Id,
     /// スレッド内の返信なら、そのスレッド（起点のメッセージ）の ID。メインチャットなら `null`。
     pub thread_id: Option<Id>,
+    /// 返信なら、返信先のメッセージの ID（同じメインチャット・同じスレッドのメッセージ）。
+    pub reply_to: Option<Id>,
+    /// 返信先の要約。返信先が削除されていれば `null`（`reply_to` だけが残る）。
+    pub reply_preview: Option<ReplyPreview>,
     /// Markdown サブセットの生テキスト。メンションは `<@user_id>`。
     pub body: String,
     pub attachments: Vec<Attachment>,
@@ -263,6 +321,31 @@ pub struct ApiError {
     pub message: String,
 }
 
+/// 通話の参加者（接続）が自分で知らせる状態。サーバーは中身を解釈せずに保存して配る。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CallStatus {
+    /// マイクをミュートしている。
+    pub muted: bool,
+    /// スピーカーミュート（相手の声を消している）。
+    pub deafened: bool,
+    /// WebRTC を使える。`false` ならサーバー経由（リレー）で音声を送る。
+    pub rtc: bool,
+    /// 端末の種類（smartphone / tablet / laptop / monitor）。
+    #[serde(default)]
+    pub device: Option<String>,
+}
+
+/// 通話にいる接続1つ分。同じ人が2台で入れば2つ。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CallMember {
+    /// 参加者が決める接続の ID（シグナリングの宛先に使う）。
+    pub peer: String,
+    pub user_id: Id,
+    pub status: CallStatus,
+}
+
 /// クライアント → サーバー（WebSocket）。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type")]
@@ -278,6 +361,12 @@ pub enum ClientEvent {
         attachment_ids: Vec<Id>,
         /// `true` なら、このメッセージを起点にスレッドを作る。
         start_thread: bool,
+        /// 返信先のメッセージ ID。同じメインチャット・同じスレッドのメッセージだけ指定できる。
+        #[serde(default)]
+        reply_to: Option<Id>,
+        /// `true` なら通知を送らない。
+        #[serde(default)]
+        silent: bool,
     },
     #[serde(rename = "message.edit")]
     MessageEdit { message_id: Id, body: String },
@@ -301,6 +390,25 @@ pub enum ClientEvent {
     #[serde(rename = "plugin.emit")]
     PluginEmit {
         plugin: String,
+        name: String,
+        #[ts(type = "unknown")]
+        payload: serde_json::Value,
+    },
+    /// 通話に参加する（この接続が参加者になる）。入り直すときは同じ接続で呼べば置き換わる。
+    #[serde(rename = "call.join")]
+    CallJoin { peer: String, status: CallStatus },
+    /// 通話から抜ける。接続が切れたときも自動で抜ける。
+    #[serde(rename = "call.leave")]
+    CallLeave,
+    /// 通話での自分の状態（ミュートなど）を更新する。
+    #[serde(rename = "call.update")]
+    CallUpdate { status: CallStatus },
+    /// 通話の参加者を通話から外す（`peer` は外す接続の ID）。外された接続には `call.kicked` が届く。
+    #[serde(rename = "call.kick")]
+    CallKick { peer: String },
+    /// 通話のシグナリング・音声を、ほかの参加者全員に中継する（保存しない）。参加者だけが送れる。
+    #[serde(rename = "call.emit")]
+    CallEmit {
         name: String,
         #[ts(type = "unknown")]
         payload: serde_json::Value,
@@ -377,6 +485,22 @@ pub enum ServerEvent {
         #[ts(type = "unknown")]
         payload: serde_json::Value,
     },
+    /// 通話の参加者の一覧。参加・退出・状態の更新のたびに全員へ送る（接続直後は、通話中なら送る）。
+    #[serde(rename = "call.state")]
+    CallState { members: Vec<CallMember> },
+    /// `call.emit` の中継（参加者にだけ届く）。
+    #[serde(rename = "call.event")]
+    CallEvent {
+        /// 送った接続の ID（サーバーが付ける）。
+        peer: String,
+        from: Id,
+        name: String,
+        #[ts(type = "unknown")]
+        payload: serde_json::Value,
+    },
+    /// 自分が通話から外された。
+    #[serde(rename = "call.kicked")]
+    CallKicked { by: Id },
     /// 自分の設定（`/api/me/prefs`）が変わった。同じユーザーのすべての接続に届く。
     #[serde(rename = "prefs.updated")]
     PrefsUpdated {

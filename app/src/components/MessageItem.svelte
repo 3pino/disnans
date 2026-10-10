@@ -10,6 +10,7 @@
   import X from '@lucide/svelte/icons/x';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import AuthorAvatar from './AuthorAvatar.svelte';
+  import ReplyQuote from './ReplyQuote.svelte';
   import Markdown from './Markdown.svelte';
   import Attachments from './Attachments.svelte';
   import Reactions from './Reactions.svelte';
@@ -24,6 +25,8 @@
   import { client } from '../lib/stores/client.svelte';
   import { authorOf, isOwnMessage } from '../lib/author';
   import { ui } from '../lib/stores/ui.svelte';
+  import { reply } from '../lib/stores/reply.svelte';
+  import { placeOf } from '../lib/reply';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { enterComboLabel, sendCombos } from '../lib/enterKeys';
   import { unread as unreadStore } from '../lib/stores/unread.svelte';
@@ -40,14 +43,14 @@
   }: {
     message: Message | PendingMessage;
     grouped?: boolean;
-    /** スレッドの中（返信）。ここからはスレッドを作れない */
+    /** スレッドのパネルの中（起点のメッセージを含む）。ここからはスレッドを作れない */
     inThread?: boolean;
   } = $props();
 
   /** 吹き出しのときの、他人の発言のアイコンの大きさ（px）。ふだんの半分くらい */
   const AVATAR_PX = 20;
-  /** リストのときのアイコンの大きさ（px） */
-  const AVATAR_LIST_PX = 36;
+  /** リストのときのアイコンの大きさ（px）。スレッド一覧（ThreadList）のアイコンと同じ */
+  const AVATAR_LIST_PX = 28;
 
   /** 表示の仕方（設定）。吹き出しのときだけ、自分の発言を右に寄せ、時刻を吹き出しの横に出す */
   const layout = $derived(prefs.messageLayout);
@@ -68,8 +71,12 @@
   const canEdit = $derived(isMine && !message.card && !author.isBot);
   /** 本文のコピー（カードや本文のない発言は対象外） */
   const canCopy = $derived(!pending && !message.card && message.body.length > 0);
-  /** 左へのスワイプで返信できるか（長押しメニューの「スレッドで返信」と同じ） */
-  const canSwipe = $derived(canThread && !editing);
+  /** 返信できるか（同じ場所のメッセージに返信する） */
+  const canReply = $derived(!pending);
+  /** 返信を送る場所（スレッドの ID。メインチャットなら null） */
+  const place = $derived(placeOf(message, inThread));
+  /** 左へのスワイプで返信できるか（メニューの「返信」と同じ） */
+  const canSwipe = $derived(canReply && !editing);
 
   /** 一覧のとき、名前と時刻（ヘッダー）を出しているか。アイコンを押すと出し入れする（既定は隠す） */
   let headerShown = $state(false);
@@ -99,6 +106,11 @@
     if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
     toggleHeader();
+  }
+
+  /** このメッセージへの返信を始める（入力欄の上に返信先を出す） */
+  function startReply() {
+    if (canReply) reply.set(place, message as Message);
   }
 
   function saveEdit() {
@@ -194,7 +206,7 @@
     endPress(e);
     if (swipeAxisNow === 'x' && swipeTriggered(dragDx)) {
       navigator.vibrate?.(10);
-      client.openThreadFrom(message);
+      startReply();
     }
     resetSwipe();
   }
@@ -314,6 +326,9 @@
             {/if}
           </div>
         {:else}
+          {#if message.reply_to}
+            <ReplyQuote {message} threadId={place} />
+          {/if}
           {#if message.card}
             <!-- プラグインのセッションのカード。吹き出しの代わりに、その下に出す -->
             <MessageCard card={message.card} />
@@ -379,10 +394,13 @@
       <IconButton label="リアクション" title="リアクション" onclick={(e) => (picker = e.currentTarget.getBoundingClientRect())}
         ><SmilePlus size={17} /></IconButton
       >
+      {#if canReply}
+        <IconButton label="返信" title="返信" onclick={startReply}><Reply size={17} /></IconButton>
+      {/if}
       {#if canThread}
         <IconButton
-          label={message.thread ? 'スレッドを開く' : 'スレッドを作る'}
-          title={message.thread ? 'スレッドを開く' : 'スレッドで返信'}
+          label={message.thread ? 'スレッドを開く' : 'スレッドを立てる'}
+          title={message.thread ? 'スレッドを開く' : 'スレッドを立てる'}
           onclick={() => client.openThreadFrom(message)}><MessageSquare size={17} /></IconButton
         >
       {/if}
@@ -418,8 +436,9 @@
     onmorereactions={() => (picker = new DOMRect(window.innerWidth / 2 + 140, window.innerHeight / 3, 0, 0))}
     items={[
       ...(canCopy ? [{ label: 'コピー', icon: Copy, run: copyBody }] : []),
+      ...(canReply ? [{ label: '返信', icon: Reply, run: startReply }] : []),
       ...(canThread
-        ? [{ label: message.thread ? 'スレッドを開く' : 'スレッドで返信', icon: MessageSquare, run: () => client.openThreadFrom(message) }]
+        ? [{ label: message.thread ? 'スレッドを開く' : 'スレッドを立てる', icon: MessageSquare, run: () => client.openThreadFrom(message) }]
         : []),
       ...(canEdit ? [{ label: '編集', icon: Pencil, run: () => (ui.editing = message.id) }] : []),
       ...(deletable ? [{ label: '削除', icon: Trash2, danger: true, run: remove }] : []),
@@ -453,6 +472,16 @@
     background: var(--mention-soft);
     box-shadow: inset 2px 0 0 var(--mention);
   }
+  /* 返信の引用から飛んできたとき、少しのあいだ強調する */
+  .message-item:global(.message-item-flash) {
+    animation: message-flash 1.8s ease-out;
+  }
+  @keyframes message-flash {
+    0%,
+    40% {
+      background: var(--accent-soft);
+    }
+  }
   .message-item.message-item-editing {
     background: var(--accent-soft);
   }
@@ -471,7 +500,7 @@
     padding-top: 2px;
   }
   .message-item[data-layout='list'] .message-gutter {
-    width: 36px;
+    width: 28px;
     padding-top: 0;
   }
   /* 一覧の先頭の発言のアイコンは、押して名前と時刻を出し入れできる */

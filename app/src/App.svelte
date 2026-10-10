@@ -14,6 +14,7 @@
   import { startShareReceiver } from './lib/share';
   import { pluginHost } from './lib/plugins/host.svelte';
   import { closeTopLayer, isBackKey, startBackNav } from './lib/backNav';
+  import { startDropGuard } from './lib/dropGuard';
 
   let setup = $state(needsServerSetup());
 
@@ -52,6 +53,9 @@
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
+
+  // ファイルをどこに落としても、WebView がファイルへ移動しない（受け取りは ChatView が行う）
+  onMount(() => startDropGuard());
 
   // 配布版でも Ctrl+Shift+I で開発者ツールを開く（デスクトップのみ）
   onMount(() => {

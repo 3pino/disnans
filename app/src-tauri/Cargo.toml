@@ -28,6 +28,10 @@ tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 # 開発用フォルダを選ぶダイアログ
 tauri-plugin-dialog = "2"
+# Linux: ドロップされたファイルを読む（パスから File にする）
+tauri-plugin-fs = "2"
+# Linux: クリップボードの画像を読む（WebView の paste で画像が取れないとき）
+tauri-plugin-clipboard-manager = "2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # getUserMedia / WebRTC を有効にする設定（tauri が使うものと同じ版）

@@ -11,6 +11,11 @@ export function isAndroid(): boolean {
   return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
 }
 
+/** Linux の Tauri 版（WebKitGTK）。ファイルのドロップとクリップボードの画像の扱いが他と違う */
+export function isLinuxDesktop(): boolean {
+  return isTauri() && !isAndroid() && typeof navigator !== 'undefined' && /linux/i.test(navigator.userAgent);
+}
+
 /** 末尾のスラッシュを落とし、スキームがなければ http:// を補う */
 export function normalizeServerUrl(input: string): string {
   // 日本語 IME で入力された全角文字（／：． など）を半角にする

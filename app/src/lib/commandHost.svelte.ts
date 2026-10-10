@@ -14,6 +14,8 @@ import { APP_COMMAND_PREFIX, commandForKey, commandList, registerCommand, runCom
 import { isAndroid } from './config';
 import { prefs } from './stores/prefs.svelte';
 import { ui } from './stores/ui.svelte';
+import { callCommands, registerCallComposerAction } from './call/commands';
+import { startCall } from './call/instance.svelte';
 import { jumpToFirstUnread, jumpToNextUnread, jumpToPrevUnread } from './unreadNav';
 
 /** コマンドパレットを開くコマンド（設定の説明にも使う） */
@@ -38,6 +40,10 @@ class CommandHost {
     this.started = true;
     prefs.start();
     for (const c of builtinCommands(this)) registerCommand(c);
+    // 通話: サーバーのイベントを受け始め、コマンドと「＋」メニューの項目を登録する
+    startCall();
+    for (const c of callCommands()) registerCommand(c);
+    registerCallComposerAction();
     window.addEventListener('keydown', (e) => this.onKeydown(e));
   }
 

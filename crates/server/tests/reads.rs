@@ -48,6 +48,8 @@ fn reply(thread_id: &str, body: &str) -> ClientEvent {
         body: body.into(),
         attachment_ids: vec![],
         start_thread: false,
+        reply_to: None,
+        silent: false,
     }
 }
 
@@ -76,6 +78,8 @@ async fn counts_unread_and_syncs_between_devices() {
             body: "話題".into(),
             attachment_ids: vec![],
             start_thread: true,
+            reply_to: None,
+            silent: false,
         })
         .await;
     let r1 = bob.post_with(reply(&root.id, "a")).await;

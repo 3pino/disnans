@@ -10,6 +10,9 @@ import type { PluginPostMessage } from './protocol/PluginPostMessage';
 import type { ReadMarker } from './protocol/ReadMarker';
 import type { Session } from './protocol/Session';
 import type { Thread } from './protocol/Thread';
+import type { ThreadTag } from './protocol/ThreadTag';
+import type { ThreadTagUsage } from './protocol/ThreadTagUsage';
+import type { UpdateThread } from './protocol/UpdateThread';
 import type { UpdateMe } from './protocol/UpdateMe';
 import type { UpdateSession } from './protocol/UpdateSession';
 import type { User } from './protocol/User';
@@ -89,6 +92,12 @@ export const api = {
     ),
   threads: () => request<Thread[]>('GET', '/api/threads'),
   thread: (id: string) => request<Thread>('GET', `/api/threads/${encodeURIComponent(id)}`),
+  /** タイトル・アーカイブを変える（スレッドを立てた人だけ） */
+  updateThread: (id: string, body: UpdateThread) => request<Thread>('PATCH', `/api/threads/${encodeURIComponent(id)}`, body),
+  /** タグを置き換える（誰でも） */
+  setThreadTags: (id: string, tags: ThreadTag[]) => request<Thread>('PUT', `/api/threads/${encodeURIComponent(id)}/tags`, { tags }),
+  /** すでに使われているタグ（多い順） */
+  threadTags: () => request<ThreadTagUsage[]>('GET', '/api/thread-tags'),
   /** 自分にサンプルの通知を送る */
   sampleNotification: () => request<void>('POST', '/api/notify/sample'),
   /** 既読の位置と未読数（メインチャットが先頭、続いてすべてのスレッド） */

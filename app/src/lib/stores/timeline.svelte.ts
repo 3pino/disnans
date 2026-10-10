@@ -34,6 +34,8 @@ export type PendingMessage = Message & {
   /** 再送用（アップロードが済んだファイルの ID。送るときに決まる） */
   attachment_ids: string[];
   start_thread: boolean;
+  /** 通知を送らない */
+  silent: boolean;
   /** 送るファイル。送信のたびに、まだ上げていないものを上げる */
   files: PendingFile[];
   /** アップロードと送信の途中（二重に動かさない） */
@@ -134,6 +136,11 @@ export class Timeline {
   patch(id: string, fn: (m: Message) => void): void {
     const m = this.messages.find((x) => x.id === id);
     if (m) fn(m);
+  }
+
+  /** `id` への返信の、返信先の要約を差し替える（返信先が編集・削除されたとき。削除なら null） */
+  setReplyPreview(id: string, preview: Message['reply_preview']): void {
+    for (const m of this.messages) if (m.reply_to === id) m.reply_preview = preview;
   }
 
   setReactions(id: string, reactions: Reaction[]): void {

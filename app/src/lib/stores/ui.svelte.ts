@@ -1,5 +1,7 @@
+import type { AuthorView } from '../author';
 import { getItem, setItem } from '../storage';
 import { setNavigationBarHidden, syncSystemBars } from '../systemBars';
+import type { User } from '../protocol/User';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
@@ -9,10 +11,19 @@ export type Panel =
   | { kind: 'plugin'; plugin: string; view: string; sessionId: string }
   | null;
 
-/** 設定の中のサブページ（一覧の代わりに出す）。入力欄のキー・ホットキー・＋メニュー */
-export type SettingsSubpage = 'enterKeys' | 'hotkeys' | 'composerMenu';
+/** 設定の中のサブページ（一覧の代わりに出す）。入力欄のキー・ホットキー・＋メニュー・通話 */
+export type SettingsSubpage = 'enterKeys' | 'hotkeys' | 'composerMenu' | 'call';
 
-export type Toast = { id: number; text: string; kind: 'info' | 'error'; action?: { label: string; run: () => void } };
+/** トーストの先頭に出す、送った人のアイコン（AuthorAvatar で描く。ボットならプラグインのアイコン） */
+export type ToastAvatar = { author: AuthorView; user?: User; id: string };
+
+export type Toast = {
+  id: number;
+  text: string;
+  kind: 'info' | 'error';
+  action?: { label: string; run: () => void };
+  avatar?: ToastAvatar;
+};
 
 export type ConfirmRequest = {
   title: string;
@@ -114,6 +125,7 @@ class Ui {
   /** 設定の中で、「操作」のサブページ（入力欄のキーなど）を開く */
   openSettingsSub(page: SettingsSubpage): void {
     this.tab = 'settings';
+    this.pluginSettings = null;
     this.settingsSub = page;
   }
 
@@ -143,9 +155,9 @@ class Ui {
     this.panel = null;
   }
 
-  toast(text: string, kind: Toast['kind'] = 'info', action?: Toast['action'], ms = 5000): void {
+  toast(text: string, kind: Toast['kind'] = 'info', action?: Toast['action'], ms = 5000, avatar?: ToastAvatar): void {
     const id = ++this.toastSeq;
-    this.toasts.push({ id, text, kind, action });
+    this.toasts.push({ id, text, kind, action, avatar });
     setTimeout(() => this.dismiss(id), ms);
   }
 

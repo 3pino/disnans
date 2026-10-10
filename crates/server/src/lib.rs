@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod avatars;
+pub mod calls;
 pub mod chat;
 pub mod config;
 pub mod db;

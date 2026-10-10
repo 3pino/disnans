@@ -33,6 +33,9 @@
 | GET | `/api/messages?thread_id=&before=&limit=` | メッセージ履歴 | `Message[]` |
 | GET | `/api/threads` | スレッド一覧 | `Thread[]` |
 | GET | `/api/threads/{id}` | スレッド1件 | `Thread` |
+| PATCH | `/api/threads/{id}` | タイトル・アーカイブを変える（body: `UpdateThread` = `{ title?, archived? }`。指定した項目だけ変わる）。**スレッドを立てた人だけ**（他人は `403 forbidden`）。`title` は前後の空白を除いて100文字まで（`title_too_long`）、空文字なら消す | `Thread` |
+| PUT | `/api/threads/{id}/tags` | タグをまるごと置き換える（body: `SetThreadTags` = `{ tags: ThreadTag[] }`）。**誰でもできる** | `Thread` |
+| GET | `/api/thread-tags` | すでに使われているタグと、使っているスレッドの数（多い順） | `ThreadTagUsage[]` |
 | POST | `/api/files` | ファイルのアップロード（multipart、フィールド名 `file`） | `Attachment` |
 | GET | `/api/files/{id}` | ファイル本体 | バイナリ |
 | GET | `/api/files/{id}/thumb` | サムネイル（WebP） | バイナリ |
@@ -76,6 +79,18 @@
   - `message_id` が ULID の形でなければ `400 invalid_message_id`、スレッドがなければ `404 not_found`
   - 位置が進んだら、自分のすべての接続（送った端末を含む）に `read.updated` を送る
 - スレッドの起点を削除すると、そのスレッドの位置も消える
+
+### スレッドのタイトル・タグ・アーカイブ
+- `ThreadInfo`（`Message.thread` と `Thread.info`）に `created_by`（スレッドを立てた人）・`title`（なければ `null`）・`tags`（表示の順）・`archived` が入る。`created_by` は、`thread.create` を送った人、または `start_thread: true` で送った人
+- `ThreadTag` は `{ label, icon }`。`label` は前後の空白を除いて1〜24文字（絵文字も可）、`icon` は Lucide のアイコン名（英小文字・数字・ハイフン、48文字まで）か `null`。同じ（label, icon）の重複は1つにまとめる。10個まで（`too_many_tags`）。不正なら `400 invalid_tag`
+- 変更すると、起点のメッセージの `message.updated` と `thread.updated` を全員に配信する
+- アーカイブされたスレッドにも、ふつうに返信できる（一覧での見せ方をクライアントが変えるだけ）
+- マイグレーション 0010: `threads` に `created_by` / `title` / `archived`、`thread_tags` テーブルを追加（既存のスレッドの `created_by` は起点の投稿者）
+
+### 返信
+- `message.send` の `reply_to`（省略は `null`）に返信先のメッセージ ID を入れる。返信先は**同じ場所**（`thread_id` が同じ。スレッドの中なら、そのスレッドの起点のメッセージも可）のメッセージだけ。なければ `reply_not_found`、場所が違うと `reply_other_place`
+- `Message.reply_to` に返信先の ID、`Message.reply_preview` に要約（`author_id`・本文の冒頭100文字・`has_attachments`・`bot`）が入る。返信先が削除されると `reply_preview` は `null` になり、`reply_to` は残る（外部キーなし。クライアントは「削除されたメッセージ」と表示する）。要約は読み込みのたびにその時点の内容で作る（編集に追従する）
+- 返信先の作者に通知を送る（`{名前} さんが返信`。自分自身・すでにメンション等で通知する人には送らない）
 
 ### スレッド一覧
 - スレッドに種類はない。クエリ文字列は受け取らない（付いていても無視する）
@@ -143,13 +158,21 @@
 - `notify` は対象者にだけ送る
   - メンションされた（`<@user_id>`）
   - 自分が起点のスレッド、または自分が返信したスレッドに、他人が返信した
+  - 自分のメッセージに、他人が返信した（`reply_to`）
   - `POST /api/notify/sample` で自分に送った（`sample: true`。クライアントは表示中でもシステム通知を出す）
 - `notify` はそのユーザーのすべての接続に送る。Android アプリは WebView とは別に、通知用の常駐サービスからも接続する
+- `message.send` の `silent: true`（省略は `false`）は、通知を一切送らない（配信は普通の投稿と同じ）
 - スレッドは `thread.create`（既存のメッセージを起点にする）か、`message.send` の `start_thread: true`（送信と同時に起点にする）で作る。スレッドの中の返信からは作れない
 - 編集・削除は本人のメッセージだけ。スレッドの起点を削除すると、スレッドの返信もすべて削除する
 - プラグインの配布・更新・削除（`plugin.updated` / `plugin.removed`）と、セッションの更新（`session.updated`）は全員に配信する（自分だけのプラグイン・テーマのイベントは持ち主にだけ）
 - `session.emit` は保存せず、送信した接続以外の全員（同じユーザーの別の接続を含む）に `session.event` として中継する。`from` は送信者のユーザー ID
   - セッションがなければ `not_found`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）
+- 通話（みんな共通の1部屋。SPEC 9.11）。参加者はサーバーがメモリ上で持つ（接続ごと。保存しない）
+  - `call.join { peer, status }` で参加する（`peer` は参加者が決める英数字・`-`・`_` の 1〜64 文字、`status` は `muted` `deafened` `rtc` `device`）。同じ接続で呼び直すと置き換わる。別の接続がすでに使っている `peer` は `peer_in_use`
+  - `call.update { status }`（ミュートなどの更新）、`call.leave`（抜ける。接続が切れても自動で抜ける）
+  - 参加・退出・更新のたびに `call.state { members }` を**全員に**配る。接続した直後も、通話中なら送る
+  - `call.kick { peer }` で参加者を外す（参加者だけが送れる。自分は外せない: `invalid_kick`、いない人: `peer_not_found`）。外された接続に `call.kicked { by }` を送り、一覧から外して `call.state` を配る
+  - `call.emit { name, payload }` は、参加者だけが送れ、ほかの参加者全員に `call.event { peer, from, name, payload }` として中継する（保存しない。`peer` は送った接続の ID でサーバーが付ける）。参加していなければ `not_in_call`。`name` と `payload` の制限は `session.emit` と同じ。使っている `name` は `signal`（WebRTC のシグナリング）と `audio`（WebRTC を使えない相手向けの音声）
 - `prefs.updated` は、`PUT /api/me/prefs` で設定が変わったとき、そのユーザーのすべての接続にだけ送る
 - `read.updated` は、`PUT /api/me/read` で既読の位置が進んだとき、そのユーザーのすべての接続にだけ送る（`unread_count` はその時点の値）
 - 失敗したら、送信者に `error` を返す

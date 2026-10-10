@@ -5,6 +5,7 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 use tokio::sync::{Mutex, MutexGuard};
 
+use crate::calls::Calls;
 use crate::config::Config;
 use crate::hub::Hub;
 use crate::notify::Notifier;
@@ -15,6 +16,8 @@ pub struct AppState {
     pub pool: SqlitePool,
     pub hub: Arc<Hub>,
     pub notifier: Arc<dyn Notifier>,
+    /// 通話の参加者。
+    pub calls: Calls,
     pub tailscale: Tailscale,
     /// 書き込みを1つずつ行うためのロック。
     ///
@@ -38,6 +41,7 @@ impl AppState {
             pool,
             hub,
             notifier,
+            calls: Calls::new(),
             tailscale,
             write_lock: Mutex::new(()),
         }

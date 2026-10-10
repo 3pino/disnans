@@ -8,7 +8,7 @@
   import PluginSettingsPage from './PluginSettingsPage.svelte';
   import ConnectionBanner from './ConnectionBanner.svelte';
   import NavBar from './NavBar.svelte';
-  import PluginStatusBar from './PluginStatusBar.svelte';
+  import TopBarSlot from './TopBarSlot.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
@@ -30,6 +30,8 @@
 {/snippet}
 
 <div class="shell-root">
+<!-- 画面上部の共通の枠（通話のバー・プラグインのステータス欄）。どのタブでも一番上に出る -->
+<TopBarSlot />
 <div class="shell" class:shell-mobile={ui.isMobile} class:shell-with-panel={panelOpen} data-tab={ui.tab}>
   {#if !ui.isMobile}
     <div class="shell-sidebar"><Sidebar /></div>
@@ -37,8 +39,6 @@
 
   <main id="main-chat" class="shell-main-chat" class:shell-main-chat-hidden={!showChat}>
     <header class="top-bar"></header>
-    <!-- プラグインのステータス欄（通話中の人など）。ヘッダーの下 -->
-    <PluginStatusBar />
     <ConnectionBanner />
     <ChatView threadId={null} placeholder="メッセージを送信" empty={mainEmpty} active={chatVisible} />
   </main>
@@ -83,6 +83,10 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+  }
+  /* 上の枠に中身があるときは、その下の各画面のヘッダーはステータスバー分の余白を取らない（枠が取っている） */
+  .shell-root:has(:global(.call-bar, .plugin-status-item > :not(:empty))) :global(.top-bar) {
+    padding-top: 4px;
   }
   .shell {
     flex: 1;

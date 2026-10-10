@@ -3,7 +3,9 @@
 //! WebSocket の `ClientEvent` から呼ばれる。DB を書き換えたあと、結果を全員に配信し、
 //! 必要なら通知を送る。
 
-use disnans_shared::{Id, Message, PluginInfo, PluginPostMessage, ServerEvent, User};
+use disnans_shared::{
+    Id, Message, PluginInfo, PluginPostMessage, ServerEvent, ThreadTag, UpdateThread, User,
+};
 
 use crate::db;
 use crate::error::{AppError, AppResult};
@@ -20,6 +22,12 @@ const MAX_BODY_CHARS: usize = 10_000;
 const MAX_BOT_NAME_CHARS: usize = 40;
 /// リアクションの絵文字の最大文字数（合字の絵文字は複数の文字からなる）。
 const MAX_EMOJI_CHARS: usize = 32;
+/// スレッドのタイトルの最大文字数。
+const MAX_TITLE_CHARS: usize = 100;
+/// スレッドのタグの最大個数・ラベルの最大文字数・アイコン名の最大文字数。
+const MAX_TAGS: usize = 10;
+const MAX_TAG_LABEL_CHARS: usize = 24;
+const MAX_TAG_ICON_CHARS: usize = 48;
 
 /// 操作をした人と、その接続。
 pub struct Actor<'a> {
@@ -34,6 +42,10 @@ pub struct SendMessage {
     pub attachment_ids: Vec<Id>,
     /// `true` なら、このメッセージを起点にスレッドを作る。
     pub start_thread: bool,
+    /// 返信先のメッセージ。
+    pub reply_to: Option<Id>,
+    /// `true` なら通知を送らない。
+    pub silent: bool,
 }
 
 pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage) -> AppResult<()> {
@@ -50,7 +62,29 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
         ensure_thread_exists(state, thread_id).await?;
     }
 
-    let row = new_row(&actor.user.id, req.thread_id.clone(), req.body);
+    // 返信先は、同じ場所（メインチャット、または同じスレッド。スレッドの起点も含む）のメッセージだけ
+    let reply_author = match &req.reply_to {
+        Some(reply_to) => {
+            let target = messages::get_row(&state.pool, reply_to)
+                .await?
+                .ok_or_else(|| {
+                    AppError::bad_request("reply_not_found", "返信先のメッセージが見つかりません")
+                })?;
+            let same_place =
+                target.thread_id == req.thread_id || req.thread_id.as_deref() == Some(&target.id);
+            if !same_place {
+                return Err(AppError::bad_request(
+                    "reply_other_place",
+                    "同じ場所のメッセージにだけ返信できます",
+                ));
+            }
+            Some(target.author_id)
+        }
+        None => None,
+    };
+
+    let mut row = new_row(&actor.user.id, req.thread_id.clone(), req.body);
+    row.reply_to = req.reply_to.clone();
 
     let mut tx = state.pool.begin().await?;
     messages::insert(&mut tx, &row).await?;
@@ -63,7 +97,7 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
         ));
     }
     if req.start_thread {
-        messages::insert_thread(&mut tx, &row.id, row.created_at).await?;
+        messages::insert_thread(&mut tx, &row.id, &actor.user.id, row.created_at).await?;
     }
     tx.commit().await?;
 
@@ -73,13 +107,22 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
         broadcast_thread(state, &message.id).await?;
     }
 
-    // 通知
+    // 通知（silent なら送らない）
+    if req.silent {
+        return Ok(());
+    }
     let participants = match &message.thread_id {
         Some(thread_id) => messages::thread_participants(&state.pool, thread_id).await?,
         None => Vec::new(),
     };
     let all_users = users::list(&state.pool).await?;
-    for (user_id, notification) in notify::plan(&message, &all_users, &participants, Sender::User) {
+    for (user_id, notification) in notify::plan(
+        &message,
+        &all_users,
+        &participants,
+        reply_author.as_deref(),
+        Sender::User,
+    ) {
         state.notifier.notify(&user_id, &notification);
     }
     Ok(())
@@ -118,7 +161,13 @@ pub async fn post_bot_message(
             None => Vec::new(),
         };
         let all_users = users::list(&state.pool).await?;
-        let plan = notify::plan(&message, &all_users, &participants, Sender::Bot(&name));
+        let plan = notify::plan(
+            &message,
+            &all_users,
+            &participants,
+            None,
+            Sender::Bot(&name),
+        );
         for (user_id, notification) in plan {
             state.notifier.notify(&user_id, &notification);
         }
@@ -193,7 +242,11 @@ pub async fn delete_message(
 }
 
 /// 既存のメッセージを起点にスレッドを作る。スレッドの中の返信からは作れない（ネストしない）。
-pub async fn create_thread(state: &AppState, root_message_id: &str) -> AppResult<()> {
+pub async fn create_thread(
+    state: &AppState,
+    actor: &Actor<'_>,
+    root_message_id: &str,
+) -> AppResult<()> {
     let _guard = state.write_lock().await;
     let row = find_message(state, root_message_id).await?;
     if row.thread_id.is_some() {
@@ -208,7 +261,7 @@ pub async fn create_thread(state: &AppState, root_message_id: &str) -> AppResult
     }
 
     let mut conn = state.pool.acquire().await?;
-    messages::insert_thread(&mut conn, root_message_id, db::now_ms()).await?;
+    messages::insert_thread(&mut conn, root_message_id, &actor.user.id, db::now_ms()).await?;
     drop(conn);
 
     if let Some(message) = messages::get(&state.pool, root_message_id).await? {
@@ -217,6 +270,103 @@ pub async fn create_thread(state: &AppState, root_message_id: &str) -> AppResult
             .broadcast(&ServerEvent::MessageUpdated { message });
     }
     broadcast_thread(state, root_message_id).await
+}
+
+/// スレッドのタイトルとアーカイブを変える。スレッドを立てた人だけができる。
+pub async fn update_thread(
+    state: &AppState,
+    actor: &Actor<'_>,
+    thread_id: &str,
+    req: UpdateThread,
+) -> AppResult<()> {
+    let title = match req.title.as_deref().map(str::trim) {
+        None => None,
+        Some(title) if title.chars().count() > MAX_TITLE_CHARS => {
+            return Err(AppError::bad_request(
+                "title_too_long",
+                format!("タイトルは {MAX_TITLE_CHARS} 文字までです"),
+            ));
+        }
+        // 空なら消す
+        Some(title) => Some((!title.is_empty()).then(|| title.to_owned())),
+    };
+
+    let _guard = state.write_lock().await;
+    ensure_thread_exists(state, thread_id).await?;
+    let creator = messages::thread_creator(&state.pool, thread_id).await?;
+    if creator.as_deref() != Some(&actor.user.id) {
+        return Err(AppError::forbidden(
+            "スレッドを立てた人だけがタイトルとアーカイブを変えられます",
+        ));
+    }
+    if let Some(title) = &title {
+        messages::set_thread_title(&state.pool, thread_id, title.as_deref()).await?;
+    }
+    if let Some(archived) = req.archived {
+        messages::set_thread_archived(&state.pool, thread_id, archived).await?;
+    }
+    broadcast_thread_changed(state, thread_id).await
+}
+
+/// スレッドのタグを置き換える。誰でもできる。
+pub async fn set_thread_tags(
+    state: &AppState,
+    thread_id: &str,
+    tags: Vec<ThreadTag>,
+) -> AppResult<()> {
+    let tags = validate_tags(tags)?;
+    let _guard = state.write_lock().await;
+    ensure_thread_exists(state, thread_id).await?;
+    let mut tx = state.pool.begin().await?;
+    messages::set_thread_tags(&mut tx, thread_id, &tags).await?;
+    tx.commit().await?;
+    broadcast_thread_changed(state, thread_id).await
+}
+
+/// 起点のメッセージ（`message.thread` を含む）とスレッドの更新を配信する。
+async fn broadcast_thread_changed(state: &AppState, thread_id: &str) -> AppResult<()> {
+    if let Some(message) = messages::get(&state.pool, thread_id).await? {
+        state
+            .hub
+            .broadcast(&ServerEvent::MessageUpdated { message });
+    }
+    broadcast_thread(state, thread_id).await
+}
+
+fn validate_tags(tags: Vec<ThreadTag>) -> AppResult<Vec<ThreadTag>> {
+    let mut out: Vec<ThreadTag> = Vec::new();
+    for tag in tags {
+        let label = tag.label.trim().to_owned();
+        if label.is_empty() || label.chars().count() > MAX_TAG_LABEL_CHARS {
+            return Err(AppError::bad_request(
+                "invalid_tag",
+                format!("タグは 1〜{MAX_TAG_LABEL_CHARS} 文字です"),
+            ));
+        }
+        let icon = tag.icon.filter(|i| !i.is_empty());
+        if let Some(icon) = &icon
+            && (icon.chars().count() > MAX_TAG_ICON_CHARS
+                || !icon
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'))
+        {
+            return Err(AppError::bad_request(
+                "invalid_tag",
+                "アイコン名は英小文字・数字・ハイフンです",
+            ));
+        }
+        let tag = ThreadTag { label, icon };
+        if !out.contains(&tag) {
+            out.push(tag);
+        }
+    }
+    if out.len() > MAX_TAGS {
+        return Err(AppError::bad_request(
+            "too_many_tags",
+            format!("タグは {MAX_TAGS} 個までです"),
+        ));
+    }
+    Ok(out)
 }
 
 pub async fn add_reaction(
@@ -254,6 +404,7 @@ pub(crate) fn new_row(author_id: &str, thread_id: Option<Id>, body: String) -> M
         id: ulid.to_string(),
         author_id: author_id.to_owned(),
         thread_id,
+        reply_to: None,
         body,
         created_at: ulid.timestamp_ms() as i64,
         edited_at: None,

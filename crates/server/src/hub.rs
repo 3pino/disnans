@@ -81,6 +81,11 @@ impl Hub {
         self.deliver(event, |id, _| id == conn);
     }
 
+    /// 指定した接続だけに送る。
+    pub fn send_to_conns(&self, conns: &[ConnId], event: &ServerEvent) {
+        self.deliver(event, |id, _| conns.contains(&id));
+    }
+
     /// そのユーザーのすべての接続に送る。
     pub fn send_to_user(&self, user_id: &str, event: &ServerEvent) {
         self.deliver(event, |_, c| c.user_id == user_id);

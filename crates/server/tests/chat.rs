@@ -235,6 +235,8 @@ async fn threads_cannot_nest() {
             body: "返信".into(),
             attachment_ids: vec![],
             start_thread: false,
+            reply_to: None,
+            silent: false,
         })
         .await;
     assert_eq!(reply.thread_id.as_deref(), Some(root.id.as_str()));
@@ -282,6 +284,8 @@ async fn threads_cannot_nest() {
             body: "nested".into(),
             attachment_ids: vec![],
             start_thread: true,
+            reply_to: None,
+            silent: false,
         })
         .await;
     assert_eq!(
@@ -297,6 +301,8 @@ async fn threads_cannot_nest() {
             body: "x".into(),
             attachment_ids: vec![],
             start_thread: false,
+            reply_to: None,
+            silent: false,
         })
         .await;
     assert_eq!(alice.expect_error().await.1, "thread_not_found");
@@ -309,6 +315,8 @@ async fn threads_cannot_nest() {
             body: "今日のごはん".into(),
             attachment_ids: vec![],
             start_thread: true,
+            reply_to: None,
+            silent: false,
         })
         .await;
     assert_eq!(status.thread.as_ref().unwrap().reply_count, 0);
@@ -341,6 +349,8 @@ async fn threads_cannot_nest() {
         body: "もう一つ".into(),
         attachment_ids: vec![],
         start_thread: false,
+        reply_to: None,
+        silent: false,
     })
     .await;
     let all: Vec<Thread> = server.get_json(ALICE, "/api/threads").await;

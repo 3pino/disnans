@@ -1,5 +1,5 @@
 /**
- * disnans プラグインの型定義（ホスト API バージョン 6）。
+ * disnans プラグインの型定義（ホスト API バージョン 7）。
  *
  * プラグインの main.js は ES モジュールで、`Plugin` を継承したクラスを `export default` する。
  * ホスト API はグローバルの `disnans` から取る（`import` は使わない）。
@@ -56,7 +56,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 6） */
+      /** ホスト API のバージョン（いまは 7） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -66,6 +66,95 @@ declare global {
       readonly VersionConflictError: typeof VersionConflictError;
       /** 音の入出力の選択（API v5）。通話のプラグイン向け。環境の違い（Android・デスクトップ）はここで隠す */
       readonly audio: Audio;
+      /** 本体の通話（API v7）。画面共有などの拡張向け。通話そのもの（参加・ミュート・出力先）は本体の機能で、ここからは状態の読み取りとトラックの追加だけ */
+      readonly call: Call;
+    }
+
+    /** 通話の参加者1人分（API v7）。同じ人が2台で入れば2つ */
+    type CallParticipant = {
+      /** 接続の ID（通話の中で一意。再参加すると変わる） */
+      peer: string;
+      user: User;
+      /** 自分自身 */
+      self: boolean;
+      /** マイクをミュートしている */
+      muted: boolean;
+      /** スピーカーミュート（相手の声を消している）中 */
+      deafened: boolean;
+      /** 映像を送受信できる（WebRTC を使える）。`false` の人（Linux の WebKitGTK など）とは音声だけをサーバー経由で流しているので、トラックは届かない */
+      canVideo: boolean;
+      /** 音声がつながっている（自分自身は参加できていれば true） */
+      connected: boolean;
+      /** いましゃべっている */
+      speaking: boolean;
+      /** 端末の種類（`smartphone` `tablet` `laptop` `monitor`。不明なら null） */
+      device: string | null;
+    };
+
+    /** 相手から届いたメディアのトラック（API v7） */
+    type CallRemoteTrack = {
+      /** 送ってきた参加者の接続 ID（`CallParticipant.peer`） */
+      peer: string;
+      user: User;
+      track: MediaStreamTrack;
+      stream: MediaStream;
+    };
+
+    /** 通話のバーに足すボタン（API v7） */
+    type CallButtonOptions = {
+      icon: IconName;
+      /** 読み上げ・ツールチップの文字 */
+      label: string;
+      onClick: () => void;
+      /** 押されている状態の見た目にする（共有中など） */
+      active?: boolean;
+      disabled?: boolean;
+    };
+
+    type CallButton = {
+      /** 渡した項目だけ変える */
+      update(patch: Partial<CallButtonOptions>): void;
+      /** バーから外す */
+      remove(): void;
+    };
+
+    /**
+     * 本体の通話（API v7）。みんな共通の 1 部屋で、参加者の一覧・kick はサーバーが管理し、音声・映像は WebRTC でつなぐ。
+     * コールバックの登録や `addTrack` などの返り値の関数は、プラグインが外されるときに自動では外れないので、
+     * `this.register(...)` に渡して片付ける。
+     */
+    interface Call {
+      /** 参加している（自分が通話にいる） */
+      readonly joined: boolean;
+      /**
+       * この環境が映像を送受信できるか。`false` なら（WebRTC を使えない環境の）サーバー経由の音声だけで、
+       * `addTrack` は例外になり、相手の映像も届かない
+       */
+      readonly canVideo: boolean;
+      /** 参加者。参加していれば自分（`self: true`）が先頭。参加していなくても、いま通話にいる人が入る */
+      readonly participants: CallParticipant[];
+      /** いま届いている、音声以外（と声以外）のトラック */
+      readonly remoteTracks: CallRemoteTrack[];
+      /** 通話に参加する（マイクの許可などの失敗は本体がトーストで知らせる） */
+      join(): Promise<void>;
+      /** 通話から抜ける */
+      leave(): void;
+      /**
+       * 映像などのトラックを通話に足す。つながっている相手へ再ネゴシエーションで届け、あとから来た人にも送る。
+       * 通話に参加していないとき・`canVideo` が `false` のときは例外。戻り値の関数で外す（通話を抜けると自動で外れる）。
+       * 画面共有なら `navigator.mediaDevices.getDisplayMedia()` のトラックを渡す
+       */
+      addTrack(track: MediaStreamTrack, stream?: MediaStream): Cleanup;
+      /** `addTrack` したトラックを外す（トラックを `stop()` はしない） */
+      removeTrack(track: MediaStreamTrack): void;
+      /** 通話の状態が変わったとき（参加・退出・参加者の出入り・ミュート・つながった・しゃべり始めなど）。戻り値の関数で外す */
+      onChange(cb: () => void): Cleanup;
+      /** 相手からトラック（映像など）が届いたとき。戻り値の関数で外す */
+      onTrack(cb: (t: CallRemoteTrack) => void): Cleanup;
+      /** 届いていたトラックが外れた・終わった・相手が抜けたとき。戻り値の関数で外す */
+      onTrackEnd(cb: (t: CallRemoteTrack) => void): Cleanup;
+      /** 通話のバー（画面上部）にボタンを足す。通話に参加している間だけ表示される */
+      addButton(opts: CallButtonOptions): CallButton;
     }
 
     /** 音の出力先（API v5） */
@@ -206,7 +295,7 @@ declare global {
       /** broadcast を受け取る（API v3）。外すときに自動で外れる。from は送った人 */
       onBroadcast(name: string, cb: (payload: unknown, from: User) => void): Cleanup;
       /**
-       * 常時表示のステータス欄（アプリの最上部の帯）に出す要素を足して返す（API v3）。
+       * 常時表示のステータス欄（アプリの最上部の帯。通話のバーと同じ枠）に出す要素を足して返す（API v3）。
        * 中身はプラグインが自由に描く。何も入れない（`:empty`）間は隠れる。外すときに自動で消える
        */
       addStatusBarItem(): HTMLElement;

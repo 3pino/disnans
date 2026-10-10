@@ -1,6 +1,6 @@
 import { api } from '../api';
 import { getServerUrl, isAndroid, isTauri } from '../config';
-import { ui } from './ui.svelte';
+import { ui, type ToastAvatar } from './ui.svelte';
 
 /**
  * 通知の出し方は環境ごとに違う。
@@ -27,6 +27,8 @@ export type NotifyEvent = {
   body: string;
   threadId: string | null;
   sample: boolean;
+  /** 通知のもとのメッセージを送った人（分かるとき）。アプリ内のトーストでは、タイトルの代わりにこのアイコンを出す */
+  from?: ToastAvatar | null;
 };
 
 function detectBackend(): Backend {
@@ -185,7 +187,9 @@ class Notifications {
 
   private toast(ev: NotifyEvent): void {
     const open = ev.sample ? undefined : { label: '開く', run: () => this.openTarget(ev.threadId) };
-    ui.toast(ev.body ? `${ev.title}: ${ev.body}` : ev.title, 'info', open, 8000);
+    // 送った人が分かるときは、タイトルの文字の代わりにその人のアイコンを出し、本文だけを並べる
+    const text = ev.from && ev.body ? ev.body : ev.body ? `${ev.title}: ${ev.body}` : ev.title;
+    ui.toast(text, 'info', open, 8000, ev.from ?? undefined);
   }
 }
 

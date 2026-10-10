@@ -249,6 +249,8 @@ async fn card_in_thread_cannot_be_edited_and_deletion_removes_session() {
             body: "ゲームしよう".into(),
             attachment_ids: vec![],
             start_thread: true,
+            reply_to: None,
+            silent: false,
         })
         .await;
     alice

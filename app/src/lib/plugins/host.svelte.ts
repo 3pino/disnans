@@ -18,6 +18,7 @@ import { toPluginUser, VersionConflictError } from './sessions';
 import { createUi } from './ui';
 import { holdBackground } from './background';
 import { audio } from './audio';
+import { callApi } from '../call/instance.svelte';
 import { loadLucide, registerIcon } from '../icons.svelte';
 import { API_VERSION, errorMessage, type HostServices, type Manifest, type PluginClass } from './types';
 
@@ -25,6 +26,29 @@ const DISABLED_KEY = 'disnans.plugins.disabled';
 const DEV_DIR_KEY = 'disnans.plugins.devDir';
 const DEV_POLL_MS = 1000;
 const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+/** 配布するファイル1つ（中身は文字） */
+type DevFile = { name: string; text: string; type: string };
+
+/** サーバーがハッシュを計算するときの順（FILE_NAMES と同じ） */
+const PACKAGE_ORDER = ['manifest.json', 'main.js', 'styles.css', 'theme.css', 'icon.svg'];
+
+/** 開発中のものを配布するときの中身（サーバーに送るのと同じ。読めていなければ例外） */
+function devFiles(d: DevPlugin): DevFile[] {
+  const body = d.kind === 'theme' ? d.theme : d.main;
+  if (!d.manifest || d.manifestText === null || body === null) {
+    throw new Error(d.error ?? (d.kind === 'theme' ? 'manifest.json と theme.css が必要です' : 'manifest.json と main.js が必要です'));
+  }
+  const files: DevFile[] = [{ name: 'manifest.json', text: d.manifestText, type: 'application/json' }];
+  if (d.kind === 'theme') {
+    files.push({ name: 'theme.css', text: body, type: 'text/css' });
+  } else {
+    files.push({ name: 'main.js', text: body, type: 'text/javascript' });
+    if (d.styles !== null) files.push({ name: 'styles.css', text: d.styles, type: 'text/css' });
+  }
+  if (d.icon !== null) files.push({ name: 'icon.svg', text: d.icon, type: 'image/svg+xml' });
+  return files;
+}
 
 /** 開発用フォルダのプラグイン・テーマ1つ（サブフォルダ1つ） */
 export type DevPlugin = {
@@ -216,6 +240,7 @@ class PluginHost {
       ui: createUi({ toast: (t, k) => ui.toast(t, k), confirm: (o) => ui.confirm(o) }),
       VersionConflictError,
       audio,
+      call: callApi,
     });
     (window as unknown as { disnans: Disnans.Host }).disnans = host;
 
@@ -600,19 +625,47 @@ class PluginHost {
 
   /** 開発中のもの（プラグイン・テーマ）を配布する。visibility は「みんな」か「自分だけ」 */
   async publishDev(d: DevPlugin, visibility: PluginVisibility): Promise<PluginInfo> {
-    const body = d.kind === 'theme' ? d.theme : d.main;
-    if (!d.manifest || d.manifestText === null || body === null) {
-      throw new Error(d.error ?? (d.kind === 'theme' ? 'manifest.json と theme.css が必要です' : 'manifest.json と main.js が必要です'));
-    }
-    const files: { name: string; data: Blob }[] = [{ name: 'manifest.json', data: new Blob([d.manifestText], { type: 'application/json' }) }];
-    if (d.kind === 'theme') {
-      files.push({ name: 'theme.css', data: new Blob([body], { type: 'text/css' }) });
-    } else {
-      files.push({ name: 'main.js', data: new Blob([body], { type: 'text/javascript' }) });
-      if (d.styles !== null) files.push({ name: 'styles.css', data: new Blob([d.styles], { type: 'text/css' }) });
-    }
-    if (d.icon !== null) files.push({ name: 'icon.svg', data: new Blob([d.icon], { type: 'image/svg+xml' }) });
+    const files = devFiles(d).map((f) => ({ name: f.name, data: new Blob([f.text], { type: f.type }) }));
     return this.publish(files, visibility);
+  }
+
+  /**
+   * 開発中のものの中身のハッシュ（サーバーの PluginInfo.hash と同じ計算）。配布済みと中身が同じか比べるのに使う。
+   * 計算できない（読めていない・この環境に SHA-256 がない）ときは null
+   */
+  async devHash(d: DevPlugin): Promise<string | null> {
+    if (!globalThis.crypto?.subtle) return null;
+    let files: DevFile[];
+    try {
+      files = devFiles(d);
+    } catch {
+      return null;
+    }
+    // サーバーと同じ順（FILE_NAMES の順）に、名前・0・長さ（8バイト LE）・中身をつなぐ
+    files.sort((a, b) => PACKAGE_ORDER.indexOf(a.name) - PACKAGE_ORDER.indexOf(b.name));
+    const enc = new TextEncoder();
+    const parts: Uint8Array[] = [];
+    let total = 0;
+    for (const f of files) {
+      const name = enc.encode(f.name);
+      const data = enc.encode(f.text);
+      const len = new Uint8Array(8);
+      const dv = new DataView(len.buffer);
+      dv.setUint32(0, data.length, true);
+      dv.setUint32(4, Math.floor(data.length / 2 ** 32), true);
+      for (const part of [name, new Uint8Array([0]), len, data]) {
+        parts.push(part);
+        total += part.length;
+      }
+    }
+    const all = new Uint8Array(total);
+    let at = 0;
+    for (const part of parts) {
+      all.set(part, at);
+      at += part.length;
+    }
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', all);
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
   }
 
   /** 選んだファイルを配布する（ブラウザー版）。プラグインかテーマかは manifest でサーバーが見分ける */

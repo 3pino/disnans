@@ -101,12 +101,25 @@
 - `_` と `__` は英数字の途中（`snake_case` など）では効かない
 
 #### スレッド
-- どのメッセージからでも1操作で分岐できる（タイトル入力は不要）
+- どのメッセージからでも1操作で分岐できる（タイトル入力は不要）。メッセージのメニューの「スレッドを立てる」から作る
 - ネストはしない（スレッドの中でさらにスレッドは作れない）
+- 見出し: **タイトル**があればそれ、なければ起点のメッセージの冒頭。タイトルを付けたり変えたりできるのは、スレッドを立てた人だけ
+- **タグ**: 好きな文字列（絵文字を含む。24文字まで）と、0 か 1 個の Lucide アイコン名を持つ。1スレッドに10個まで。誰でも追加・編集・削除でき、すでに使われているタグから選べる。アイコンは、よく使うものを数十個に絞った表から選ぶ（Lucide 全体は読み込まない）
+- **アーカイブ**: スレッドを立てた人だけが付け外しできる。一覧で薄く表示されるだけで、返信はふつうにできる
+- タイトル・タグ・アーカイブの変更は、リアルタイムに全員へ反映する
+- スレッド一覧の1件: 立てた人はアイコンだけを出す（押すと名前を出し入れする。チャットのリスト表示と同じ）。見出しの下に、添付が画像ならサムネイル、画像でなければクリップのアイコンと件数、カードならカード（小さく）を出す。タグは見出しの下に並べる
 - 一覧への入り口
   - Android: 画面下部のボトムナビゲーションの **[Threads]**
   - デスクトップ: サイドバー
 - 古いスレッドが勝手に消えたりアーカイブされたりしない
+
+#### 返信とサイレント送信
+- **返信**: メッセージを左へスワイプする（PC ではメッセージ右上のツールバーの返信ボタン、モバイルでは長押しメニューの「返信」）と、入力欄の上に「返信先: 名前 本文の冒頭 ×」のバーが出る。そのまま送ると、そのメッセージへの返信になる（バーの × で取り消す）
+- 返信できるのは、**同じ場所**（メインチャット、または同じスレッド。スレッドの中では起点のメッセージにも返信できる）のメッセージだけ
+- 返信のメッセージは、本文の上に返信先の小さな引用（アイコン・名前・本文の冒頭）を出す。押すと元のメッセージまでスクロールして、しばらく強調する。読み込まれていなければ、見つかるまで古い履歴を読み込む（見つからなければトースト）
+- 返信先が**削除された**ら、返信は残り、引用は「削除されたメッセージ」になる（押せない）。返信先が編集されたら、引用の文面も追従する
+- 返信すると、返信先の作者に通知する（自分自身には送らない。同じメッセージでメンション・スレッドの通知を送る人には1回だけ）
+- **サイレント送信**: `silent: true` で送ると、通知（メンション・スレッドの返信・返信先）を一切送らない。それ以外は普通の投稿
 
 #### 戻る操作（Android の戻るボタン）
 - 開いているものを上から1つずつ閉じる: パネル（スレッド・プラグインの画面）→ プラグインの設定画面（プラグイン一覧に戻る）→ チャット以外のタブ（設定・スレッド一覧など。チャットに戻る）
@@ -196,7 +209,7 @@ Obsidian のプラグインに近い仕組みにする。**誰でも簡単に作
 - プラグインのロジックはすべてクライアント（JS）で動く。サーバーはプラグイン固有のコードを実行しない
 - サーバーが提供するのは次の汎用機能だけ
   - **セッション**: ゲームの1局のような「1回分の利用」ごとの共有の状態（→ 9.5）
-  - **イベントの中継**: 保存しない一時的なイベント（セッションごとの `session.emit` と、プラグイン全体の `plugin.emit`）
+  - **イベントの中継**: 保存しない一時的なイベント（セッションごとの `session.emit` と、プラグイン全体の `plugin.emit`）。通話は本体の機能で、サーバーが参加者を持つ専用の経路を使う（→ 9.11）
   - **カード**: セッションへのリンクとしてチャットに流れるメッセージ
   - **通知**
 - 友達同士なので、ゲームでのチート対策は考えない
@@ -227,7 +240,7 @@ Obsidian のプラグインに近い仕組みにする。**誰でも簡単に作
   - 通知チャンネルは「メッセージ」（重要度: 高）と「常駐接続」（重要度: 最低）。常駐の通知は端末の設定で非表示にできる
   - 通知を開くと、そのスレッド（なければチャット）を表示する
   - 常駐接続は常にオン（切り替えは置かない）。設定には、通知の許可と電池の最適化の解除のボタンを、必要なときだけ出す
-  - 通話用に、同じプラグインに `CallService`（フォアグラウンドサービス、種類は `microphone`）がある。プラグインの `holdBackground`（→ 9.4）から始め、通話中だけ動く。中身は何もせず、通知欄に「通話中」を出して、プロセスと WebView を止められにくくする（通話中は WebView の `onPause` を打ち消す）。通知にはプラグインが決めたアクションボタン（最大3つ。ボイスチャットは「ミュート」「切断」）を付けられ、押されると notifier プラグインのイベント `call_action` で JS に届く。JS に届けられないとき（リスナーがない）は溜めておき、`dismiss` つきのボタンはサービスがその場で通知を止める（切断が必ず効く）。`start_call` を呼び直すと文言とボタンだけが差し替わる
+  - 通話用に、同じプラグインに `CallService`（フォアグラウンドサービス、種類は `microphone`）がある。本体の通話（→ 9.11）が `holdBackground` 相当の機能（`lib/plugins/background.ts`）から始め、通話中だけ動く。中身は何もせず、通知欄に「通話中」を出して、プロセスと WebView を止められにくくする（通話中は WebView の `onPause` を打ち消す）。通知にはプラグインが決めたアクションボタン（最大3つ。通話は「ミュート」「スピーカーミュート」「切断」）を付けられ、押されると notifier プラグインのイベント `call_action` で JS に届く。JS に届けられないとき（リスナーがない）は溜めておき、`dismiss` つきのボタンはサービスがその場で通知を止める（切断が必ず効く）。`start_call` を呼び直すと文言とボタンだけが差し替わる
   - **共有メニュー**: 他のアプリの「共有」に disnans が出る（`ACTION_SEND` / `ACTION_SEND_MULTIPLE`。画像・動画・テキスト・任意のファイル）。intent-filter は notifier プラグインのマニフェストから `MainActivity` に統合する（生成物の `gen/` は触らない）。`content://` のファイルはアプリのキャッシュ（`disnans-share/`）にコピーし（1ファイル 200 MB まで。サーバー側に上限はないが、WebView が全体をメモリに読むための端末側の上限）、JS には名前・MIME・パスだけを渡す。中身は専用コマンド `read_shared_file` がバイナリのまま渡して消す。受け取ると、メインチャットの入力欄にファイルの添付とテキストが入る（`share.ts` → `shareInbox`）。起動時の共有は `take_shared`、起動中の共有は `share` イベントで受ける
 - デスクトップは Tauri 公式の notification プラグインを使い、ウィンドウにフォーカスがないときにシステム通知を出す
 - 設定の「サンプル通知を送信」で、サーバーから自分に通知を送り、届くまでの経路をまとめて確かめられる。送り先はボタンを押した端末（同じ IP アドレスからの接続）だけ
@@ -332,7 +345,7 @@ disnans/
 
 ```jsonc
 // クライアント → サーバー（抜粋）
-{ "type": "message.send", "client_id": "tmp-123", "thread_id": null, "body": "**hi**", "attachment_ids": [], "start_thread": false }
+{ "type": "message.send", "client_id": "tmp-123", "thread_id": null, "body": "**hi**", "attachment_ids": [], "start_thread": false, "reply_to": null, "silent": false }
 { "type": "reaction.add", "message_id": "01J...", "emoji": "👍" }
 
 // サーバー → クライアント（抜粋）
@@ -438,10 +451,11 @@ export default class DicePlugin extends Plugin {
 | `this.postMessage({ body, threadId?, name?, notify? })` | プラグインの名前（`name` で変えられる）のボットとしてメッセージを投稿する。投稿者（author）は実行した人のままで、メッセージに `bot: { plugin, name }` が付く。通常の投稿と同じく配信する。通知は `notify: true` のときだけ送り、通常の宛先に加えて投稿した本人にも届く（API v5。`notify` は v6） |
 | `this.openSettings()` | このプラグインの設定画面を開く（設定タブに切り替える）（API v6） |
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント。いまつながっている人に中継するだけで、保存しない（API v3） |
-| `this.addStatusBarItem()` | アプリの下端の常時表示のステータス欄に出す要素を足す。空の間は隠れる（API v3） |
+| `this.addStatusBarItem()` | 画面上部の共通の枠（通話のバーと同じ。9.11）の常時表示のステータス欄に出す要素を足す。空の間は隠れる（API v3） |
 | `this.holdBackground({ microphone?, title?, text?, actions?, onAction? })` | 画面を切っても動き続ける。Android ではフォアグラウンドサービス（microphone 型）を動かす。ほかの環境では何もしない（API v3）。`actions`（通知のボタン、最大3つ）と `onAction(id)`、戻り値の `update({ title, text, actions })` は API v4 |
 | `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（API v5）。`listOutputs()` は `{ id, label, kind, selected }` の配列（Android: 通話中の `earpiece` `speaker` `wired` `bluetooth`。notifier プラグインの `list_audio_outputs` / `set_audio_output` コマンド＝Kotlin の AudioManager。API 31 以上は `setCommunicationDevice`、それ以前は `setSpeakerphoneOn` / `startBluetoothSco`。デスクトップ: `enumerateDevices` と `setSinkId`）。`attach` は `<audio>` や `AudioContext` を登録し、デスクトップで選んだ出力先に出す。`listInputs()` はデスクトップのマイクの一覧（Android は空）。使えない環境では空配列 / false を返す |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 6。2 で `addCommand` に `icon`・`slash`・`args`・`suggestArgs`・`run(ctx)` が、3 で `broadcast`・`addStatusBarItem`・`holdBackground` が、4 で `holdBackground` の通知ボタン `actions` / `onAction` と `update()` が、5 で `postMessage` と `disnans.audio` が、6 で `postMessage` の `notify` と `openSettings()` が増えた） |
+| `disnans.call.*` | 本体の通話の状態の読み取り・トラック（映像など）の追加と受け取り・通話のバーのボタン（API v7。9.11） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 7。2 で `addCommand` に `icon`・`slash`・`args`・`suggestArgs`・`run(ctx)` が、3 で `broadcast`・`addStatusBarItem`・`holdBackground` が、4 で `holdBackground` の通知ボタン `actions` / `onAction` と `update()` が、5 で `postMessage` と `disnans.audio` が、6 で `postMessage` の `notify` と `openSettings()` が、7 で通話の拡張 `disnans.call` が増えた） |
 
 - 型定義と詳しい説明は `packages/plugin-sdk/`、作り方のガイドは `docs/PLUGINS.md` を正とする
 - 本体の CSS 変数（`--bg`, `--accent` など）と共通クラス（`.btn`, `.input` など）はプラグインからも使える
@@ -534,18 +548,26 @@ theme-sakura/
 - 選んだテーマが更新されたらすぐに入れ替え、削除されたら外す（選んだことは覚えておき、同じ ID が配布し直されたらまた適用する）
 - 起動直後のちらつきを防ぐため、選んだテーマの CSS は端末に覚えておき、サーバーの応答を待たずに適用する
 
-### 9.11 実例: ボイスチャット
+### 9.11 通話
 
-みんな共通の1部屋の音声通話（`examples/voice/`）。映像・画面共有はない。通話の機能はすべてプラグインで、本体に足したのは汎用のホスト API（9.4 の `broadcast`・`addStatusBarItem`・`holdBackground`）と、各 OS のマイクの許可だけ。
+みんな共通の1部屋の音声通話。**アプリ本体の機能**（`app/src/lib/call/`）で、画面共有などは通話の拡張 API（`disnans.call`、API v7）を使って別プラグインとして作れる。
 
-- 参加・退出・ミュート・スピーカーミュート（相手の声を全部、自分の側だけ消す）・出力先の切り替えは、コマンドパレット・`/vc-join` `/vc-leave` `/vc-mute` `/vc-deafen` `/vc-output`・「＋」メニューから。いつでも出入りでき、チャットにカードは流れない
-- 画面の上部（ヘッダーの下）のステータス欄に、いま通話にいる人のアイコンが常に出る（参加していない人にも見える）。しゃべっている人は枠が光り、ミュート中は印が付く。相手のアイコンを押すと、自分の側だけ消音できる
-- WebRTC のメッシュ（10 人ほどまで）。音声は端末同士が直接つなぐ。Tailscale の中なので STUN/TURN は基本要らず、必要ならプラグインの設定で STUN を足す
-- シグナリング（offer / answer / ICE）と在室の管理は `plugin.emit` の中継だけで行う。サーバーは保存しない。参加者は 3 秒ごとに在室を知らせ、12 秒途絶えた人は落ちたと見なして外す
-- Android では通話中の通知に「ミュート」「スピーカーミュート」「切断」のボタンが出る（`holdBackground` の `actions` / `onAction` / `update`。押すと「…解除」に変わり、本文に人数が出る）
-- 出力先は `disnans.audio`（Android は通話中に `MODE_IN_COMMUNICATION` にして切り替える。参加時は、Bluetooth・イヤホンがあればそれ、なければスピーカー。前に選んだものがあればそれに戻す）。マイクと相手の音量は設定タブのスライダー（端末ごとに保存、同期しない。マイクは GainNode、相手は `<audio>` の volume）
-- WebRTC を使えない環境（配布元の WebKitGTK など）は、その相手とのあいだだけ音声をサーバー経由（`plugin.emit` の `audio`。16kHz モノラル PCM を 50ms ずつ、base64。無音は送らない）で流す。在室の知らせの `rtc` で伝え合い、双方が使えるペアは WebRTC のまま
+- 参加・退出・ミュート・スピーカーミュート（相手の声を全部、自分の側だけ消す）・出力先の切り替えは、コマンドパレット・`/vc-join` `/vc-leave` `/vc-mute` `/vc-deafen` `/vc-output` `/vc-settings`・「＋」メニューから。いつでも出入りでき、チャットにカードは流れない
+- 画面上部の共通の枠（トップバーのスロット。`TopBarSlot`）に通話のバーが出る。チャット・スレッド・設定のどのタブでも、参加中、またはだれかが通話にいるあいだ出る。プラグインのステータス欄項目（`addStatusBarItem`）も同じ枠に並ぶ
+  - 参加者のアバターの右下に端末の種類（`deviceKind`: smartphone / tablet / laptop / monitor）、左下にミュート・スピーカーミュート・自分の側の消音の小さなバッジ。しゃべっている人は枠が光る。アバターを押すと、自分の側だけ消音（自分なら自分のミュート）
+  - 右側にミュート、スピーカーミュート、通話の設定（設定 → 通話を開く）、一番右端に退出（`--danger`）。拡張 API で足したボタンはミュートの前に並ぶ。出力先の選択はバーに出さず、設定にだけ置く
+  - 参加者を長押し（PC は右クリックでもよい）すると、確認（`ui.confirm`）のあとその人を通話から外せる（kick）。外された人の通話は切れ、トーストで知らせる。外しただけで禁止ではなく、また参加できる
+- 設定（設定 → 通話。端末ごとに保存、同期しない）: 参加したときミュート、マイクの音量（GainNode）、相手の音量（`<audio>` の volume）、音の出力先、マイク、STUN サーバー
+- WebRTC のメッシュ（10 人ほどまで）。音声は端末同士が直接つなぐ。Tailscale の中なので STUN/TURN は基本要らない
+- **参加者の管理とシグナリングはサーバー**（`crates/server/src/calls.rs`。→ `docs/API.md` の WebSocket）。サーバーは接続ごとの参加者（peer ID・ユーザー・`muted` `deafened` `rtc` `device`）をメモリで持ち、変化のたびに `call.state` を全員に配る。接続が切れれば自動で外れ、kick（`call.kick`）は対象の接続に `call.kicked` を確実に届ける。`call.emit` は参加者どうしにだけ中継する（`signal`: offer / answer / ICE、`audio`: リレー）。ハートビートや期限切れはない
+- 再接続（WebSocket が切れてつなぎ直した）では、本体が `call.join` を送り直し、WebRTC の接続もやり直す
+- 同じ相手と同時に offer を出し合わない: peer ID が小さい側だけが最初の offer を出す。そのあとの再ネゴシエーション（トラックの追加・削除）は、どちらからも出せる Perfect Negotiation（大きい側が譲る側）。接続ごとの世代 ID（`sid`）を signal に付け、新しい世代の offer は古い接続を置き換える
+- Android では通話中の通知に「ミュート」「スピーカーミュート」「切断」のボタンが出る（`lib/plugins/background.ts` の `actions` / `onAction` / `update`。押すと「…解除」に変わり、本文に人数が出る）
+- 出力先は `lib/plugins/audio.ts`（Android は通話中に `MODE_IN_COMMUNICATION` にして切り替える。参加時は、Bluetooth・イヤホンがあればそれ、なければスピーカー。前に選んだものがあればそれに戻す）
+- WebRTC を使えない環境（配布元の WebKitGTK など）は、その相手とのあいだだけ音声をサーバー経由（`call.emit` の `audio`。16kHz モノラル PCM を 50ms ずつ、base64。無音は送らない）で流す。`status.rtc` で伝え合い、双方が使えるペアは WebRTC のまま。この中継は**音声だけ**で、映像は扱えない（`disnans.call.canVideo` と `participant.canVideo` で判別できる）
+- 拡張 API（`disnans.call`、API v7。→ `docs/PLUGINS.md`）: 通話中か・参加者・状態変化（`onChange`）、トラックの追加・削除（`addTrack` / `removeTrack`。WebRTC の再ネゴシエーション）、相手のトラックを受け取る（`onTrack` / `onTrackEnd` / `remoteTracks`）、通話のバーのボタン（`addButton`）、`join` / `leave`。本体は映像を送らない
 - マイクはアプリ版（Tauri）でのみ使える（`getUserMedia` に安全なコンテキストが要るため、`http://` で開いたブラウザー版では使えない）
+- 通話がプラグイン（`voice`）だったころの設定は、新しい保存先が空なら引き継ぐ
 
 プラットフォーム:
 
@@ -559,4 +581,4 @@ theme-sakura/
 
 - [x] テーマ（カスタム CSS）の適用方法 → 9.10
 - [ ] ホスト API のエラーの扱い、API バージョンの互換性の方針
-- [ ] セッションを開いている人の一覧（プレゼンス）を API で取れるようにするか（通話は `broadcast` のハートビートで自前の在室を管理している。→ 9.11）
+- [ ] セッションを開いている人の一覧（プレゼンス）を API で取れるようにするか（通話はサーバーが参加者を持つ専用の経路。→ 9.11）

@@ -4,7 +4,9 @@
   import X from '@lucide/svelte/icons/x';
     import FileIcon from '@lucide/svelte/icons/file';
   import Puzzle from '@lucide/svelte/icons/puzzle';
+  import BellOff from '@lucide/svelte/icons/bell-off';
   import MessageInput from './MessageInput.svelte';
+  import ReplyBar from './ReplyBar.svelte';
   import IconButton from './ui/IconButton.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
@@ -12,6 +14,7 @@
   import { client } from '../lib/stores/client.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { reply } from '../lib/stores/reply.svelte';
   import { draftKey, loadDraft, saveDraft } from '../lib/drafts';
   import ImageCropDialog from './ImageCropDialog.svelte';
   import { readImageInfo, canCropImage, type CropRect, type ImageInfo } from '../lib/imageCrop';
@@ -20,6 +23,7 @@
   import { parseSlashInput, runSlashCommand } from '../lib/slashCommands.svelte';
   import { formatSize } from '../lib/format';
   import { MAX_BODY } from '../lib/errors';
+  import { isSilentSwipe, sendButtonLift, swipeUpLift } from '../lib/silentSend';
 
   let { threadId, placeholder }: { threadId: string | null; placeholder: string } = $props();
 
@@ -111,6 +115,11 @@
     input?.focus();
   }
 
+  // 返信先を選んだら、すぐ入力できるように入力欄にフォーカスする
+  $effect(() => {
+    if (reply.get(threadId)) untrack(() => input?.focus());
+  });
+
   export function focus() {
     input?.focus();
   }
@@ -121,7 +130,8 @@
     staged = staged.filter((x) => x.key !== s.key);
   }
 
-  function submit() {
+  /** silent は通知を送らない（送信ボタンを上へスワイプして送ったとき） */
+  function submit(silent = false) {
     if (!input || running) return;
     const parsed = parseSlashInput(input.getBody());
     const key = draftId;
@@ -138,13 +148,59 @@
       return;
     }
     // アップロードと送信は client の仮表示の中で行う。入力欄はすぐ空にする
-    client.sendMessage({ threadId, body, files: staged.map((s) => ({ file: s.file, crop: s.crop })) });
+    client.sendMessage({ threadId, body, files: staged.map((s) => ({ file: s.file, crop: s.crop })), replyTo: reply.get(threadId), silent });
+    reply.clear(threadId);
     input.clear();
     hasText = false;
     if (key) saveDraft(key, '');
     // 一覧用の見本の URL は、ここで破棄する（送るファイルは client が持つ）
     for (const s of staged) if (s.preview) URL.revokeObjectURL(s.preview);
     staged = [];
+  }
+
+  /** 送信ボタンを押したまま上へなぞっている量（px）。0 なら押しているだけ */
+  let sendLift = $state(0);
+  let sendGesture: { id: number; startY: number } | null = null;
+  /** 直前の操作で silent 送信した（続く click では送らない） */
+  let sendSilentDone = false;
+
+  function onsendpointerdown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    sendSilentDone = false;
+    sendGesture = { id: e.pointerId, startY: e.clientY };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function onsendpointermove(e: PointerEvent) {
+    if (!sendGesture || e.pointerId !== sendGesture.id) return;
+    sendLift = swipeUpLift(sendGesture.startY, e.clientY);
+  }
+
+  function onsendpointerup(e: PointerEvent) {
+    if (!sendGesture || e.pointerId !== sendGesture.id) return;
+    const lift = swipeUpLift(sendGesture.startY, e.clientY);
+    sendGesture = null;
+    sendLift = 0;
+    // しきい値に届いたら通知なしで送る。届かなければ、続く click で通常の送信になる
+    if (isSilentSwipe(lift)) {
+      sendSilentDone = true;
+      submit(true);
+    }
+  }
+
+  function onsendpointercancel(e: PointerEvent) {
+    if (!sendGesture || e.pointerId !== sendGesture.id) return;
+    sendGesture = null;
+    sendLift = 0;
+  }
+
+  function onsendclick() {
+    // 上へのスワイプで送ったあとの click は無視する（二重に送らない）
+    if (sendSilentDone) {
+      sendSilentDone = false;
+      return;
+    }
+    submit();
   }
 
   async function runCommand(name: string, args: string, key: string | null) {
@@ -175,6 +231,8 @@
 </script>
 
 <div class="composer" class:composer-in-thread={threadId !== null}>
+  <ReplyBar {threadId} />
+
   {#if staged.length > 0}
     <div class="composer-upload-tray">
       {#each staged as s (s.key)}
@@ -239,8 +297,26 @@
       />
     {/key}
 
-    <button type="button" class="composer-send" disabled={!canSend} aria-label="送信" onclick={submit}>
-      <Send size={18} />
+    <button
+      type="button"
+      class="composer-send"
+      class:composer-send-lifting={sendLift > 0}
+      disabled={!canSend}
+      aria-label="送信"
+      style:transform={sendLift > 0 ? `translateY(${-sendButtonLift(sendLift)}px)` : null}
+      onpointerdown={onsendpointerdown}
+      onpointermove={onsendpointermove}
+      onpointerup={onsendpointerup}
+      onpointercancel={onsendpointercancel}
+      onclick={onsendclick}
+    >
+      {#if sendLift > 0}
+        <BellOff size={18} />
+        <!-- 上へスワイプ中。しきい値に届くと、離したときに通知なしで送る -->
+        <span class="composer-send-hint" class:composer-send-hint-ready={isSilentSwipe(sendLift)}>通知なしで送信</span>
+      {:else}
+        <Send size={18} />
+      {/if}
     </button>
   </div>
 
@@ -319,6 +395,7 @@
     font-size: 13px;
   }
   .composer-send {
+    position: relative;
     display: grid;
     place-items: center;
     width: 36px;
@@ -329,11 +406,37 @@
     background: var(--accent);
     color: var(--on-accent);
     flex: none;
-    transition: opacity 0.12s;
+    /* 上へのスワイプ（通知なしで送る）を指で追えるように、ブラウザーの処理（スクロール）を止める */
+    touch-action: none;
+    transition:
+      opacity 0.12s,
+      transform 0.12s;
   }
   .composer-send:disabled {
     opacity: 0.35;
     cursor: default;
+  }
+  .composer-send-lifting {
+    box-shadow: var(--shadow);
+  }
+  /* 上へスワイプ中の小さなラベル（ボタンの上に出す） */
+  .composer-send-hint {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 10px);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .composer-send-hint-ready {
+    color: var(--accent);
+    font-weight: 600;
   }
   .composer-upload-tray {
     display: flex;

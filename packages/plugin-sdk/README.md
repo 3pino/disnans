@@ -1,6 +1,6 @@
 # @disnans/plugin-sdk
 
-disnans のプラグインを書くための型定義（ホスト API バージョン 3）。
+disnans のプラグインを書くための型定義（ホスト API バージョン 7）。
 
 - `index.d.ts`: ホスト API の型。グローバルの `disnans` と、名前空間 `Disnans`（`Disnans.Session` など）を宣言する
 - 実行時のコードは入っていない。ホスト API の実体は disnans 本体がグローバルの `disnans` として用意する

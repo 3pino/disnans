@@ -2,22 +2,27 @@
   import Upload from '@lucide/svelte/icons/upload';
   import Users from '@lucide/svelte/icons/users';
   import Lock from '@lucide/svelte/icons/lock';
+  import CloudOff from '@lucide/svelte/icons/cloud-off';
   import Button from './ui/Button.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
   import type { PluginVisibility } from '../lib/protocol/PluginVisibility';
 
-  // [配布] ボタン。押すと「みんなに配布」「自分だけに配布」を選ぶメニューを出す（プラグイン・テーマの設定で使う）
+  // [配布] ボタン。押すと「みんなに配布」「自分だけに配布」を選ぶメニューを出す（プラグイン・テーマの設定で使う）。
+  // onunpublish を渡すと（配布済みのときだけ渡す）、メニューに「配布しない」を足す
   let {
     disabled = false,
     label = '配布',
     class: className = '',
     onpublish,
+    onunpublish,
   }: {
     disabled?: boolean;
     label?: string;
     class?: string;
     onpublish: (visibility: PluginVisibility) => void;
+    /** 配布を取り消す（サーバーから外す）。確認は呼ぶ側で出す */
+    onunpublish?: () => void;
   } = $props();
 
   let open = $state(false);
@@ -25,6 +30,11 @@
   function pick(v: PluginVisibility) {
     open = false;
     onpublish(v);
+  }
+
+  function unpick() {
+    open = false;
+    onunpublish?.();
   }
 </script>
 
@@ -44,6 +54,14 @@
           <span class="muted publish-button-detail">自分の端末（スマホも）でだけ使えます</span>
         </span>
       </MenuItem>
+      {#if onunpublish}
+        <MenuItem class="publish-button-unpublish" icon={CloudOff} danger onclick={unpick}>
+          <span class="publish-button-item">
+            <span>配布しない</span>
+            <span class="muted publish-button-detail">配布を取り消します（手元のフォルダはそのまま）</span>
+          </span>
+        </MenuItem>
+      {/if}
     </Menu>
   {/if}
 </span>

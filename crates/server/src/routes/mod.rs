@@ -44,7 +44,9 @@ pub fn router(state: SharedState) -> Router {
         .route("/avatars/{id}", get(users::avatar))
         .route("/messages", get(messages::list))
         .route("/threads", get(threads::list))
-        .route("/threads/{id}", get(threads::get))
+        .route("/threads/{id}", get(threads::get).patch(threads::update))
+        .route("/threads/{id}/tags", put(threads::set_tags))
+        .route("/thread-tags", get(threads::tags))
         // ファイルサイズの上限はなし（ストリーミングでディスクに書く）
         .route(
             "/files",

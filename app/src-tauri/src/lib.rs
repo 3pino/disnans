@@ -27,7 +27,7 @@ fn read_shared_file(path: String) -> Result<tauri::ipc::Response, String> {
     Ok(tauri::ipc::Response::new(bytes))
 }
 
-/// WebKitGTK で getUserMedia / WebRTC を使えるようにする（通話プラグイン用）。
+/// WebKitGTK で getUserMedia / WebRTC を使えるようにする（通話用）。
 /// 動くには、システムに GStreamer のプラグイン（gst-plugins-good / -bad、libnice の gstreamer プラグイン）が要る。
 #[cfg(target_os = "linux")]
 fn enable_webrtc(app: &tauri::App) {
@@ -54,6 +54,7 @@ pub fn run() {
     // アップデート: デスクトップは公式の updater、Android は自前のプラグイン
     // 通知: デスクトップは公式の notification、Android は常駐サービスを持つ自前のプラグイン
     // dialog: 開発用フォルダを選ぶ（デスクトップだけ）
+    // fs / clipboard-manager: Linux でのファイルのドロップと、クリップボードの画像の貼り付け（capabilities/linux.json で許可）
     #[cfg(desktop)]
     {
         builder = builder
@@ -61,6 +62,8 @@ pub fn run() {
             .plugin(tauri_plugin_process::init())
             .plugin(tauri_plugin_notification::init())
             .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_fs::init())
+            .plugin(tauri_plugin_clipboard_manager::init())
             .invoke_handler(tauri::generate_handler![
                 open_devtools,
                 dev_plugins::dev_plugins_scan,
@@ -77,7 +80,7 @@ pub fn run() {
             .plugin(tauri_plugin_notifier::init());
     }
 
-    // 通話（プラグインの getUserMedia / WebRTC）: マイクだけ許可する。カメラ・画面共有などは既定のまま
+    // 通話（getUserMedia / WebRTC）: マイクだけ許可する。カメラ・画面共有などは既定のまま
     // （Windows は WebView2 の確認を省き、Linux は WebKitGTK の許可の要求に答え、Android は OS の許可へ進める）
     builder = builder.on_permission_request(|_webview, kind| match kind {
         tauri::webview::PermissionKind::Microphone => tauri::webview::PermissionResponse::Allow,

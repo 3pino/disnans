@@ -1,5 +1,6 @@
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
+  import AuthorAvatar from './AuthorAvatar.svelte';
   import IconButton from './ui/IconButton.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 </script>
@@ -7,6 +8,11 @@
 <div class="toasts" aria-live="polite">
   {#each ui.toasts as t (t.id)}
     <div class="toast" class:toast-error={t.kind === 'error'}>
+      {#if t.avatar}
+        <span class="toast-avatar">
+          <AuthorAvatar author={t.avatar.author} user={t.avatar.user} id={t.avatar.id} size={28} />
+        </span>
+      {/if}
       <span class="toast-text">{t.text}</span>
       {#if t.action}
         {@const action = t.action}
@@ -44,15 +50,19 @@
     padding: 8px 6px 8px 14px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     font-size: 14px;
     pointer-events: auto;
     animation: drop 0.18s ease-out;
   }
+  /* 種類の見分けは error だけ（info には帯を付けない） */
   .toast.toast-error {
-    border-left-color: var(--danger);
+    border-left: 3px solid var(--danger);
+  }
+  .toast-avatar {
+    flex: none;
+    display: flex;
   }
   .toast-text {
     flex: 1;

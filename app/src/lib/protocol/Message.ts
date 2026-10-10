@@ -3,6 +3,7 @@ import type { Attachment } from "./Attachment";
 import type { BotInfo } from "./BotInfo";
 import type { MessageCard } from "./MessageCard";
 import type { Reaction } from "./Reaction";
+import type { ReplyPreview } from "./ReplyPreview";
 import type { ThreadInfo } from "./ThreadInfo";
 
 export type Message = { id: string, author_id: string, 
@@ -10,6 +11,14 @@ export type Message = { id: string, author_id: string,
  * スレッド内の返信なら、そのスレッド（起点のメッセージ）の ID。メインチャットなら `null`。
  */
 thread_id: string | null, 
+/**
+ * 返信なら、返信先のメッセージの ID（同じメインチャット・同じスレッドのメッセージ）。
+ */
+reply_to: string | null, 
+/**
+ * 返信先の要約。返信先が削除されていれば `null`（`reply_to` だけが残る）。
+ */
+reply_preview: ReplyPreview | null, 
 /**
  * Markdown サブセットの生テキスト。メンションは `<@user_id>`。
  */
