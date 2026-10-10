@@ -1,0 +1,43 @@
+# タグ（v0.1.1 など）を push すると、サーバー（disnans-server）をビルドして、そのタグのリリースに添付する。
+# 本番（Ubuntu 24.04）と glibc の版を合わせるため、ubuntu-24.04 でビルドする。
+# 既存のタグにあとから添付するときは、Actions の画面から tag を指定して手動で実行する。
+name: Server
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 添付するリリースのタグ（例: v0.1.8）
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  server:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p disnans-server
+      - name: リリースに添付
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET=disnans-server_linux-x64
+          cp target/release/disnans-server "$ASSET"
+          sha256sum "$ASSET" > "$ASSET.sha256"
+          # リリースは Release のワークフローが作る。まだなければ（下書きのうちは）できるまで待つ
+          for _ in $(seq 1 60); do
+            gh release view "$TAG" > /dev/null 2>&1 && break
+            sleep 10
+          done
+          gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber
