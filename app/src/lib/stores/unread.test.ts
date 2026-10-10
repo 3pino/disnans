@@ -19,6 +19,7 @@ function msg(id: string, author: string, threadId: string | null = null): Messag
     edited_at: null,
     thread: null,
     card: null,
+    bot: null,
   };
 }
 

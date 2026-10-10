@@ -1,6 +1,6 @@
 //! 画像の変換（SPEC 4.4）。CPU を使うので、呼び出し側で `spawn_blocking` すること。
 //!
-//! - 静止画: 回転情報を反映し、長辺 2560px 以下に縮小して、非可逆 WebP（品質 85）にする。
+//! - 静止画: 回転情報を反映し、長辺 800px（既定）以下に縮小して、非可逆 WebP（品質 85）にする。
 //!   作り直すので EXIF などのメタデータは残らない
 //! - アニメーション（GIF / WebP / APNG）: 変換しない。サムネイルだけ最初のフレームから作る
 //! - サムネイル: 長辺 480px の WebP
@@ -16,7 +16,8 @@ use image::codecs::webp::WebPDecoder;
 use image::imageops::FilterType;
 use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat, ImageReader, ImageResult};
 
-pub const MAX_EDGE: u32 = 2560;
+/// 静止画の長辺の既定値（`DISNANS_IMAGE_MAX_EDGE` で変えられる）。
+pub const DEFAULT_MAX_EDGE: u32 = 800;
 pub const THUMB_EDGE: u32 = 480;
 pub const QUALITY: f32 = 85.0;
 pub const AVATAR_EDGE: u32 = 256;
@@ -83,10 +84,10 @@ pub fn decode(path: &Path, format: ImageFormat) -> ImageResult<DynamicImage> {
 }
 
 /// 静止画を、保存用の WebP にする。
-pub fn convert(image: &DynamicImage) -> Result<Encoded, String> {
+pub fn convert(image: &DynamicImage, max_edge: u32) -> Result<Encoded, String> {
     let resized;
-    let image = if image.width().max(image.height()) > MAX_EDGE {
-        resized = image.resize(MAX_EDGE, MAX_EDGE, FilterType::Lanczos3);
+    let image = if image.width().max(image.height()) > max_edge {
+        resized = image.resize(max_edge, max_edge, FilterType::Lanczos3);
         &resized
     } else {
         image

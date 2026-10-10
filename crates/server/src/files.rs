@@ -45,10 +45,11 @@ pub fn store_upload(
     thumb: &Path,
     file_name: String,
     mime: String,
+    max_edge: u32,
 ) -> std::io::Result<Stored> {
     let kind = image_proc::detect(tmp);
     if let Kind::Still(format) = kind {
-        match convert_still(tmp, dest, thumb, format) {
+        match convert_still(tmp, dest, thumb, format, max_edge) {
             Ok((size, width, height)) => {
                 std::fs::remove_file(tmp)?;
                 return Ok(Stored {
@@ -115,9 +116,10 @@ fn convert_still(
     dest: &Path,
     thumb: &Path,
     format: image::ImageFormat,
+    max_edge: u32,
 ) -> Result<(u64, u32, u32), String> {
     let image = image_proc::decode(tmp, format).map_err(|e| e.to_string())?;
-    let full = image_proc::convert(&image)?;
+    let full = image_proc::convert(&image, max_edge)?;
     let small = image_proc::thumbnail(&image)?;
     std::fs::write(dest, &full.data).map_err(|e| e.to_string())?;
     std::fs::write(thumb, &small.data).map_err(|e| e.to_string())?;

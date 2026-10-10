@@ -42,8 +42,8 @@
 
 - **Android**: 初回の参加でマイクの許可を求められます。通話中は「通話」の通知が出て、画面を消しても通話が続きます
 - **Windows**: 追加の準備は要りません（WebView2 のマイクは、アプリ側で許可します）
-- **Linux**: WebKitGTK の WebRTC に GStreamer のプラグインが要ります。`.deb` で入れた場合は推奨パッケージとして入ります。AppImage や手動の場合は `sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-nice` を入れてください
-- 通話の音声は Tailscale の中で端末同士が直接つなぎます。つながらないときは、プラグインの設定に STUN サーバーを足せます
+- **Linux**: 配布元の WebKitGTK は WebRTC なしでビルドされていることがあります。その場合は自動で、サーバー経由の音声（リレー）で話します（WebRTC を使える人どうしは今までどおり直接つなぎます）。追加のパッケージは要りません
+- 通話の音声は Tailscale の中で端末同士が直接つなぎます（WebRTC を使えない端末との間だけサーバーを通ります）。つながらないときは、プラグインの設定に STUN サーバーを足せます
 
 ### アップデート
 
@@ -61,6 +61,26 @@ DISNANS_BIND=<Tailscale の IP>:8080 DISNANS_DATA_DIR=/var/lib/disnans ./target/
 - Tailscale の IP は `tailscale ip -4` で確認できます
 - 友達を招待するには、Tailscale の管理画面でサーバー端末を[ノード共有](https://tailscale.com/kb/1084/sharing)します。友達は自分の無料アカウントのままで接続できます
 - 環境変数や注意点は [crates/server/README.md](crates/server/README.md) を参照してください
+
+  1. 管理画面（login.tailscale.com）の Machines で、server の「…」メニューから Share… を選びます。
+  2. 招待リンクを作るか、友だちのメールアドレスに送ります。
+  3. 友だちは自分の Tailscale アカウントで招待を受けます。その人がそのアカウントでログインしている端末なら、どれからでも サーバーPC が見えるようになります。
+  4. 友だちはアプリで、 サーバーPC を入力します。サーバーは Tailscale のアカウントで相手を見分けるので、共有で入った人も今までどおりログインできます。
+  5. Access Controls の設定を書き換えます。
+    ```jsonc
+    {
+      "hosts": {
+        "server": "100.x.x.x"
+      },
+      "acls": [
+        // 自分（tailnet のメンバー）はこれまでどおり全部
+        { "action": "accept", "src": ["autogroup:member"], "dst": ["*:*"] },
+
+        // 共有で入った人は、disnans の 8080 だけ
+        { "action": "accept", "src": ["autogroup:shared"], "dst": ["server:8080"] }
+      ]
+    }
+    ```
 
 ### 常駐させる（systemd）
 

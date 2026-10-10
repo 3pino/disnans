@@ -1,5 +1,5 @@
 import { api, uploadFile } from '../api';
-import { prepareUpload } from '../imageResize';
+import { prepareUpload } from '../imageCrop';
 import { mentionsToText } from '../markdown';
 import type { ClientEvent } from '../protocol/ClientEvent';
 import type { Message } from '../protocol/Message';
@@ -119,6 +119,7 @@ class Client {
       edited_at: null,
       thread: null,
       card: null,
+      bot: null,
       sent: false,
       failed: false,
       attachment_ids: [],
@@ -126,7 +127,7 @@ class Client {
       files: opts.files.map((f) => ({
         key: ++this.seq,
         file: f.file,
-        maxEdge: f.maxEdge,
+        crop: f.crop,
         preview: f.file.type.startsWith('image/') ? URL.createObjectURL(f.file) : null,
         progress: 0,
         attachment: null,
@@ -159,7 +160,7 @@ class Client {
         if (f.attachment) continue;
         f.error = null;
         try {
-          const file = await prepareUpload(f.file, f.maxEdge);
+          const file = await prepareUpload(f.file, f.crop);
           if (!find()) return; // 取り消された
           const h = uploadFile(file, (r) => (f.progress = r));
           f.progress = 0;

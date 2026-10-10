@@ -85,8 +85,8 @@ async fn still_image_becomes_rotated_lossy_webp_without_exif() {
     assert_eq!(att.mime, "image/webp");
     assert_eq!(att.file_name, "IMG_0001.webp");
     assert!(att.has_thumb);
-    // 回転（400x2800）してから、長辺を 2560 に縮小する
-    assert_eq!((att.width, att.height), (Some(366), Some(2560)));
+    // 回転（400x2800）してから、長辺を 800（既定）に縮小する
+    assert_eq!((att.width, att.height), (Some(114), Some(800)));
 
     let res = server
         .get(ALICE, &format!("/api/files/{}", att.id))
@@ -109,7 +109,7 @@ async fn still_image_becomes_rotated_lossy_webp_without_exif() {
     assert!(!contains(&body, b"EXIF") && !contains(&body, b"Exif"));
     assert!(!contains(&body, SECRET));
     let decoded = image::load_from_memory_with_format(&body, ImageFormat::WebP).unwrap();
-    assert_eq!((decoded.width(), decoded.height()), (366, 2560));
+    assert_eq!((decoded.width(), decoded.height()), (114, 800));
 
     let res = server
         .get(ALICE, &format!("/api/files/{}/thumb", att.id))

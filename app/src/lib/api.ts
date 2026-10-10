@@ -6,6 +6,7 @@ import type { Message } from './protocol/Message';
 import type { PluginInfo } from './protocol/PluginInfo';
 import type { PluginVisibility } from './protocol/PluginVisibility';
 import type { PluginNotify } from './protocol/PluginNotify';
+import type { PluginPostMessage } from './protocol/PluginPostMessage';
 import type { ReadMarker } from './protocol/ReadMarker';
 import type { Session } from './protocol/Session';
 import type { Thread } from './protocol/Thread';
@@ -115,6 +116,7 @@ export const api = {
     if (!res.ok) throw await toError(res);
     return await res.text();
   },
+  pluginPostMessage: (id: string, body: PluginPostMessage) => request<Message>('POST', `/api/plugins/${encodeURIComponent(id)}/messages`, body),
   pluginNotify: (id: string, body: PluginNotify) => request<void>('POST', `/api/plugins/${encodeURIComponent(id)}/notify`, body),
 
   // ---- セッション ----

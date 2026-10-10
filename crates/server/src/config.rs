@@ -13,6 +13,8 @@ pub struct Config {
     pub dev: bool,
     /// tailscaled の LocalAPI のソケット（`DISNANS_TAILSCALE_SOCKET`）。
     pub tailscale_socket: PathBuf,
+    /// 保存する画像の長辺の最大（`DISNANS_IMAGE_MAX_EDGE`、既定 800px）。
+    pub image_max_edge: u32,
 }
 
 impl Config {
@@ -33,6 +35,14 @@ impl Config {
             tailscale_socket: var("DISNANS_TAILSCALE_SOCKET")
                 .map(PathBuf::from)
                 .unwrap_or_else(default_tailscale_socket),
+            image_max_edge: match var("DISNANS_IMAGE_MAX_EDGE") {
+                Some(v) => v
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|n| *n >= 1)
+                    .ok_or_else(|| format!("DISNANS_IMAGE_MAX_EDGE が不正です（{v}）"))?,
+                None => crate::image_proc::DEFAULT_MAX_EDGE,
+            },
         })
     }
 

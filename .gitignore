@@ -9,3 +9,7 @@ node_modules/
 # Tauri プラグインの Android ビルド成果物
 /app/src-tauri/plugins/*/android/build
 /app/src-tauri/plugins/*/android/.tauri
+
+# 個人的なファイル
+scripts/deploy.sh
+CLAUDE.md

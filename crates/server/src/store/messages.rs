@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use disnans_shared::{Attachment, Message, Reaction, Thread, ThreadInfo};
+use disnans_shared::{Attachment, BotInfo, Message, Reaction, Thread, ThreadInfo};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use super::{files, json_ids, sessions};
@@ -18,6 +18,8 @@ pub struct MessageRow {
     pub body: String,
     pub created_at: i64,
     pub edited_at: Option<i64>,
+    pub bot_plugin: Option<String>,
+    pub bot_name: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -34,7 +36,7 @@ struct ReactionRow {
     user_id: String,
 }
 
-const COLUMNS: &str = "id, author_id, thread_id, body, created_at, edited_at";
+const COLUMNS: &str = "id, author_id, thread_id, body, created_at, edited_at, bot_plugin, bot_name";
 
 // ---- 読み込み ----
 
@@ -79,6 +81,10 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
             reactions: reactions.remove(&row.id).unwrap_or_default(),
             thread: threads.remove(&row.id),
             card: cards.remove(&row.id),
+            bot: row
+                .bot_plugin
+                .zip(row.bot_name)
+                .map(|(plugin, name)| BotInfo { plugin, name }),
             id: row.id,
             author_id: row.author_id,
             thread_id: row.thread_id,
@@ -223,7 +229,7 @@ pub async fn thread_participants(pool: &SqlitePool, thread_id: &str) -> sqlx::Re
 
 pub async fn insert(conn: &mut SqliteConnection, row: &MessageRow) -> sqlx::Result<()> {
     sqlx::query(&format!(
-        "INSERT INTO messages ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT INTO messages ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     ))
     .bind(&row.id)
     .bind(&row.author_id)
@@ -231,6 +237,8 @@ pub async fn insert(conn: &mut SqliteConnection, row: &MessageRow) -> sqlx::Resu
     .bind(&row.body)
     .bind(row.created_at)
     .bind(row.edited_at)
+    .bind(&row.bot_plugin)
+    .bind(&row.bot_name)
     .execute(conn)
     .await?;
     Ok(())

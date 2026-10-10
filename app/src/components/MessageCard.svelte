@@ -85,10 +85,10 @@
     cursor: pointer;
   }
   .message-card.message-card-openable:hover {
-    border-color: var(--accent);
+    border-color: var(--border-hover);
   }
   .message-card.message-card-openable:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--ring);
     outline-offset: 1px;
   }
   .message-card.message-card-unavailable {

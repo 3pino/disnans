@@ -14,7 +14,7 @@ set -euo pipefail
 HOST="${DISNANS_HOST:-cucum-ubu24}"
 REMOTE_DIR="${DISNANS_REMOTE_DIR:-disnans}"          # 本番のホームからの相対パス
 BIND_PORT="${DISNANS_PORT:-8080}"
-PLUGIN_DEST="${DISNANS_PLUGIN_DEST:-$HOME/repos/disnans-plugin}"
+PLUGIN_DEST="${DISNANS_PLUGIN_DEST:-$HOME/repos/disnans-plugins}"
 REPO="${DISNANS_REPO:-3pino/disnans}"
 ASSET=disnans-server_linux-x64
 

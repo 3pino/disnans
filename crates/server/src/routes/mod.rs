@@ -65,6 +65,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/plugins/{id}", delete(plugins::remove))
         .route("/plugins/{id}/files/{name}", get(plugins::file))
         .route("/plugins/{id}/notify", post(plugins::notify))
+        .route("/plugins/{id}/messages", post(plugins::post_message))
         .route("/sessions", post(sessions::create))
         .route("/sessions/{id}", get(sessions::get).put(sessions::update))
         .route("/ws", get(ws::handler))

@@ -9,6 +9,8 @@
 - `allow-start-call`
 - `allow-stop-call`
 - `allow-take-call-actions`
+- `allow-list-audio-outputs`
+- `allow-set-audio-output`
 - `allow-take-shared`
 - `allow-status`
 - `allow-request-permission`
@@ -25,6 +27,32 @@
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`notifier:allow-list-audio-outputs`
+
+</td>
+<td>
+
+Enables the list_audio_outputs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:deny-list-audio-outputs`
+
+</td>
+<td>
+
+Denies the list_audio_outputs command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -126,6 +154,32 @@ Enables the request_permission command without any pre-configured scope.
 <td>
 
 Denies the request_permission command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:allow-set-audio-output`
+
+</td>
+<td>
+
+Enables the set_audio_output command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:deny-set-audio-output`
+
+</td>
+<td>
+
+Denies the set_audio_output command without any pre-configured scope.
 
 </td>
 </tr>

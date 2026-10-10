@@ -17,6 +17,7 @@ import { PluginBase, PluginRuntime, type ViewHandle } from './runtime';
 import { toPluginUser, VersionConflictError } from './sessions';
 import { createUi } from './ui';
 import { holdBackground } from './background';
+import { audio } from './audio';
 import { loadLucide, registerIcon } from '../icons.svelte';
 import { API_VERSION, errorMessage, type HostServices, type Manifest, type PluginClass } from './types';
 
@@ -176,6 +177,7 @@ class PluginHost {
       getSession: (id) => api.session(id),
       updateSession: (id, body) => api.updateSession(id, body),
       notify: (id, body) => api.pluginNotify(id, body),
+      postMessage: async (id, body) => void (await api.pluginPostMessage(id, body)),
     },
     send: (ev) => void client.send(ev),
     registerSlashCommand,
@@ -212,6 +214,7 @@ class PluginHost {
       Plugin: PluginBase,
       ui: createUi({ toast: (t, k) => ui.toast(t, k), confirm: (o) => ui.confirm(o) }),
       VersionConflictError,
+      audio,
     });
     (window as unknown as { disnans: Disnans.Host }).disnans = host;
 

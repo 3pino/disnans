@@ -42,6 +42,7 @@
 | DELETE | `/api/plugins/{id}` | プラグイン・テーマの削除 | `204` |
 | GET | `/api/plugins/{id}/files/{name}` | 配布されたファイル（`manifest.json` / `main.js` / `styles.css` / `theme.css` / `icon.svg`） | ファイル本体 |
 | POST | `/api/plugins/{id}/notify` | プラグインから通知を送る（body: `PluginNotify`） | `204` |
+| POST | `/api/plugins/{id}/messages` | プラグインがボットとしてメッセージを投稿する（body: `PluginPostMessage` = `{ thread_id?, body, name? }`）。`author_id` は呼び出した人で、`bot: { plugin, name }` が付く。`name` は前後の空白を除いて40文字まで（省略するとプラグインの名前）。本文の検査は通常のメッセージと同じ。プラグインがない（見えない）と `404`、スレッドがないと `404 thread_not_found`。配信・通知は通常の投稿と同じ（`message.created`）。ボットのメッセージの編集は `bot_not_editable` | `Message` |
 | POST | `/api/sessions` | セッションを作り、カードを流す（body: `CreateSession`） | `Session` |
 | GET | `/api/sessions/{id}` | セッション1件 | `Session` |
 | PUT | `/api/sessions/{id}` | セッションの更新（body: `UpdateSession`） | `Session` |
@@ -82,7 +83,7 @@
 
 ### ファイル
 - 上限なし（サーバー側でストリーミングして保存する）
-- 静止画（JPEG / PNG / WebP など）は WebP（品質 85、長辺最大 2560px）に変換し、EXIF を削除する（回転は反映する）。元画像は残さない
+- 静止画（JPEG / PNG / WebP など）は WebP（品質 85、長辺最大 800px（`DISNANS_IMAGE_MAX_EDGE` で変更））に変換し、EXIF を削除する（回転は反映する）。元画像は残さない
 - 長辺 480px のサムネイルを作る
 - アニメーション GIF / WebP は変換せずそのまま保存する
 - 投稿されていないファイルは、一定時間（24時間）後に削除してよい

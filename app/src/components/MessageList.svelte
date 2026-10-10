@@ -10,6 +10,7 @@
   import { isContinuation } from '../lib/messageRows';
   import { ui } from '../lib/stores/ui.svelte';
   import { client } from '../lib/stores/client.svelte';
+  import { prefs } from '../lib/stores/prefs.svelte';
   import { firstUnread, page, registerUnreadView, takePendingJump, unread } from '../lib/stores/unread.svelte';
 
   let {
@@ -200,7 +201,7 @@
   });
 </script>
 
-<div class="message-list">
+<div class="message-list" data-layout={prefs.messageLayout}>
 <div class="message-list-scroller scroll" bind:this={scroller} {onscroll}>
   <div class="message-list-content" bind:this={content}>
     {#if header}{@render header()}{/if}
@@ -350,6 +351,10 @@
     border-radius: var(--radius-sm);
     background: var(--surface);
     font-size: 12px;
+  }
+  /* 一覧のときは、本文と同じ左の位置に（アイコンの幅のぶん空ける） */
+  .message-list[data-layout='list'] .message-list-upload {
+    margin: 4px 16px 4px 64px;
   }
   .message-list-upload.message-list-upload-error {
     border-color: var(--danger);

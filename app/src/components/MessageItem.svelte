@@ -9,7 +9,7 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import X from '@lucide/svelte/icons/x';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
-  import Avatar from './Avatar.svelte';
+  import AuthorAvatar from './AuthorAvatar.svelte';
   import Markdown from './Markdown.svelte';
   import Attachments from './Attachments.svelte';
   import Reactions from './Reactions.svelte';
@@ -22,6 +22,7 @@
   import type { Message } from '../lib/protocol/Message';
   import type { PendingMessage } from '../lib/stores/timeline.svelte';
   import { client } from '../lib/stores/client.svelte';
+  import { authorOf, isOwnMessage } from '../lib/author';
   import { ui } from '../lib/stores/ui.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { enterComboLabel, sendCombos } from '../lib/enterKeys';
@@ -43,19 +44,28 @@
     inThread?: boolean;
   } = $props();
 
-  /** 他人の発言のアイコンの大きさ（px）。ふだんの半分くらい */
+  /** 吹き出しのときの、他人の発言のアイコンの大きさ（px）。ふだんの半分くらい */
   const AVATAR_PX = 20;
+  /** リストのときのアイコンの大きさ（px） */
+  const AVATAR_LIST_PX = 36;
 
+  /** 表示の仕方（設定）。吹き出しのときだけ、自分の発言を右に寄せ、時刻を吹き出しの横に出す */
+  const layout = $derived(prefs.messageLayout);
+  const bubble = $derived(layout === 'bubble');
   const pending = $derived('client_id' in message ? (message as PendingMessage) : null);
-  const author = $derived(client.user(message.author_id));
-  const isMine = $derived(client.me?.id === message.author_id);
+  /** 投稿者の表示（ボットなら名前とプラグインのアイコン） */
+  const author = $derived(authorOf(message, client.users));
+  /** 自分の発言（吹き出しの右側）。ボットの発言は、自分が実行したものでも他人の発言として出す */
+  const isMine = $derived(isOwnMessage(message, client.me?.id));
+  /** 削除できるか（自分が投稿者のもの。ボットの発言も、自分が実行したものなら削除できる） */
+  const deletable = $derived(!!client.me && client.me.id === message.author_id);
   const mentionsMe = $derived(!!client.me && extractMentions(message.body).includes(client.me.id));
   const editing = $derived(ui.editing === message.id && !pending && !message.card);
   const canThread = $derived(!inThread && !pending && message.thread_id === null);
   /** このメッセージが起点のスレッドの未読数 */
   const unread = $derived(message.thread ? unreadStore.count(message.id) : 0);
-  /** プラグインのカードは本文を編集できない（削除はできる） */
-  const canEdit = $derived(isMine && !message.card);
+  /** プラグインのカードとボットの発言は本文を編集できない（削除はできる） */
+  const canEdit = $derived(isMine && !message.card && !author.isBot);
   /** 本文のコピー（カードや本文のない発言は対象外） */
   const canCopy = $derived(!pending && !message.card && message.body.length > 0);
   /** 左へのスワイプで返信できるか（長押しメニューの「スレッドで返信」と同じ） */
@@ -188,17 +198,23 @@
   <span class="message-edited" title={message.edited_at ? formatFull(message.edited_at) : undefined}>（編集済み）</span>
 {/snippet}
 
+{#snippet timeTag(cls: string, text: string)}
+  <time class={cls} datetime={new Date(message.created_at).toISOString()} title={formatFull(message.created_at)}>{text}</time>
+{/snippet}
+
+<!-- 吹き出しの横の時刻（続きの発言は、ホバーしたときだけ出す） -->
 {#snippet stamp()}
-  <time
-    class={grouped ? 'message-hover-time' : 'message-time'}
-    datetime={new Date(message.created_at).toISOString()}
-    title={formatFull(message.created_at)}>{grouped ? formatTime(message.created_at) : formatStamp(message.created_at, ui.now)}</time
-  >
+  {#if grouped}
+    {@render timeTag('message-hover-time', formatTime(message.created_at))}
+  {:else}
+    {@render timeTag('message-time', formatStamp(message.created_at, ui.now))}
+  {/if}
 {/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="message-item"
+  data-layout={layout}
   class:message-item-mine={isMine}
   class:message-item-grouped={grouped}
   class:message-item-pending={!!pending}
@@ -219,21 +235,36 @@
     }
   }}
 >
-  {#if !isMine}
+  {#if !bubble || !isMine}
     <div class="message-gutter">
-      {#if !grouped}<Avatar user={author} id={message.author_id} size={AVATAR_PX} />{/if}
+      {#if grouped}
+        <!-- 一覧の続きの発言は、ホバーしたときだけ左に時刻を出す -->
+        {#if !bubble}{@render timeTag('message-hover-time', formatTime(message.created_at))}{/if}
+      {:else}
+        <AuthorAvatar {author} user={client.user(message.author_id)} id={message.author_id} size={bubble ? AVATAR_PX : AVATAR_LIST_PX} />
+      {/if}
     </div>
   {/if}
 
   <div class="message-column">
-    {#if !isMine && !grouped}
-      <div class="message-author">{author?.display_name ?? '不明なユーザー'}</div>
+    {#if bubble}
+      {#if !isMine && !grouped}
+        <div class="message-author">
+          {author.name}{#if author.isBot}<span class="message-bot-badge">BOT</span>{/if}
+        </div>
+      {/if}
+    {:else if !grouped}
+      <div class="message-header">
+        <span class="message-author">{author.name}</span>
+        {#if author.isBot}<span class="message-bot-badge">BOT</span>{/if}
+        {@render timeTag('message-time', formatStamp(message.created_at, ui.now))}
+      </div>
     {/if}
 
     <div class="message-line">
-      {#if isMine}{@render stamp()}{/if}
+      {#if bubble && isMine}{@render stamp()}{/if}
 
-      <!-- 吹き出しと、その下の付属物（リアクション・カードなど）。スワイプではまとめて動く -->
+      <!-- 本文（吹き出し）と、その下の付属物（リアクション・カードなど）。スワイプではまとめて動く -->
       <div class="message-stack" class:message-stack-editing={editing} style:transform="translateX({swipeX}px)">
         {#if editing}
           <div class="message-editor">
@@ -261,7 +292,7 @@
             <!-- プラグインのセッションのカード。吹き出しの代わりに、その下に出す -->
             <MessageCard card={message.card} />
           {:else if message.body}
-            <div class="message-bubble" class:message-bubble-mine={isMine} class:message-bubble-other={!isMine}>
+            <div class="message-bubble" class:message-bubble-mine={bubble && isMine} class:message-bubble-other={bubble && !isMine}>
               <div class="message-body">
                 <Markdown body={message.body} suffix={message.edited_at ? edited : undefined} />
               </div>
@@ -305,7 +336,7 @@
         {/if}
       </div>
 
-      {#if !isMine}{@render stamp()}{/if}
+      {#if bubble && !isMine}{@render stamp()}{/if}
     </div>
   </div>
 
@@ -335,7 +366,7 @@
       {#if canEdit}
         <IconButton label="編集" title="編集" onclick={() => (ui.editing = message.id)}><Pencil size={16} /></IconButton>
       {/if}
-      {#if isMine}
+      {#if deletable}
         <IconButton class="message-toolbar-delete" label="削除" title="削除" onclick={remove}><Trash2 size={16} /></IconButton>
       {/if}
     </div>
@@ -365,14 +396,14 @@
         ? [{ label: message.thread ? 'スレッドを開く' : 'スレッドで返信', icon: MessageSquare, run: () => client.openThreadFrom(message) }]
         : []),
       ...(canEdit ? [{ label: '編集', icon: Pencil, run: () => (ui.editing = message.id) }] : []),
-      ...(isMine ? [{ label: '削除', icon: Trash2, danger: true, run: remove }] : []),
+      ...(deletable ? [{ label: '削除', icon: Trash2, danger: true, run: remove }] : []),
     ]}
   />
 {/if}
 
 <style>
   .message-item {
-    /* 自分の吹き出しの左に残す幅（時刻を含む） */
+    /* 自分の吹き出しの左に残す幅（時刻を含む）。吹き出しのときだけ使う */
     --mine-gap: 72px;
     position: relative;
     display: flex;
@@ -381,6 +412,9 @@
     margin-top: 6px;
     /* 横方向の操作（スワイプで返信）は自分で受け、縦のスクロールはそのまま */
     touch-action: pan-y;
+  }
+  .message-item[data-layout='list'] {
+    gap: 12px;
   }
   .message-item.message-item-grouped {
     margin-top: 0;
@@ -410,36 +444,23 @@
     align-items: flex-start;
     padding-top: 2px;
   }
+  .message-item[data-layout='list'] .message-gutter {
+    width: 36px;
+    padding-top: 0;
+  }
   .message-column {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
   }
-  .message-author {
-    font-size: 11px;
-    font-weight: 650;
-    line-height: 1.3;
-    margin: 0 0 2px 2px;
-  }
-  .message-line {
-    display: flex;
-    align-items: flex-end;
-    gap: 6px;
-    min-width: 0;
-  }
-  .message-item-mine .message-line {
-    justify-content: flex-end;
-  }
-  .message-line time {
+  /* 時刻は、どちらの表示でも選べないように（長押しで文字を選ばないように） */
+  .message-item time {
     flex: none;
     -webkit-user-select: none;
     user-select: none;
-    font-size: 11px;
-    line-height: 1;
     color: var(--text-muted);
     white-space: nowrap;
-    margin-bottom: 2px;
     font-variant-numeric: tabular-nums;
   }
   .message-hover-time {
@@ -448,24 +469,85 @@
   .message-item:hover .message-hover-time {
     visibility: visible;
   }
+  /* 一覧: 名前と時刻を上に並べる（Slack 風）。続きの発言は名前を省く */
+  .message-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    line-height: 1.3;
+    margin-bottom: 2px;
+  }
+  .message-header .message-time {
+    font-size: 12px;
+  }
+  .message-item[data-layout='list'] .message-hover-time {
+    font-size: 11px;
+    line-height: 23px;
+  }
+  .message-author {
+    font-weight: 650;
+    line-height: 1.3;
+  }
+  /* ボットの発言の印。目立たせず、灰色の小さな札にする */
+  .message-bot-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 15px;
+    letter-spacing: 0.04em;
+    vertical-align: 1px;
+  }
+  /* 吹き出し: 相手の名前は吹き出しの上に小さく */
+  .message-item[data-layout='bubble'] .message-author {
+    font-size: 11px;
+    margin: 0 0 2px 2px;
+  }
+  .message-line {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    min-width: 0;
+  }
+  .message-item[data-layout='list'] .message-line {
+    display: block;
+  }
+  .message-item[data-layout='bubble'] .message-line time {
+    font-size: 11px;
+    line-height: 1;
+    margin-bottom: 2px;
+  }
+  .message-item[data-layout='bubble'].message-item-mine .message-line {
+    justify-content: flex-end;
+  }
   .message-stack {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     min-width: 0;
     max-width: 75%;
+    transition: transform 0.2s ease-out;
   }
-  /* 自分の発言は横幅を固定する（右寄せで幅が揃わないと読みにくいので）。左に --mine-gap だけ空け、文字は左寄せ。
+  /* 一覧: 本文は行の幅いっぱい。カードや添付は、ふつうの大きさのまま */
+  .message-item[data-layout='list'] .message-stack {
+    width: 100%;
+    max-width: none;
+  }
+  /* 吹き出し・自分の発言は横幅を固定する（右寄せで幅が揃わないと読みにくいので）。左に --mine-gap だけ空け、文字は左寄せ。
      吹き出しとカードは幅いっぱいに広げ、写真などはそのままの大きさで右に寄せる */
-  .message-item-mine .message-stack {
+  .message-item[data-layout='bubble'].message-item-mine .message-stack:not(.message-stack-editing) {
     align-items: flex-end;
     width: calc(100% - var(--mine-gap));
     max-width: none;
   }
-  .message-item-mine .message-bubble {
+  .message-item[data-layout='bubble'].message-item-mine .message-bubble {
     align-self: stretch;
   }
-  .message-item-mine .message-stack > :global(.message-card) {
+  .message-item[data-layout='bubble'].message-item-mine .message-stack > :global(.message-card) {
     align-self: stretch;
     max-width: none;
   }
@@ -476,16 +558,15 @@
   .message-item.message-item-swiping .message-stack {
     transition: none;
   }
-  .message-stack {
-    transition: transform 0.2s ease-out;
-  }
   .message-bubble {
     max-width: 100%;
     min-width: 0;
-    padding: 7px 12px;
-    border: none;
-    border-radius: 16px;
     overflow-wrap: anywhere;
+  }
+  .message-bubble.message-bubble-mine,
+  .message-bubble.message-bubble-other {
+    padding: 7px 12px;
+    border-radius: 16px;
   }
   /* 自分の発言：アクセント色を薄く混ぜた、右側の吹き出し */
   .message-bubble.message-bubble-mine {
@@ -510,7 +591,7 @@
     margin-top: 2px;
     padding: 2px 8px;
     border-radius: var(--radius-sm);
-    border: 1px solid var(--accent);
+    border: 1px solid var(--border-hover);
     background: var(--bg);
   }
   .message-edit-hint {
@@ -560,7 +641,7 @@
     font-size: 13px;
   }
   .message-thread-link:hover {
-    border-color: var(--accent);
+    border-color: var(--border-hover);
   }
   .message-thread-link .message-thread-link-count {
     font-weight: 600;
@@ -569,7 +650,7 @@
     font-size: 12px;
   }
   /* 付属物（リアクションの並び）は、吹き出しと同じ側に寄せる */
-  .message-item-mine :global(.reactions) {
+  .message-item[data-layout='bubble'].message-item-mine :global(.reactions) {
     justify-content: flex-end;
   }
   .message-swipe-hint {
@@ -640,6 +721,9 @@
     .message-item {
       padding-left: 10px;
       padding-right: 10px;
+    }
+    .message-item[data-layout='list'] {
+      gap: 10px;
     }
   }
 </style>

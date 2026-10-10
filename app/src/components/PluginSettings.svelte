@@ -1,6 +1,5 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import Trash2 from '@lucide/svelte/icons/trash-2';
   import Settings from '@lucide/svelte/icons/settings';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import FolderSearch from '@lucide/svelte/icons/folder-search';
@@ -20,7 +19,7 @@
 
   // 設定の「プラグイン」セクション: 配布済み・開発中の一覧、開発用フォルダ（PC 版）、ファイルを選んで配布（ブラウザー版）
   // テーマの一覧は「外観」（ThemeSettings）。開発用フォルダとファイルを選んでの配布は、テーマにも使う。
-  // 設定タブを登録したプラグインは、トグルの右の歯車から別の画面（PluginSettingsPage）で設定を開く
+  // 歯車から開く、プラグインごとの画面（PluginSettingsPage）に、設定タブと「配布と削除」を置く
 
   const entries = $derived(pluginHost.entries);
   const devSupported = devFolderSupported();
@@ -29,7 +28,7 @@
 
   // svelte-ignore state_referenced_locally
   let devDir = $state(pluginHost.devDir);
-  /** 配布・削除の最中の ID */
+  /** ファイルを選んで配布の最中か */
   let busy = $state<string | null>(null);
   /** 設定画面を開いたときの、一覧のスクロール位置と歯車のボタン（戻ったときに元へ戻す） */
   let returnTo: { scroller: Element | null; top: number; button: HTMLElement } | null = null;
@@ -47,39 +46,6 @@
 
   function message(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
-  }
-
-  async function publish(e: PluginEntry, visibility: PluginVisibility) {
-    if (!e.dev) return;
-    busy = e.id;
-    try {
-      const info = await pluginHost.publishDev(e.dev, visibility);
-      ui.toast(publishedText(info.name, info.version, visibility));
-    } catch (err) {
-      ui.toast(`配布できませんでした: ${message(err)}`, 'error');
-    } finally {
-      busy = null;
-    }
-  }
-
-  async function remove(e: PluginEntry) {
-    const priv = e.server?.visibility === 'private';
-    const ok = await ui.confirm({
-      title: `プラグイン「${nameOf(e)}」を削除しますか？`,
-      body: `${priv ? 'あなたのすべての端末' : '全員のクライアント'}から外れます。セッションとカードは残り、同じ ID で配布し直せばまた開けます。`,
-      okLabel: '削除',
-      danger: true,
-    });
-    if (!ok) return;
-    busy = e.id;
-    try {
-      await pluginHost.remove(e.id);
-      ui.toast(`「${nameOf(e)}」を削除しました`);
-    } catch (err) {
-      ui.toast(`削除できませんでした: ${message(err)}`, 'error');
-    } finally {
-      busy = null;
-    }
   }
 
   async function publishPicked() {
@@ -155,7 +121,7 @@
         {#snippet control()}
           <div class="plugin-settings-controls">
             <Toggle checked={e.enabled} label="{nameOf(e)} を有効にする" onchange={(on) => pluginHost.setEnabled(e.id, on)} />
-            {#if e.hasSettings}
+            {#if e.hasSettings || e.dev || e.server}
               <Button
                 variant="ghost"
                 icon={Settings}
@@ -185,18 +151,6 @@
         <p class="plugin-settings-error">{e.error}</p>
       {/if}
 
-      {#if e.dev || e.server}
-        <div class="plugin-settings-actions">
-          {#if e.dev}
-            <PublishButton disabled={busy !== null || !e.dev.manifest || !!e.dev.error} onpublish={(v) => publish(e, v)} />
-          {/if}
-          {#if e.server}
-            <Button variant="danger" disabled={busy !== null} onclick={() => remove(e)}>
-              <Trash2 size={15} />削除
-            </Button>
-          {/if}
-        </div>
-      {/if}
     </div>
   {/each}
 
@@ -277,12 +231,6 @@
     overflow-wrap: anywhere;
     -webkit-user-select: text;
     user-select: text;
-  }
-  .plugin-settings-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 8px;
   }
   /* トグルと、その右の歯車（設定画面を開く） */
   .plugin-settings-controls {

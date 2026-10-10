@@ -57,8 +57,9 @@ pub async fn upload(
         let dest = files::file_path(&state.config, &id);
         let thumb = files::thumb_path(&state.config, &id);
         let tmp_for_task = tmp.clone();
+        let max_edge = state.config.image_max_edge;
         let stored: Stored = tokio::task::spawn_blocking(move || {
-            files::store_upload(&tmp_for_task, &dest, &thumb, file_name, mime)
+            files::store_upload(&tmp_for_task, &dest, &thumb, file_name, mime, max_edge)
         })
         .await
         .map_err(AppError::internal)?

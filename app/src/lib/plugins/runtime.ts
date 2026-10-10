@@ -92,6 +92,9 @@ export class PluginBase implements Disnans.Plugin {
   notify(userIds: string[], text: string, opts?: { session?: Disnans.Session<any> }): Promise<void> {
     return rt(this).notify(userIds, text, opts?.session?.id ?? null);
   }
+  postMessage(opts: { body: string; threadId?: string | null; name?: string }): Promise<void> {
+    return rt(this).postMessage(opts);
+  }
   broadcast(name: string, payload?: unknown): void {
     rt(this).broadcast(name, payload);
   }
@@ -567,5 +570,9 @@ export class PluginRuntime {
 
   notify(userIds: string[], text: string, sessionId: string | null): Promise<void> {
     return this.services.api.notify(this.id, { user_ids: userIds, body: text, session_id: sessionId });
+  }
+
+  postMessage(opts: { body: string; threadId?: string | null; name?: string }): Promise<void> {
+    return this.services.api.postMessage(this.id, { thread_id: opts.threadId ?? null, body: opts.body, name: opts.name ?? null });
   }
 }

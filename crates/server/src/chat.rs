@@ -3,7 +3,7 @@
 //! WebSocket の `ClientEvent` から呼ばれる。DB を書き換えたあと、結果を全員に配信し、
 //! 必要なら通知を送る。
 
-use disnans_shared::{Id, Message, ServerEvent, User};
+use disnans_shared::{Id, Message, PluginInfo, PluginPostMessage, ServerEvent, User};
 
 use crate::db;
 use crate::error::{AppError, AppResult};
@@ -16,6 +16,8 @@ use crate::store::{files as file_store, sessions, users};
 
 /// 本文の最大文字数。
 const MAX_BODY_CHARS: usize = 10_000;
+/// ボットの表示名の最大文字数。
+const MAX_BOT_NAME_CHARS: usize = 40;
 /// リアクションの絵文字の最大文字数（合字の絵文字は複数の文字からなる）。
 const MAX_EMOJI_CHARS: usize = 32;
 
@@ -83,6 +85,44 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
     Ok(())
 }
 
+/// プラグインが、ボットとして投稿する。`author_id` は呼び出した人のまま（責任の所在を残す）。
+/// 通常の投稿と同じ経路で配信・通知する。
+pub async fn post_bot_message(
+    state: &AppState,
+    user: &User,
+    plugin: &PluginInfo,
+    req: PluginPostMessage,
+) -> AppResult<Message> {
+    validate_body(&req.body, false)?;
+    let name = match req.name.as_deref().map(str::trim) {
+        None | Some("") => plugin.name.clone(),
+        Some(name) => name.chars().take(MAX_BOT_NAME_CHARS).collect(),
+    };
+
+    let _guard = state.write_lock().await;
+    if let Some(thread_id) = &req.thread_id {
+        ensure_thread_exists(state, thread_id).await?;
+    }
+    let mut row = new_row(&user.id, req.thread_id, req.body);
+    row.bot_plugin = Some(plugin.id.clone());
+    row.bot_name = Some(name);
+
+    let mut tx = state.pool.begin().await?;
+    messages::insert(&mut tx, &row).await?;
+    tx.commit().await?;
+
+    let message = broadcast_created(state, &row.id, None).await?;
+    let participants = match &message.thread_id {
+        Some(thread_id) => messages::thread_participants(&state.pool, thread_id).await?,
+        None => Vec::new(),
+    };
+    let all_users = users::list(&state.pool).await?;
+    for (user_id, notification) in notify::plan(&message, &all_users, &participants) {
+        state.notifier.notify(&user_id, &notification);
+    }
+    Ok(message)
+}
+
 pub async fn edit_message(
     state: &AppState,
     actor: &Actor<'_>,
@@ -91,6 +131,12 @@ pub async fn edit_message(
 ) -> AppResult<()> {
     let _guard = state.write_lock().await;
     let row = own_message(state, actor, message_id).await?;
+    if row.bot_plugin.is_some() {
+        return Err(AppError::bad_request(
+            "bot_not_editable",
+            "ボットのメッセージは編集できません",
+        ));
+    }
     if sessions::is_card(&state.pool, message_id).await? {
         return Err(AppError::bad_request(
             "card_not_editable",
@@ -208,6 +254,8 @@ pub(crate) fn new_row(author_id: &str, thread_id: Option<Id>, body: String) -> M
         body,
         created_at: ulid.timestamp_ms() as i64,
         edited_at: None,
+        bot_plugin: None,
+        bot_name: None,
     }
 }
 

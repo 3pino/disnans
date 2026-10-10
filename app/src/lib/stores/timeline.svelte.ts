@@ -2,12 +2,13 @@ import { api } from '../api';
 import type { Message } from '../protocol/Message';
 import type { Reaction } from '../protocol/Reaction';
 import type { Attachment } from '../protocol/Attachment';
+import type { CropRect } from '../imageCrop';
 
 /** 送るときにまとめてアップロードするファイル（送る前は手元に File だけ持つ） */
 export type OutgoingFile = {
   file: File;
-  /** 送る前に縮小する長辺（null は元のまま） */
-  maxEdge: number | null;
+  /** 送る前に切り抜く範囲（元の画像の画素。null は全体） */
+  crop: CropRect | null;
 };
 
 /** 送信中のメッセージが持つ、アップロード中（または待ち・失敗）のファイル */

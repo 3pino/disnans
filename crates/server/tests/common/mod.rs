@@ -29,6 +29,7 @@ impl TestServer {
             bind: "127.0.0.1:0".parse().unwrap(),
             dev: true,
             tailscale_socket: dir.path().join("no-such.sock"),
+            image_max_edge: disnans_server::image_proc::DEFAULT_MAX_EDGE,
         };
         let (app, state) = disnans_server::build(config).await.unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -1,4 +1,4 @@
-/* ボイスチャット。ステータス欄（アプリの下端）に、通話にいる人と操作を出す */
+/* ボイスチャット。ステータス欄（アプリの上部、ヘッダーの下）に、通話にいる人と操作を出す */
 
 .voice-bar {
   display: flex;
@@ -88,4 +88,28 @@
   .voice-person {
     transition: none;
   }
+}
+
+.voice-controls .voice-select {
+  width: auto;
+  max-width: 140px;
+  min-height: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.voice-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.voice-slider input[type='range'] {
+  width: 140px;
+  max-width: 40vw;
+}
+.voice-slider-value {
+  min-width: 3.5em;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }

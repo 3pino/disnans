@@ -27,7 +27,7 @@
     align-items: center;
     gap: 4px 12px;
     padding: 4px 12px;
-    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
     background: var(--surface);
     flex: none;
   }

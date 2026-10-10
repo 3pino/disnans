@@ -9,6 +9,7 @@
   import { threads } from '../lib/stores/threads.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { api } from '../lib/api';
+  import { authorOf } from '../lib/author';
   import type { Message } from '../lib/protocol/Message';
 
   let { threadId }: { threadId: string } = $props();
@@ -44,7 +45,11 @@
       <div class="thread-panel-title">
         <MessagesSquare size={16} />
         <span>スレッド</span>
-        {#if root}<span class="muted thread-panel-root-author">{client.nameOf(root.author_id)}</span>{/if}
+        {#if root}
+          {@const author = authorOf(root, client.users)}
+          <span class="muted thread-panel-root-author">{author.name}</span>
+          {#if author.isBot}<span class="thread-panel-bot-badge">BOT</span>{/if}
+        {/if}
       </div>
       <IconButton class="thread-panel-close" label="閉じる" onclick={() => ui.closePanel()}><X size={18} /></IconButton>
     {/if}
@@ -101,6 +106,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* ボットの発言の印（MessageItem の .message-bot-badge と同じ見た目） */
+  .thread-panel-bot-badge {
+    flex: none;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 15px;
+    letter-spacing: 0.04em;
   }
   .thread-panel-root-message {
     padding-bottom: 6px;

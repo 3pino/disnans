@@ -123,10 +123,10 @@
 - 添付は入力欄に入れた時点ではアップロードしない（手元に持つだけ）。**送信を押したときに**アップロードし、そろったらメッセージを送る
   - 送信を押すと入力欄はすぐ空になり、送信中のメッセージの下に、ファイルごとのアップロードの進みを出す
   - 失敗したら、メッセージは「送信できませんでした・再送・取り消す」になる。再送では、アップロード済みのファイルは上げ直さない。取り消すと、アップロード中のものは中止する
-- 画像は、入力欄のサムネイルをタップして大きさを選べる（元のまま / 大: 長辺 2560px / 中: 1600px / 小: 1024px）。選択肢には縮小後の寸法と、おおよそのサイズを出す（目安）
-  - 縮小は送信するときに canvas で行う。形式は JPEG（透過があれば PNG）。形式が変わると、サイズは画素数から見積もる
-  - 元より小さくならない大きさは選べない。GIF とアニメーション（APNG・アニメーション WebP）は縮小しない
-  - 既定は「元のまま」（そのまま送り、サーバーが 4.4 のとおり変換する）
+- 画像は、入力欄のサムネイルをタップして切り抜ける（トリミング）。比率は 自由 / 1:1 / 4:3 / 16:9 / 元の比率（4:3・16:9 は横・縦を切り替えられる）
+  - 切り抜きは送信するときに canvas で行う。形式は JPEG（透過があれば PNG）。画像全体を選んだときは元のファイルをそのまま送る
+  - GIF とアニメーション（APNG・アニメーション WebP）は切り抜けない
+  - 大きさはサーバーが 4.4 のとおり縮小する（既定は長辺 800px）
 - PC では、チャット画面（メインチャット・スレッドのパネル）にファイルをドラッグ＆ドロップすると、その入力欄に添付される。ドラッグ中は受け入れ先を薄い枠と小さなラベルで示す。クリップボードの画像の貼り付けも添付になる
   - Tauri の `dragDropEnabled` は false（HTML5 の drop を受けるため）。ネイティブのファイルのドロップ通知は使わない
 - 共有（Android の共有メニュー）で受け取ったファイルと文章は、共有の受け口（`lib/stores/shareInbox.svelte.ts`）に置かれ、メインチャットの入力欄が拾って添付・本文に加える。チャットのタブに切り替え、モバイルでパネルが開いていれば閉じる
@@ -236,7 +236,7 @@ Obsidian のプラグインに近い仕組みにする。**誰でも簡単に作
 - 形式: **WebP（非可逆）** に統一する
   - JPEG XL は、Chromium 系の WebView（Android / Windows）での対応がまだ確実ではないため見送る
   - 1形式に統一すれば、フォールバック用に2つ保存する必要がない
-- 長辺は最大 **2560px**（それより小さい画像は拡大しない）
+- 長辺は最大 **800px**（既定。環境変数 `DISNANS_IMAGE_MAX_EDGE` で変更）（それより小さい画像は拡大しない）
 - 品質は **85**
 - EXIF は削除する（**位置情報の漏えい対策**）。その前に、回転情報を画像に反映しておく
 - アニメーション GIF / WebP は圧縮せず、そのまま保存する
@@ -435,10 +435,12 @@ export default class DicePlugin extends Plugin {
 | `this.notify(userIds, text, { session? })` | 通知を送る（「あなたの番です」） |
 | `this.registerDomEvent(...)` / `this.registerInterval(id)` / `this.register(cleanup)` | 外すときに自動で片付く購読・タイマー・後始末 |
 | `disnans.ui.*` | 本体と同じ見た目の部品（アイコン、ボタン、トグル、入力欄、選択肢、タブのバー、区切り線、設定の行、トースト、確認ダイアログ）。→ `docs/PLUGIN_UI.md` |
+| `this.postMessage({ body, threadId?, name? })` | プラグインの名前（`name` で変えられる）のボットとしてメッセージを投稿する。投稿者（author）は実行した人のままで、メッセージに `bot: { plugin, name }` が付く。通常の投稿と同じく配信・通知される（API v5） |
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント。いまつながっている人に中継するだけで、保存しない（API v3） |
 | `this.addStatusBarItem()` | アプリの下端の常時表示のステータス欄に出す要素を足す。空の間は隠れる（API v3） |
 | `this.holdBackground({ microphone?, title?, text?, actions?, onAction? })` | 画面を切っても動き続ける。Android ではフォアグラウンドサービス（microphone 型）を動かす。ほかの環境では何もしない（API v3）。`actions`（通知のボタン、最大3つ）と `onAction(id)`、戻り値の `update({ title, text, actions })` は API v4 |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 4。2 で `addCommand` に `icon`・`slash`・`args`・`suggestArgs`・`run(ctx)` が、3 で `broadcast`・`addStatusBarItem`・`holdBackground` が、4 で `holdBackground` の通知ボタン `actions` / `onAction` と `update()` が増えた） |
+| `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（API v5）。`listOutputs()` は `{ id, label, kind, selected }` の配列（Android: 通話中の `earpiece` `speaker` `wired` `bluetooth`。notifier プラグインの `list_audio_outputs` / `set_audio_output` コマンド＝Kotlin の AudioManager。API 31 以上は `setCommunicationDevice`、それ以前は `setSpeakerphoneOn` / `startBluetoothSco`。デスクトップ: `enumerateDevices` と `setSinkId`）。`attach` は `<audio>` や `AudioContext` を登録し、デスクトップで選んだ出力先に出す。`listInputs()` はデスクトップのマイクの一覧（Android は空）。使えない環境では空配列 / false を返す |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 5。2 で `addCommand` に `icon`・`slash`・`args`・`suggestArgs`・`run(ctx)` が、3 で `broadcast`・`addStatusBarItem`・`holdBackground` が、4 で `holdBackground` の通知ボタン `actions` / `onAction` と `update()` が、5 で `postMessage` と `disnans.audio` が増えた） |
 
 - 型定義と詳しい説明は `packages/plugin-sdk/`、作り方のガイドは `docs/PLUGINS.md` を正とする
 - 本体の CSS 変数（`--bg`, `--accent` など）と共通クラス（`.btn`, `.input` など）はプラグインからも使える
@@ -535,11 +537,13 @@ theme-sakura/
 
 みんな共通の1部屋の音声通話（`examples/voice/`）。映像・画面共有はない。通話の機能はすべてプラグインで、本体に足したのは汎用のホスト API（9.4 の `broadcast`・`addStatusBarItem`・`holdBackground`）と、各 OS のマイクの許可だけ。
 
-- 参加・退出・ミュートは、コマンドパレット・`/vc-join` `/vc-leave` `/vc-mute`・「＋」メニューから。いつでも出入りでき、チャットにカードは流れない
-- 画面の下端のステータス欄に、いま通話にいる人のアイコンが常に出る（参加していない人にも見える）。しゃべっている人は枠が光り、ミュート中は印が付く。相手のアイコンを押すと、自分の側だけ消音できる
+- 参加・退出・ミュート・スピーカーミュート（相手の声を全部、自分の側だけ消す）・出力先の切り替えは、コマンドパレット・`/vc-join` `/vc-leave` `/vc-mute` `/vc-deafen` `/vc-output`・「＋」メニューから。いつでも出入りでき、チャットにカードは流れない
+- 画面の上部（ヘッダーの下）のステータス欄に、いま通話にいる人のアイコンが常に出る（参加していない人にも見える）。しゃべっている人は枠が光り、ミュート中は印が付く。相手のアイコンを押すと、自分の側だけ消音できる
 - WebRTC のメッシュ（10 人ほどまで）。音声は端末同士が直接つなぐ。Tailscale の中なので STUN/TURN は基本要らず、必要ならプラグインの設定で STUN を足す
 - シグナリング（offer / answer / ICE）と在室の管理は `plugin.emit` の中継だけで行う。サーバーは保存しない。参加者は 3 秒ごとに在室を知らせ、12 秒途絶えた人は落ちたと見なして外す
-- Android では通話中の通知に「ミュート」「切断」のボタンが出る（`holdBackground` の `actions` / `onAction` / `update`。ミュート中は「ミュート解除」に変わり、本文に人数が出る）
+- Android では通話中の通知に「ミュート」「スピーカーミュート」「切断」のボタンが出る（`holdBackground` の `actions` / `onAction` / `update`。押すと「…解除」に変わり、本文に人数が出る）
+- 出力先は `disnans.audio`（Android は通話中に `MODE_IN_COMMUNICATION` にして切り替える。参加時は、Bluetooth・イヤホンがあればそれ、なければスピーカー。前に選んだものがあればそれに戻す）。マイクと相手の音量は設定タブのスライダー（端末ごとに保存、同期しない。マイクは GainNode、相手は `<audio>` の volume）
+- WebRTC を使えない環境（配布元の WebKitGTK など）は、その相手とのあいだだけ音声をサーバー経由（`plugin.emit` の `audio`。16kHz モノラル PCM を 50ms ずつ、base64。無音は送らない）で流す。在室の知らせの `rtc` で伝え合い、双方が使えるペアは WebRTC のまま
 - マイクはアプリ版（Tauri）でのみ使える（`getUserMedia` に安全なコンテキストが要るため、`http://` で開いたブラウザー版では使えない）
 
 プラットフォーム:

@@ -94,6 +94,7 @@ class CallService : Service() {
     } else {
       startForeground(ONGOING_ID, n)
     }
+    if (!running && microphone) CallAudio.begin(this)
     running = true
     // 強制終了されたあとに勝手に再開しない（マイクの許可や前面の条件を満たせないため）
     return START_NOT_STICKY
@@ -133,6 +134,7 @@ class CallService : Service() {
   }
 
   override fun onDestroy() {
+    if (running) CallAudio.end(this)
     running = false
     super.onDestroy()
   }

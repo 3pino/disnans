@@ -37,6 +37,8 @@
 
   <main id="main-chat" class="shell-main-chat" class:shell-main-chat-hidden={!showChat}>
     <header class="top-bar"></header>
+    <!-- プラグインのステータス欄（通話中の人など）。ヘッダーの下 -->
+    <PluginStatusBar />
     <ConnectionBanner />
     <ChatView threadId={null} placeholder="メッセージを送信" empty={mainEmpty} active={chatVisible} />
   </main>
@@ -67,14 +69,9 @@
   {/if}
 
   {#if ui.isMobile && !panelOpen}
-    <!-- プラグインのステータス欄（通話中の人など）。モバイルは下のナビゲーションの上、デスクトップは画面の下端 -->
-    <PluginStatusBar />
     <NavBar withThreads />
   {/if}
 </div>
-{#if !ui.isMobile}
-  <PluginStatusBar />
-{/if}
 </div>
 
 {#if commandHost.paletteOpen}

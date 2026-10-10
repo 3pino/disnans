@@ -2,6 +2,8 @@ import { api } from '../api';
 import { getItem, setItem } from '../storage';
 import { normalizeEnterKeys, type EnterAction, type EnterCombo, type EnterKeyPrefs } from '../enterKeys';
 import { normalizeHotkeys } from '../commands.svelte';
+import { normalizeComposerMenu, type ComposerMenuPrefs } from '../composerMenu';
+import { normalizeMessageLayout, type MessageLayout } from '../messageLayout';
 import { client } from './client.svelte';
 import { ui } from './ui.svelte';
 
@@ -36,6 +38,10 @@ class Prefs {
   /** コマンド ID → ショートカット（空文字列は「なし」） */
   readonly hotkeys = $derived(normalizeHotkeys(this.raw.hotkeys));
   readonly enterKeys = $derived<EnterKeyPrefs>(normalizeEnterKeys(this.raw.enterKeys));
+  /** 入力欄の「＋」メニューの並び順と出す項目 */
+  readonly composerMenu = $derived(normalizeComposerMenu(this.raw.composerMenu));
+  /** メッセージの表示（リスト・吹き出し）。既定はリスト */
+  readonly messageLayout = $derived<MessageLayout>(normalizeMessageLayout(this.raw.messageLayout));
 
   /** 接続を始めたあとに1回呼ぶ。hello のたびにサーバーから読み直し、ほかの端末での変更を受け取る */
   start(): void {
@@ -89,6 +95,16 @@ class Prefs {
 
   setEnterAction(combo: EnterCombo, action: EnterAction): void {
     void this.update('enterKeys', { ...this.enterKeys, [combo]: action });
+  }
+
+  /** 「＋」メニューの並び順と出さない項目。知らない項目（新しい版が足したものなど）は残す */
+  setComposerMenu(next: ComposerMenuPrefs): void {
+    const raw = this.raw.composerMenu;
+    void this.update('composerMenu', { ...(isObject(raw) ? raw : {}), ...next });
+  }
+
+  setMessageLayout(layout: MessageLayout): void {
+    void this.update('messageLayout', layout);
   }
 }
 

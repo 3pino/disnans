@@ -8,6 +8,8 @@ permissions = [
   "allow-start-call",
   "allow-stop-call",
   "allow-take-call-actions",
+  "allow-list-audio-outputs",
+  "allow-set-audio-output",
   "allow-take-shared",
   "allow-status",
   "allow-request-permission",

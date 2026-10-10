@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the list_audio_outputs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-audio-outputs",
+          "markdownDescription": "Enables the list_audio_outputs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_audio_outputs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-audio-outputs",
+          "markdownDescription": "Denies the list_audio_outputs command without any pre-configured scope."
+        },
+        {
           "description": "Enables the open_battery_settings command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-battery-settings",
@@ -341,6 +353,18 @@
           "type": "string",
           "const": "deny-request-permission",
           "markdownDescription": "Denies the request_permission command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_audio_output command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-audio-output",
+          "markdownDescription": "Enables the set_audio_output command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_audio_output command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-audio-output",
+          "markdownDescription": "Denies the set_audio_output command without any pre-configured scope."
         },
         {
           "description": "Enables the start command without any pre-configured scope.",
@@ -439,10 +463,10 @@
           "markdownDescription": "Denies the take_shared command without any pre-configured scope."
         },
         {
-          "description": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-take-call-actions`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-take-call-actions`\n- `allow-list-audio-outputs`\n- `allow-set-audio-output`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-take-call-actions`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-take-call-actions`\n- `allow-list-audio-outputs`\n- `allow-set-audio-output`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`"
         }
       ]
     }

@@ -101,7 +101,7 @@
     font-size: 14px;
   }
   .attachment-file:hover {
-    border-color: var(--accent);
+    border-color: var(--border-hover);
   }
   .attachment-file-name {
     overflow: hidden;

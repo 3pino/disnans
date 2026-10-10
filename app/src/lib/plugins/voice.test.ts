@@ -5,6 +5,7 @@ import { PluginBase, PluginRuntime } from './runtime';
 import { VersionConflictError } from './sessions';
 import { createUi } from './ui';
 import { registerIcon, setLucideForTest } from '../icons.svelte';
+import { describeDevices } from './audio';
 import { API_VERSION, type HostCommand, type HostServices, type PluginClass } from './types';
 import type { ClientEvent } from '../protocol/ClientEvent';
 
@@ -13,6 +14,15 @@ import type { ClientEvent } from '../protocol/ClientEvent';
   Plugin: PluginBase,
   ui: createUi({ toast: () => {}, confirm: async () => true }),
   VersionConflictError,
+  audio: {
+    listOutputs: async () => [
+      { id: 'earpiece', label: '受話口', kind: 'earpiece', selected: false },
+      { id: 'speaker', label: 'スピーカー', kind: 'speaker', selected: true },
+    ],
+    setOutput: async () => true,
+    listInputs: async () => [],
+    attach: () => () => {},
+  },
 };
 
 const users = [
@@ -65,6 +75,13 @@ class FakePc {
 }
 
 class FakeAudioContext {
+  state = 'running';
+  createGain() {
+    return { gain: { value: 1 }, connect: () => {} };
+  }
+  createMediaStreamDestination() {
+    return { stream: { getTracks: () => [{ enabled: true }], getAudioTracks: () => [{ enabled: true }] } };
+  }
   createAnalyser() {
     return { fftSize: 0, getByteTimeDomainData: (b: Uint8Array) => b.fill(128), connect: () => {} };
   }
@@ -116,7 +133,7 @@ function makeClient(userId: string): Env {
     holdBackground: hold,
     changed: () => {},
   } as unknown as HostServices;
-  const r = new PluginRuntime({ id: 'voice', name: 'ボイスチャット', version: '0.1.0', description: '', author: '', minApiVersion: 4 }, services);
+  const r = new PluginRuntime({ id: 'voice', name: 'ボイスチャット', version: '0.1.0', description: '', author: '', minApiVersion: 5 }, services);
   const env = { me, r, commands, bar, hold };
   clients.push(env);
   return env;
@@ -208,5 +225,155 @@ describe('examples/voice', () => {
     await start(a);
     await a.commands.get('voice:join')!.run({ args: '', threadId: null, via: 'palette' });
     expect(plugin(a).joined).toBe(false);
+  });
+
+  it('スピーカーミュートは相手の音を消し、通知のボタンの文言も変わる。出力先の選択は保存される', async () => {
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await start(a);
+    await start(b);
+    await a.commands.get('voice:join')!.run({ args: '', threadId: null, via: 'palette' });
+    await b.commands.get('voice:join')!.run({ args: '', threadId: null, via: 'palette' });
+    plugin(a).tick();
+    plugin(b).tick();
+    await flush();
+    await flush();
+    const first = a.hold.mock.calls[0][0] as { actions: { id: string; title: string }[]; onAction: (id: string) => void };
+    expect(first.actions.map((x) => x.id)).toEqual(['mute', 'deafen', 'hangup']);
+    const p = plugin(a) as unknown as { deafened: boolean; entries: Map<string, { audio: { muted: boolean; volume: number } | null }> };
+    const audioEl = [...p.entries.values()][0]!.audio!;
+    expect(audioEl.muted).toBe(false);
+    first.onAction('deafen');
+    expect(p.deafened).toBe(true);
+    expect(audioEl.muted).toBe(true);
+    expect(a.bar.querySelector('.voice-active')).not.toBeNull();
+    a.commands.get('voice:deafen')!.run({ args: '', threadId: null, via: 'palette' });
+    expect(p.deafened).toBe(false);
+    expect(audioEl.muted).toBe(false);
+    // 出力先が2つ以上あれば、ステータス欄に選択欄が出る
+    expect(a.bar.querySelectorAll('select option')).toHaveLength(2);
+  });
+});
+
+const pure = () => import('../../../../examples/voice/main.js') as unknown as Promise<{
+  clampVolume(v: unknown, max: number, fallback?: number): number;
+  Resampler: new (src: number, dst?: number) => { push(f: Float32Array): Float32Array };
+  Framer: new (size?: number) => { push(f: Float32Array): Float32Array[] };
+  floatToInt16(f: Float32Array): Int16Array;
+  int16ToFloat(p: Int16Array): Float32Array;
+  pcmToBase64(p: Int16Array): string;
+  base64ToPcm(b: unknown): Int16Array | null;
+  rms(f: Float32Array): number;
+  scheduleFrame(st: { next: number }, now: number, dur: number, lead?: number, max?: number): number | null;
+  pickOutput(outs: Disnans.AudioOutput[], saved: { id: string; kind: string; label: string } | null): Disnans.AudioOutput | null;
+}>;
+
+describe('音量と出力先の純粋な処理', () => {
+  it('clampVolume は範囲に収め、数でなければ既定値', async () => {
+    const { clampVolume } = await pure();
+    expect(clampVolume(3, 2)).toBe(2);
+    expect(clampVolume(-1, 2)).toBe(0);
+    expect(clampVolume(0.5, 1)).toBe(0.5);
+    expect(clampVolume('x', 2, 1)).toBe(1);
+    expect(clampVolume(NaN, 2, 0.7)).toBe(0.7);
+  });
+
+  it('pickOutput は ID、なければ同じ種類と名前、なければ同じ種類で探す', async () => {
+    const { pickOutput } = await pure();
+    const outs = [
+      { id: 'speaker', label: 'スピーカー', kind: 'speaker', selected: false },
+      { id: 'bluetooth:9', label: 'Bluetooth（X）', kind: 'bluetooth', selected: false },
+      { id: 'bluetooth:12', label: 'Bluetooth（Y）', kind: 'bluetooth', selected: false },
+    ];
+    expect(pickOutput(outs, null)).toBeNull();
+    expect(pickOutput(outs, { id: 'speaker', kind: 'speaker', label: 'スピーカー' })?.id).toBe('speaker');
+    expect(pickOutput(outs, { id: 'bluetooth:3', kind: 'bluetooth', label: 'Bluetooth（Y）' })?.id).toBe('bluetooth:12');
+    expect(pickOutput(outs, { id: 'bluetooth:3', kind: 'bluetooth', label: 'Z' })?.id).toBe('bluetooth:9');
+    expect(pickOutput(outs, { id: 'wired:1', kind: 'wired', label: 'イヤホン' })).toBeNull();
+    expect(pickOutput(outs, { id: 'abc', kind: 'other', label: 'abc' })).toBeNull();
+  });
+
+  it('describeDevices は default を実機器と重ねず、名前のない機器に仮の名前を付ける', () => {
+    const dev = (kind: string, deviceId: string, label: string) => ({ kind, deviceId, label }) as MediaDeviceInfo;
+    const list = [dev('audiooutput', 'default', '既定'), dev('audiooutput', 'a', 'Speakers'), dev('audiooutput', 'b', ''), dev('audioinput', 'm', 'Mic')];
+    expect(describeDevices(list, 'audiooutput', '出力')).toEqual([
+      { id: 'a', label: 'Speakers' },
+      { id: 'b', label: '出力 2' },
+    ]);
+    expect(describeDevices([dev('audiooutput', 'default', '')], 'audiooutput', '出力')).toEqual([{ id: 'default', label: '出力' }]);
+    expect(describeDevices([], 'audioinput', '入力')).toEqual([]);
+  });
+});
+
+describe('リレー音声の純粋な処理', () => {
+  it('Resampler は 48kHz→16kHz で長さが約 1/3 になり、チャンクを分けても同じ結果', async () => {
+    const { Resampler } = await pure();
+    const input = Float32Array.from({ length: 4800 }, (_, i) => Math.sin(i / 50));
+    const whole = new Resampler(48000).push(input);
+    expect(Math.abs(whole.length - 1600)).toBeLessThanOrEqual(1);
+    const r = new Resampler(48000);
+    const parts = [r.push(input.subarray(0, 1000)), r.push(input.subarray(1000, 3333)), r.push(input.subarray(3333))];
+    const joined = Float32Array.from(parts.flatMap((p) => [...p]));
+    expect(joined.length).toBe(whole.length);
+    for (let i = 0; i < whole.length; i++) expect(joined[i]).toBeCloseTo(whole[i]!, 5);
+  });
+
+  it('Framer は指定の長さずつに分け、余りは次に持ち越す', async () => {
+    const { Framer } = await pure();
+    const f = new Framer(4);
+    expect(f.push(new Float32Array(3))).toHaveLength(0);
+    const out = f.push(Float32Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9]));
+    expect(out).toHaveLength(3);
+    expect([...out[0]!]).toEqual([0, 0, 0, 1]);
+  });
+
+  it('PCM の変換と base64 は往復できて、壊れた入力は null', async () => {
+    const { floatToInt16, int16ToFloat, pcmToBase64, base64ToPcm, rms } = await pure();
+    const f = Float32Array.from([0, 0.5, -0.5, 1, -1, 2]);
+    const pcm = floatToInt16(f);
+    expect(pcm[3]).toBe(32767);
+    expect(pcm[4]).toBe(-32768);
+    expect(pcm[5]).toBe(32767); // 範囲を超えたら丸める
+    const back = int16ToFloat(base64ToPcm(pcmToBase64(pcm))!);
+    expect(back[1]).toBeCloseTo(0.5, 3);
+    expect(back[2]).toBeCloseTo(-0.5, 3);
+    expect(base64ToPcm('!!')).toBeNull();
+    expect(base64ToPcm('QQ==')).toBeNull(); // 1バイト
+    expect(base64ToPcm(5)).toBeNull();
+    expect(base64ToPcm('A'.repeat(9000))).toBeNull();
+    expect(rms(new Float32Array(4))).toBe(0);
+    expect(rms(Float32Array.from([1, -1]))).toBe(1);
+  });
+
+  it('scheduleFrame は最初と空になったときにためてから鳴らし、続きは隙間なく、ためすぎは捨てる', async () => {
+    const { scheduleFrame } = await pure();
+    const st = { next: 0 };
+    expect(scheduleFrame(st, 10, 0.05)).toBeCloseTo(10.12);
+    expect(scheduleFrame(st, 10.01, 0.05)).toBeCloseTo(10.17);
+    // 空になった（時刻が追いついた）ら、またためる
+    expect(scheduleFrame(st, 11, 0.05)).toBeCloseTo(11.12);
+    // 先に溜まりすぎたら捨てる
+    st.next = 12;
+    expect(scheduleFrame(st, 11, 0.05)).toBeNull();
+  });
+});
+
+describe('WebRTC を使えない環境', () => {
+  it('RTCPeerConnection がなくても参加でき、在室の知らせで rtc:false を伝える', async () => {
+    vi.stubGlobal('RTCPeerConnection', undefined);
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await start(a);
+    await start(b);
+    await a.commands.get('voice:join')!.run({ args: '', threadId: null, via: 'palette' });
+    expect(plugin(a).joined).toBe(true);
+    await b.commands.get('voice:join')!.run({ args: '', threadId: null, via: 'palette' });
+    plugin(a).tick();
+    plugin(b).tick();
+    await flush();
+    expect(FakePc.all).toHaveLength(0);
+    const e = [...plugin(a).entries.values()][0] as unknown as { rtc: boolean; connected: boolean };
+    expect(e.rtc).toBe(false);
+    expect(e.connected).toBe(true);
   });
 });

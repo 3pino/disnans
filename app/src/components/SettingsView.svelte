@@ -33,7 +33,11 @@
   import PluginSettings from './PluginSettings.svelte';
   import ThemeSettings from './ThemeSettings.svelte';
   import KeySettings from './KeySettings.svelte';
+  import ComposerMenuSettings from './ComposerMenuSettings.svelte';
+  import DeviceKindSettings from './DeviceKindSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
+  import { prefs } from '../lib/stores/prefs.svelte';
+  import type { MessageLayout } from '../lib/messageLayout';
   import { ui, type ThemePref } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
   import { devUser, getServerUrl, isAndroid, isCustomAvatar, isTauri, setServerUrl } from '../lib/config';
@@ -78,6 +82,12 @@
     { value: 'system', label: '自動', icon: Monitor },
     { value: 'light', label: 'ライト', icon: Sun },
     { value: 'dark', label: 'ダーク', icon: Moon },
+  ];
+
+  // メッセージの表示。既定はリスト（Slack 風）
+  const messageLayouts: { value: MessageLayout; label: string }[] = [
+    { value: 'list', label: 'リスト' },
+    { value: 'bubble', label: '吹き出し' },
   ];
 
   const perm = $derived(notifications.permission);
@@ -267,6 +277,21 @@
           </SettingRow>
         {/if}
       </Section>
+
+      <Section title="メッセージの表示" class="settings-message-layout">
+        <SegmentedButton
+          class="settings-message-layout-picker"
+          label="メッセージの表示"
+          options={messageLayouts}
+          value={prefs.messageLayout}
+          onchange={(v) => prefs.setMessageLayout(v)}
+        />
+        <p class="muted settings-small-text">リストは名前と時刻を上に並べます。吹き出しは自分の発言を右に、ほかの人の発言を左に並べます。</p>
+      </Section>
+
+      <DeviceKindSettings />
+
+      <ComposerMenuSettings />
 
       <Section title="通知" class="settings-notifications">
         {#if notifications.backend === 'android'}

@@ -8,6 +8,10 @@
   /* 入力欄（カード・input・textarea）にフォーカスしたとき。青くせず、枠と背景を少し明るくする */
   --border-focus: oklch(0.92 0.012 248);
   --field-focus-bg: oklch(0.97 0.012 248);
+  /* ホバーで枠を少し濃く（明るい地では、明るくすると見えなくなるので濃くする） */
+  --border-hover: oklch(0.76 0.015 248);
+  /* キーボードのフォーカスの輪郭（青くしない） */
+  --ring: oklch(0.45 0.015 248);
   --text-muted: oklch(0.48 0.015 248);
   --text: oklch(0.22 0.015 248);
 
@@ -45,6 +49,8 @@
     --border: oklch(0.32 0.015 248);
     --border-focus: oklch(0.43 0.015 248);
     --field-focus-bg: oklch(0.245 0.015 248);
+    --border-hover: oklch(0.44 0.015 248);
+    --ring: oklch(0.84 0.015 248);
     --text-muted: oklch(0.7 0.015 248);
     --text: oklch(0.93 0.015 248);
 
@@ -67,6 +73,8 @@
   --border: oklch(0.32 0.015 248);
   --border-focus: oklch(0.43 0.015 248);
   --field-focus-bg: oklch(0.245 0.015 248);
+  --border-hover: oklch(0.44 0.015 248);
+  --ring: oklch(0.84 0.015 248);
   --text-muted: oklch(0.7 0.015 248);
   --text: oklch(0.93 0.015 248);
 
@@ -161,7 +169,7 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 

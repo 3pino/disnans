@@ -197,6 +197,7 @@ mod tests {
             edited_at: None,
             thread: None,
             card: None,
+            bot: None,
         }
     }
 

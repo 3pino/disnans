@@ -19,6 +19,7 @@ const uiDeps: UiDeps = { toast: () => {}, confirm: async () => true };
   Plugin: PluginBase,
   ui: createUi({ toast: (...a) => uiDeps.toast(...a), confirm: (o) => uiDeps.confirm(o) }),
   VersionConflictError,
+  audio: { listOutputs: async () => [], setOutput: async () => false, listInputs: async () => [], attach: () => () => {} },
 };
 
 const users = [

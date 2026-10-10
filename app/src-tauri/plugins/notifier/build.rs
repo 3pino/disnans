@@ -5,6 +5,8 @@ const COMMANDS: &[&str] = &[
     "start_call",
     "stop_call",
     "take_call_actions",
+    "list_audio_outputs",
+    "set_audio_output",
     "take_shared",
     "status",
     "request_permission",

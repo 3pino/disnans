@@ -45,6 +45,11 @@ class StartCallArgs {
   var actions: Array<CallActionArg> = arrayOf()
 }
 
+@InvokeArg
+class SetAudioOutputArgs {
+  lateinit var id: String
+}
+
 @TauriPlugin(
   permissions = [
     Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = "notifications")
@@ -271,6 +276,47 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
       invoke.resolve()
     } catch (ex: Exception) {
       invoke.reject(ex.message)
+    }
+  }
+
+  /** 通話の音の出力先の一覧と、いまの出力先 */
+  @Command
+  fun listAudioOutputs(invoke: Invoke) {
+    try {
+      requestBluetoothPermissionOnce()
+      val arr = JSArray()
+      for (o in CallAudio.list(activity)) {
+        arr.put(JSObject().put("id", o.id).put("label", o.label).put("kind", o.kind))
+      }
+      val ret = JSObject()
+      ret.put("outputs", arr)
+      ret.put("current", CallAudio.current(activity))
+      invoke.resolve(ret)
+    } catch (ex: Exception) {
+      invoke.reject(ex.message)
+    }
+  }
+
+  @Command
+  fun setAudioOutput(invoke: Invoke) {
+    val args = invoke.parseArgs(SetAudioOutputArgs::class.java)
+    try {
+      val ret = JSObject()
+      ret.put("ok", CallAudio.set(activity, args.id))
+      invoke.resolve(ret)
+    } catch (ex: Exception) {
+      invoke.reject(ex.message)
+    }
+  }
+
+  private var askedBluetooth = false
+
+  /** Android 12 以降、Bluetooth の出力先を見るには BLUETOOTH_CONNECT の許可がいる（最初の1回だけ尋ねる） */
+  private fun requestBluetoothPermissionOnce() {
+    if (askedBluetooth || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    askedBluetooth = true
+    if (activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+      activity.requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 7201)
     }
   }
 

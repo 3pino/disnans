@@ -69,6 +69,26 @@ pub struct Message {
     pub thread: Option<ThreadInfo>,
     /// プラグインのセッションのカードなら入る（本文は空）。
     pub card: Option<MessageCard>,
+    /// プラグインがボットとして投稿したメッセージなら入る。`author_id` は投稿を実行した人。
+    pub bot: Option<BotInfo>,
+}
+
+/// ボットとして投稿したメッセージの表示名と、投稿したプラグイン。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct BotInfo {
+    pub plugin: String,
+    pub name: String,
+}
+
+/// `POST /api/plugins/{id}/messages`
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PluginPostMessage {
+    pub thread_id: Option<Id>,
+    pub body: String,
+    /// 省略するとプラグインの表示名。
+    pub name: Option<String>,
 }
 
 // ---- プラグイン ----

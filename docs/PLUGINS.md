@@ -114,7 +114,7 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `4`（`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `5`（`4` の本体には `postMessage` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -235,6 +235,7 @@ app/node_modules/.bin/tsc -p examples/dice
 | `session.update(state, { card })` / `session.onChange(cb)` | 楽観ロック付きの保存、変更の購読 |
 | `session.emit(name, payload)` / `session.on(name, cb)` | 保存しない一時的なイベント |
 | `this.notify(userIds, text, { session })` | 通知 |
+| `this.postMessage({ body, threadId?, name? })` | ボットとしてメッセージを投稿する（v5）。投稿者は自分のままで、名前は `name`（省略するとプラグインの名前）。例: `examples/bot` |
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント（v3）。いまつながっている人に届く |
 | `this.addStatusBarItem()` | 常時表示のステータス欄に出す要素（v3） |
 | `this.holdBackground({ microphone, actions, onAction })` | 画面を切っても動き続ける（v3。Android のフォアグラウンドサービス）。通知のボタンと `update()` は v4 |
@@ -244,7 +245,8 @@ app/node_modules/.bin/tsc -p examples/dice
 | `this.register(cleanup)` / `this.registerDomEvent(...)` / `this.registerInterval(id)` | 後始末を自動で行う登録 |
 | `disnans.ui.*` | 本体と同じ見た目の部品とアイコン（→ [PLUGIN_UI.md](PLUGIN_UI.md)） |
 | `disnans.VersionConflictError` | `session.update` がぶつかったときのエラー |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 3） |
+| `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（v5）。Android は通話中の出力先（受話口・スピーカー・イヤホン・Bluetooth）、デスクトップは `setSinkId`。使えない環境では一覧が空 |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 5） |
 
 ### コマンド（パレット・ショートカット・スラッシュコマンド）
 
@@ -677,11 +679,13 @@ ui.toast('設定を初期値に戻しました');
 
 | やりたいこと | 使っている API |
 |---|---|
-| 参加・退出・ミュート（パレット、`/vc-join` `/vc-leave` `/vc-mute`、Ctrl+Shift+M） | `addCommand` |
+| 参加・退出・ミュート・スピーカーミュート・出力先（パレット、`/vc-join` `/vc-leave` `/vc-mute` `/vc-deafen` `/vc-output`、Ctrl+Shift+M） | `addCommand` |
 | 「＋」メニューの「ボイスチャットに参加」 | `addComposerAction` |
 | いま通話にいる人のアイコンを常に出す・しゃべっている人の枠が光る・押すと自分の側だけ消音 | `addStatusBarItem`（v3） |
 | 在室の管理（3 秒ごとに知らせ、12 秒途絶えたら落ちたと見なす）と、offer / answer / ICE のやり取り | `broadcast` / `onBroadcast`（v3） |
-| 画面を消しても通話を続ける（Android）。通知の「ミュート」「切断」ボタン | `holdBackground`（v3）、`actions` / `onAction` / `update()`（v4） |
+| 画面を消しても通話を続ける（Android）。通知の「ミュート」「スピーカーミュート」「切断」ボタン | `holdBackground`（v3）、`actions` / `onAction` / `update()`（v4） |
+| スピーカーミュート・出力先の切り替え（受話口・スピーカー・イヤホン・Bluetooth）・マイク / 相手の音量 | `disnans.audio`（v5）、設定タブのスライダー |
+| WebRTC を使えない環境の相手とは、サーバー経由で音声を流す（`audio` イベント） | `broadcast` / `onBroadcast` |
 | 設定（参加時にミュート、STUN サーバー） | `addSettingTab`、`loadData` / `saveData`、`ui.setting` / `ui.toggle` / `ui.input` |
 
 しくみ:

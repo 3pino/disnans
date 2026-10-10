@@ -56,7 +56,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 3） */
+      /** ホスト API のバージョン（いまは 5） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -64,6 +64,39 @@ declare global {
       readonly ui: Ui;
       /** Session.update が他の人の更新とぶつかったときのエラー（`instanceof` で見分ける） */
       readonly VersionConflictError: typeof VersionConflictError;
+      /** 音の入出力の選択（API v5）。通話のプラグイン向け。環境の違い（Android・デスクトップ）はここで隠す */
+      readonly audio: Audio;
+    }
+
+    /** 音の出力先（API v5） */
+    type AudioOutput = {
+      /** `audio.setOutput` に渡す ID（端末ごとに違う。保存するなら kind と label も覚えておくとよい） */
+      id: string;
+      /** 表示用の名前（「受話口」「スピーカー」「イヤホン（…）」「Bluetooth（…）」など） */
+      label: string;
+      /** `earpiece` `speaker` `wired` `bluetooth`（Android）、デスクトップは `other` */
+      kind: string;
+      /** いま使っているか */
+      selected: boolean;
+    };
+
+    /** 音の入力（マイク）（API v5） */
+    type AudioInput = { id: string; label: string };
+
+    /**
+     * 音の入出力の選択（API v5）。使えない環境では一覧が空になる。
+     * - Android: 出力先は端末全体（通話中のみ）。受話口・スピーカー・有線イヤホン・Bluetooth から選べる。入力は選べない（空）
+     * - デスクトップ・ブラウザー: `setSinkId` が使えれば、`attach` した要素の出力先を切り替える。入力は `getUserMedia({ audio: { deviceId } })` に渡す
+     */
+    interface Audio {
+      /** 選べる出力先。Android では通話中（`holdBackground` の `microphone`）に呼ぶ */
+      listOutputs(): Promise<AudioOutput[]>;
+      /** 出力先を切り替える。切り替えられたら true */
+      setOutput(id: string): Promise<boolean>;
+      /** 選べるマイク。Android では空 */
+      listInputs(): Promise<AudioInput[]>;
+      /** 音を出す `<audio>` など（`AudioContext` も可）を登録する。デスクトップで、選んだ出力先に出すために使う。戻り値の関数で外す */
+      attach(el: HTMLMediaElement | AudioContext): Cleanup;
     }
 
     /** Session.update が他の人の更新とぶつかったときのエラー */
@@ -152,6 +185,13 @@ declare global {
 
       /** 通知を送る。session を渡すと、通知から開いたときにそのカードの場所を開く */
       notify(userIds: string[], text: string, opts?: { session?: Session<any> }): Promise<void>;
+
+      /**
+       * このプラグインの名前（`name` で変えられる）のボットとして、チャットにメッセージを投稿する（API v5）。
+       * 投稿した人（author）は自分のままで、メッセージに bot の印が付く。`threadId` を省くとメインチャット。
+       * 本文は普通のメッセージと同じ制限（空でなく 10,000 文字まで）。`name` は前後の空白を除いて 40 文字まで
+       */
+      postMessage(opts: { body: string; threadId?: string | null; name?: string }): Promise<void>;
 
       /**
        * このプラグインの一時的なイベントを、いまつながっているほかの人（と自分の別の端末）に送る（API v3）。

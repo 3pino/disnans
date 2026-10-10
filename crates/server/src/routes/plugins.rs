@@ -4,9 +4,10 @@ use axum::Json;
 use axum::extract::{Multipart, Path, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use disnans_shared::{PluginInfo, PluginNotify, PluginVisibility};
+use disnans_shared::{Message, PluginInfo, PluginNotify, PluginPostMessage, PluginVisibility};
 
 use crate::auth::CurrentUser;
+use crate::chat;
 use crate::error::{AppError, AppResult};
 use crate::plugins::{self, Package};
 use crate::sessions;
@@ -129,6 +130,22 @@ pub async fn notify(
 ) -> AppResult<StatusCode> {
     sessions::notify(&state, &id, req).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// プラグインがボットとしてメッセージを投稿する。
+pub async fn post_message(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<String>,
+    Json(req): Json<PluginPostMessage>,
+) -> AppResult<Json<Message>> {
+    let info = plugin_store::get(&state.pool, &id)
+        .await?
+        .filter(|p| plugins::is_visible(p, &user.id))
+        .ok_or_else(|| AppError::not_found("プラグインが見つかりません"))?;
+    Ok(Json(
+        chat::post_bot_message(&state, &user, &info, req).await?,
+    ))
 }
 
 fn bad_multipart(err: axum::extract::multipart::MultipartError) -> AppError {

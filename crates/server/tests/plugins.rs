@@ -3,7 +3,9 @@
 mod common;
 
 use common::TestServer;
-use disnans_shared::{ApiError, PluginInfo, PluginKind, PluginVisibility, ServerEvent, User};
+use disnans_shared::{
+    ApiError, ClientEvent, Message, PluginInfo, PluginKind, PluginVisibility, ServerEvent, User,
+};
 
 const ALICE: &str = "alice@test";
 const BOB: &str = "bob@test";
@@ -639,4 +641,180 @@ async fn themes() {
         list.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
         ["sakura"]
     );
+}
+
+// ---- ボットとしての投稿 ----
+
+#[tokio::test]
+async fn plugin_can_post_message_as_bot() {
+    let server = TestServer::start().await;
+    let alice_user: User = server.get_json(ALICE, "/api/me").await;
+    let m = manifest("dice", "1.0.0");
+    server
+        .upload_plugin(ALICE, &[("manifest.json", &m), ("main.js", MAIN_JS)])
+        .await;
+    let mut alice = server.ws(ALICE).await;
+    let mut bob = server.ws(BOB).await;
+
+    // 名前を省略するとプラグインの表示名
+    let res = server
+        .post_json(
+            ALICE,
+            "/api/plugins/dice/messages",
+            &serde_json::json!({ "body": "こんにちは" }),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let message: Message = res.json().await.unwrap();
+    assert_eq!(message.author_id, alice_user.id);
+    let bot = message.bot.clone().unwrap();
+    assert_eq!((bot.plugin.as_str(), bot.name.as_str()), ("dice", "ダイス"));
+
+    let ServerEvent::MessageCreated { message: got, .. } = bob
+        .recv_until(|e| matches!(e, ServerEvent::MessageCreated { .. }))
+        .await
+    else {
+        panic!()
+    };
+    assert_eq!(got.id, message.id);
+    assert_eq!(got.bot.unwrap().plugin, "dice");
+
+    // 名前を指定（前後の空白は削る・長すぎれば切る）
+    let long = "あ".repeat(100);
+    let res = server
+        .post_json(
+            ALICE,
+            "/api/plugins/dice/messages",
+            &serde_json::json!({ "body": "hi", "name": format!("  {long}  ") }),
+        )
+        .send()
+        .await
+        .unwrap();
+    let named: Message = res.json().await.unwrap();
+    assert_eq!(named.bot.unwrap().name.chars().count(), 40);
+    let res = server
+        .post_json(
+            ALICE,
+            "/api/plugins/dice/messages",
+            &serde_json::json!({ "body": "hi", "name": " Bot君 " }),
+        )
+        .send()
+        .await
+        .unwrap();
+    let named: Message = res.json().await.unwrap();
+    assert_eq!(named.bot.unwrap().name, "Bot君");
+
+    // 履歴にも bot が入る
+    let history = server.messages("").await;
+    assert_eq!(history.len(), 3);
+    assert!(history.iter().all(|m| m.bot.is_some()));
+
+    // スレッドへの投稿は返信数に数えられる
+    let root = alice.post("root").await;
+    alice
+        .send(ClientEvent::ThreadCreate {
+            root_message_id: root.id.clone(),
+        })
+        .await;
+    let res = server
+        .post_json(
+            BOB,
+            "/api/plugins/dice/messages",
+            &serde_json::json!({ "body": "in thread", "thread_id": root.id }),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let thread: disnans_shared::Thread = server
+        .get_json(ALICE, &format!("/api/threads/{}", root.id))
+        .await;
+    assert_eq!(thread.info.reply_count, 1);
+
+    // 作者（呼び出した人）は削除できる。他人は削除できない
+    bob.send(ClientEvent::MessageDelete {
+        message_id: message.id.clone(),
+    })
+    .await;
+    assert_eq!(bob.expect_error().await.1, "forbidden");
+    alice
+        .send(ClientEvent::MessageDelete {
+            message_id: message.id.clone(),
+        })
+        .await;
+    alice
+        .recv_until(|e| matches!(e, ServerEvent::MessageDeleted { .. }))
+        .await;
+
+    // 編集はできない
+    alice
+        .send(ClientEvent::MessageEdit {
+            message_id: named_id(&server).await,
+            body: "x".into(),
+        })
+        .await;
+    assert_eq!(alice.expect_error().await.1, "bot_not_editable");
+}
+
+async fn named_id(server: &TestServer) -> String {
+    server.messages("").await[0].id.clone()
+}
+
+#[tokio::test]
+async fn bot_post_validates_plugin_body_and_thread() {
+    let server = TestServer::start().await;
+    let m = manifest("dice", "1.0.0");
+    server
+        .upload_plugin(ALICE, &[("manifest.json", &m), ("main.js", MAIN_JS)])
+        .await;
+    let post = |user: &'static str, path: &'static str, body: serde_json::Value| {
+        server.post_json(user, path, &body).send()
+    };
+
+    let res = post(
+        ALICE,
+        "/api/plugins/nope/messages",
+        serde_json::json!({ "body": "x" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(res.status(), 404);
+
+    let res = post(
+        ALICE,
+        "/api/plugins/dice/messages",
+        serde_json::json!({ "body": "  " }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(error_code(res).await, (400, "empty_message".into()));
+
+    let res = post(
+        ALICE,
+        "/api/plugins/dice/messages",
+        serde_json::json!({ "body": "x", "thread_id": "01NOPE" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(error_code(res).await, (404, "thread_not_found".into()));
+
+    // 他人の自分だけのプラグインは、ないものとして扱う
+    let m = manifest("mine", "1.0.0");
+    server
+        .upload_plugin_as(
+            ALICE,
+            "private",
+            &[("manifest.json", &m), ("main.js", MAIN_JS)],
+        )
+        .await;
+    let res = post(
+        BOB,
+        "/api/plugins/mine/messages",
+        serde_json::json!({ "body": "x" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(res.status(), 404);
 }

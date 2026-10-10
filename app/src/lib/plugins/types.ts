@@ -4,6 +4,7 @@
 import type { ClientEvent } from '../protocol/ClientEvent';
 import type { CreateSession } from '../protocol/CreateSession';
 import type { PluginNotify } from '../protocol/PluginNotify';
+import type { PluginPostMessage } from '../protocol/PluginPostMessage';
 import type { Session as SessionData } from '../protocol/Session';
 import type { UpdateSession } from '../protocol/UpdateSession';
 import type { SlashCommandDef } from '../slashCommands.svelte';
@@ -11,7 +12,7 @@ import type { ComposerAction } from '../composerActions';
 import type { AppCommand } from '../commands.svelte';
 
 /** ホスト API のバージョン。index.d.ts を変えたら上げる */
-export const API_VERSION = 4;
+export const API_VERSION = 5;
 
 export type Manifest = Disnans.Manifest;
 export type Cleanup = Disnans.Cleanup;
@@ -35,6 +36,7 @@ export interface HostServices {
     getSession(id: string): Promise<SessionData>;
     updateSession(id: string, body: UpdateSession): Promise<SessionData>;
     notify(pluginId: string, body: PluginNotify): Promise<void>;
+    postMessage(pluginId: string, body: PluginPostMessage): Promise<void>;
   };
   send(ev: ClientEvent): void;
   registerSlashCommand(def: HostSlashCommand): Cleanup;

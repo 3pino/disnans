@@ -3,6 +3,7 @@
   import IconButton from './ui/IconButton.svelte';
   import Icon from './ui/Icon.svelte';
   import PluginSettingTab from './PluginSettingTab.svelte';
+  import PluginManageSection from './PluginManageSection.svelte';
   import { pluginHost } from '../lib/plugins/host.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 
@@ -13,6 +14,8 @@
   const entry = $derived(pluginHost.entries.find((e) => e.id === id));
   const name = $derived(entry?.manifest?.name ?? id);
   const tabs = $derived(entry?.hasSettings ? pluginHost.settingTabs(id) : []);
+  /** 開発中（配布）か配布済み（削除）のときは、下に「配布と削除」を出す */
+  const manageable = $derived(!!entry && (!!entry.dev || !!entry.server));
 </script>
 
 <div id="plugin-settings-page" class="plugin-settings-page" data-plugin={id}>
@@ -29,9 +32,13 @@
     <div class="plugin-settings-page-content">
       {#each tabs as tab, i (i)}
         <PluginSettingTab {tab} {name} />
-      {:else}
-        <p class="muted plugin-settings-page-empty">このプラグインには設定がありません。</p>
       {/each}
+      {#if entry && manageable}
+        <PluginManageSection {entry} />
+      {/if}
+      {#if tabs.length === 0 && !manageable}
+        <p class="muted plugin-settings-page-empty">このプラグインには設定がありません。</p>
+      {/if}
     </div>
   </div>
 </div>

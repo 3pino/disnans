@@ -2,8 +2,7 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Send from '@lucide/svelte/icons/send';
   import X from '@lucide/svelte/icons/x';
-  import Paperclip from '@lucide/svelte/icons/paperclip';
-  import FileIcon from '@lucide/svelte/icons/file';
+    import FileIcon from '@lucide/svelte/icons/file';
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import MessageInput from './MessageInput.svelte';
   import IconButton from './ui/IconButton.svelte';
@@ -11,12 +10,13 @@
   import MenuItem from './ui/MenuItem.svelte';
   import { untrack } from 'svelte';
   import { client } from '../lib/stores/client.svelte';
+  import { prefs } from '../lib/stores/prefs.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { draftKey, loadDraft, saveDraft } from '../lib/drafts';
-  import ImageResizeDialog from './ImageResizeDialog.svelte';
-  import { readImageInfo, canResizeImage, type ImageInfo } from '../lib/imageResize';
+  import ImageCropDialog from './ImageCropDialog.svelte';
+  import { readImageInfo, canCropImage, type CropRect, type ImageInfo } from '../lib/imageCrop';
   import { shareInbox } from '../lib/stores/shareInbox.svelte';
-  import { composerActions, type BuiltinComposerAction, type ComposerAction } from '../lib/composerActions';
+  import { composerMenuAvailable, composerMenuItems, type ComposerMenuItem } from '../lib/composerMenu';
   import { parseSlashInput, runSlashCommand } from '../lib/slashCommands.svelte';
   import { formatSize } from '../lib/format';
   import { MAX_BODY } from '../lib/errors';
@@ -30,15 +30,15 @@
     preview: string | null;
     /** 寸法など（画像のときだけ。読めなければ null） */
     info: ImageInfo | null;
-    /** 送る前に縮小する長辺（null は元のまま） */
-    maxEdge: number | null;
+    /** 送る前に切り抜く範囲（null は全体） */
+    crop: CropRect | null;
   };
 
   let input: MessageInput | undefined = $state();
   let fileEl: HTMLInputElement | undefined = $state();
   let staged = $state<Staged[]>([]);
-  /** 大きさを選んでいる画像 */
-  let resizing = $state<Staged | null>(null);
+  /** 切り抜く範囲を選んでいる画像 */
+  let cropping = $state<Staged | null>(null);
   let menuOpen = $state(false);
   let hasText = $state(false);
   /** コマンドを実行中（終わるまで次を送らない） */
@@ -57,9 +57,9 @@
 
   const canSend = $derived((hasText || staged.length > 0) && client.ready);
 
-  /** 大きさを選べる画像か（寸法が読めて、アニメーションでないもの） */
-  function resizable(s: Staged): boolean {
-    return canResizeImage(s.info);
+  /** 切り抜きできる画像か（寸法が読めて、アニメーションでないもの） */
+  function croppable(s: Staged): boolean {
+    return canCropImage(s.info);
   }
 
   // 共有で受け取ったものを、メインチャットの入力欄が拾う（スレッドは対象外）
@@ -79,21 +79,18 @@
     input?.focus();
   }
 
-  const builtinActions: BuiltinComposerAction[] = [
-    { id: 'file', label: 'ファイルを添付', icon: Paperclip, run: (c) => c.pickFiles() },
-  ];
-  // 本体の項目のあとに、登録された項目を並べる
+  // 「＋」メニューの項目。並び順と出す項目は利用者の設定（設定 > 一般 > ＋メニュー）
   const actions = $derived(
-    [...builtinActions.map((a) => ({ ...a, builtin: true as const })), ...composerActions()].filter(
-      (a) => !a.when || a.when({ threadId }),
-    ),
+    composerMenuItems(
+      composerMenuAvailable(() => fileEl?.click()).filter((a) => !a.when || a.when({ threadId })),
+      prefs.composerMenu,
+    ).map((x) => x.entry),
   );
 
-  async function runAction(a: BuiltinComposerAction | ComposerAction, builtin: boolean) {
+  async function runAction(a: ComposerMenuItem) {
     menuOpen = false;
     try {
-      if (builtin) (a as BuiltinComposerAction).run({ threadId, pickFiles: () => fileEl?.click() });
-      else await (a as ComposerAction).run({ threadId });
+      await a.run({ threadId });
     } catch (e) {
       ui.toast(`${a.label}: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }
@@ -104,7 +101,7 @@
     for (const file of files) {
       const key = ++seq;
       const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
-      staged.push({ key, file, preview, info: null, maxEdge: null });
+      staged.push({ key, file, preview, info: null, crop: null });
       // 寸法は、大きさを選ぶときとサムネイルの表示のために、先に読んでおく
       void readImageInfo(file).then((info) => {
         const s = staged.find((x) => x.key === key);
@@ -120,7 +117,7 @@
 
   function removeStaged(s: Staged) {
     if (s.preview) URL.revokeObjectURL(s.preview);
-    if (resizing?.key === s.key) resizing = null;
+    if (cropping?.key === s.key) cropping = null;
     staged = staged.filter((x) => x.key !== s.key);
   }
 
@@ -141,7 +138,7 @@
       return;
     }
     // アップロードと送信は client の仮表示の中で行う。入力欄はすぐ空にする
-    client.sendMessage({ threadId, body, files: staged.map((s) => ({ file: s.file, maxEdge: s.maxEdge })) });
+    client.sendMessage({ threadId, body, files: staged.map((s) => ({ file: s.file, crop: s.crop })) });
     input.clear();
     hasText = false;
     if (key) saveDraft(key, '');
@@ -169,7 +166,7 @@
     if (!me) return;
     const msgs = client.timeline(threadId).messages;
     for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].author_id === me) {
+      if (msgs[i].author_id === me && !msgs[i].bot) {
         ui.editing = msgs[i].id;
         return;
       }
@@ -183,15 +180,15 @@
       {#each staged as s (s.key)}
         <div class="composer-upload" title={s.file.name}>
           {#if s.preview}
-            {#if resizable(s)}
-              <!-- 画像は、タップすると大きさを選べる -->
-              <button type="button" class="composer-upload-thumb" aria-label="{s.file.name} の大きさを選ぶ" onclick={() => (resizing = s)}>
+            {#if croppable(s)}
+              <!-- 画像は、タップすると切り抜く範囲を選べる -->
+              <button type="button" class="composer-upload-thumb" aria-label="{s.file.name} を切り抜く" onclick={() => (cropping = s)}>
                 <img class="composer-upload-preview" src={s.preview} alt="" />
               </button>
             {:else}
               <img class="composer-upload-preview" src={s.preview} alt="" />
             {/if}
-            {#if s.maxEdge !== null}<span class="composer-upload-badge">長辺 {s.maxEdge}</span>{/if}
+            {#if s.crop}<span class="composer-upload-badge">切り抜き</span>{/if}
           {:else}
             <div class="composer-upload-file-icon"><FileIcon size={20} /><span>{formatSize(s.file.size)}</span></div>
           {/if}
@@ -215,14 +212,12 @@
       </IconButton>
       {#if menuOpen}
         <Menu class="composer-menu" onclose={() => (menuOpen = false)}>
-          {#each actions as a (('builtin' in a ? 'builtin:' : '') + a.id)}
-            <MenuItem
-              class="composer-menu-item"
-              icon={a.icon ?? Puzzle}
-              onclick={() => void runAction(a, 'builtin' in a)}
-            >
+          {#each actions as a (a.id)}
+            <MenuItem class="composer-menu-item" icon={a.icon ?? Puzzle} onclick={() => void runAction(a)}>
               {a.label}
             </MenuItem>
+          {:else}
+            <p class="muted composer-menu-empty">表示する項目がありません</p>
           {/each}
         </Menu>
       {/if}
@@ -262,17 +257,17 @@
     }}
   />
 
-  {#if resizing && resizing.info}
-    {@const target = resizing}
-    <ImageResizeDialog
+  {#if cropping && cropping.info}
+    {@const target = cropping}
+    <ImageCropDialog
       file={target.file}
       info={target.info!}
-      value={target.maxEdge}
-      onpick={(maxEdge) => {
-        target.maxEdge = maxEdge;
-        resizing = null;
+      value={target.crop}
+      onpick={(crop) => {
+        target.crop = crop;
+        cropping = null;
       }}
-      onclose={() => (resizing = null)}
+      onclose={() => (cropping = null)}
     />
   {/if}
 </div>
@@ -317,6 +312,11 @@
     position: absolute;
     bottom: calc(100% + 8px);
     left: -4px;
+  }
+  .composer-menu-empty {
+    margin: 0;
+    padding: 8px 10px;
+    font-size: 13px;
   }
   .composer-send {
     display: grid;
