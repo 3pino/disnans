@@ -6,6 +6,7 @@
   import Headphones from '@lucide/svelte/icons/headphones';
   import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
+  import Slider from './ui/Slider.svelte';
   import Toggle from './ui/Toggle.svelte';
   import { call } from '../lib/call/instance.svelte';
   import { callSettings } from '../lib/call/settings.svelte';
@@ -25,9 +26,9 @@
 
   const selectedOutput = $derived(call.outputs.find((o) => o.selected)?.id ?? '');
 
-  /** 動かしている間は反映だけして、離したときに保存する */
-  function slide(key: 'micVolume' | 'outVolume', e: Event & { currentTarget: HTMLInputElement }) {
-    callSettings.preview({ [key]: Number(e.currentTarget.value) / 100 });
+  /** 動かしている間は反映だけして、離したときに保存する（v は％） */
+  function slide(key: 'micVolume' | 'outVolume', v: number) {
+    callSettings.preview({ [key]: v / 100 });
     if (key === 'micVolume') call.applyMicVolume();
     else call.applyOutVolume();
   }
@@ -42,37 +43,31 @@
 
   <SettingRow name="マイクの音量" icon={Mic}>
     {#snippet control()}
-      <div class="call-slider">
-        <input
-          type="range"
-          min="0"
-          max={Math.round(MIC_VOLUME_MAX * 100)}
-          step="5"
-          value={Math.round(s.micVolume * 100)}
-          aria-label="マイクの音量"
-          oninput={(e) => slide('micVolume', e)}
-          onchange={() => callSettings.save()}
-        />
-        <span class="call-slider-value">{Math.round(s.micVolume * 100)}%</span>
-      </div>
+      <Slider
+        label="マイクの音量"
+        min={0}
+        max={Math.round(MIC_VOLUME_MAX * 100)}
+        step={5}
+        value={Math.round(s.micVolume * 100)}
+        format={(v) => `${v}%`}
+        oninput={(v) => slide('micVolume', v)}
+        onchange={() => callSettings.save()}
+      />
     {/snippet}
   </SettingRow>
 
   <SettingRow name="相手の音量" icon={Volume2}>
     {#snippet control()}
-      <div class="call-slider">
-        <input
-          type="range"
-          min="0"
-          max={Math.round(OUT_VOLUME_MAX * 100)}
-          step="5"
-          value={Math.round(s.outVolume * 100)}
-          aria-label="相手の音量"
-          oninput={(e) => slide('outVolume', e)}
-          onchange={() => callSettings.save()}
-        />
-        <span class="call-slider-value">{Math.round(s.outVolume * 100)}%</span>
-      </div>
+      <Slider
+        label="相手の音量"
+        min={0}
+        max={Math.round(OUT_VOLUME_MAX * 100)}
+        step={5}
+        value={Math.round(s.outVolume * 100)}
+        format={(v) => `${v}%`}
+        oninput={(v) => slide('outVolume', v)}
+        onchange={() => callSettings.save()}
+      />
     {/snippet}
   </SettingRow>
 
@@ -115,21 +110,5 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-  }
-  .call-slider {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .call-slider input[type='range'] {
-    width: 140px;
-    max-width: 40vw;
-  }
-  .call-slider-value {
-    min-width: 3.5em;
-    text-align: right;
-    color: var(--text-muted);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
   }
 </style>

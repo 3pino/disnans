@@ -9,7 +9,7 @@ import { APP_COMMAND_PREFIX, type AppCommand } from '../commands.svelte';
 import { ui } from '../stores/ui.svelte';
 import { call } from './instance.svelte';
 
-/** 通話のコマンド（パレット・ショートカット・スラッシュコマンド） */
+/** 通話のコマンド（パレット・ホットキー・スラッシュコマンド） */
 export function callCommands(): AppCommand[] {
   const id = (name: string) => `${APP_COMMAND_PREFIX}call-${name}`;
   return [

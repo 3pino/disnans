@@ -286,7 +286,7 @@ describe('PluginRuntime', () => {
     expect(f.slash.has('ok')).toBe(true);
   });
 
-  it('addCommand: ID にプラグイン ID を付け、読めないショートカット・スラッシュコマンド名はエラーにして外して登録する', async () => {
+  it('addCommand: ID にプラグイン ID を付け、読めないホットキー・スラッシュコマンド名はエラーにして外して登録する', async () => {
     const f = fakeServices();
     const run = vi.fn();
     class P extends PluginBase {

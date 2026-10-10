@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   addComposerMenuCommand,
   composerMenuItems,
-  moveComposerMenuEntry,
+  dropSlot,
   normalizeComposerMenu,
   removeComposerMenuEntry,
+  reorderComposerMenuEntry,
   setComposerMenuHidden,
+  slotToIndex,
   type ComposerMenuEntry,
   type ComposerMenuPrefs,
 } from './composerMenu';
@@ -73,16 +75,53 @@ describe('composerMenuItems', () => {
 });
 
 describe('composer menu edits', () => {
-  it('上下に動かす。端は何もしない', () => {
-    const next = moveComposerMenuEntry(none, available, 'action:plugin:dice:roll', 1);
+  it('表示の並びの指定した位置に動かす。範囲外は端に収める', () => {
+    const next = reorderComposerMenuEntry(none, available, 'action:plugin:dice:roll', 2);
     expect(ids(composerMenuItems(available, next))).toEqual(['builtin:file', 'action:plugin:poll:new', 'action:plugin:dice:roll']);
-    expect(moveComposerMenuEntry(none, available, 'builtin:file', -1)).toBe(none);
+    const first = reorderComposerMenuEntry(none, available, 'action:plugin:poll:new', -5);
+    expect(ids(composerMenuItems(available, first))[0]).toBe('action:plugin:poll:new');
+    const last = reorderComposerMenuEntry(none, available, 'builtin:file', 99);
+    expect(ids(composerMenuItems(available, last)).at(-1)).toBe('builtin:file');
+  });
+
+  it('同じ位置なら同じ設定を返す。知らない id も同じ設定', () => {
+    expect(reorderComposerMenuEntry(none, available, 'builtin:file', 0)).toBe(none);
+    expect(reorderComposerMenuEntry(none, available, 'action:gone', 1)).toBe(none);
   });
 
   it('動かすと、知らない id は後ろに残る', () => {
     const prefs = { order: ['action:plugin:gone:x'], hidden: [] };
-    const next = moveComposerMenuEntry(prefs, available, 'builtin:file', 1);
+    const next = reorderComposerMenuEntry(prefs, available, 'builtin:file', 1);
     expect(next.order).toEqual(['action:plugin:dice:roll', 'builtin:file', 'action:plugin:poll:new', 'action:plugin:gone:x']);
+  });
+
+  it('出さない項目も並びの中で数える（隠れた項目を飛び越えて動く）', () => {
+    const prefs = { order: [], hidden: ['action:plugin:dice:roll'] };
+    const next = reorderComposerMenuEntry(prefs, available, 'builtin:file', 1);
+    expect(ids(composerMenuItems(available, next, { includeHidden: true })).slice(0, 2)).toEqual(['action:plugin:dice:roll', 'builtin:file']);
+    expect(next.hidden).toEqual(['action:plugin:dice:roll']);
+  });
+
+  it('差し込み位置は行の中央で決まる', () => {
+    const rows = [
+      { top: 0, bottom: 40 },
+      { top: 44, bottom: 84 },
+      { top: 88, bottom: 128 },
+    ];
+    expect(dropSlot(rows, -10)).toBe(0);
+    expect(dropSlot(rows, 19)).toBe(0);
+    expect(dropSlot(rows, 21)).toBe(1);
+    expect(dropSlot(rows, 100)).toBe(2);
+    expect(dropSlot(rows, 500)).toBe(3);
+  });
+
+  it('差し込み位置を、抜いたあとの並びの位置に直す', () => {
+    // 2番目（0 始まりで1）の行を、その前（slot 1）に戻す → 同じ位置
+    expect(slotToIndex(1, 1)).toBe(1);
+    // 1 の行を、末尾の後ろ（slot 3）に入れる → 最後（2）
+    expect(slotToIndex(0, 3)).toBe(2);
+    // 2 の行を、先頭の前（slot 0）に入れる → 先頭（0）
+    expect(slotToIndex(2, 0)).toBe(0);
   });
 
   it('出す・出さないを切り替える', () => {

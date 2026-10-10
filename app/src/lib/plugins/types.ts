@@ -41,7 +41,7 @@ export interface HostServices {
   send(ev: ClientEvent): void;
   registerSlashCommand(def: HostSlashCommand): Cleanup;
   registerComposerAction(action: HostComposerAction): Cleanup;
-  /** コマンド（ショートカット・パレット・スラッシュコマンド）を登録する（lib/commands.svelte.ts） */
+  /** コマンド（ホットキー・パレット・スラッシュコマンド）を登録する（lib/commands.svelte.ts） */
   registerCommand(cmd: HostCommand): Cleanup;
   /** パネルに view を開く */
   openPanel(pluginId: string, view: string, sessionId: string): void;

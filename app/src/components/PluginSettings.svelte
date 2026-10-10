@@ -1,10 +1,12 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import Settings from '@lucide/svelte/icons/settings';
+  import Upload from '@lucide/svelte/icons/upload';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import FolderSearch from '@lucide/svelte/icons/folder-search';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import Button from './ui/Button.svelte';
+  import IconButton from './ui/IconButton.svelte';
   import PublishButton from './PublishButton.svelte';
   import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
@@ -13,18 +15,33 @@
   import Toggle from './ui/Toggle.svelte';
   import { pluginHost, type PluginEntry } from '../lib/plugins/host.svelte';
   import { devFolderSupported } from '../lib/plugins/dev';
+  import { localHashes, updatePlugin } from '../lib/plugins/deliver';
+  import { hasPluginUpdate, pluginUpdateText } from '../lib/plugins/update';
   import { isTauri } from '../lib/config';
   import { ui } from '../lib/stores/ui.svelte';
   import type { PluginVisibility } from '../lib/protocol/PluginVisibility';
 
   // 設定の「プラグイン」セクション: 配布済み・開発中の一覧、開発用フォルダ（PC 版）、ファイルを選んで配布（ブラウザー版）
   // テーマの一覧は「外観」（ThemeSettings）。開発用フォルダとファイルを選んでの配布は、テーマにも使う。
-  // 歯車から開く、プラグインごとの画面（PluginSettingsPage）に、設定タブと「配布と削除」を置く
+  // 一覧の各行の右側は「アップデート（あるときだけ）・有効/無効・設定（歯車）」。歯車から開く、プラグインごとの画面（PluginSettingsPage）に、設定タブと「配布と削除」を置く
 
   const entries = $derived(pluginHost.entries);
   const devSupported = devFolderSupported();
   /** ブラウザー版（開発用）は、開発用フォルダの代わりにファイルを選んで配布する */
   const browser = !isTauri();
+
+  /** 開発中のものの中身のハッシュ（ID ごと）。配布済みと中身が同じか比べる。一覧が変わるたびに計算し直す */
+  let hashes = $state<Record<string, string | null>>({});
+  $effect(() => {
+    const list = entries;
+    let stale = false;
+    void localHashes(list).then((h) => {
+      if (!stale) hashes = h;
+    });
+    return () => {
+      stale = true;
+    };
+  });
 
   // svelte-ignore state_referenced_locally
   let devDir = $state(pluginHost.devDir);
@@ -58,6 +75,16 @@
       ui.toast(publishedText(info.name, info.version, pickVisibility));
     } catch (err) {
       ui.toast(`配布できませんでした: ${message(err)}`, 'error');
+    } finally {
+      busy = null;
+    }
+  }
+
+  /** 行の右のアップデートボタン。配布の最中は他の操作を止める */
+  async function doUpdate(e: PluginEntry) {
+    busy = e.id;
+    try {
+      await updatePlugin(e);
     } finally {
       busy = null;
     }
@@ -116,10 +143,22 @@
 
   {#each entries as e (e.id)}
     {@const m = e.manifest}
+    {@const canUpdate = hasPluginUpdate(e, hashes[e.id] ?? null)}
     <div class="plugin-settings-item" class:plugin-settings-item-off={!e.enabled}>
       <SettingRow name={nameOf(e)} description={m?.description || undefined} icon={e.icon} class="plugin-settings-row">
         {#snippet control()}
           <div class="plugin-settings-controls">
+            {#if canUpdate}
+              <IconButton
+                class="plugin-settings-update"
+                label="{nameOf(e)} のアップデートを配布"
+                title="アップデートを配布: {pluginUpdateText(e)}"
+                disabled={busy !== null || !!e.dev?.error}
+                onclick={() => doUpdate(e)}
+              >
+                <Upload size={16} />
+              </IconButton>
+            {/if}
             <Toggle checked={e.enabled} label="{nameOf(e)} を有効にする" onchange={(on) => pluginHost.setEnabled(e.id, on)} />
             {#if e.hasSettings || e.dev || e.server}
               <Button

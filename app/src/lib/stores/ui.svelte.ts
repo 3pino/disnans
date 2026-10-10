@@ -11,8 +11,8 @@ export type Panel =
   | { kind: 'plugin'; plugin: string; view: string; sessionId: string }
   | null;
 
-/** 設定の中のサブページ（一覧の代わりに出す）。入力欄のキー・ホットキー・＋メニュー・通話 */
-export type SettingsSubpage = 'enterKeys' | 'hotkeys' | 'composerMenu' | 'call';
+/** 設定の中のサブページ（一覧の代わりに出す）。入力欄のキー・ホットキー・ナビゲーションバー・＋メニュー・通話 */
+export type SettingsSubpage = 'enterKeys' | 'hotkeys' | 'navBar' | 'composerMenu' | 'call';
 
 /** トーストの先頭に出す、送った人のアイコン（AuthorAvatar で描く。ボットならプラグインのアイコン） */
 export type ToastAvatar = { author: AuthorView; user?: User; id: string };
@@ -57,6 +57,8 @@ class Ui {
   confirmReq = $state<ConfirmRequest | null>(null);
   /** インライン編集中のメッセージ */
   editing = $state<string | null>(null);
+  /** 一覧で名前と時刻を出しているメッセージの ID（画面全体で1つだけ。別のものを出すと前のものは消える） */
+  headerMessage = $state<string | null>(null);
   /** 相対時刻の表示を更新するための現在時刻 */
   now = $state(Date.now());
   private toastSeq = 0;

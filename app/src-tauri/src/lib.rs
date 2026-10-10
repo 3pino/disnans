@@ -80,10 +80,13 @@ pub fn run() {
             .plugin(tauri_plugin_notifier::init());
     }
 
-    // 通話（getUserMedia / WebRTC）: マイクだけ許可する。カメラ・画面共有などは既定のまま
+    // 通話（getUserMedia / getDisplayMedia）: マイクと画面の取得を許可する。カメラなどは既定のまま
+    // （画面の取得は、どの画面を共有するかを OS / WebView の選択画面で利用者が選ぶので、アプリ側の確認は省く）
     // （Windows は WebView2 の確認を省き、Linux は WebKitGTK の許可の要求に答え、Android は OS の許可へ進める）
     builder = builder.on_permission_request(|_webview, kind| match kind {
-        tauri::webview::PermissionKind::Microphone => tauri::webview::PermissionResponse::Allow,
+        tauri::webview::PermissionKind::Microphone | tauri::webview::PermissionKind::DisplayCapture => {
+            tauri::webview::PermissionResponse::Allow
+        }
         _ => tauri::webview::PermissionResponse::Default,
     });
 

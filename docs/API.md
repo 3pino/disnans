@@ -26,7 +26,7 @@
 | DELETE | `/api/me/avatar` | 自分で設定したアバターを消し、Tailscale のプロフィール画像に戻す | `User` |
 | GET | `/api/me/read` | 自分の既読の位置と未読数（メインチャットが先頭、続いてすべてのスレッド） | `ReadMarker[]` |
 | PUT | `/api/me/read` | 既読の位置を進める（body: `MarkRead`） | `ReadMarker` |
-| GET | `/api/me/prefs` | 自分の設定（ショートカット・Enter キーの動作など。まだなければ `{}`） | JSON オブジェクト |
+| GET | `/api/me/prefs` | 自分の設定（ホットキー・Enter キーの動作など。まだなければ `{}`） | JSON オブジェクト |
 | PUT | `/api/me/prefs` | 自分の設定をまるごと置き換える（body: JSON オブジェクト） | JSON オブジェクト |
 | GET | `/api/users` | メンバー一覧 | `User[]` |
 | GET | `/api/avatars/{id}` | 自分で設定したアバターの画像（WebP） | バイナリ |
@@ -62,7 +62,7 @@
 
 ### 設定（prefs）
 - ユーザーごとに1つの JSON オブジェクトを保存し、同じユーザーの端末どうしで共有する。中身はクライアントが決める（サーバーは形と大きさだけを確かめる）
-  - いまの中身: `hotkeys`（コマンド ID → `"Mod+Shift+D"` 形式のショートカット。空文字列は「なし」、項目がなければ既定）、`enterKeys`（`enter` / `shift` / `ctrl` / `alt` → `"send"` / `"newline"` / `"none"`）
+  - いまの中身: `hotkeys`（コマンド ID → `"Mod+Shift+D"` 形式のホットキーの配列。空の配列は「なし」、項目がなければ既定。古い1つだけの文字列も読める）、`slashNames`（コマンド ID → スラッシュコマンドの別名。項目がなければ元の名前）、`enterKeys`（`enter` / `shift` / `ctrl` / `alt` → `"send"` / `"newline"` / `"none"`）
 - オブジェクトでなければ `400 invalid_prefs`、JSON にして 64 KB を超えたら `413 prefs_too_large`
 - 保存したら、そのユーザーのすべての接続に `prefs.updated` を送る（保存した端末にも届く）
 

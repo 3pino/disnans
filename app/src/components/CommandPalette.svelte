@@ -4,7 +4,7 @@
   import TextInput from './ui/TextInput.svelte';
   import SuggestList from './ui/SuggestList.svelte';
   import Icon from './ui/Icon.svelte';
-  import { commandList, effectiveHotkey, filterCommands, type AppCommand } from '../lib/commands.svelte';
+  import { commandList, effectiveHotkeys, filterCommands, type AppCommand } from '../lib/commands.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
   import { formatHotkey } from '../lib/plugins/hotkey';
   import { prefs } from '../lib/stores/prefs.svelte';
@@ -61,11 +61,15 @@
       <div class="command-palette-results scroll" bind:this={results}>
         <SuggestList bind:this={list} bind:index class="command-palette-list" label="コマンド" {items} key={(c) => c.id} onpick={(c) => void pick(c)} {onclose}>
           {#snippet item(c)}
-            {@const hotkey = effectiveHotkey(c, prefs.hotkeys)}
+            {@const hotkeys = effectiveHotkeys(c, prefs.hotkeys)}
             <span class="command-palette-icon">{#if c.icon}<Icon icon={c.icon} size={18} />{/if}</span>
             <span class="suggest-list-item-title command-palette-name">{c.name}</span>
             {#if c.source}<span class="suggest-list-item-detail command-palette-source">{c.source}</span>{/if}
-            {#if hotkey}<kbd class="kbd command-palette-hotkey">{formatHotkey(hotkey)}</kbd>{/if}
+            {#if hotkeys.length > 0}
+              <span class="command-palette-hotkeys">
+                {#each hotkeys as hk (hk)}<kbd class="kbd command-palette-hotkey">{formatHotkey(hk)}</kbd>{/each}
+              </span>
+            {/if}
           {/snippet}
         </SuggestList>
       </div>
@@ -106,7 +110,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .command-palette-hotkey {
+  .command-palette-hotkeys {
+    display: flex;
+    gap: 4px;
     margin-left: auto;
     flex: none;
   }

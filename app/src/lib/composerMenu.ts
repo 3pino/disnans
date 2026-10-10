@@ -120,19 +120,37 @@ function visibleIds(available: ComposerMenuEntry[], prefs: ComposerMenuPrefs): s
   return composerMenuItems(available, prefs, { includeHidden: true }).map((x) => x.entry.id);
 }
 
-/** 項目を1つ上（dir -1）か下（dir 1）に動かす。端なら何もしない */
-export function moveComposerMenuEntry(
+/**
+ * 項目を、表示の並びの toIndex 番目に動かす（ドラッグ・上下キーの両方で使う）。
+ * toIndex は範囲に収めて扱う。動かさないときは同じ prefs を返す
+ */
+export function reorderComposerMenuEntry(
   prefs: ComposerMenuPrefs,
   available: ComposerMenuEntry[],
   id: string,
-  dir: -1 | 1,
+  toIndex: number,
 ): ComposerMenuPrefs {
   const ids = visibleIds(available, prefs);
-  const i = ids.indexOf(id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= ids.length) return prefs;
-  [ids[i], ids[j]] = [ids[j], ids[i]];
+  const from = ids.indexOf(id);
+  if (from < 0) return prefs;
+  const to = Math.max(0, Math.min(ids.length - 1, toIndex));
+  if (to === from) return prefs;
+  ids.splice(from, 1);
+  ids.splice(to, 0, id);
   return { ...prefs, order: orderWith(available, prefs, ids) };
+}
+
+/**
+ * ドラッグ中の差し込み位置（slot）。rows は並びの上から各行の上端と下端、y はポインターの縦位置。
+ * 行の中央より上にある行の数を返す（0 なら先頭の前、rows.length なら末尾の後ろ）
+ */
+export function dropSlot(rows: { top: number; bottom: number }[], y: number): number {
+  return rows.filter((r) => (r.top + r.bottom) / 2 < y).length;
+}
+
+/** 差し込み位置を、動かしたあとの並びの位置に直す（from の行を抜いた分だけ、後ろの位置が1つ詰まる） */
+export function slotToIndex(from: number, slot: number): number {
+  return slot > from ? slot - 1 : slot;
 }
 
 /** 出す・出さないを切り替える */

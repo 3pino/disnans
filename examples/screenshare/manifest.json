@@ -1,0 +1,9 @@
+{
+  "id": "screenshare",
+  "name": "画面共有",
+  "version": "0.1.0",
+  "description": "通話中に画面を共有する（映像もサーバー経由で、縮小した画像を送る）",
+  "author": "sanpino",
+  "minApiVersion": 8,
+  "icon": "monitor-up"
+}

@@ -39,8 +39,10 @@
   let separatorId = $state<string | null>(null);
 
   const all = $derived<Message[]>([...timeline.messages, ...timeline.pending]);
+  /** 返信を受けているメッセージの ID（その返信が一覧にあるもの） */
+  const repliedIds = $derived(new Set(all.map((m) => m.reply_to).filter((id): id is string => id !== null)));
 
-  type Row = { msg: Message; grouped: boolean; day: string | null };
+  type Row = { msg: Message; grouped: boolean; day: string | null; replied: boolean };
   const rows = $derived.by<Row[]>(() => {
     const out: Row[] = [];
     let prev: Message | null = null;
@@ -48,7 +50,7 @@
       const newDay = !prev || !sameDay(prev.created_at, m.created_at);
       // 区切り線のあとは、投稿者の名前から出し直す
       const grouped = isContinuation(prev, m, newDay) && m.id !== separatorId;
-      out.push({ msg: m, grouped, day: newDay ? dayLabel(m.created_at, ui.now) : null });
+      out.push({ msg: m, grouped, day: newDay ? dayLabel(m.created_at, ui.now) : null, replied: repliedIds.has(m.id) });
       prev = m;
     }
     return out;
@@ -226,7 +228,7 @@
       {#if r.msg.id === separatorId}
         <div class="message-list-unread-divider" role="separator"><span>ここから未読</span></div>
       {/if}
-      <MessageItem message={r.msg} grouped={r.grouped} {inThread} />
+      <MessageItem message={r.msg} grouped={r.grouped} replied={r.replied} {inThread} />
     {/each}
     <!-- 送信中の添付のアップロードの進み（送信中の仮表示は一番下に並ぶ） -->
     {#each timeline.pending as p (p.client_id)}

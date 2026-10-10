@@ -97,7 +97,7 @@ export function formatHotkey(text: string, mac = isMac()): string {
 const IGNORED_KEYS = new Set(['control', 'shift', 'alt', 'meta', 'os', 'altgraph', 'capslock', 'fn', 'fnlock', 'hyper', 'super', 'dead', 'process', 'unidentified']);
 
 /**
- * 押したキーを "Mod+Shift+D" 形式にする（ショートカットの記録に使う）。修飾キーだけのときは null。
+ * 押したキーを "Mod+Shift+D" 形式にする（ホットキーの記録に使う）。修飾キーだけのときは null。
  * 端末をまたいで使えるように、Ctrl（macOS では Cmd）は Mod にする
  */
 export function hotkeyFromEvent(e: KeyboardEvent, mac = isMac()): string | null {

@@ -37,7 +37,8 @@ class Updater {
     }
   }
 
-  async check(): Promise<void> {
+  /** quiet なら（定期の確認）、失敗しても画面にエラーを出さず、待機中に戻す */
+  async check(opts: { quiet?: boolean } = {}): Promise<void> {
     if (!this.supported) return;
     this.state = { kind: 'checking' };
     this.apply = null;
@@ -46,7 +47,7 @@ class Updater {
       if (isAndroid()) await this.checkAndroid();
       else await this.checkDesktop();
     } catch (e) {
-      this.state = { kind: 'error', message: errorMessage(e) };
+      this.state = opts.quiet ? { kind: 'idle' } : { kind: 'error', message: errorMessage(e) };
     }
   }
 

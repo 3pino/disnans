@@ -225,7 +225,7 @@ describe('examples/dice', () => {
     expect(handle.closed).toBe(true);
   });
 
-  it('「＋」メニューとコマンド（ショートカット・パレット）を登録する', async () => {
+  it('「＋」メニューとコマンド（ホットキー・パレット）を登録する', async () => {
     const env = setup({ data: { animate: false } });
     await start(env);
     const action = env.actions.get('plugin:dice:roll-2d6')!;
@@ -234,14 +234,14 @@ describe('examples/dice', () => {
     await action.run({ threadId: 't1' });
     expect((env.state.server!.state as DiceState).spec).toBe('2d6');
 
-    // コマンド: プラグイン ID を前に付けた ID で、既定のショートカット・スラッシュコマンド・アイコンを持つ
+    // コマンド: プラグイン ID を前に付けた ID で、既定のホットキー・スラッシュコマンド・アイコンを持つ
     const roll = env.commands.get('dice:roll')!;
     expect(roll.name).toBe('サイコロを用意する');
     expect(roll.defaultHotkey).toBe('Mod+Shift+D');
     expect(roll.slash).toBe('dice');
     expect(roll.icon).toBe('dice-cube');
     expect(roll.source).toBe('ダイス');
-    // ショートカット・パレットからは引数なし → 設定の既定のサイコロ。開いているスレッドに用意する
+    // ホットキー・パレットからは引数なし → 設定の既定のサイコロ。開いているスレッドに用意する
     await roll.run({ args: '', threadId: 't2', via: 'hotkey' });
     expect((env.state.server!.state as DiceState).spec).toBe('1d6');
     expect(env.openPanel).toHaveBeenLastCalledWith('dice', 'dice', 's1');

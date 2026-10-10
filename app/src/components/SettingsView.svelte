@@ -35,6 +35,7 @@
   import ThemeSettings from './ThemeSettings.svelte';
   import EnterKeySettings from './EnterKeySettings.svelte';
   import HotkeySettings from './HotkeySettings.svelte';
+  import NavBarSettings from './NavBarSettings.svelte';
   import ComposerMenuSettings from './ComposerMenuSettings.svelte';
   import CallSettings from './CallSettings.svelte';
   import DeviceKindSettings from './DeviceKindSettings.svelte';
@@ -73,10 +74,11 @@
     };
   });
 
-  // 「操作」の行。押すと、その設定のサブページを開く（ショートカットはデスクトップだけ）
+  // 「操作」の行。押すと、その設定のサブページを開く（ホットキーはデスクトップだけ）
   const operations: { value: SettingsSubpage; name: string }[] = [
     { value: 'enterKeys', name: '入力欄のキー' },
     ...(isAndroid() ? [] : [{ value: 'hotkeys' as const, name: 'ホットキー' }]),
+    { value: 'navBar', name: 'ナビゲーションバー' },
     { value: 'composerMenu', name: '＋メニュー' },
     { value: 'call', name: '通話' },
   ];
@@ -227,6 +229,8 @@
             <EnterKeySettings />
           {:else if ui.settingsSub === 'hotkeys'}
             <HotkeySettings />
+          {:else if ui.settingsSub === 'navBar'}
+            <NavBarSettings />
           {:else if ui.settingsSub === 'call'}
             <CallSettings />
           {:else}

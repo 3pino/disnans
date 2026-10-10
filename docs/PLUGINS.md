@@ -7,7 +7,7 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 | ダイスでできること | 使っている API |
 |---|---|
 | `/dice 2d6` でサイコロを用意する（補完に候補が出る）。Ctrl+Shift+D・コマンドパレットからも | `addCommand`（`icon`・`hotkey`・`slash`・`args`・`suggestArgs`） |
-| コマンドパレットの「20面のサイコロを用意する」 | `addCommand`（ショートカットもスラッシュコマンドもないもの） |
+| コマンドパレットの「20面のサイコロを用意する」 | `addCommand`（ホットキーもスラッシュコマンドもないもの） |
 | 「＋」メニューの「サイコロ（2d6）」 | `addComposerAction`（Lucide のアイコン `dices`） |
 | 立方体のサイコロのアイコン | `icon.svg`（プラグインのアイコン）、`addIcon`（`dice-cube`）、manifest の `icon`（予備） |
 | パネルの画面（「結果」「使い方」のタブ） | `registerView` / `openView`、`View.title` / `View.icon`、`panel.setTitle` / `setIcon`、`ui.navbar` / `ui.button` / `ui.icon` / `ui.divider` |
@@ -226,7 +226,7 @@ app/node_modules/.bin/tsc -p examples/dice
 | `this.app.me` / `this.app.users` / `this.app.user(id)` / `this.app.nameOf(id)` | 自分・メンバー |
 | `this.app.isMobile` / `this.app.theme` | モバイルか、現在のテーマ（`'light'` / `'dark'`） |
 | `this.manifest` | 自分の manifest |
-| `this.addCommand(cmd)` | コマンド。コマンドパレット・ショートカット（デスクトップ）・入力欄の `/コマンド`（`slash`）から実行できる |
+| `this.addCommand(cmd)` | コマンド。コマンドパレット・ホットキー（デスクトップ）・入力欄の `/コマンド`（`slash`）から実行できる |
 | `this.addSlashCommand(cmd)` | 入力欄の `/コマンド` だけ（API v1 からある書き方。新しく書くなら `addCommand` の `slash`） |
 | `this.addComposerAction(action)` | 入力欄の「＋」メニュー |
 | `this.registerView(type, factory)` / `this.openView(type, session)` | パネル（モバイルでは全画面）に出す画面 |
@@ -250,20 +250,20 @@ app/node_modules/.bin/tsc -p examples/dice
 | `disnans.call.*` | 本体の通話の状態の読み取りと、参加者どうしのデータの送受信、通話のバーのボタン（v8。→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)） |
 | `disnans.apiVersion` | ホスト API のバージョン（いまは 8） |
 
-### コマンド（パレット・ショートカット・スラッシュコマンド）
+### コマンド（パレット・ホットキー・スラッシュコマンド）
 
 `addCommand` で足したコマンドは、次の3つから実行できます。
 
 - **コマンドパレット**（デスクトップ。既定は Ctrl+P、macOS では Cmd+P）: 名前で絞り込んで Enter
-- **ショートカット**（デスクトップ。Android では効きません）: `hotkey` は既定のキーで、利用者は **設定 → ショートカット** で変えたり外したりできます
+- **ホットキー**（デスクトップ。Android では効きません）: `hotkey` は既定のキーで、利用者は **設定 → ホットキー** で変えたり外したりできます
 - **スラッシュコマンド**: `slash` を付けると、入力欄の `/名前` にもなります（補完に出ます）
 
 ```js
 this.addCommand({
-  id: 'roll',                    // プラグインの中で一意。利用者のショートカットの設定は `dice:roll` で保存される
+  id: 'roll',                    // プラグインの中で一意。利用者のホットキーの設定は `dice:roll` で保存される
   name: 'サイコロを用意する',      // パレット・設定の一覧に出る名前
   icon: 'dice-cube',             // アイコン（addIcon で登録したもの。省略するとプラグインのアイコン）
-  hotkey: 'Mod+Shift+D',         // 既定のショートカット。Mod は Ctrl（macOS では Cmd）
+  hotkey: 'Mod+Shift+D',         // 既定のホットキー。Mod は Ctrl（macOS では Cmd）
   slash: 'dice',                 // `/dice`。英小文字・数字・ハイフン。省略するとスラッシュコマンドにしない
   description: 'サイコロを振る',   // 補完に出る説明（省略すると name）
   args: '[個数]d[面数]',           // 引数の書き方のヒント
@@ -272,26 +272,26 @@ this.addCommand({
     const q = input.trim().toLowerCase();
     return PRESETS.filter((p) => p.value.startsWith(q)); // [{ value: '2d6', description: 'サイコロ2個' }, ...]
   },
-  // ctx.args: `/dice 2d6` なら '2d6'（前後の空白は除く）。ショートカット・パレットからは ''
-  // ctx.threadId: スラッシュコマンドは入力したスレッド、ショートカット・パレットは開いているスレッド（なければ null）
+  // ctx.args: `/dice 2d6` なら '2d6'（前後の空白は除く）。ホットキー・パレットからは ''
+  // ctx.threadId: スラッシュコマンドは入力したスレッド、ホットキー・パレットは開いているスレッド（なければ null）
   // ctx.via: 'slash' / 'hotkey' / 'palette'
   run: (ctx) => this.prepare(ctx.args, ctx.threadId),
 });
 ```
 
 ダイスの `prepare` は、`args` が空なら設定の「既定のサイコロ」を使います。
-ショートカットもスラッシュコマンドもないコマンド（ダイスの「20面のサイコロを用意する」）は、パレットから実行します（利用者は設定でショートカットを付けられます）。
+ホットキーもスラッシュコマンドもないコマンド（ダイスの「20面のサイコロを用意する」）は、パレットから実行します（利用者は設定でホットキーを付けられます）。
 
 - `/dice 2d6` のように送信すると、メッセージとしては送らずに `run` を呼びます
 - 入力の誤りは `disnans.ui.toast('…', 'error')` で知らせます。`run` が例外を投げた（reject した）ときも、本体がエラーのトーストを出します
 - 候補（`Suggestion`）は `{ value, label?, description? }`。`value` が入力欄に入ります
 - `hotkey` が読めない・`slash` の名前が正しくないときは、その部分を外して登録し、設定のプラグイン一覧にエラーを出します
-- ショートカットは、入力欄で文字を打っている間は Ctrl・Cmd・Alt を含むもの（と F1〜F12）だけが効きます
-- 本体のコマンド（設定を開く・チャットを開く・コマンドパレットなど）と同じキーにすると、設定のショートカットの一覧に警告が出ます。先に登録されたもの（本体のもの）が優先されます
+- ホットキーは、入力欄で文字を打っている間は Ctrl・Cmd・Alt を含むもの（と F1〜F12）だけが効きます
+- 本体のコマンド（設定を開く・チャットを開く・コマンドパレットなど）と同じキーにすると、設定のホットキーの一覧に警告が出ます。先に登録されたもの（本体のもの）が優先されます
 
 #### addSlashCommand（API v1 の書き方）
 
-スラッシュコマンドだけを足す、v1 からある書き方です。いまも使えます（パレット・ショートカットには出ません）。
+スラッシュコマンドだけを足す、v1 からある書き方です。いまも使えます（パレット・ホットキーには出ません）。
 
 ```js
 this.addSlashCommand({
@@ -599,7 +599,7 @@ displaySettings(containerEl) {
   const { ui } = disnans;
   ui.setting(containerEl, {
     name: '既定のサイコロ',
-    description: '/dice だけで送ったときと、ショートカットで用意するサイコロ',
+    description: '/dice だけで送ったときと、ホットキーで用意するサイコロ',
     icon: 'dice-cube',
     control: ui.segmented({
       label: '既定のサイコロ',
@@ -708,6 +708,12 @@ async function share() {
 }
 this.register(call.onEvent('screen', ({ user, payload }) => { /* <img> に payload.img を出す */ }));
 ```
+
+実例は **画面共有**（[`examples/screenshare/`](../examples/screenshare/)）です。通話のバーのボタンから `getDisplayMedia` で取った画面を、縮小した JPEG にして `call.emit` で送ります。
+
+- 送る側: 1 回の payload の上限（64 KB）を超えるフレームは分割して送り（`{ f: フレーム番号, i, n, d: base64 の一部 }`）、受け手が組み立てます（欠けたフレームは捨てる）。サーバーの流量制限（容量 400・毎秒 300 回復・1 回の重さ = 1 + payload の KB）に収まるよう、直前のフレームの大きさから次の間隔を決め、大きすぎれば画質→解像度の順に下げ、画面が変わらなければ送りません。既定（標準）は長辺 1280px・3fps まで・映像の予算は毎秒 100 KB ほどです（音声が毎秒 40 ほど使うので、いちばん高い設定でも 160 KB まで）
+- 見る側: プラグインが `document.body` に全画面のオーバーレイを足して表示します（本体に専用の API はありません。ダイアログ・トーストより下、Esc で閉じる）。共有者が複数ならタブで切り替えます
+- `getDisplayMedia` が無い環境（Android の WebView、Linux の WebKitGTK など）では共有ボタンを出さず、見るだけです
 
 本体の通話のしくみ（参加者の管理と kick はサーバー、音声とデータもサーバー経由）は [`SPEC.md`](../SPEC.md) の 9.11、サーバーの経路は [`API.md`](API.md) の WebSocket を参照してください。
 マイクを使うには**アプリ版（Tauri）が必要**です（WebView の `getUserMedia` は安全なコンテキストでしか動かないため、`http://` で開いたブラウザー版では使えません）。

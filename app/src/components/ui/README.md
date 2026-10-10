@@ -17,6 +17,7 @@
 | `NavBar` | `.nav-bar` / `.nav-bar-item`（`-selected`） / `-item-icon` / `-item-badge` / `-item-label` | `<NavBar items={[{ id, label, icon, badge? }]} selected={...} onselect={...} />`。本体の下のナビゲーション（`components/NavBar.svelte`）が使う |
 | `Divider` | `.divider` | `<Divider />`。横の区切り線（`<hr>`） |
 | `Toggle` | `.toggle` / `.toggle-thumb`（`.toggle-on`） | `<Toggle bind:checked label="有効" onchange={...} />`。`<button role="switch">` |
+| `Slider` | `.slider` / `.slider-input` / `.slider-value` | `<Slider label="マイクの音量" min={0} max={200} step={5} value={v} format={(v) => `${v}%`} oninput={...} onchange={...} />`。範囲のスライダー。`oninput` は動かしている間、`onchange` は離したとき。`disabled` も使える |
 | `TextInput` | `.input` | `<TextInput bind:value placeholder="..." />`。ほかの属性はそのまま `<input>` に渡る |
 | `Section` | `.setting-section` / `.setting-section-divider` / `.setting-section-title` | `<Section title="通知">...</Section>`。区切り線（Divider。前にもセクションがあるときだけ出る） + 見出し。中身の縦の間隔は 10px |
 | `SettingRow` | `.setting-row` / `-icon` / `-info` / `-name` / `-description` / `-control` | `<SettingRow name="..." description="..." icon="...">{#snippet control()}<Toggle ... />{/snippet}</SettingRow>`。`icon` は任意。`onclick` を渡すと行全体が ghost ボタンになる（`.setting-row-button`。読み上げの名前は `name`、`control` は飾りだけにする） |

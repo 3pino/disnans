@@ -43,6 +43,8 @@
   // svelte-ignore state_referenced_locally
   let text = $state(bodyToDraft(initial, client.users, mentionMap));
   let ta: HTMLTextAreaElement | undefined = $state();
+  /** 高さを測るための、画面に出さない写し（resize で使う） */
+  let mirror: HTMLDivElement | undefined;
   let suggest = $state<(Suggestion & { index: number }) | null>(null);
   let suggestList: SuggestList<SuggestItem> | undefined = $state();
 
@@ -85,10 +87,57 @@
     ta?.focus();
   }
 
+  /** 写しに写す、入力欄の字体と余白のスタイル（折り返しを入力欄と同じに数えるため） */
+  const MIRROR_PROPS = [
+    'font-family',
+    'font-size',
+    'font-weight',
+    'font-style',
+    'font-variant',
+    'letter-spacing',
+    'word-spacing',
+    'line-height',
+    'tab-size',
+    'padding-top',
+    'padding-right',
+    'padding-bottom',
+    'padding-left',
+    'box-sizing',
+  ];
+
+  /**
+   * 入力欄の高さを、中身に合わせる（上限は maxHeight と CSS の max-height のうち小さいほう）。
+   * 高さを測るのに入力欄を `height: auto` に縮めると、入力欄と一覧の高さが一瞬変わり、
+   * 一覧の位置や入力欄の内側のスクロールが飛んでしまうので、測るのは隠れた写し（mirror）でする。
+   * 上限を超えたときは、キャレットの行が入力欄の中で見えるように内側のスクロールを合わせる
+   */
   function resize() {
-    if (!ta) return;
-    ta.style.height = 'auto';
-    ta.style.height = Math.min(ta.scrollHeight, maxHeight) + 'px';
+    if (!ta || !mirror) return;
+    const cs = getComputedStyle(ta);
+    for (const p of MIRROR_PROPS) mirror.style.setProperty(p, cs.getPropertyValue(p));
+    mirror.style.width = `${ta.clientWidth}px`;
+    const cssMax = parseFloat(cs.maxHeight);
+    const limit = Number.isFinite(cssMax) ? Math.min(maxHeight, cssMax) : maxHeight;
+
+    // キャレットの位置の行を取るために、キャレットの前後を分けて写す
+    const pos = ta.selectionStart ?? text.length;
+    const caret = document.createElement('span');
+    caret.textContent = '​';
+    mirror.replaceChildren(document.createTextNode(text.slice(0, pos)), caret, document.createTextNode(text.slice(pos) + '​'));
+
+    const full = mirror.scrollHeight;
+    ta.style.height = Math.min(full, limit) + 'px';
+
+    // 内側でスクロールしているときは、フォーカスがあるあいだだけ、キャレットの行を見える位置に保つ
+    if (full > limit && document.activeElement === ta) {
+      const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+      const padTop = parseFloat(cs.paddingTop) || 0;
+      const padBottom = parseFloat(cs.paddingBottom) || 0;
+      // 写しの上端が、入力欄の上端と同じ座標（offsetTop は写しの内側の位置）
+      const top = caret.offsetTop;
+      if (top < ta.scrollTop + padTop) ta.scrollTop = top - padTop;
+      else if (top + lineHeight > ta.scrollTop + ta.clientHeight - padBottom) ta.scrollTop = top + lineHeight - ta.clientHeight + padBottom;
+    }
   }
 
   $effect(() => {
@@ -251,6 +300,7 @@
     }}
     enterkeyhint={prefs.enterKeys.enter === 'send' ? 'send' : 'enter'}
   ></textarea>
+  <div class="message-input-mirror" bind:this={mirror} aria-hidden="true"></div>
 </div>
 
 <style>
@@ -271,6 +321,18 @@
     line-height: 1.5;
     max-height: 40vh;
     scrollbar-width: thin;
+  }
+  /* 高さを測るための写し。高さ 0・はみ出し隠しで、見えず、レイアウトにも影響しない */
+  .message-input-mirror {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
   }
   .message-input-textarea::placeholder {
     color: var(--text-muted);

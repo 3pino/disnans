@@ -40,6 +40,8 @@
     flex: none;
     object-fit: cover;
     display: block;
+    -webkit-user-select: none;
+    user-select: none;
   }
   .avatar-initials {
     display: grid;

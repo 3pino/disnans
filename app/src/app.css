@@ -315,7 +315,7 @@ a {
   line-height: 1;
 }
 
-/* キーボードのキー（ショートカットの表示） */
+/* キーボードのキー（ホットキーの表示） */
 .kbd {
   display: inline-block;
   padding: 1px 6px;
@@ -390,6 +390,70 @@ a {
 .toggle:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* 範囲のスライダー。<div class="slider"><input type="range" class="slider-input"><span class="slider-value">50%</span></div>（ui/Slider.svelte） */
+.slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.slider-input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 140px;
+  max-width: 40vw;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.slider-input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 2px oklch(0.08 0.01 248 / 0.3);
+}
+.slider-input::-moz-range-track {
+  height: 4px;
+  border: none;
+  border-radius: 2px;
+  background: var(--border);
+}
+.slider-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 2px oklch(0.08 0.01 248 / 0.3);
+}
+.slider-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.slider-input:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.slider-value {
+  min-width: 3.5em;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 横に並んだ選択肢から1つを選ぶボタン（テーマの切り替えなど）。

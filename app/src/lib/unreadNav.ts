@@ -3,7 +3,7 @@ import { ui } from './stores/ui.svelte';
 import { MAIN_KEY, nextUnreadKey, requestJump, scopeKey, unread } from './stores/unread.svelte';
 
 /**
- * 未読への移動（コマンド・ショートカットから呼ぶ）。
+ * 未読への移動（コマンド・ホットキーから呼ぶ）。
  *
  * 場所の順番は、メインチャット → スレッド一覧の順（最後に動きがあった順）。
  */

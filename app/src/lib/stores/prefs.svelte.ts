@@ -1,7 +1,8 @@
 import { api } from '../api';
 import { getItem, setItem } from '../storage';
 import { normalizeEnterKeys, type EnterAction, type EnterCombo, type EnterKeyPrefs } from '../enterKeys';
-import { normalizeHotkeys } from '../commands.svelte';
+import { normalizeHotkeys, type HotkeyOverrides } from '../commands.svelte';
+import { normalizeSlashAliases, setSlashAlias, type SlashAliases } from '../slashAlias';
 import { normalizeComposerMenu, type ComposerMenuPrefs } from '../composerMenu';
 import { normalizeMessageLayout, type MessageLayout } from '../messageLayout';
 import { client } from './client.svelte';
@@ -26,7 +27,7 @@ function loadCache(): Raw {
 }
 
 /**
- * ユーザーごとの設定（ショートカット・Enter キーの動作）。サーバー（/api/me/prefs）に置き、同じユーザーの端末で共有する。
+ * ユーザーごとの設定（ホットキー・スラッシュコマンドの別名・Enter キーの動作など）。サーバー（/api/me/prefs）に置き、同じユーザーの端末で共有する。
  * 中身は JSON のオブジェクトで、知らない項目（新しい版が足したものなど）もそのまま残して保存する
  */
 class Prefs {
@@ -35,8 +36,10 @@ class Prefs {
   private saving = 0;
   private started = false;
 
-  /** コマンド ID → ショートカット（空文字列は「なし」） */
-  readonly hotkeys = $derived(normalizeHotkeys(this.raw.hotkeys));
+  /** コマンド ID → ホットキーの一覧（空の一覧は「なし」。項目がなければ既定）。古い1つだけの形も読む */
+  readonly hotkeys = $derived<HotkeyOverrides>(normalizeHotkeys(this.raw.hotkeys));
+  /** コマンド ID → スラッシュコマンドの別名（項目がなければ元の名前） */
+  readonly slashNames = $derived<SlashAliases>(normalizeSlashAliases(this.raw.slashNames));
   readonly enterKeys = $derived<EnterKeyPrefs>(normalizeEnterKeys(this.raw.enterKeys));
   /** 入力欄の「＋」メニューの並び順と出す項目 */
   readonly composerMenu = $derived(normalizeComposerMenu(this.raw.composerMenu));
@@ -85,12 +88,17 @@ class Prefs {
     }
   }
 
-  /** ショートカットを設定する。null で既定に戻す、空文字列で「なし」 */
-  setHotkey(commandId: string, hotkey: string | null): void {
+  /** ホットキーの一覧を設定する。null で既定に戻す、空の一覧で「なし」 */
+  setHotkeys(commandId: string, hotkeys: string[] | null): void {
     const next = { ...this.hotkeys };
-    if (hotkey === null) delete next[commandId];
-    else next[commandId] = hotkey;
+    if (hotkeys === null) delete next[commandId];
+    else next[commandId] = hotkeys;
     void this.update('hotkeys', next);
+  }
+
+  /** スラッシュコマンドの別名を付ける（null で元の名前に戻す） */
+  setSlashAlias(commandId: string, alias: string | null): void {
+    void this.update('slashNames', setSlashAlias(this.slashNames, commandId, alias));
   }
 
   setEnterAction(combo: EnterCombo, action: EnterAction): void {

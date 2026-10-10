@@ -10,7 +10,16 @@ import SunMoon from '@lucide/svelte/icons/sun-moon';
 import ChevronsDown from '@lucide/svelte/icons/chevrons-down';
 import ChevronsUp from '@lucide/svelte/icons/chevrons-up';
 import BookmarkCheck from '@lucide/svelte/icons/bookmark-check';
-import { APP_COMMAND_PREFIX, commandForKey, commandList, registerCommand, runCommand, type AppCommand, type CommandVia } from './commands.svelte';
+import {
+  APP_COMMAND_PREFIX,
+  commandForKey,
+  commandList,
+  registerCommand,
+  runCommand,
+  setSlashAliasSource,
+  type AppCommand,
+  type CommandVia,
+} from './commands.svelte';
 import { isAndroid } from './config';
 import { prefs } from './stores/prefs.svelte';
 import { ui } from './stores/ui.svelte';
@@ -21,24 +30,26 @@ import { jumpToFirstUnread, jumpToNextUnread, jumpToPrevUnread } from './unreadN
 /** コマンドパレットを開くコマンド（設定の説明にも使う） */
 export const PALETTE_COMMAND_ID = `${APP_COMMAND_PREFIX}command-palette`;
 
-/** コマンドパレット・ショートカットの記録の状態 */
+/** コマンドパレット・ホットキーの記録の状態 */
 class CommandHost {
   /** コマンドパレットを開いているか */
   paletteOpen = $state(false);
-  /** 設定でショートカットを記録している間は、ショートカットを効かせない */
+  /** 設定でホットキーを記録している間は、ホットキーを効かせない */
   recording = $state(false);
   private started = false;
 
-  /** パレットとショートカットを使えるか（Android では使わない） */
+  /** パレットとホットキーを使えるか（Android では使わない） */
   get available(): boolean {
     return !isAndroid();
   }
 
-  /** 接続を始めたあとに1回呼ぶ。設定の読み込み・本体のコマンドの登録・ショートカットの受け付けを始める */
+  /** 接続を始めたあとに1回呼ぶ。設定の読み込み・本体のコマンドの登録・ホットキーの受け付けを始める */
   start(): void {
     if (this.started) return;
     this.started = true;
     prefs.start();
+    // スラッシュコマンドの別名は設定から引く（コマンドの登録より前に決めておく）
+    setSlashAliasSource(() => prefs.slashNames);
     for (const c of builtinCommands(this)) registerCommand(c);
     // 通話: サーバーのイベントを受け始め、コマンドと「＋」メニューの項目を登録する
     startCall();
@@ -94,7 +105,8 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       id: PALETTE_COMMAND_ID,
       name: 'コマンドパレットを開く',
       icon: Command,
-      defaultHotkey: 'Mod+P',
+      // Ctrl+P（macOS では Cmd+P）に加えて F2 でも開ける
+      defaultHotkey: ['Mod+P', 'F2'],
       run: () => {
         if (host.available) host.paletteOpen = !host.paletteOpen;
       },

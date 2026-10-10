@@ -26,8 +26,8 @@
 {#if preview && author}
   <button type="button" class="reply-quote" title="元のメッセージへ移動" onclick={open}>
     <CornerUpLeft size={12} class="reply-quote-mark" />
+    <!-- 返信先の名前は出さず、アイコンと本文の冒頭だけを出す -->
     <AuthorAvatar {author} user={client.user(preview.author_id)} id={preview.author_id} size={16} />
-    <span class="reply-quote-name">{author.name}</span>
     <span class="reply-quote-text">{text}</span>
   </button>
 {:else}
@@ -62,11 +62,6 @@
   }
   .reply-quote :global(.reply-quote-mark) {
     flex: none;
-  }
-  .reply-quote-name {
-    flex: none;
-    font-weight: 600;
-    color: var(--text);
   }
   .reply-quote-text {
     min-width: 0;

@@ -16,7 +16,7 @@
   const panelOpen = $derived(ui.panel !== null);
   const showChat = $derived(ui.isMobile ? ui.tab === 'chat' : ui.tab !== 'settings');
 
-  // 設定（ショートカットなど）の読み込み・本体のコマンドの登録・ショートカットの受け付けを始める
+  // 設定（ホットキーなど）の読み込み・本体のコマンドの登録・ホットキーの受け付けを始める
   onMount(() => commandHost.start());
   // モバイルではパネルがチャットを覆う
   const chatVisible = $derived(showChat && !(ui.isMobile && panelOpen));

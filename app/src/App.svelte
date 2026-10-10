@@ -15,6 +15,7 @@
   import { pluginHost } from './lib/plugins/host.svelte';
   import { closeTopLayer, isBackKey, startBackNav } from './lib/backNav';
   import { startDropGuard } from './lib/dropGuard';
+  import { startUpdateWatch } from './lib/updateWatch';
 
   let setup = $state(needsServerSetup());
 
@@ -56,6 +57,9 @@
 
   // ファイルをどこに落としても、WebView がファイルへ移動しない（受け取りは ChatView が行う）
   onMount(() => startDropGuard());
+
+  // アプリのアップデートを裏で確認し、新しい版があれば知らせる（Tauri 版だけ）
+  onMount(() => startUpdateWatch());
 
   // 配布版でも Ctrl+Shift+I で開発者ツールを開く（デスクトップのみ）
   onMount(() => {

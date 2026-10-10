@@ -273,20 +273,20 @@ export class PluginRuntime {
     const id = this.id;
     let hotkey = cmd.hotkey || undefined;
     if (hotkey && !parseHotkey(hotkey)) {
-      // ショートカットなしで登録する（利用者が設定で付けられる）
-      this.addError(`コマンド「${cmd.name}」のショートカット「${hotkey}」を読めません`);
+      // ホットキーなしで登録する（利用者が設定で付けられる）
+      this.addError(`コマンド「${cmd.name}」のホットキー「${hotkey}」を読めません`);
       hotkey = undefined;
     }
     let slash = cmd.slash || undefined;
     if (slash && !SLASH_NAME_RE.test(slash)) {
-      // スラッシュコマンドにはせずに登録する（パレット・ショートカットからは使える）
+      // スラッシュコマンドにはせずに登録する（パレット・ホットキーからは使える）
       this.addError(`/${slash} を登録できません: コマンド名には英小文字・数字・ハイフンだけを使えます`);
       slash = undefined;
     }
     let off: Cleanup;
     try {
       off = services.registerCommand({
-        // ショートカットの設定はこの ID で保存する。ほかのプラグインとぶつからないように、プラグイン ID を前に付ける
+        // ホットキーの設定はこの ID で保存する。ほかのプラグインとぶつからないように、プラグイン ID を前に付ける
         id: `${id}:${cmd.id}`,
         name: cmd.name,
         // 省くとプラグインのアイコン（icon.svg はあとから読めることがあるので、そのつど引く）
@@ -308,7 +308,7 @@ export class PluginRuntime {
             }
           : undefined,
         source: this.manifest.name,
-        // run の例外は本体（入力欄・ショートカット・パレット）がトーストで知らせる
+        // run の例外は本体（入力欄・ホットキー・パレット）がトーストで知らせる
         run: ({ args, threadId, via }) => cmd.run({ args: args.trim(), threadId, via }),
       });
     } catch (e) {

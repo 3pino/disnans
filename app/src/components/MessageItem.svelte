@@ -40,9 +40,12 @@
     message,
     grouped = false,
     inThread = false,
+    replied = false,
   }: {
     message: Message | PendingMessage;
     grouped?: boolean;
+    /** このメッセージへの返信が一覧にあるか（一覧の中でまとめて判定して渡す） */
+    replied?: boolean;
     /** スレッドのパネルの中（起点のメッセージを含む）。ここからはスレッドを作れない */
     inThread?: boolean;
   } = $props();
@@ -78,8 +81,8 @@
   /** 左へのスワイプで返信できるか（メニューの「返信」と同じ） */
   const canSwipe = $derived(canReply && !editing);
 
-  /** 一覧のとき、名前と時刻（ヘッダー）を出しているか。アイコンを押すと出し入れする（既定は隠す） */
-  let headerShown = $state(false);
+  /** 一覧のとき、名前と時刻（ヘッダー）を出しているか。アイコンを押すと出し入れする（既定は隠す）。画面全体で1つだけ（ui.headerMessage） */
+  const headerShown = $derived(ui.headerMessage === message.id);
   /** アイコンで名前と時刻を出し入れできるか（一覧のグループ先頭の発言だけ。吹き出しは対象外） */
   const headerToggle = $derived(!bubble && !grouped);
 
@@ -99,7 +102,8 @@
   const armed = $derived(swipeTriggered(dragDx));
 
   function toggleHeader() {
-    headerShown = !headerShown;
+    // 出していたものを消して、このメッセージのヘッダーだけを出す（同じものなら消す）
+    ui.headerMessage = headerShown ? null : message.id;
   }
 
   function onGutterKeydown(e: KeyboardEvent) {
@@ -377,6 +381,11 @@
         {/if}
       </div>
 
+      {#if replied && !message.thread && !pending}
+        <!-- 返信を受けているが、スレッドはないメッセージ。目印に小さなアイコンだけ出す -->
+        <span class="message-replied" role="img" aria-label="返信があります" title="返信があります"><MessagesSquare size={13} /></span>
+      {/if}
+
       {#if bubble && !isMine}{@render stamp()}{/if}
     </div>
   </div>
@@ -552,6 +561,28 @@
   .message-author {
     font-weight: 650;
     line-height: 1.3;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  /* 返信を受けたメッセージの目印（スレッドはないとき）。吹き出しでは右、一覧では本文の右端に出す */
+  .message-replied {
+    flex: none;
+    align-self: flex-end;
+    display: inline-grid;
+    place-items: center;
+    padding: 2px;
+    color: var(--text-muted);
+    opacity: 0.8;
+    line-height: 0;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .message-item[data-layout='list'] .message-replied {
+    display: flex;
+    justify-content: flex-end;
+    align-self: auto;
+    width: 100%;
+    padding: 2px 0 0;
   }
   /* ボットの発言の印。目立たせず、灰色の小さな札にする */
   .message-bot-badge {
@@ -649,6 +680,8 @@
   .message-edited {
     font-size: 11px;
     color: var(--text-muted);
+    -webkit-user-select: none;
+    user-select: none;
   }
   .message-editor {
     display: flex;

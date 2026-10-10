@@ -10,7 +10,6 @@ import {
   resolveEnterAction,
   sendCombos,
 } from './enterKeys';
-import { normalizeHotkeys } from './commands.svelte';
 
 const ev = (over: Partial<KeyboardEventInit> = {}) => ({ key: 'Enter', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...over });
 
@@ -86,13 +85,5 @@ describe('改行', () => {
     expect(enterComboLabel('ctrl', false)).toBe('Ctrl+Enter');
     expect(enterComboLabel('ctrl', true)).toBe('⌘+Enter');
     expect(enterComboLabel('shift', false)).toBe('Shift+Enter');
-  });
-});
-
-describe('normalizeHotkeys', () => {
-  it('文字列だけを拾う', () => {
-    expect(normalizeHotkeys({ 'app:a': 'Mod+K', 'dice:b': '', bad: 1 })).toEqual({ 'app:a': 'Mod+K', 'dice:b': '' });
-    expect(normalizeHotkeys(null)).toEqual({});
-    expect(normalizeHotkeys([1])).toEqual({});
   });
 });

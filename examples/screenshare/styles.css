@@ -1,0 +1,74 @@
+/*
+ * 画面共有の見た目。本体の CSS 変数（app/src/app.css の :root）を使うので、ライト・ダークどちらでも本体に合う。
+ * クラスにはすべてプラグイン ID の接頭辞（screenshare-）を付ける
+ */
+
+/* 画面全体の閲覧表示。本体のダイアログ（80）とトースト（90）より下に置く */
+.screenshare-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: flex;
+  flex-direction: column;
+  background: oklch(0.1 0.01 248 / 0.96);
+  color: var(--text);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.screenshare-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.screenshare-tabs {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.screenshare-tab-selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.screenshare-stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+}
+
+/* 画面に収める */
+.screenshare-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* 原寸（はみ出した分はスクロール） */
+.screenshare-stage-actual {
+  place-items: start;
+}
+.screenshare-stage-actual .screenshare-img {
+  max-width: none;
+  max-height: none;
+}
+
+.screenshare-wait {
+  color: var(--text-muted);
+}
+
+/* ステータス欄の項目 */
+.screenshare-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}

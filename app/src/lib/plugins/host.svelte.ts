@@ -244,7 +244,7 @@ class PluginHost {
     });
     (window as unknown as { disnans: Disnans.Host }).disnans = host;
 
-    // ショートカット（addCommand）は lib/commandHost.svelte.ts がまとめて受け付ける
+    // ホットキー（addCommand）は lib/commandHost.svelte.ts がまとめて受け付ける
     client.subscribe((ev) => this.onEvent(ev));
     // すでに hello を受け取っていたら（HMR など）そのまま始める
     if (client.ready) this.onHello();
