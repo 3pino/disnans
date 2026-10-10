@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 添付するリリースのタグ（例: v0.1.8）
+        description: "添付するリリースのタグ（例: v0.1.8）"
         required: true
 
 permissions:
