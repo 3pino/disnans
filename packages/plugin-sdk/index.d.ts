@@ -1,5 +1,5 @@
 /**
- * disnans プラグインの型定義（ホスト API バージョン 3）。
+ * disnans プラグインの型定義（ホスト API バージョン 6）。
  *
  * プラグインの main.js は ES モジュールで、`Plugin` を継承したクラスを `export default` する。
  * ホスト API はグローバルの `disnans` から取る（`import` は使わない）。
@@ -56,7 +56,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 5） */
+      /** ホスト API のバージョン（いまは 6） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -139,6 +139,8 @@ declare global {
       addCommand(cmd: Command): void;
       /** 設定画面にプラグインの欄を出す */
       addSettingTab(tab: SettingTab): void;
+      /** このプラグインの設定画面を開く（API v6）。設定タブに切り替える */
+      openSettings(): void;
       /**
        * アイコンを登録する。以後、アイコン名を受け取るところ（ui.icon、ComposerAction.icon など）で使える。
        * svg は `<svg>` まるごとか、中身だけ（`<path d="..."/>` など）。viewBox は 24x24 を想定し、
@@ -189,9 +191,11 @@ declare global {
       /**
        * このプラグインの名前（`name` で変えられる）のボットとして、チャットにメッセージを投稿する（API v5）。
        * 投稿した人（author）は自分のままで、メッセージに bot の印が付く。`threadId` を省くとメインチャット。
-       * 本文は普通のメッセージと同じ制限（空でなく 10,000 文字まで）。`name` は前後の空白を除いて 40 文字まで
+       * 本文は普通のメッセージと同じ制限（空でなく 10,000 文字まで）。`name` は前後の空白を除いて 40 文字まで。
+       * `notify: true` なら、メンションされた人・スレッドの参加者に加えて、投稿した本人にも通知する（API v6）。
+       * 通知の文言はボットの名前で作る。省略（`false`）すると通知は送らない
        */
-      postMessage(opts: { body: string; threadId?: string | null; name?: string }): Promise<void>;
+      postMessage(opts: { body: string; threadId?: string | null; name?: string; notify?: boolean }): Promise<void>;
 
       /**
        * このプラグインの一時的なイベントを、いまつながっているほかの人（と自分の別の端末）に送る（API v3）。

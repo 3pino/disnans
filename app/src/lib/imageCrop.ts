@@ -1,7 +1,7 @@
 /**
  * 送る前の画像の切り抜き（トリミング・SPEC 3.1 ファイル共有）。
  *
- * 切り抜く範囲（CropRect）は元の画像の画素で持つ。ダイアログの表示との変換・範囲の計算・比率の計算は純粋関数
+ * 切り抜く範囲（CropRect）は元の画像の画素で持つ。ダイアログの表示との変換・範囲の計算は純粋関数
  * （imageCrop.test.ts で試す）。canvas を使うのは readImageInfo と prepareUpload だけ。切り抜きは送信するときに行う。
  * 向きは createImageBitmap の imageOrientation: 'from-image' で直してから描く（EXIF の回転を反映する）。
  */
@@ -13,38 +13,6 @@ export type ImageSize = { width: number; height: number };
 
 /** 切り抜きの一番小さい辺（元の画像の画素）。画像がこれより小さいときは画像の辺まで */
 export const MIN_CROP = 32;
-
-/** 比率の選択肢 */
-export type AspectId = 'free' | 'square' | 'r4x3' | 'r16x9' | 'original';
-
-export const ASPECT_CHOICES: readonly { id: AspectId; label: string }[] = [
-  { id: 'free', label: '自由' },
-  { id: 'square', label: '1:1' },
-  { id: 'r4x3', label: '4:3' },
-  { id: 'r16x9', label: '16:9' },
-  { id: 'original', label: '元の比率' },
-];
-
-/** 4:3 と 16:9 は、縦にもできる（1:1 と元の比率は向きを選ばない） */
-export function isOrientable(id: AspectId): boolean {
-  return id === 'r4x3' || id === 'r16x9';
-}
-
-/** 比（幅 / 高さ）。自由なら null。portrait のときは縦長にする */
-export function aspectRatio(id: AspectId, img: ImageSize, portrait: boolean): number | null {
-  switch (id) {
-    case 'free':
-      return null;
-    case 'square':
-      return 1;
-    case 'r4x3':
-      return portrait ? 3 / 4 : 4 / 3;
-    case 'r16x9':
-      return portrait ? 9 / 16 : 16 / 9;
-    case 'original':
-      return img.width / img.height;
-  }
-}
 
 /** 画像全体の範囲 */
 export function fullRect(img: ImageSize): CropRect {
@@ -63,18 +31,6 @@ export function isFullRect(r: CropRect, img: ImageSize): boolean {
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
-}
-
-/** 比率を保って、画像に入る一番大きい範囲を中央に置く（比率が null なら画像全体） */
-export function initialRect(img: ImageSize, ratio: number | null): CropRect {
-  if (ratio === null) return fullRect(img);
-  let w = img.width;
-  let h = img.height;
-  if (w / h > ratio) w = Math.round(h * ratio);
-  else h = Math.round(w / ratio);
-  w = Math.max(1, w);
-  h = Math.max(1, h);
-  return { x: Math.round((img.width - w) / 2), y: Math.round((img.height - h) / 2), w, h };
 }
 
 /** 整数にして、画像の中に収め、最小の大きさを守る（比率は保たない） */
@@ -105,17 +61,9 @@ export type Corner = 'nw' | 'ne' | 'sw' | 'se';
 
 /**
  * 角のハンドルを、ドラッグの分だけ動かす。対角の角は動かさない（固定）。
- * ratio（幅 / 高さ）があるときは比を保つ。ドラッグが大きいほうの方向に合わせる。
  * start は動かし始めた範囲、dx / dy は動かし始めてからの合計（画素）。
  */
-export function resizeRect(
-  start: CropRect,
-  corner: Corner,
-  dx: number,
-  dy: number,
-  img: ImageSize,
-  ratio: number | null,
-): CropRect {
+export function resizeRect(start: CropRect, corner: Corner, dx: number, dy: number, img: ImageSize): CropRect {
   const east = corner[1] === 'e';
   const south = corner[0] === 's';
   // 固定する辺（対角の角）と、動かす辺の位置
@@ -128,21 +76,8 @@ export function resizeRect(
   const maxH = south ? img.height - ay : ay;
   const m = minSize(img);
 
-  let w: number;
-  let h: number;
-  if (ratio === null) {
-    w = clamp(Math.round(Math.abs(px - ax)), m.w, maxW);
-    h = clamp(Math.round(Math.abs(py - ay)), m.h, maxH);
-  } else {
-    const cap = Math.min(maxW, maxH * ratio);
-    const lo = Math.max(m.w, m.h * ratio);
-    w = Math.floor(clamp(Math.max(Math.abs(px - ax), Math.abs(py - ay) * ratio), lo, cap));
-    h = Math.round(w / ratio);
-    if (h > maxH) {
-      h = maxH;
-      w = Math.round(h * ratio);
-    }
-  }
+  const w = clamp(Math.round(Math.abs(px - ax)), m.w, maxW);
+  const h = clamp(Math.round(Math.abs(py - ay)), m.h, maxH);
   return {
     x: east ? ax : ax - w,
     y: south ? ay : ay - h,

@@ -435,12 +435,13 @@ export default class DicePlugin extends Plugin {
 | `this.notify(userIds, text, { session? })` | 通知を送る（「あなたの番です」） |
 | `this.registerDomEvent(...)` / `this.registerInterval(id)` / `this.register(cleanup)` | 外すときに自動で片付く購読・タイマー・後始末 |
 | `disnans.ui.*` | 本体と同じ見た目の部品（アイコン、ボタン、トグル、入力欄、選択肢、タブのバー、区切り線、設定の行、トースト、確認ダイアログ）。→ `docs/PLUGIN_UI.md` |
-| `this.postMessage({ body, threadId?, name? })` | プラグインの名前（`name` で変えられる）のボットとしてメッセージを投稿する。投稿者（author）は実行した人のままで、メッセージに `bot: { plugin, name }` が付く。通常の投稿と同じく配信・通知される（API v5） |
+| `this.postMessage({ body, threadId?, name?, notify? })` | プラグインの名前（`name` で変えられる）のボットとしてメッセージを投稿する。投稿者（author）は実行した人のままで、メッセージに `bot: { plugin, name }` が付く。通常の投稿と同じく配信する。通知は `notify: true` のときだけ送り、通常の宛先に加えて投稿した本人にも届く（API v5。`notify` は v6） |
+| `this.openSettings()` | このプラグインの設定画面を開く（設定タブに切り替える）（API v6） |
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント。いまつながっている人に中継するだけで、保存しない（API v3） |
 | `this.addStatusBarItem()` | アプリの下端の常時表示のステータス欄に出す要素を足す。空の間は隠れる（API v3） |
 | `this.holdBackground({ microphone?, title?, text?, actions?, onAction? })` | 画面を切っても動き続ける。Android ではフォアグラウンドサービス（microphone 型）を動かす。ほかの環境では何もしない（API v3）。`actions`（通知のボタン、最大3つ）と `onAction(id)`、戻り値の `update({ title, text, actions })` は API v4 |
 | `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（API v5）。`listOutputs()` は `{ id, label, kind, selected }` の配列（Android: 通話中の `earpiece` `speaker` `wired` `bluetooth`。notifier プラグインの `list_audio_outputs` / `set_audio_output` コマンド＝Kotlin の AudioManager。API 31 以上は `setCommunicationDevice`、それ以前は `setSpeakerphoneOn` / `startBluetoothSco`。デスクトップ: `enumerateDevices` と `setSinkId`）。`attach` は `<audio>` や `AudioContext` を登録し、デスクトップで選んだ出力先に出す。`listInputs()` はデスクトップのマイクの一覧（Android は空）。使えない環境では空配列 / false を返す |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 5。2 で `addCommand` に `icon`・`slash`・`args`・`suggestArgs`・`run(ctx)` が、3 で `broadcast`・`addStatusBarItem`・`holdBackground` が、4 で `holdBackground` の通知ボタン `actions` / `onAction` と `update()` が、5 で `postMessage` と `disnans.audio` が増えた） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 6。2 で `addCommand` に `icon`・`slash`・`args`・`suggestArgs`・`run(ctx)` が、3 で `broadcast`・`addStatusBarItem`・`holdBackground` が、4 で `holdBackground` の通知ボタン `actions` / `onAction` と `update()` が、5 で `postMessage` と `disnans.audio` が、6 で `postMessage` の `notify` と `openSettings()` が増えた） |
 
 - 型定義と詳しい説明は `packages/plugin-sdk/`、作り方のガイドは `docs/PLUGINS.md` を正とする
 - 本体の CSS 変数（`--bg`, `--accent` など）と共通クラス（`.btn`, `.input` など）はプラグインからも使える

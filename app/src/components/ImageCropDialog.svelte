@@ -1,21 +1,16 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import Modal from './ui/Modal.svelte';
-  import SegmentedButton from './ui/SegmentedButton.svelte';
+  import Button from './ui/Button.svelte';
   import {
-    ASPECT_CHOICES,
-    aspectRatio,
     clampRect,
     displayToSource,
     fitDisplay,
     fullRect,
-    initialRect,
     isFullRect,
-    isOrientable,
     moveRect,
     rectToDisplay,
     resizeRect,
-    type AspectId,
     type Corner,
     type CropRect,
     type ImageInfo,
@@ -39,14 +34,15 @@
 
   // 開いたときの範囲と画像の大きさで始める（以後は変わらない）
   let rect = $state<CropRect>(untrack(() => value ?? fullRect(info)));
-  let aspect = $state<AspectId>('free');
-  let portrait = $state(false);
-  const ratio = $derived(aspectRatio(aspect, info, portrait));
 
-  // 画像の表示。枠の幅に合わせ、高さは画面の半分まで（小さい画像は拡大しない）
+  // 画像の表示。枠の幅に合わせ、高さは画面の半分まで（小さい画像は拡大しない）。
+  // 四隅のハンドルは角から半分（16px）はみ出すので、その分の余白を枠の中に取っておく
+  const PAD = 16;
   const boxH = Math.min(420, Math.round(window.innerHeight * 0.5));
   let areaW = $state(0);
-  const fit = $derived(fitDisplay(info, { width: areaW || 320, height: boxH }));
+  const fit = $derived(
+    fitDisplay(info, { width: Math.max(1, (areaW || 320) - PAD * 2), height: Math.max(1, boxH - PAD * 2) }),
+  );
   const shown = $derived(rectToDisplay(rect, fit.scale));
 
   let url = $state('');
@@ -55,22 +51,6 @@
     url = u;
     return () => URL.revokeObjectURL(u);
   });
-
-  function setAspect(id: AspectId) {
-    aspect = id;
-    rect = initialRect(info, aspectRatio(id, info, portrait));
-  }
-
-  function setPortrait(v: boolean) {
-    portrait = v;
-    rect = initialRect(info, aspectRatio(aspect, info, v));
-  }
-
-  function reset() {
-    aspect = 'free';
-    portrait = false;
-    rect = fullRect(info);
-  }
 
   // ドラッグ（マウス・タッチ・ペンは同じ pointer イベント）。動かし始めた範囲からの合計で計算する
   let drag: { mode: 'move' | Corner; startX: number; startY: number; start: CropRect } | null = null;
@@ -91,7 +71,7 @@
     rect =
       drag.mode === 'move'
         ? moveRect(drag.start, dx, dy, info)
-        : resizeRect(drag.start, drag.mode, dx, dy, info, ratio);
+        : resizeRect(drag.start, drag.mode, dx, dy, info);
   }
 
   function onpointerup() {
@@ -137,31 +117,9 @@
     </div>
   </div>
 
-  <div class="image-crop-controls">
-    <SegmentedButton
-      label="比率"
-      bind:value={aspect}
-      options={ASPECT_CHOICES.map((c) => ({ value: c.id, label: c.label }))}
-      onchange={setAspect}
-    />
-    {#if isOrientable(aspect)}
-      <SegmentedButton
-        label="向き"
-        value={portrait ? 'portrait' : 'landscape'}
-        options={[
-          { value: 'landscape', label: '横' },
-          { value: 'portrait', label: '縦' },
-        ]}
-        onchange={(v) => setPortrait(v === 'portrait')}
-      />
-    {/if}
-  </div>
-
-  <div class="image-crop-actions">
-    <button type="button" class="image-crop-reset" onclick={reset}>リセット</button>
-    <span class="image-crop-spacer"></span>
-    <button type="button" onclick={onclose}>キャンセル</button>
-    <button type="button" class="primary" onclick={decide}>決定</button>
+  <div class="modal-actions">
+    <Button onclick={onclose}>キャンセル</Button>
+    <Button variant="primary" onclick={decide}>決定</Button>
   </div>
   <p class="image-crop-note muted">
     送るときに切り抜きます。形式は JPEG（透過がある画像は PNG）になります。
@@ -241,21 +199,6 @@
     left: 100%;
     top: 100%;
     cursor: nwse-resize;
-  }
-  .image-crop-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 12px;
-  }
-  .image-crop-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 14px;
-  }
-  .image-crop-spacer {
-    flex: 1;
   }
   .image-crop-note {
     margin: 12px 0 0;

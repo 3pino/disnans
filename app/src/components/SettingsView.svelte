@@ -11,13 +11,14 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Download from '@lucide/svelte/icons/download';
   import ExternalLink from '@lucide/svelte/icons/external-link';
-  import CircleCheck from '@lucide/svelte/icons/circle-check';
   import Camera from '@lucide/svelte/icons/camera';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
   import ImageUp from '@lucide/svelte/icons/image-up';
   import Undo2 from '@lucide/svelte/icons/undo-2';
+  import Settings from '@lucide/svelte/icons/settings';
+  import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import Avatar from './Avatar.svelte';
   import Markdown from './Markdown.svelte';
   import Button from './ui/Button.svelte';
@@ -32,13 +33,14 @@
   import SegmentedButton from './ui/SegmentedButton.svelte';
   import PluginSettings from './PluginSettings.svelte';
   import ThemeSettings from './ThemeSettings.svelte';
-  import KeySettings from './KeySettings.svelte';
+  import EnterKeySettings from './EnterKeySettings.svelte';
+  import HotkeySettings from './HotkeySettings.svelte';
   import ComposerMenuSettings from './ComposerMenuSettings.svelte';
   import DeviceKindSettings from './DeviceKindSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
   import type { MessageLayout } from '../lib/messageLayout';
-  import { ui, type ThemePref } from '../lib/stores/ui.svelte';
+  import { ui, type SettingsSubpage, type ThemePref } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
   import { devUser, getServerUrl, isAndroid, isCustomAvatar, isTauri, setServerUrl } from '../lib/config';
   import { notifications } from '../lib/stores/notifications.svelte';
@@ -70,12 +72,11 @@
     };
   });
 
-  // 設定の中のタブ。「キー」には入力欄のキーとショートカットを置く
-  type SettingsPage = 'general' | 'keys';
-  let settingsPage = $state<SettingsPage>('general');
-  const settingsPages: { value: SettingsPage; label: string }[] = [
-    { value: 'general', label: '一般' },
-    { value: 'keys', label: 'キー' },
+  // 「操作」の行。押すと、その設定のサブページを開く（ショートカットはデスクトップだけ）
+  const operations: { value: SettingsSubpage; name: string }[] = [
+    { value: 'enterKeys', name: '入力欄のキー' },
+    ...(isAndroid() ? [] : [{ value: 'hotkeys' as const, name: 'ホットキー' }]),
+    { value: 'composerMenu', name: '＋メニュー' },
   ];
 
   const themes: { value: ThemePref; label: string; icon: typeof Sun }[] = [
@@ -96,6 +97,19 @@
   const changed = $derived(name.trim() !== '' && name.trim() !== client.me?.display_name);
   const st = $derived(updater.state);
   const busy = $derived(st.kind === 'checking' || st.kind === 'downloading' || st.kind === 'installing');
+
+  /** 手動で確認したときだけ、「最新です」をトーストで知らせる */
+  let checkingByHand = false;
+  function checkUpdate() {
+    checkingByHand = true;
+    void updater.check();
+  }
+  $effect(() => {
+    if (st.kind === 'latest' && checkingByHand) {
+      checkingByHand = false;
+      ui.toast('最新です');
+    }
+  });
 
   async function startEditName() {
     name = client.me?.display_name ?? '';
@@ -198,22 +212,34 @@
 </script>
 
 <div id="settings" class="settings-view">
+  <!-- 「操作」のサブページ。一覧の上に重ねる（一覧はそのままにして、戻ったときに元の位置へ戻す） -->
+  {#if ui.settingsSub}
+    <div id="settings-sub-page" class="settings-sub-page" data-sub={ui.settingsSub}>
+      <header class="top-bar"></header>
+      <div class="settings-sub-page-header">
+        <IconButton class="settings-sub-page-back" label="戻る" onclick={() => ui.closeSettingsSub()}><ArrowLeft size={20} /></IconButton>
+      </div>
+      <div class="scroll settings-sub-page-body">
+        <div class="settings-sub-page-content">
+          {#if ui.settingsSub === 'enterKeys'}
+            <EnterKeySettings />
+          {:else if ui.settingsSub === 'hotkeys'}
+            <HotkeySettings />
+          {:else}
+            <ComposerMenuSettings />
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
+
   <header class="top-bar"></header>
 
-  <div class="scroll settings-body">
+  <div class="scroll settings-body" inert={!!ui.settingsSub}>
     <div class="settings-content">
-      <SegmentedButton
-        class="settings-page-tabs"
-        label="設定の種類"
-        options={settingsPages}
-        value={settingsPage}
-        onchange={(v) => (settingsPage = v)}
-      />
-
-      {#if settingsPage === 'general'}
       <Section title="プロフィール" class="settings-profile">
-        {#if client.me}
-          <div class="settings-profile-card">
+        <div class="settings-profile-card">
+          {#if client.me}
             <div class="settings-profile-avatar-wrap">
               <button
                 type="button"
@@ -261,8 +287,10 @@
               {/if}
               <div class="muted settings-small-text settings-profile-login-name">{client.me.login_name}</div>
             </div>
-          </div>
-        {/if}
+          {/if}
+          <!-- この端末の種類は、プロフィールのカードの右に並べる -->
+          <DeviceKindSettings />
+        </div>
       </Section>
 
       <Section title="外観" class="settings-appearance">
@@ -289,9 +317,22 @@
         <p class="muted settings-small-text">リストは名前と時刻を上に並べます。吹き出しは自分の発言を右に、ほかの人の発言を左に並べます。</p>
       </Section>
 
-      <DeviceKindSettings />
-
-      <ComposerMenuSettings />
+      <Section title="操作" class="settings-operations">
+        {#each operations as op (op.value)}
+          <SettingRow name={op.name} class="settings-operation-row">
+            {#snippet control()}
+              <IconButton
+                class="settings-operation-open"
+                label="{op.name}の設定"
+                title="設定"
+                onclick={() => ui.openSettingsSub(op.value)}
+              >
+                <Settings size={18} />
+              </IconButton>
+            {/snippet}
+          </SettingRow>
+        {/each}
+      </Section>
 
       <Section title="通知" class="settings-notifications">
         {#if notifications.backend === 'android'}
@@ -341,17 +382,27 @@
       <Section title="アプリ" class="settings-app">
         <SettingRow name="バージョン" class="settings-version-row">
           {#snippet control()}
-            <span class="settings-version">{updater.supported ? (updater.version ? `v${updater.version}` : '…') : '開発版'}</span>
+            <div class="settings-version-control">
+              <span class="settings-version">{updater.supported ? (updater.version ? `v${updater.version}` : '…') : '開発版'}</span>
+              {#if updater.supported}
+                <IconButton
+                  class="settings-update-check"
+                  label="アップデートを確認"
+                  title="アップデートを確認"
+                  disabled={busy}
+                  onclick={checkUpdate}
+                >
+                  <RefreshCw size={18} class={st.kind === 'checking' ? 'spin' : ''} />
+                </IconButton>
+              {/if}
+            </div>
           {/snippet}
         </SettingRow>
 
-        {#if updater.supported}
+        <!-- 新しいバージョンや、うまくいかなかったときだけ、その状態の表示と操作を出す（「最新です」はトーストで知らせる） -->
+        {#if updater.supported && st.kind !== 'idle' && st.kind !== 'checking' && st.kind !== 'latest'}
           <div class="settings-update">
-            {#if st.kind === 'latest'}
-              <StatusLine kind="ok" icon={CircleCheck}>最新です</StatusLine>
-            {:else if st.kind === 'checking'}
-              <StatusLine kind="muted" busy>確認中…</StatusLine>
-            {:else if st.kind === 'available'}
+            {#if st.kind === 'available'}
               <StatusLine kind="accent">新しいバージョンがあります: v{st.version} が利用できます</StatusLine>
               {#if st.notes}
                 <div class="settings-update-notes scroll"><Markdown body={st.notes} /></div>
@@ -374,30 +425,24 @@
               <p class="muted settings-small-text">うまくいかないときは、リリースページから直接ダウンロードできます。</p>
             {/if}
 
-            <div class="settings-update-actions">
-              {#if st.kind === 'available'}
-                <Button variant="primary" onclick={() => updater.install()}>
-                  <Download size={15} />ダウンロードしてインストール
-                </Button>
-              {:else if st.kind === 'permission'}
-                <Button variant="primary" onclick={() => updater.install()}>続ける</Button>
-              {:else}
-                <Button disabled={busy} onclick={() => updater.check()}>
-                  <RefreshCw size={15} />アップデートを確認
-                </Button>
-              {/if}
-              {#if st.kind === 'error'}
-                <Button onclick={() => updater.openReleasePage()}>
-                  <ExternalLink size={15} />リリースページを開く
-                </Button>
-              {/if}
-            </div>
+            {#if st.kind === 'available' || st.kind === 'permission' || st.kind === 'error'}
+              <div class="settings-update-actions">
+                {#if st.kind === 'available'}
+                  <Button variant="primary" onclick={() => updater.install()}>
+                    <Download size={15} />ダウンロードしてインストール
+                  </Button>
+                {:else if st.kind === 'permission'}
+                  <Button variant="primary" onclick={() => updater.install()}>続ける</Button>
+                {:else}
+                  <Button onclick={() => updater.openReleasePage()}>
+                    <ExternalLink size={15} />リリースページを開く
+                  </Button>
+                {/if}
+              </div>
+            {/if}
           </div>
         {/if}
       </Section>
-      {:else}
-        <KeySettings />
-      {/if}
     </div>
   </div>
 </div>
@@ -407,6 +452,7 @@
   .settings-view {
     -webkit-user-select: none;
     user-select: none;
+    position: relative;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -417,8 +463,35 @@
     flex: 1;
     min-height: 0;
   }
-  .settings-content > :global(.settings-page-tabs) {
-    margin-bottom: 4px;
+  /* 「操作」のサブページ。一覧の上を覆う。左上に戻るボタン、中は設定と同じ幅で並べる */
+  .settings-sub-page {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--bg);
+  }
+  .settings-sub-page-header {
+    display: flex;
+    align-items: center;
+    height: 52px;
+    padding: 0 16px 0 8px;
+    border-bottom: 1px solid var(--border);
+    flex: none;
+  }
+  .settings-sub-page-body {
+    flex: 1;
+    min-height: 0;
+  }
+  .settings-sub-page-content {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 8px 16px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
   }
   .settings-content {
     max-width: 640px;
@@ -528,6 +601,12 @@
   .settings-version {
     font-family: var(--mono);
     font-size: 13px;
+  }
+  /* バージョンの右に、アップデートを確認するボタン */
+  .settings-version-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .settings-update {
     padding-top: 12px;

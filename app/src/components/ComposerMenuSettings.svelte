@@ -121,7 +121,8 @@
     position: absolute;
     top: calc(100% + 6px);
     left: 0;
-    z-index: 5;
+    /* 外側を閉じる幕（.menu-backdrop, z-index 29）より前に出す。小さい値にすると幕がメニューを覆い、項目が押せなくなる */
+    z-index: 30;
     min-width: 240px;
     max-height: 320px;
     overflow-y: auto;

@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "ボットとしてメッセージを投稿する（ほかの人からどう見えるかの確認にも）",
   "author": "sanpino",
-  "minApiVersion": 5,
+  "minApiVersion": 6,
   "icon": "bot"
 }

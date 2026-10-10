@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   anyTransparent,
-  aspectRatio,
   canCropImage,
   clampRect,
   displayToSource,
   fitDisplay,
-  initialRect,
   isAnimatedImage,
   isFullRect,
   moveRect,
@@ -23,29 +21,6 @@ const le32 = (n: number) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 
 const chunk = (type: string, data: number[]) => [...be32(data.length), ...enc(type), ...data, 0, 0, 0, 0];
 
 const IMG = { width: 1000, height: 500 };
-
-describe('aspectRatio', () => {
-  it('gives the ratio for each choice, flipped for portrait', () => {
-    expect(aspectRatio('free', IMG, false)).toBeNull();
-    expect(aspectRatio('square', IMG, false)).toBe(1);
-    expect(aspectRatio('r4x3', IMG, false)).toBeCloseTo(4 / 3);
-    expect(aspectRatio('r4x3', IMG, true)).toBeCloseTo(3 / 4);
-    expect(aspectRatio('r16x9', IMG, true)).toBeCloseTo(9 / 16);
-    expect(aspectRatio('original', { width: 300, height: 200 }, false)).toBe(1.5);
-  });
-});
-
-describe('initialRect', () => {
-  it('is the whole image when free', () => {
-    expect(initialRect(IMG, null)).toEqual({ x: 0, y: 0, w: 1000, h: 500 });
-  });
-  it('is the largest centered rect with the ratio', () => {
-    // 横長の画像を 1:1 に → 高さいっぱい、左右を中央に
-    expect(initialRect(IMG, 1)).toEqual({ x: 250, y: 0, w: 500, h: 500 });
-    // 縦長の画像を 3:4（縦長）に → 幅いっぱい、上下を中央に
-    expect(initialRect({ width: 600, height: 1000 }, 3 / 4)).toEqual({ x: 0, y: 100, w: 600, h: 800 });
-  });
-});
 
 describe('clampRect', () => {
   it('keeps the rect inside the image and rounds it', () => {
@@ -74,44 +49,16 @@ describe('resizeRect (free)', () => {
   const start = { x: 200, y: 100, w: 400, h: 200 };
   it('moves the dragged corner and keeps the opposite one', () => {
     // se: 右下を動かす。左上 (200,100) は固定
-    expect(resizeRect(start, 'se', 100, 50, IMG, null)).toEqual({ x: 200, y: 100, w: 500, h: 250 });
+    expect(resizeRect(start, 'se', 100, 50, IMG)).toEqual({ x: 200, y: 100, w: 500, h: 250 });
     // nw: 左上を動かす。右下 (600,300) は固定
-    expect(resizeRect(start, 'nw', 50, 20, IMG, null)).toEqual({ x: 250, y: 120, w: 350, h: 180 });
+    expect(resizeRect(start, 'nw', 50, 20, IMG)).toEqual({ x: 250, y: 120, w: 350, h: 180 });
   });
   it('does not go past the image edge', () => {
-    expect(resizeRect(start, 'se', 5000, 5000, IMG, null)).toEqual({ x: 200, y: 100, w: 800, h: 400 });
+    expect(resizeRect(start, 'se', 5000, 5000, IMG)).toEqual({ x: 200, y: 100, w: 800, h: 400 });
   });
   it('does not get smaller than the minimum', () => {
-    expect(resizeRect(start, 'se', -368, -168, IMG, null)).toEqual({ x: 200, y: 100, w: 32, h: 32 });
-    expect(resizeRect(start, 'nw', 368, 168, IMG, null)).toEqual({ x: 568, y: 268, w: 32, h: 32 });
-  });
-});
-
-describe('resizeRect (fixed ratio)', () => {
-  const start = { x: 0, y: 0, w: 400, h: 300 };
-  it('keeps the ratio while dragging a corner', () => {
-    const r = resizeRect(start, 'se', 100, 0, IMG, 4 / 3);
-    expect(r).toEqual({ x: 0, y: 0, w: 500, h: 375 });
-    expect(r.w / r.h).toBeCloseTo(4 / 3);
-  });
-  it('follows the larger of the two drags', () => {
-    // 縦だけ大きく動かしても、比を保つので幅も伸びる
-    const r = resizeRect(start, 'se', 0, 150, IMG, 4 / 3);
-    expect(r).toEqual({ x: 0, y: 0, w: 600, h: 450 });
-    expect(r.w / r.h).toBeCloseTo(4 / 3);
-  });
-  it('stays inside the image', () => {
-    const r = resizeRect({ x: 500, y: 100, w: 400, h: 300 }, 'se', 5000, 0, IMG, 4 / 3);
-    expect(r.x + r.w).toBeLessThanOrEqual(IMG.width);
-    expect(r.y + r.h).toBeLessThanOrEqual(IMG.height);
-    expect(r.w / r.h).toBeCloseTo(4 / 3, 1);
-  });
-  it('keeps the minimum size with the ratio', () => {
-    const r = resizeRect(start, 'nw', 390, 290, IMG, 16 / 9);
-    expect(r.w).toBeGreaterThanOrEqual(32);
-    expect(r.h).toBeGreaterThanOrEqual(18);
-    expect(r.x + r.w).toBe(400);
-    expect(r.w / r.h).toBeCloseTo(16 / 9, 1);
+    expect(resizeRect(start, 'se', -368, -168, IMG)).toEqual({ x: 200, y: 100, w: 32, h: 32 });
+    expect(resizeRect(start, 'nw', 368, 168, IMG)).toEqual({ x: 568, y: 268, w: 32, h: 32 });
   });
 });
 

@@ -91,9 +91,11 @@
     return () => nav.stop();
   });
 
-  // 設定のタブを離れたら、プラグインの設定画面は閉じる
+  // 設定のタブを離れたら、プラグインの設定画面と設定のサブページは閉じる
   $effect(() => {
-    if (ui.tab !== 'settings' && ui.pluginSettings) ui.closePluginSettings();
+    if (ui.tab === 'settings') return;
+    if (ui.pluginSettings) ui.closePluginSettings();
+    if (ui.settingsSub) ui.closeSettingsSub();
   });
 </script>
 

@@ -9,6 +9,9 @@ export type Panel =
   | { kind: 'plugin'; plugin: string; view: string; sessionId: string }
   | null;
 
+/** 設定の中のサブページ（一覧の代わりに出す）。入力欄のキー・ホットキー・＋メニュー */
+export type SettingsSubpage = 'enterKeys' | 'hotkeys' | 'composerMenu';
+
 export type Toast = { id: number; text: string; kind: 'info' | 'error'; action?: { label: string; run: () => void } };
 
 export type ConfirmRequest = {
@@ -36,6 +39,8 @@ class Ui {
   panel = $state<Panel>(null);
   /** 設定で開いているプラグインの設定画面（プラグインの ID）。設定のタブでだけ使う */
   pluginSettings = $state<string | null>(null);
+  /** 設定で開いている「操作」のサブページ。設定のタブでだけ使う */
+  settingsSub = $state<SettingsSubpage | null>(null);
   lightbox = $state<{ src: string; alt: string; downloadUrl: string } | null>(null);
   toasts = $state<Toast[]>([]);
   confirmReq = $state<ConfirmRequest | null>(null);
@@ -91,12 +96,14 @@ class Ui {
   openSettings(): void {
     this.tab = 'settings';
     this.pluginSettings = null;
+    this.settingsSub = null;
     if (!this.isMobile) this.panel = null;
   }
 
   /** 設定の中で、プラグインの設定画面を開く */
   openPluginSettings(id: string): void {
     this.tab = 'settings';
+    this.settingsSub = null;
     this.pluginSettings = id;
   }
 
@@ -104,9 +111,19 @@ class Ui {
     this.pluginSettings = null;
   }
 
+  /** 設定の中で、「操作」のサブページ（入力欄のキーなど）を開く */
+  openSettingsSub(page: SettingsSubpage): void {
+    this.tab = 'settings';
+    this.settingsSub = page;
+  }
+
+  closeSettingsSub(): void {
+    this.settingsSub = null;
+  }
+
   /**
    * 戻る操作で閉じられるもの（下から順）。Android の戻るボタンは、これを上から1つずつ閉じる。
-   * チャット以外のタブ → プラグインの設定画面 → パネル。チャットで何も開いていなければ空
+   * チャット以外のタブ → 設定のサブページ・プラグインの設定画面 → パネル。チャットで何も開いていなければ空
    */
   backLayers(): (() => void)[] {
     const layers: (() => void)[] = [];
@@ -114,8 +131,10 @@ class Ui {
       layers.push(() => {
         this.tab = 'chat';
         this.pluginSettings = null;
+        this.settingsSub = null;
       });
     if (this.tab === 'settings' && this.pluginSettings) layers.push(() => this.closePluginSettings());
+    if (this.tab === 'settings' && this.settingsSub) layers.push(() => this.closeSettingsSub());
     if (this.panel) layers.push(() => this.closePanel());
     return layers;
   }

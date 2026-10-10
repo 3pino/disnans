@@ -12,7 +12,7 @@ import type { ComposerAction } from '../composerActions';
 import type { AppCommand } from '../commands.svelte';
 
 /** ホスト API のバージョン。index.d.ts を変えたら上げる */
-export const API_VERSION = 5;
+export const API_VERSION = 6;
 
 export type Manifest = Disnans.Manifest;
 export type Cleanup = Disnans.Cleanup;
@@ -45,6 +45,8 @@ export interface HostServices {
   registerCommand(cmd: HostCommand): Cleanup;
   /** パネルに view を開く */
   openPanel(pluginId: string, view: string, sessionId: string): void;
+  /** そのプラグインの設定画面を開く（API v6。ui.openPluginSettings） */
+  openSettings(pluginId: string): void;
   /** 開いているパネルを閉じる（そのプラグインの view が開いていれば） */
   closePanel(pluginId: string): void;
   toast(text: string, kind?: 'info' | 'error'): void;

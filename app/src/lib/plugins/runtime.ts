@@ -69,6 +69,9 @@ export class PluginBase implements Disnans.Plugin {
   openView<S = unknown>(type: string, session: Disnans.Session<S>): void {
     rt(this).openView(type, session.id);
   }
+  openSettings(): void {
+    rt(this).openSettings();
+  }
   registerCardRenderer(render: Disnans.CardRenderer): void {
     rt(this).registerCardRenderer(render);
   }
@@ -92,7 +95,7 @@ export class PluginBase implements Disnans.Plugin {
   notify(userIds: string[], text: string, opts?: { session?: Disnans.Session<any> }): Promise<void> {
     return rt(this).notify(userIds, text, opts?.session?.id ?? null);
   }
-  postMessage(opts: { body: string; threadId?: string | null; name?: string }): Promise<void> {
+  postMessage(opts: { body: string; threadId?: string | null; name?: string; notify?: boolean }): Promise<void> {
     return rt(this).postMessage(opts);
   }
   broadcast(name: string, payload?: unknown): void {
@@ -455,6 +458,12 @@ export class PluginRuntime {
     this.services.openPanel(this.id, type, sessionId);
   }
 
+  /** このプラグインの設定画面を開く（API v6） */
+  openSettings(): void {
+    if (this.stopped) return;
+    this.services.openSettings(this.id);
+  }
+
   /**
    * パネルの containerEl に view を描く（PluginPanel から呼ぶ）。
    * 閉じるときは返した handle の close() を呼ぶ。
@@ -572,7 +581,12 @@ export class PluginRuntime {
     return this.services.api.notify(this.id, { user_ids: userIds, body: text, session_id: sessionId });
   }
 
-  postMessage(opts: { body: string; threadId?: string | null; name?: string }): Promise<void> {
-    return this.services.api.postMessage(this.id, { thread_id: opts.threadId ?? null, body: opts.body, name: opts.name ?? null });
+  postMessage(opts: { body: string; threadId?: string | null; name?: string; notify?: boolean }): Promise<void> {
+    return this.services.api.postMessage(this.id, {
+      thread_id: opts.threadId ?? null,
+      body: opts.body,
+      name: opts.name ?? null,
+      notify: opts.notify ?? false,
+    });
   }
 }

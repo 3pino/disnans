@@ -100,3 +100,28 @@ describe('composer menu edits', () => {
     expect(ids(composerMenuItems(available, removed))).toEqual(['builtin:file', 'action:plugin:dice:roll', 'action:plugin:poll:new']);
   });
 });
+
+describe('コマンドを「＋」メニューに追加する（再発防止）', () => {
+  it('設定が空でも、追加したコマンドは「＋」の表示（出す項目だけの一覧）に出る', () => {
+    // 設定の画面で「コマンドを追加」→ 選んだ結果が、実際の「＋」メニューに出ること
+    const next = addComposerMenuCommand(none, available, 'cmd:app:open-settings');
+    const shown = composerMenuItems(available, next).map((x) => x.entry.id);
+    expect(shown).toContain('cmd:app:open-settings');
+    expect(shown.at(-1)).toBe('cmd:app:open-settings');
+  });
+
+  it('追加しても、既存の並びと知らない id（入れ直したプラグインなど）は保たれる', () => {
+    const prefs = { order: ['action:plugin:poll:new', 'action:plugin:gone:x'], hidden: [] };
+    const next = addComposerMenuCommand(prefs, available, 'cmd:dice:quick-roll');
+    expect(next.order.slice(0, 3)).toEqual(['action:plugin:poll:new', 'builtin:file', 'action:plugin:dice:roll']);
+    expect(next.order).toContain('cmd:dice:quick-roll');
+    expect(next.order).toContain('action:plugin:gone:x');
+    expect(ids(composerMenuItems(available, next))).toContain('cmd:dice:quick-roll');
+  });
+
+  it('追加の結果は保存しても読み直せる（JSON の往復で同じ並びになる）', () => {
+    const added = addComposerMenuCommand(none, available, 'cmd:app:open-settings');
+    const reloaded = normalizeComposerMenu(JSON.parse(JSON.stringify(added)));
+    expect(ids(composerMenuItems(available, reloaded))).toEqual(ids(composerMenuItems(available, added)));
+  });
+});

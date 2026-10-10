@@ -24,8 +24,10 @@
  *   在室の知らせの rtc で WebRTC を使えるか伝え合い、双方が使えるペアは今までどおり WebRTC だけで話す
  * - 出力先の切り替えは disnans.audio（API v5）。マイクの音量は WebAudio の GainNode、相手の音量は <audio> の volume
  *
+ * 設定画面を開く this.openSettings()（API v6）は、あるときだけ使う（古いホストでは設定ボタンと /vc-settings を出さない）
+ *
  * 使っている API: audio / addCommand / addComposerAction / addSettingTab / loadData / saveData / registerInterval /
- *   broadcast / onBroadcast / addStatusBarItem / holdBackground / ui.*
+ *   broadcast / onBroadcast / addStatusBarItem / holdBackground / ui.* / openSettings（v6・任意）
  */
 
 const { Plugin, ui, audio } = disnans;
@@ -469,6 +471,17 @@ export default class VoicePlugin extends Plugin {
       description: '受話口・スピーカー・イヤホンなど、次の出力先に切り替える',
       run: () => void this.cycleOutput(),
     });
+    // 設定画面を開くコマンドは、開けるホストのときだけ出す
+    if (this.canOpenSettings()) {
+      this.addCommand({
+        id: 'settings',
+        name: 'ボイスチャットの設定を開く',
+        icon: 'settings',
+        slash: 'vc-settings',
+        description: 'ボイスチャットの設定を開く',
+        run: () => this.openPluginSettings(),
+      });
+    }
     this.addComposerAction({
       id: 'join',
       label: 'ボイスチャットに参加',
@@ -512,6 +525,17 @@ export default class VoicePlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
+  /** 設定画面を開けるか（API v6 の openSettings があるか。古いホストでは false） */
+  canOpenSettings() {
+    return typeof (/** @type {{ openSettings?: unknown }} */ (/** @type {unknown} */ (this)).openSettings) === 'function';
+  }
+
+  /** このプラグインの設定画面を開く。開けないホストでは何もしない */
+  openPluginSettings() {
+    const self = /** @type {{ openSettings?: () => void }} */ (/** @type {unknown} */ (this));
+    if (typeof self.openSettings === 'function') self.openSettings();
+  }
+
   /** @param {HTMLElement} containerEl */
   displaySettings(containerEl) {
     ui.setting(containerEl, {
@@ -526,7 +550,6 @@ export default class VoicePlugin extends Plugin {
     this.displayAudioSettings(containerEl);
     ui.setting(containerEl, {
       name: 'STUN サーバー（任意）',
-      description: 'Tailscale の中なら空のままで大丈夫です。つながらないときだけ、stun:stun.l.google.com:19302 のように入れます',
       icon: 'server',
       control: ui.input({
         value: this.settings.stun,
@@ -540,7 +563,6 @@ export default class VoicePlugin extends Plugin {
   displayAudioSettings(containerEl) {
     ui.setting(containerEl, {
       name: 'マイクの音量',
-      description: '端末の音量とは別に、相手へ送る声の大きさを変えます（この端末だけに保存）',
       icon: 'mic',
       control: this.volumeSlider(this.settings.micVolume, MIC_VOLUME_MAX, (v) => {
         this.settings.micVolume = v;
@@ -549,7 +571,6 @@ export default class VoicePlugin extends Plugin {
     });
     ui.setting(containerEl, {
       name: '相手の音量',
-      description: '端末の音量とは別に、通話の相手の声の大きさを変えます（この端末だけに保存）',
       icon: 'volume-2',
       control: this.volumeSlider(this.settings.outVolume, OUT_VOLUME_MAX, (v) => {
         this.settings.outVolume = v;
@@ -568,14 +589,13 @@ export default class VoicePlugin extends Plugin {
     });
     const inRow = ui.setting(containerEl, {
       name: 'マイク',
-      description: '次に参加するときから使います',
       icon: 'mic',
     });
     inRow.hidden = true;
     void (audio?.listInputs() ?? Promise.resolve([])).then((list) => {
       if (list.length === 0) return;
       inRow.hidden = false;
-      const sel = h('select', 'input');
+      const sel = h('select', 'input voice-select');
       sel.setAttribute('aria-label', 'マイク');
       sel.append(new Option('既定', ''));
       for (const d of list) sel.append(new Option(d.label, d.id));
@@ -1381,13 +1401,16 @@ export default class VoicePlugin extends Plugin {
       deafen.classList.toggle('voice-active', this.deafened);
       deafen.title = this.deafened ? 'スピーカーミュートを解除' : 'スピーカーミュート（相手の声を全部消す）';
       controls.append(mute, deafen);
-      if (this.outputs.length > 1) {
-        const sel = this.outputSelect();
-        sel.onchange = () => void this.chooseOutput(sel.value);
-        controls.append(sel);
+      // 出力先の変更は設定画面へ（バーには出さない）
+      if (this.canOpenSettings()) {
+        const settings = ui.button({ icon: 'settings', label: 'ボイスチャットの設定', variant: 'ghost', onClick: () => this.openPluginSettings() });
+        settings.title = 'ボイスチャットの設定';
+        controls.append(settings);
       }
+      // 退出は右端に、危険色で置く
       const leave = ui.button({ icon: 'phone-off', label: '通話から抜ける', variant: 'ghost', onClick: () => this.leave() });
       leave.title = '通話から抜ける';
+      leave.classList.add('voice-leave');
       controls.append(leave);
     } else if (!this.joining) {
       controls.append(ui.button({ text: '参加', icon: 'phone', variant: 'primary', onClick: () => void this.join() }));

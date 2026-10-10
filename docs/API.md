@@ -42,7 +42,7 @@
 | DELETE | `/api/plugins/{id}` | プラグイン・テーマの削除 | `204` |
 | GET | `/api/plugins/{id}/files/{name}` | 配布されたファイル（`manifest.json` / `main.js` / `styles.css` / `theme.css` / `icon.svg`） | ファイル本体 |
 | POST | `/api/plugins/{id}/notify` | プラグインから通知を送る（body: `PluginNotify`） | `204` |
-| POST | `/api/plugins/{id}/messages` | プラグインがボットとしてメッセージを投稿する（body: `PluginPostMessage` = `{ thread_id?, body, name? }`）。`author_id` は呼び出した人で、`bot: { plugin, name }` が付く。`name` は前後の空白を除いて40文字まで（省略するとプラグインの名前）。本文の検査は通常のメッセージと同じ。プラグインがない（見えない）と `404`、スレッドがないと `404 thread_not_found`。配信・通知は通常の投稿と同じ（`message.created`）。ボットのメッセージの編集は `bot_not_editable` | `Message` |
+| POST | `/api/plugins/{id}/messages` | プラグインがボットとしてメッセージを投稿する（body: `PluginPostMessage` = `{ thread_id?, body, name?, notify? }`）。`author_id` は呼び出した人で、`bot: { plugin, name }` が付く。`name` は前後の空白を除いて40文字まで（省略するとプラグインの名前）。本文の検査は通常のメッセージと同じ。プラグインがない（見えない）と `404`、スレッドがないと `404 thread_not_found`。配信は通常の投稿と同じ（`message.created`）。通知は `notify: true` のときだけ送る（v6。省略は `false` で、通知は一切送らない）。`true` なら通常の宛先（メンション・スレッドの参加者）に加えて投稿した本人にも送り、文言はボットの名前で作る（`{名前} からのメッセージ`、`{名前} さんからのメンション` など）。ボットのメッセージの編集は `bot_not_editable` | `Message` |
 | POST | `/api/sessions` | セッションを作り、カードを流す（body: `CreateSession`） | `Session` |
 | GET | `/api/sessions/{id}` | セッション1件 | `Session` |
 | PUT | `/api/sessions/{id}` | セッションの更新（body: `UpdateSession`） | `Session` |

@@ -89,6 +89,10 @@ pub struct PluginPostMessage {
     pub body: String,
     /// 省略するとプラグインの表示名。
     pub name: Option<String>,
+    /// `true` なら、通常の通知の宛先に加えて投稿した本人にも通知する（自分で通知の確認をするため）。
+    /// 省略すると `false`（通知は一切送らない）。
+    #[serde(default)]
+    pub notify: bool,
 }
 
 // ---- プラグイン ----

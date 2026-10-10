@@ -147,9 +147,14 @@ async function start(c: Env) {
 const plugin = (c: Env) => c.r.instance as unknown as { tick(): void; entries: Map<string, { connected: boolean; pc: unknown }>; joined: boolean };
 const flush = () => new Promise((res) => setTimeout(res, 0));
 
+/** openSettings の有無を切り替えるため、プロトタイプの元の定義を覚えておく */
+const protoSettings = Object.getOwnPropertyDescriptor(PluginBase.prototype, 'openSettings');
+
 beforeEach(() => {
   clients.length = 0;
   FakePc.all = [];
+  // 既定は「openSettings のないホスト」。必要なテストだけ足す
+  delete (PluginBase.prototype as unknown as Record<string, unknown>).openSettings;
   vi.stubGlobal('RTCPeerConnection', FakePc);
   vi.stubGlobal('AudioContext', FakeAudioContext);
   vi.stubGlobal('Worker', class { onmessage = null; terminate() {} });
@@ -160,11 +165,13 @@ beforeEach(() => {
   });
   setLucideForTest(
     Object.fromEntries(
-      ['Puzzle', 'Phone', 'PhoneOff', 'Mic', 'MicOff', 'VolumeX'].map((k) => [k, [['path', { d: 'M1 1' }]]]),
+      ['Puzzle', 'Phone', 'PhoneOff', 'Mic', 'MicOff', 'VolumeX', 'Settings'].map((k) => [k, [['path', { d: 'M1 1' }]]]),
     ) as never,
   );
 });
 afterEach(() => {
+  delete (PluginBase.prototype as unknown as Record<string, unknown>).openSettings;
+  if (protoSettings) Object.defineProperty(PluginBase.prototype, 'openSettings', protoSettings);
   setLucideForTest(null);
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -250,8 +257,38 @@ describe('examples/voice', () => {
     a.commands.get('voice:deafen')!.run({ args: '', threadId: null, via: 'palette' });
     expect(p.deafened).toBe(false);
     expect(audioEl.muted).toBe(false);
-    // 出力先が2つ以上あれば、ステータス欄に選択欄が出る
-    expect(a.bar.querySelectorAll('select option')).toHaveLength(2);
+    // 出力先の選択はステータス欄には出さない（設定画面で選ぶ）
+    expect(a.bar.querySelector('select')).toBeNull();
+  });
+
+  it('openSettings のないホストでは、設定ボタンも /vc-settings も出ない', async () => {
+    const a = makeClient('u1');
+    await start(a);
+    expect(a.commands.has('voice:settings')).toBe(false);
+    await a.commands.get('voice:join')!.run({ args: '', threadId: null, via: 'palette' });
+    expect(a.bar.querySelector('.voice-controls button[aria-label="ボイスチャットの設定"]')).toBeNull();
+    // 退出ボタンは右端（最後）に、危険色のクラス付きで置く
+    const buttons = [...a.bar.querySelectorAll('.voice-controls button')];
+    expect(buttons.at(-1)!.classList.contains('voice-leave')).toBe(true);
+  });
+
+  it('openSettings のあるホストでは、設定ボタンと /vc-settings でこのプラグインの設定を開く', async () => {
+    const openSettings = vi.fn();
+    Object.defineProperty(PluginBase.prototype, 'openSettings', { value: openSettings, configurable: true, writable: true });
+    const a = makeClient('u1');
+    await start(a);
+    expect(a.commands.get('voice:settings')).toMatchObject({ name: 'ボイスチャットの設定を開く', slash: 'vc-settings' });
+    await a.commands.get('voice:join')!.run({ args: '', threadId: null, via: 'palette' });
+    const btn = a.bar.querySelector<HTMLButtonElement>('.voice-controls button[aria-label="ボイスチャットの設定"]');
+    expect(btn).not.toBeNull();
+    btn!.click();
+    expect(openSettings).toHaveBeenCalledTimes(1);
+    await a.commands.get('voice:settings')!.run({ args: '', threadId: null, via: 'slash' });
+    expect(openSettings).toHaveBeenCalledTimes(2);
+    // 設定ボタンは退出ボタンより前にある
+    const buttons = [...a.bar.querySelectorAll('.voice-controls button')];
+    expect(buttons.at(-1)!.classList.contains('voice-leave')).toBe(true);
+    expect(buttons.at(-2)).toBe(btn);
   });
 });
 

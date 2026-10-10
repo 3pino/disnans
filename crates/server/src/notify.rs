@@ -92,29 +92,49 @@ pub fn parse_mentions(body: &str) -> Vec<&str> {
     found
 }
 
+/// 通知の送り手。どの名前で通知の文言を作るかと、本人にも送るかを決める。
+#[derive(Debug, Clone, Copy)]
+pub enum Sender<'a> {
+    /// ふつうの投稿。本人には通知しない。
+    User,
+    /// プラグインのボットとしての投稿（通知を送る指定があったとき）。文言はボットの名前で作り、
+    /// 投稿した本人にも「{名前} からのメッセージ」を送る（通常の宛先に入っていればそちらを使う）。
+    Bot(&'a str),
+}
+
 /// 新しいメッセージについて、誰にどんな通知を送るかを決める。
 ///
 /// - メンションされた人
 /// - スレッドへの返信なら、そのスレッドに関わっている人（`participants`: 起点の投稿者と返信した人）
+/// - `Sender::Bot` のときは、投稿した本人
 ///
-/// 本人には送らない。1つのメッセージで同じ人に送るのは1回だけ（メンションを優先する）。
+/// `Sender::User` では本人には送らない。1つのメッセージで同じ人に送るのは1回だけ（メンションを優先する）。
 pub fn plan(
     message: &Message,
     users: &[User],
     participants: &[String],
+    sender: Sender,
 ) -> Vec<(String, Notification)> {
     let names: HashMap<&str, &str> = users
         .iter()
         .map(|u| (u.id.as_str(), u.display_name.as_str()))
         .collect();
-    let author = names
-        .get(message.author_id.as_str())
-        .copied()
-        .unwrap_or("だれか");
+    let (author, self_title) = match sender {
+        Sender::User => (
+            names
+                .get(message.author_id.as_str())
+                .copied()
+                .unwrap_or("だれか"),
+            None,
+        ),
+        Sender::Bot(name) => (name, Some(format!("{name} からのメッセージ"))),
+    };
     let body = preview(message, &names);
 
     let mut sent = HashSet::new();
-    sent.insert(message.author_id.as_str());
+    if matches!(sender, Sender::User) {
+        sent.insert(message.author_id.as_str());
+    }
     let mut out = Vec::new();
     let mut push = |user_id: &str, title: String| {
         out.push((
@@ -140,6 +160,9 @@ pub fn plan(
                 push(id, format!("{author} さんがスレッドに返信"));
             }
         }
+    }
+    if let Some(title) = self_title.filter(|_| !sent.contains(message.author_id.as_str())) {
+        push(&message.author_id, title);
     }
     out
 }
@@ -215,7 +238,12 @@ mod tests {
     fn plans_mentions_and_thread_replies_once_each() {
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
         let msg = message("A", Some("ROOT"), "<@B> <@A> <@ZZZ> 見て");
-        let plan = plan(&msg, &users, &["B".into(), "C".into(), "A".into()]);
+        let plan = plan(
+            &msg,
+            &users,
+            &["B".into(), "C".into(), "A".into()],
+            Sender::User,
+        );
 
         let targets: Vec<_> = plan
             .iter()
@@ -233,9 +261,49 @@ mod tests {
     }
 
     #[test]
+    fn bot_notifies_the_poster_with_the_bot_name() {
+        let users = [user("A", "alice"), user("B", "bob")];
+        let msg = message("A", None, "hello");
+        let plan = plan(&msg, &users, &[], Sender::Bot("ダイス"));
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].0, "A");
+        assert_eq!(plan[0].1.title, "ダイス からのメッセージ");
+        assert_eq!(plan[0].1.body, "hello");
+    }
+
+    #[test]
+    fn bot_uses_its_name_in_mention_and_thread_titles() {
+        let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
+        let msg = message("A", Some("ROOT"), "<@B> 見て");
+        // 投稿者（A）はスレッドの参加者に入っていないので、本人への通知になる
+        let plan = plan(&msg, &users, &["C".into()], Sender::Bot("ダイス"));
+        let targets: Vec<_> = plan
+            .iter()
+            .map(|(u, n)| (u.as_str(), n.title.as_str()))
+            .collect();
+        assert_eq!(
+            targets,
+            vec![
+                ("B", "ダイス さんからのメンション"),
+                ("C", "ダイス さんがスレッドに返信"),
+                ("A", "ダイス からのメッセージ"),
+            ]
+        );
+    }
+
+    #[test]
+    fn bot_poster_gets_one_notification_even_if_mentioned() {
+        let users = [user("A", "alice")];
+        let msg = message("A", None, "<@A> 自分宛て");
+        let plan = plan(&msg, &users, &[], Sender::Bot("ダイス"));
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].1.title, "ダイス さんからのメンション");
+    }
+
+    #[test]
     fn no_thread_notifications_in_main_chat() {
         let users = [user("A", "alice"), user("B", "bob")];
         let msg = message("A", None, "hello");
-        assert!(plan(&msg, &users, &["B".into()]).is_empty());
+        assert!(plan(&msg, &users, &["B".into()], Sender::User).is_empty());
     }
 }

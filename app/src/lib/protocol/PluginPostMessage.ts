@@ -7,4 +7,9 @@ export type PluginPostMessage = { thread_id: string | null, body: string,
 /**
  * 省略するとプラグインの表示名。
  */
-name: string | null, };
+name: string | null, 
+/**
+ * `true` なら、通常の通知の宛先に加えて投稿した本人にも通知する（自分で通知の確認をするため）。
+ * 省略すると `false`（通知は一切送らない）。
+ */
+notify: boolean, };

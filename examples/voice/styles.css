@@ -84,18 +84,25 @@
   background: var(--danger-soft);
   color: var(--danger);
 }
+/* 退出は危険色（赤）。バーの右端に置く */
+.voice-controls .btn.voice-leave {
+  color: var(--danger);
+}
+.voice-controls .btn.voice-leave:hover {
+  background: var(--danger-soft);
+}
 @media (prefers-reduced-motion: reduce) {
   .voice-person {
     transition: none;
   }
 }
 
-.voice-controls .voice-select {
-  width: auto;
-  max-width: 140px;
-  min-height: 0;
-  padding: 4px 6px;
-  font-size: 12px;
+/* 機器の選択欄（マイク・出力先）は幅を抑え、長い名前は「…」で省略する */
+.voice-select {
+  max-width: 260px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .voice-slider {
   display: flex;

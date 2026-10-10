@@ -98,6 +98,7 @@ function fakeServices() {
         return () => commands.delete(c.id);
       },
       openPanel: vi.fn(),
+      openSettings: vi.fn(),
       closePanel: vi.fn(),
       toast: vi.fn(),
       storage: { get: (k: string) => store.get(k) ?? null, set: (k: string, v: string | null) => (v === null ? store.delete(k) : store.set(k, v)) },
@@ -112,6 +113,23 @@ function fakeServices() {
 }
 
 describe('PluginRuntime', () => {
+  it('openSettings はそのプラグインの設定画面を開く（API v6）。外れたあとは開かない', async () => {
+    const f = fakeServices();
+    class P extends PluginBase {
+      onload() {
+        this.openSettings();
+      }
+    }
+    const r = new PluginRuntime(manifest, f.services);
+    await r.start(P as PluginClass);
+    const open = f.services.openSettings as unknown as ReturnType<typeof vi.fn>;
+    expect(open).toHaveBeenCalledWith('dice');
+    const p = r.instance as P;
+    r.stop();
+    p.openSettings();
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
   it('addIcon は外すと消え、アイコンを省いた項目はプラグインのアイコンになる', async () => {
     const f = fakeServices();
     class P extends PluginBase {

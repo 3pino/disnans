@@ -184,6 +184,7 @@ class PluginHost {
     registerComposerAction,
     registerCommand,
     openPanel: (plugin, view, sessionId) => ui.openPluginView(plugin, view, sessionId),
+    openSettings: (plugin) => ui.openPluginSettings(plugin),
     closePanel: (plugin) => {
       if (ui.panel?.kind === 'plugin' && ui.panel.plugin === plugin) ui.closePanel();
     },

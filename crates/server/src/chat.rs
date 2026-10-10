@@ -9,7 +9,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::files;
 use crate::hub::ConnId;
-use crate::notify;
+use crate::notify::{self, Sender};
 use crate::state::AppState;
 use crate::store::messages::{self, MessageRow};
 use crate::store::{files as file_store, sessions, users};
@@ -79,14 +79,14 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
         None => Vec::new(),
     };
     let all_users = users::list(&state.pool).await?;
-    for (user_id, notification) in notify::plan(&message, &all_users, &participants) {
+    for (user_id, notification) in notify::plan(&message, &all_users, &participants, Sender::User) {
         state.notifier.notify(&user_id, &notification);
     }
     Ok(())
 }
 
 /// プラグインが、ボットとして投稿する。`author_id` は呼び出した人のまま（責任の所在を残す）。
-/// 通常の投稿と同じ経路で配信・通知する。
+/// 通常の投稿と同じ経路で配信する。通知は `notify` が `true` のときだけ送る（投稿した本人にも送る）。
 pub async fn post_bot_message(
     state: &AppState,
     user: &User,
@@ -105,20 +105,23 @@ pub async fn post_bot_message(
     }
     let mut row = new_row(&user.id, req.thread_id, req.body);
     row.bot_plugin = Some(plugin.id.clone());
-    row.bot_name = Some(name);
+    row.bot_name = Some(name.clone());
 
     let mut tx = state.pool.begin().await?;
     messages::insert(&mut tx, &row).await?;
     tx.commit().await?;
 
     let message = broadcast_created(state, &row.id, None).await?;
-    let participants = match &message.thread_id {
-        Some(thread_id) => messages::thread_participants(&state.pool, thread_id).await?,
-        None => Vec::new(),
-    };
-    let all_users = users::list(&state.pool).await?;
-    for (user_id, notification) in notify::plan(&message, &all_users, &participants) {
-        state.notifier.notify(&user_id, &notification);
+    if req.notify {
+        let participants = match &message.thread_id {
+            Some(thread_id) => messages::thread_participants(&state.pool, thread_id).await?,
+            None => Vec::new(),
+        };
+        let all_users = users::list(&state.pool).await?;
+        let plan = notify::plan(&message, &all_users, &participants, Sender::Bot(&name));
+        for (user_id, notification) in plan {
+            state.notifier.notify(&user_id, &notification);
+        }
     }
     Ok(message)
 }

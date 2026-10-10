@@ -71,6 +71,11 @@
   /** 左へのスワイプで返信できるか（長押しメニューの「スレッドで返信」と同じ） */
   const canSwipe = $derived(canThread && !editing);
 
+  /** 一覧のとき、名前と時刻（ヘッダー）を出しているか。アイコンを押すと出し入れする（既定は隠す） */
+  let headerShown = $state(false);
+  /** アイコンで名前と時刻を出し入れできるか（一覧のグループ先頭の発言だけ。吹き出しは対象外） */
+  const headerToggle = $derived(!bubble && !grouped);
+
   let picker = $state<DOMRect | null>(null);
   let sheet = $state(false);
   let editor: MessageInput | undefined = $state();
@@ -85,6 +90,16 @@
   let swiping = $state(false);
   const swipeX = $derived(swipeOffset(dragDx));
   const armed = $derived(swipeTriggered(dragDx));
+
+  function toggleHeader() {
+    headerShown = !headerShown;
+  }
+
+  function onGutterKeydown(e: KeyboardEvent) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    toggleHeader();
+  }
 
   function saveEdit() {
     if (!editor) return;
@@ -236,7 +251,18 @@
   }}
 >
   {#if !bubble || !isMine}
-    <div class="message-gutter">
+    <!-- 一覧の先頭の発言のアイコンは、押すと名前と時刻を出し入れする（長押しとスワイプは上のタッチ処理で扱う） -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div
+      class="message-gutter"
+      class:message-gutter-toggle={headerToggle}
+      role={headerToggle ? 'button' : undefined}
+      tabindex={headerToggle ? 0 : undefined}
+      aria-pressed={headerToggle ? headerShown : undefined}
+      aria-label={headerToggle ? '名前と時刻を表示' : undefined}
+      onclick={headerToggle ? toggleHeader : undefined}
+      onkeydown={headerToggle ? onGutterKeydown : undefined}
+    >
       {#if grouped}
         <!-- 一覧の続きの発言は、ホバーしたときだけ左に時刻を出す -->
         {#if !bubble}{@render timeTag('message-hover-time', formatTime(message.created_at))}{/if}
@@ -253,7 +279,7 @@
           {author.name}{#if author.isBot}<span class="message-bot-badge">BOT</span>{/if}
         </div>
       {/if}
-    {:else if !grouped}
+    {:else if !grouped && headerShown}
       <div class="message-header">
         <span class="message-author">{author.name}</span>
         {#if author.isBot}<span class="message-bot-badge">BOT</span>{/if}
@@ -447,6 +473,16 @@
   .message-item[data-layout='list'] .message-gutter {
     width: 36px;
     padding-top: 0;
+  }
+  /* 一覧の先頭の発言のアイコンは、押して名前と時刻を出し入れできる */
+  .message-gutter-toggle {
+    cursor: pointer;
+    border-radius: 50%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .message-gutter-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .message-column {
     flex: 1;

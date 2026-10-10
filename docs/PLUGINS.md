@@ -114,7 +114,7 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `5`（`4` の本体には `postMessage` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `6`（`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -235,7 +235,8 @@ app/node_modules/.bin/tsc -p examples/dice
 | `session.update(state, { card })` / `session.onChange(cb)` | 楽観ロック付きの保存、変更の購読 |
 | `session.emit(name, payload)` / `session.on(name, cb)` | 保存しない一時的なイベント |
 | `this.notify(userIds, text, { session })` | 通知 |
-| `this.postMessage({ body, threadId?, name? })` | ボットとしてメッセージを投稿する（v5）。投稿者は自分のままで、名前は `name`（省略するとプラグインの名前）。例: `examples/bot` |
+| `this.postMessage({ body, threadId?, name?, notify? })` | ボットとしてメッセージを投稿する（v5）。投稿者は自分のままで、名前は `name`（省略するとプラグインの名前）。`notify: true`（v6）なら、通常の宛先に加えて投稿した本人にも通知が届く（文言はボットの名前）。省略すると通知は送らない。例: `examples/bot` |
+| `this.openSettings()` | このプラグインの設定画面を開く（v6）。設定タブに切り替える |
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント（v3）。いまつながっている人に届く |
 | `this.addStatusBarItem()` | 常時表示のステータス欄に出す要素（v3） |
 | `this.holdBackground({ microphone, actions, onAction })` | 画面を切っても動き続ける（v3。Android のフォアグラウンドサービス）。通知のボタンと `update()` は v4 |
@@ -246,7 +247,7 @@ app/node_modules/.bin/tsc -p examples/dice
 | `disnans.ui.*` | 本体と同じ見た目の部品とアイコン（→ [PLUGIN_UI.md](PLUGIN_UI.md)） |
 | `disnans.VersionConflictError` | `session.update` がぶつかったときのエラー |
 | `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（v5）。Android は通話中の出力先（受話口・スピーカー・イヤホン・Bluetooth）、デスクトップは `setSinkId`。使えない環境では一覧が空 |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 5） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 6） |
 
 ### コマンド（パレット・ショートカット・スラッシュコマンド）
 

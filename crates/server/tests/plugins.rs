@@ -818,3 +818,62 @@ async fn bot_post_validates_plugin_body_and_thread() {
     .unwrap();
     assert_eq!(res.status(), 404);
 }
+
+#[tokio::test]
+async fn bot_notify_is_opt_in_and_reaches_the_poster() {
+    let server = TestServer::start().await;
+    let m = manifest("dice", "1.0.0");
+    server
+        .upload_plugin(ALICE, &[("manifest.json", &m), ("main.js", MAIN_JS)])
+        .await;
+    let bob_user: User = server.get_json(BOB, "/api/me").await;
+    let mut alice = server.ws(ALICE).await;
+    let mut bob = server.ws(BOB).await;
+    let post = |body: serde_json::Value| {
+        server
+            .post_json(ALICE, "/api/plugins/dice/messages", &body)
+            .send()
+    };
+
+    // notify を省略すると通知は出ない（本人にも、メンションされた人にも）
+    let res = post(serde_json::json!({ "body": format!("<@{}> 静かに", bob_user.id) }))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+
+    // notify: true なら、メンションされた人と投稿した本人に届く。文言はボットの名前で作る
+    let res = post(serde_json::json!({
+        "body": format!("<@{}> 見て", bob_user.id),
+        "notify": true,
+    }))
+    .await
+    .unwrap();
+    let loud: Message = res.json().await.unwrap();
+
+    // 最初に届いた通知が「見て」のものなので、「静かに」は通知されていない
+    let ServerEvent::Notify {
+        title,
+        body,
+        message_id,
+        ..
+    } = alice
+        .recv_until(|e| matches!(e, ServerEvent::Notify { .. }))
+        .await
+    else {
+        unreachable!()
+    };
+    assert_eq!(title, "ダイス からのメッセージ");
+    assert_eq!(body, "@bob 見て");
+    assert_eq!(message_id.as_deref(), Some(loud.id.as_str()));
+
+    let ServerEvent::Notify {
+        title, message_id, ..
+    } = bob
+        .recv_until(|e| matches!(e, ServerEvent::Notify { .. }))
+        .await
+    else {
+        unreachable!()
+    };
+    assert_eq!(title, "ダイス さんからのメンション");
+    assert_eq!(message_id.as_deref(), Some(loud.id.as_str()));
+}
