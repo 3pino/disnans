@@ -38,12 +38,62 @@ fn enable_webrtc(app: &tauri::App) {
         return;
     };
     let _ = window.with_webview(|webview| {
-        if let Some(settings) = WebViewExt::settings(&webview.inner()) {
+        let wv = webview.inner();
+        if let Some(settings) = WebViewExt::settings(&wv) {
+            let was_on = settings.enables_media_stream();
             settings.set_enable_media_stream(true);
             settings.set_enable_webrtc(true);
             settings.set_enable_mediasource(true);
+            // navigator.mediaDevices は JS のグローバルを作るときに設定を見て決まる。
+            // setup はページの読み込みが始まったあとに走りうるので、設定を変えたときは読み込み直して確実に反映する
+            if !was_on {
+                WebViewExt::reload(&wv);
+            }
         }
     });
+}
+
+/// メインウィンドウを出して前面に持ってくる（トレイから）
+#[cfg(desktop)]
+fn show_main_window(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+/// システムトレイ（通知領域）のアイコン。左クリックでウィンドウを出し、右クリックのメニューに「開く」「終了」。
+/// ウィンドウを閉じても隠すだけなので、アプリを終えるのはここの「終了」だけ。
+/// Linux（libayatana-appindicator）はアイコンのクリックを受け取れず、クリックでメニューが開く
+#[cfg(desktop)]
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let open = MenuItemBuilder::with_id("tray-open", "開く").build(app)?;
+    let quit = MenuItemBuilder::with_id("tray-quit", "終了").build(app)?;
+    let menu = MenuBuilder::new(app).items(&[&open, &quit]).build()?;
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip("disnans")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "tray-open" => show_main_window(app),
+            "tray-quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                show_main_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -77,6 +127,7 @@ pub fn run() {
             .invoke_handler(tauri::generate_handler![read_shared_file])
             .plugin(tauri_plugin_apk_updater::init())
             .plugin(tauri_plugin_system_bars::init())
+            .plugin(tauri_plugin_screen::init())
             .plugin(tauri_plugin_notifier::init());
     }
 
@@ -90,10 +141,20 @@ pub fn run() {
         _ => tauri::webview::PermissionResponse::Default,
     });
 
-    // Linux の WebKitGTK は、WebRTC とメディアストリーム（getUserMedia）が既定でオフ
-    #[cfg(target_os = "linux")]
+    // デスクトップ: ウィンドウを閉じても隠すだけにして、バックグラウンドで動き続ける（WebSocket と通知の受信）。
+    // 終了はトレイのメニューから。トレイのアイコンも setup で作る
+    #[cfg(desktop)]
     {
+        builder = builder.on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        });
         builder = builder.setup(|app| {
+            setup_tray(app)?;
+            // Linux の WebKitGTK は、WebRTC とメディアストリーム（getUserMedia）が既定でオフ
+            #[cfg(target_os = "linux")]
             enable_webrtc(app);
             Ok(())
         });

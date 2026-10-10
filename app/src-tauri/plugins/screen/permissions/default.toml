@@ -1,0 +1,12 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "画面のキャプチャと、ピクチャーインピクチャーを許可する"
+permissions = [
+  "allow-start-capture",
+  "allow-update-capture",
+  "allow-stop-capture",
+  "allow-enter-pip",
+  "allow-register-listener",
+  "allow-remove-listener",
+]

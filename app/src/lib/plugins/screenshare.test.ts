@@ -14,8 +14,19 @@ const load = () => import('../../../../examples/screenshare/main.js') as Promise
 (globalThis as unknown as { disnans: Partial<Disnans.Host> }).disnans = {
   apiVersion: API_VERSION,
   Plugin: PluginBase,
-  ui: createUi({ toast: () => {}, confirm: async () => true }),
+  ui: createUi({
+    toast: () => {},
+    confirm: async () => true,
+    onBack: (run) => hooks.onBack(run),
+    setImmersive: (on) => hooks.setImmersive(on),
+  }),
   VersionConflictError,
+};
+
+// ui.onBack / ui.setImmersive の差し替え（main.js は読み込み時の ui を使うので、ここを書き換える）
+const hooks = {
+  onBack: (_run: () => void): (() => void) => () => {},
+  setImmersive: async (_on: boolean): Promise<boolean> => false,
 };
 
 // ---- 純粋な関数 ----
@@ -78,6 +89,8 @@ describe('間隔・画質の調整', () => {
     const { nextInterval, MAX_DELAY_MS } = await load();
     // 3 fps・予算 100 で、軽い（10）フレームは fps が決める
     expect(nextInterval({ fps: 3, weight: 10, budgetKBps: 100 })).toBeCloseTo(333.3, 0);
+    // 20 fps は 50ms ごと。予算 2400 なら 100 KB のフレームでも間に合う
+    expect(nextInterval({ fps: 20, weight: 100, budgetKBps: 2400 })).toBe(50);
     // 重さ 100 のフレームは毎秒 100 の予算では 1 秒空ける
     expect(nextInterval({ fps: 3, weight: 100, budgetKBps: 100 })).toBe(1000);
     expect(nextInterval({ fps: 3, weight: 100000, budgetKBps: 100 })).toBe(MAX_DELAY_MS);
@@ -90,20 +103,22 @@ describe('間隔・画質の調整', () => {
 
   it('tuneQuality は大きければ quality、次に scale を下げ、小さければ戻す', async () => {
     const { tuneQuality, QUALITY_PRESETS } = await load();
-    const p = QUALITY_PRESETS.standard; // 予算 100 KB/s → 上限 61440 文字
+    const p = QUALITY_PRESETS.p720;
+    const big = 2400 * 1024; // 予算 2400 KB/s の 6 割（1474560 文字）を超える
+    const small = 1000;
     let t = { quality: 0.6, scale: 1 };
-    t = tuneQuality(t, 100000, p);
+    t = tuneQuality(t, big, p);
     expect(t).toEqual({ quality: 0.5, scale: 1 });
-    for (let i = 0; i < 5; i++) t = tuneQuality(t, 100000, p);
+    for (let i = 0; i < 5; i++) t = tuneQuality(t, big, p);
     expect(t.quality).toBe(0.35);
     expect(t.scale).toBeLessThan(1);
-    for (let i = 0; i < 20; i++) t = tuneQuality(t, 100000, p);
+    for (let i = 0; i < 20; i++) t = tuneQuality(t, big, p);
     expect(t.scale).toBe(0.4); // 下限
     // 小さいフレームが続けば戻る（scale が先、その次に quality。もとの quality まで）
-    for (let i = 0; i < 40; i++) t = tuneQuality(t, 1000, p);
+    for (let i = 0; i < 40; i++) t = tuneQuality(t, small, p);
     expect(t).toEqual({ quality: 0.6, scale: 1 });
     // 中くらいなら動かさない
-    expect(tuneQuality(t, 50000, p)).toEqual(t);
+    expect(tuneQuality(t, 1000 * 1024, p)).toEqual(t);
   });
 
   it('frameDiff / shouldSend: 変化が無ければ送らず、しばらくたつか強制なら送る', async () => {
@@ -130,9 +145,148 @@ describe('間隔・画質の調整', () => {
     expect(canShareScreen({})).toBe(false);
     expect(canShareScreen({ mediaDevices: {} })).toBe(false);
     expect(canShareScreen({ mediaDevices: { getDisplayMedia: () => {} } })).toBe(true);
-    expect(parseSettings(null)).toEqual({ fps: 3, quality: 'standard' });
-    expect(parseSettings({ fps: 5, quality: 'high' })).toEqual({ fps: 5, quality: 'high' });
-    expect(parseSettings({ fps: 99, quality: 'toString' })).toEqual({ fps: 3, quality: 'standard' });
+    expect(parseSettings(null)).toEqual({ fps: 5, quality: 'p720', color: 'full' });
+    expect(parseSettings({ fps: 20, quality: 'p1080', color: 'gray' })).toEqual({ fps: 20, quality: 'p1080', color: 'gray' });
+    expect(parseSettings({ fps: 99, quality: 'toString', color: 'constructor' })).toEqual({ fps: 5, quality: 'p720', color: 'full' });
+    // 前の版の保存値は読み替える
+    expect(parseSettings({ fps: 3, quality: 'high' })).toEqual({ fps: 5, quality: 'p1080', color: 'full' });
+    expect(parseSettings({ quality: 'low' }).quality).toBe('p480');
+  });
+});
+
+describe('画像の形式・色数・見積もり', () => {
+  it('sniffImageMime は JPEG・PNG・WebP だけを見分ける', async () => {
+    const { sniffImageMime } = await load();
+    const b64 = (bytes: number[]) => Buffer.from(bytes).toString('base64');
+    expect(sniffImageMime(b64([0xff, 0xd8, 0xff, 0xe0, 1, 2]))).toBe('image/jpeg');
+    expect(sniffImageMime(b64([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]))).toBe('image/png');
+    const riff = [0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50];
+    expect(sniffImageMime(b64(riff))).toBe('image/webp');
+    expect(sniffImageMime(b64([0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x41, 0x56, 0x49, 0x20, 0, 0]))).toBeNull(); // RIFF だが WebP ではない
+    expect(sniffImageMime(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64'))).toBeNull();
+  });
+
+  it('applyColorMode: c256 は 256 色相当に、gray は R=G=B にする', async () => {
+    const { applyColorMode } = await load();
+    const px = new Uint8ClampedArray([200, 100, 50, 255, 0, 0, 0, 255, 255, 255, 255, 255]);
+    const c = px.slice();
+    applyColorMode(c, 'c256');
+    expect([...c.slice(0, 4)]).toEqual([219, 109, 0, 255]); // R は 8 段階（200→219）、G は 8 段階（100→109）、B は 4 段階（50→0）
+    expect([...c.slice(4, 8)]).toEqual([0, 0, 0, 255]);
+    expect([...c.slice(8, 12)]).toEqual([255, 255, 255, 255]);
+    // 色の種類は 256 以内
+    const many = new Uint8ClampedArray(4 * 5000);
+    for (let i = 0; i < many.length; i++) many[i] = (i * 37) % 256;
+    applyColorMode(many, 'c256');
+    const kinds = new Set<string>();
+    for (let i = 0; i < many.length; i += 4) kinds.add(`${many[i]},${many[i + 1]},${many[i + 2]}`);
+    expect(kinds.size).toBeLessThanOrEqual(256);
+    const g = px.slice();
+    applyColorMode(g, 'gray');
+    expect(g[0]).toBe(g[1]);
+    expect(g[1]).toBe(g[2]);
+    expect(g[3]).toBe(255);
+    expect(g[0]).toBeGreaterThan(100);
+    expect(g[0]).toBeLessThan(150);
+    // full は触らない
+    const f = px.slice();
+    applyColorMode(f, 'full');
+    expect([...f]).toEqual([...px]);
+  });
+
+  it('candidateFormats / pickSmallest: 減色は PNG・WebP も試し、小さいものを選ぶ', async () => {
+    const { candidateFormats, pickSmallest } = await load();
+    expect(candidateFormats('full')).toEqual(['image/jpeg']);
+    expect(candidateFormats('c256')).toContain('image/png');
+    expect(candidateFormats('c256')).not.toContain('image/jpeg');
+    expect(candidateFormats('gray')).toContain('image/jpeg');
+    expect(pickSmallest({ 'image/png': 300, 'image/webp': 120, 'image/jpeg': 200 })).toBe('image/webp');
+    expect(pickSmallest({ 'image/jpeg': 100, 'image/webp': 100 })).toBe('image/jpeg');
+    expect(pickSmallest({})).toBeNull();
+  });
+
+  it('estimateBandwidth / formatBytes', async () => {
+    const { estimateBandwidth, formatBytes } = await load();
+    // 100 KB（base64 で約 133 KB）を 5 fps
+    const e = estimateBandwidth(Math.round((100 * 1024 * 4) / 3), 5);
+    expect(e.imageBytes).toBeCloseTo(100 * 1024, -2);
+    expect(e.capped).toBe(false);
+    expect(e.bytesPerSec).toBeCloseTo(5 * 133 * 1024, -4);
+    // 予算（2400 KB/s）を超える分は頭打ち
+    const big = estimateBandwidth(400 * 1024, 20);
+    expect(big.capped).toBe(true);
+    expect(big.bytesPerSec).toBe(2400 * 1024);
+    expect(formatBytes(512)).toBe('1 KB');
+    expect(formatBytes(85 * 1024)).toBe('85 KB');
+    expect(formatBytes(1.5 * 1024 * 1024)).toBe('1.5 MB');
+  });
+
+  it('shareBackend: getDisplayMedia があれば web、無くてもネイティブなら native', async () => {
+    const { shareBackend } = await load();
+    const web = { mediaDevices: { getDisplayMedia: () => {} } };
+    expect(shareBackend(web, { supported: true })).toBe('web');
+    expect(shareBackend({}, { supported: true })).toBe('native');
+    expect(shareBackend({}, { supported: false })).toBeNull();
+    expect(shareBackend({}, undefined)).toBeNull();
+  });
+
+  it('canWebPip は PiP と captureStream の両方が要る', async () => {
+    const { canWebPip } = await load();
+    const v = { requestPictureInPicture: () => {} };
+    const c = { captureStream: () => {} };
+    expect(canWebPip({ pictureInPictureEnabled: true }, v, c)).toBe(true);
+    expect(canWebPip({ pictureInPictureEnabled: false }, v, c)).toBe(false);
+    expect(canWebPip({ pictureInPictureEnabled: true }, {}, c)).toBe(false);
+    expect(canWebPip({ pictureInPictureEnabled: true }, v, {})).toBe(false);
+    expect(canWebPip(undefined, v, c)).toBe(false);
+  });
+});
+
+describe('拡大縮小・パン', () => {
+  const stage = { w: 800, h: 600 };
+  const img = { w: 800, h: 450 };
+
+  it('zoomAt は指定した点が動かない', async () => {
+    const { zoomAt } = await load();
+    const v = zoomAt({ scale: 1, x: 0, y: 0 }, 2, 100, 50);
+    expect(v).toEqual({ scale: 2, x: -100, y: -50 });
+    // 点 (100, 50) は、拡大前の画像の座標 (100, 50) → 拡大後 (100*2 + -100, 50*2 + -50) = (100, 50)
+    expect(100 * 2 + v.x).toBe(100);
+    // 範囲外は丸める
+    expect(zoomAt({ scale: 1, x: 0, y: 0 }, 100, 0, 0).scale).toBe(8);
+    expect(zoomAt({ scale: 2, x: 0, y: 0 }, 0.1, 0, 0).scale).toBe(1);
+  });
+
+  it('pinchView: 指を広げると拡大し、中点の下の点が追従する', async () => {
+    const { pinchView } = await load();
+    const v0 = { scale: 1, x: 0, y: 0 };
+    // 中点 (0, 0) で間隔が 2 倍
+    expect(pinchView(v0, { x: 0, y: 0 }, 100, { x: 0, y: 0 }, 200)).toEqual({ scale: 2, x: 0, y: 0 });
+    // 間隔が同じで中点が動けばパン
+    expect(pinchView({ scale: 2, x: 10, y: 0 }, { x: 0, y: 0 }, 1, { x: 30, y: -20 }, 1)).toEqual({ scale: 2, x: 40, y: -20 });
+    // 中点が動きながら拡大: 始めの中点 (50, 0) の下にあった点が、いまの中点 (80, 0) の下に来る
+    const v = pinchView(v0, { x: 50, y: 0 }, 100, { x: 80, y: 0 }, 300);
+    expect(v.scale).toBe(3);
+    expect(50 * 3 + v.x).toBe(80);
+    // 縮めすぎない
+    expect(pinchView(v0, { x: 0, y: 0 }, 100, { x: 0, y: 0 }, 10).scale).toBe(1);
+  });
+
+  it('clampView: 画像がはみ出さない範囲に収め、等倍では中央に戻す', async () => {
+    const { clampView } = await load();
+    expect(clampView({ scale: 1, x: 50, y: 50 }, stage, img)).toEqual({ scale: 1, x: 0, y: 0 });
+    // 2 倍: 横は (800*2-800)/2 = 400、縦は (450*2-600)/2 = 150 まで
+    expect(clampView({ scale: 2, x: 999, y: -999 }, stage, img)).toEqual({ scale: 2, x: 400, y: -150 });
+    expect(clampView({ scale: 2, x: 100, y: 20 }, stage, img)).toEqual({ scale: 2, x: 100, y: 20 });
+    expect(clampView({ scale: 20, x: 0, y: 0 }, stage, img).scale).toBe(8);
+  });
+
+  it('isDoubleTap は短い間隔で近い 2 回のタップ', async () => {
+    const { isDoubleTap } = await load();
+    expect(isDoubleTap(null, { t: 100, x: 0, y: 0 })).toBe(false);
+    expect(isDoubleTap({ t: 0, x: 0, y: 0 }, { t: 200, x: 5, y: 5 })).toBe(true);
+    expect(isDoubleTap({ t: 0, x: 0, y: 0 }, { t: 600, x: 5, y: 5 })).toBe(false);
+    expect(isDoubleTap({ t: 0, x: 0, y: 0 }, { t: 200, x: 100, y: 0 })).toBe(false);
   });
 });
 
@@ -190,9 +344,11 @@ function fakeStream() {
   return { stream: { getTracks: () => [track], getVideoTracks: () => [track] }, track, end: () => listeners.ended() };
 }
 
-async function setup(opts: { display: boolean }) {
+async function setup(opts: { display: boolean; native?: Partial<Disnans.ScreenCapture>; pip?: Partial<Disnans.Pip> }) {
   const c = makeCall();
   (g.disnans as { call: unknown }).call = c.call;
+  (g.disnans as { screenCapture: unknown }).screenCapture = opts.native;
+  (g.disnans as { pip: unknown }).pip = opts.pip;
   const fs = fakeStream();
   const getDisplayMedia = vi.fn(async () => fs.stream);
   Object.defineProperty(nav, 'mediaDevices', { configurable: true, value: opts.display ? { getDisplayMedia } : undefined });
@@ -220,7 +376,7 @@ async function setup(opts: { display: boolean }) {
     changed: () => {},
   } as unknown as HostServices;
   const r = new PluginRuntime(
-    { id: 'screenshare', name: '画面共有', version: '0.1.0', description: '', author: '', minApiVersion: 8 },
+    { id: 'screenshare', name: '画面共有', version: '0.1.0', description: '', author: '', minApiVersion: 9 },
     services,
   );
   const mod = await load();
@@ -236,7 +392,7 @@ beforeEach(() => {
   setLucideForTest({} as never);
   const ctx = { drawImage: () => {}, getImageData: () => ({ data: new Uint8ClampedArray(32 * 18 * 4) }) };
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
-  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,QUJDRA==');
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,/9j/QUJDRA==');
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
   Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', { configurable: true, get: () => 1920 });
   Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', { configurable: true, get: () => 1080 });
@@ -247,6 +403,8 @@ afterEach(() => {
   setLucideForTest(null);
   document.body.replaceChildren();
   Reflect.deleteProperty(nav, 'mediaDevices');
+  hooks.onBack = () => () => {};
+  hooks.setImmersive = async () => false;
 });
 
 describe('examples/screenshare', () => {
@@ -254,12 +412,12 @@ describe('examples/screenshare', () => {
     const s = await setup({ display: false });
     expect(s.call.addButton).not.toHaveBeenCalled();
     s.fire('screen.state', 'pa', 'a', { on: true });
-    s.fire('screen.frame', 'pa', 'a', { f: 0, i: 0, n: 1, d: 'QUJDRA==' });
+    s.fire('screen.frame', 'pa', 'a', { f: 0, i: 0, n: 1, d: '/9j/QUJDRA==' });
     const btn = s.status().querySelector('button')!;
     expect(btn.textContent).toContain('アリス');
     btn.click();
     const img = document.querySelector<HTMLImageElement>('.screenshare-overlay img')!;
-    expect(img.getAttribute('src')).toBe('data:image/jpeg;base64,QUJDRA==');
+    expect(img.getAttribute('src')).toBe('data:image/jpeg;base64,/9j/QUJDRA==');
     s.r.stop();
   });
 
@@ -272,7 +430,7 @@ describe('examples/screenshare', () => {
     expect(emitted(s.call, 'screen.state')[0]).toEqual({ on: true });
     expect(s.button()!.active).toBe(true);
     const frames = emitted(s.call, 'screen.frame');
-    expect(frames).toEqual([{ f: 0, i: 0, n: 1, d: 'QUJDRA==' }]);
+    expect(frames).toEqual([{ f: 0, i: 0, n: 1, d: '/9j/QUJDRA==' }]);
 
     // 画面が変わらないので、しばらくは送らない
     await vi.advanceTimersByTimeAsync(2000);
@@ -343,8 +501,8 @@ describe('examples/screenshare', () => {
     s.call.participants.push({ peer: 'pb', self: false });
     s.fire('screen.state', 'pa', 'a', { on: true });
     s.fire('screen.state', 'pb', 'b', { on: true });
-    s.fire('screen.frame', 'pa', 'a', { f: 0, i: 0, n: 1, d: 'QUFB' });
-    s.fire('screen.frame', 'pb', 'b', { f: 0, i: 0, n: 1, d: 'QkJC' });
+    s.fire('screen.frame', 'pa', 'a', { f: 0, i: 0, n: 1, d: '/9j/QUFB' });
+    s.fire('screen.frame', 'pb', 'b', { f: 0, i: 0, n: 1, d: '/9j/QkJC' });
     const buttons = s.status().querySelectorAll('button');
     expect(buttons).toHaveLength(2);
     buttons[0].click();
@@ -380,6 +538,196 @@ describe('examples/screenshare', () => {
     s.status().querySelector('button')!.click();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(document.querySelector('.screenshare-overlay')).toBeNull();
+    s.r.stop();
+  });
+
+  it('ステータス欄に「共有中（止める）」は出ず、共有の開始を知らせるトーストも出ない', async () => {
+    const s = await setup({ display: true });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.status().textContent).not.toContain('止める');
+    expect(s.status().querySelectorAll('button')).toHaveLength(0);
+    s.fire('screen.state', 'pa', 'a', { on: true });
+    expect(s.toast).not.toHaveBeenCalled();
+    expect(s.status().querySelectorAll('button')).toHaveLength(1);
+    s.r.stop();
+  });
+
+  it('画像でない（SVG など）フレームは表示しない', async () => {
+    const s = await setup({ display: false });
+    s.fire('screen.state', 'pa', 'a', { on: true });
+    s.fire('screen.frame', 'pa', 'a', { f: 0, i: 0, n: 1, d: Buffer.from('<svg xmlns="x"/>').toString('base64') });
+    s.status().querySelector('button')!.click();
+    expect(document.querySelector('.screenshare-overlay img')).toBeNull();
+    // PNG は表示できる（形式は画像から読む）
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]).toString('base64');
+    s.fire('screen.frame', 'pa', 'a', { f: 1, i: 0, n: 1, d: png });
+    expect(document.querySelector('.screenshare-overlay img')!.getAttribute('src')).toBe(`data:image/png;base64,${png}`);
+    s.r.stop();
+  });
+
+  it('閲覧の表示には拡大縮小のボタンが無く、戻る操作（ui.onBack）で閉じる', async () => {
+    const backs: (() => void)[] = [];
+    hooks.onBack = (run) => {
+      backs.push(run);
+      return () => {
+        backs.splice(backs.indexOf(run), 1);
+      };
+    };
+    const s = await setup({ display: false });
+    s.fire('screen.state', 'pa', 'a', { on: true });
+    s.status().querySelector('button')!.click();
+    const labels = [...document.querySelectorAll('.screenshare-bar button')].map((b) => b.getAttribute('aria-label'));
+    expect(labels).not.toContain('原寸で見る');
+    expect(labels).toContain('全画面');
+    expect(backs).toHaveLength(1);
+    backs[0]();
+    expect(document.querySelector('.screenshare-overlay')).toBeNull();
+    expect(backs).toHaveLength(0);
+    s.r.stop();
+  });
+
+  it('Android: 全画面は没入モードにし、戻る操作でまず全画面を解除する（Fullscreen API を使わない）', async () => {
+    const backs: (() => void)[] = [];
+    hooks.onBack = (run) => {
+      backs.push(run);
+      return () => {
+        backs.splice(backs.indexOf(run), 1);
+      };
+    };
+    const immersive = vi.fn(async () => true);
+    hooks.setImmersive = immersive;
+    const s = await setup({ display: false });
+    s.fire('screen.state', 'pa', 'a', { on: true });
+    s.status().querySelector('button')!.click();
+    document.querySelector<HTMLButtonElement>('[aria-label="全画面"]')!.click();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(immersive).toHaveBeenLastCalledWith(true);
+    expect(document.querySelector('.screenshare-overlay')!.classList.contains('screenshare-fullscreen')).toBe(true);
+    expect(s.toast).not.toHaveBeenCalled();
+    expect(backs).toHaveLength(2);
+    // 戻る: 全画面だけ解除して、閲覧は残る
+    backs[backs.length - 1]();
+    expect(immersive).toHaveBeenLastCalledWith(false);
+    expect(document.querySelector('.screenshare-overlay')!.classList.contains('screenshare-fullscreen')).toBe(false);
+    expect(backs).toHaveLength(1);
+    // もう一度戻ると閲覧が閉じる
+    backs[0]();
+    expect(document.querySelector('.screenshare-overlay')).toBeNull();
+    s.r.stop();
+  });
+
+  it('閲覧を閉じるとき、全画面なら没入モードも戻す', async () => {
+    hooks.onBack = () => () => {};
+    const immersive = vi.fn(async () => true);
+    hooks.setImmersive = immersive;
+    const s = await setup({ display: false });
+    s.fire('screen.state', 'pa', 'a', { on: true });
+    s.status().querySelector('button')!.click();
+    document.querySelector<HTMLButtonElement>('[aria-label="全画面"]')!.click();
+    await vi.advanceTimersByTimeAsync(1);
+    document.querySelector<HTMLButtonElement>('[aria-label="閉じる"]')!.click();
+    expect(immersive).toHaveBeenLastCalledWith(false);
+    s.r.stop();
+  });
+
+  it('Android の PiP のボタンは pip.enter を呼び、小窓の間は画像だけの表示にする', async () => {
+    let change: (a: boolean) => void = () => {};
+    const enter = vi.fn(async () => true);
+    const s = await setup({
+      display: false,
+      pip: { supported: true, enter, onChange: (cb: (a: boolean) => void) => ((change = cb), () => {}) },
+    });
+    s.fire('screen.state', 'pa', 'a', { on: true });
+    s.status().querySelector('button')!.click();
+    document.querySelector<HTMLButtonElement>('[aria-label="PiP（小窓）で見る"]')!.click();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(enter).toHaveBeenCalled();
+    change(true);
+    expect(document.querySelector('.screenshare-overlay')!.classList.contains('screenshare-pip')).toBe(true);
+    change(false);
+    expect(document.querySelector('.screenshare-overlay')!.classList.contains('screenshare-pip')).toBe(false);
+    s.r.stop();
+  });
+
+  it('getDisplayMedia が無くても、ネイティブの取得があれば共有できる（Android）', async () => {
+    let onFrame: (f: Disnans.ScreenCaptureFrame) => void = () => {};
+    let opts: Disnans.ScreenCaptureOptions | null = null;
+    const start = vi.fn(async (o: Disnans.ScreenCaptureOptions, cb: (f: Disnans.ScreenCaptureFrame) => void) => {
+      opts = o;
+      onFrame = cb;
+    });
+    const stop = vi.fn(async () => {});
+    const update = vi.fn(async () => {});
+    const s = await setup({ display: false, native: { supported: true, start, stop, update } });
+    expect(s.call.addButton).toHaveBeenCalledOnce();
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(start).toHaveBeenCalledOnce();
+    expect(opts).toMatchObject({ maxEdge: 1280, fps: 5, color: 'full', format: 'jpeg' });
+    expect(s.button()!.active).toBe(true);
+    expect(emitted(s.call, 'screen.state')[0]).toEqual({ on: true });
+
+    onFrame({ data: '/9j/QUJDRA==', mime: 'image/jpeg', width: 1280, height: 720 });
+    expect(emitted(s.call, 'screen.frame')).toEqual([{ f: 0, i: 0, n: 1, d: '/9j/QUJDRA==' }]);
+
+    // 予算の間隔が空いていなくても、新しいフレームは捨てずに予約される（最新の 1 枚だけ）
+    onFrame({ data: '/9j/QUFB', mime: 'image/jpeg', width: 1280, height: 720 });
+    onFrame({ data: '/9j/QkJC', mime: 'image/jpeg', width: 1280, height: 720 });
+    await vi.advanceTimersByTimeAsync(300);
+    const sent = emitted(s.call, 'screen.frame').map((c) => c.d);
+    expect(sent).toEqual(['/9j/QUJDRA==', '/9j/QkJC']);
+
+    // 止めるとネイティブも止まる
+    s.button()!.onClick();
+    expect(stop).toHaveBeenCalled();
+    expect(emitted(s.call, 'screen.state').at(-1)).toEqual({ on: false });
+    s.r.stop();
+  });
+
+  it('ネイティブの取得が OS 側で終わったら止まる', async () => {
+    let opts: Disnans.ScreenCaptureOptions | null = null;
+    const s = await setup({
+      display: false,
+      native: { supported: true, start: async (o: Disnans.ScreenCaptureOptions) => void (opts = o), stop: async () => {}, update: async () => {} },
+    });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.button()!.active).toBe(true);
+    (opts as unknown as Disnans.ScreenCaptureOptions).onEnd!();
+    expect(s.button()!.active).toBe(false);
+    s.r.stop();
+  });
+
+  it('ネイティブの許可を断ったら共有は始まらない', async () => {
+    const s = await setup({
+      display: false,
+      native: { supported: true, start: async () => Promise.reject(new Error('permission denied')), stop: async () => {}, update: async () => {} },
+    });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.button()!.active).toBeFalsy();
+    expect(s.call.emit).not.toHaveBeenCalled();
+    s.r.stop();
+  });
+
+  it('設定画面: 説明は無く、FPS は 5 と 20、画質は解像度と品質、色数を選べる。プレビューを出す', async () => {
+    const s = await setup({ display: false });
+    const container = document.createElement('div');
+    document.body.append(container);
+    // 設定タブの描画（addSettingTab で登録されたもの）。プレビューの符号化は jsdom の canvas に合わせて差し替える
+    vi.mocked(HTMLCanvasElement.prototype.toDataURL).mockReturnValue('data:image/jpeg;base64,/9j/' + 'A'.repeat(1000));
+    const ctx = new Proxy({} as Record<string, unknown>, { get: (t, k) => (k in t ? t[k as string] : () => ({ addColorStop: () => {} })), set: () => true });
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(ctx as never);
+    s.r.settingTabs[0].display(container);
+    expect(container.querySelector('.setting-row-description')).toBeNull();
+    const names = [...container.querySelectorAll('.setting-row-name')].map((n) => n.textContent);
+    expect(names).toEqual(['FPS', '画質', '色数']);
+    const options = (i: number) => [...container.querySelectorAll('.setting-row')[i].querySelectorAll('.segmented-option')].map((b) => b.textContent);
+    expect(options(0)).toEqual(['5', '20']);
+    expect(options(1)).toEqual(['480p・品質 50%', '720p・品質 60%', '1080p・品質 80%']);
+    expect(options(2)).toEqual(['フルカラー', '256 色', 'グレースケール']);
+    expect(container.querySelector('.screenshare-preview-info')!.textContent).toMatch(/1280×720.*JPEG.*1 フレーム 約 \d+ KB.*5 FPS/);
     s.r.stop();
   });
 });

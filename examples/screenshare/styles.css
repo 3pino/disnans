@@ -32,43 +32,104 @@
   overflow-x: auto;
 }
 
+.screenshare-tab {
+  color: var(--text);
+}
+
 .screenshare-tab-selected {
   background: var(--accent-soft);
   border-color: var(--accent);
 }
 
+/* 画像を置く舞台。ピンチ・ドラッグは自分で処理するので、ブラウザの拡大・スクロールは切る */
 .screenshare-stage {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: grid;
   place-items: center;
-  overflow: auto;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-/* 画面に収める */
+/* 画面に収める（拡大は transform で行う） */
 .screenshare-img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-}
-
-/* 原寸（はみ出した分はスクロール） */
-.screenshare-stage-actual {
-  place-items: start;
-}
-.screenshare-stage-actual .screenshare-img {
-  max-width: none;
-  max-height: none;
+  transform-origin: center center;
+  will-change: transform;
+  -webkit-user-drag: none;
 }
 
 .screenshare-wait {
   color: var(--text-muted);
 }
 
-/* ステータス欄の項目 */
+/* 全画面のあいだは、バーを隠して解除ボタンだけを浮かべる */
+.screenshare-float {
+  display: none;
+}
+.screenshare-fullscreen .screenshare-bar {
+  display: none;
+}
+.screenshare-fullscreen .screenshare-float {
+  display: inline-flex;
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 8px);
+  right: calc(env(safe-area-inset-right) + 8px);
+  z-index: 1;
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  color: var(--text);
+}
+
+/* PiP（小窓）のあいだは、画像だけを見せる */
+.screenshare-pip {
+  padding: 0;
+}
+.screenshare-pip .screenshare-bar,
+.screenshare-pip .screenshare-float {
+  display: none;
+}
+
+/* ステータス欄の項目。「〜の画面を見る」は、既定の ghost より文字を明るく（本体の --text）する */
 .screenshare-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+.screenshare-status .btn.ghost {
+  color: var(--text);
+  font-weight: 600;
+}
+.screenshare-status .btn.ghost .icon {
+  color: var(--accent);
+}
+
+/* 設定のプレビュー */
+.screenshare-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.screenshare-preview-img {
+  width: 100%;
+  max-width: 560px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.screenshare-preview-info {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.screenshare-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

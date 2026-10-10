@@ -5,6 +5,7 @@
   import ConfirmDialog from './components/ConfirmDialog.svelte';
   import Toasts from './components/Toasts.svelte';
   import Lightbox from './components/Lightbox.svelte';
+  import MessageSearch from './components/MessageSearch.svelte';
   import { needsServerSetup, isAndroid, isTauri } from './lib/config';
   import { isMac } from './lib/plugins/hotkey';
   import { startViewportSync, startZoomGuard } from './lib/viewport';
@@ -15,6 +16,7 @@
   import { pluginHost } from './lib/plugins/host.svelte';
   import { closeTopLayer, isBackKey, startBackNav } from './lib/backNav';
   import { startDropGuard } from './lib/dropGuard';
+  import { startContextMenuGuard } from './lib/contextMenu';
   import { startUpdateWatch } from './lib/updateWatch';
 
   let setup = $state(needsServerSetup());
@@ -57,6 +59,9 @@
 
   // ファイルをどこに落としても、WebView がファイルへ移動しない（受け取りは ChatView が行う）
   onMount(() => startDropGuard());
+
+  // 右クリックの WebView の既定のメニュー（更新・保存・印刷など）は出さない。入力欄の中は残す（アプリの独自の右クリックはそのまま動く）
+  onMount(() => startContextMenuGuard());
 
   // アプリのアップデートを裏で確認し、新しい版があれば知らせる（Tauri 版だけ）
   onMount(() => startUpdateWatch());
@@ -113,5 +118,8 @@
   <Shell />
   <ConfirmDialog />
   <Lightbox />
+  {#if ui.searchOpen}
+    <MessageSearch onclose={() => (ui.searchOpen = false)} />
+  {/if}
 {/if}
 <Toasts />

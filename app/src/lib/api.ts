@@ -90,6 +90,9 @@ export const api = {
       'GET',
       '/api/messages' + qs({ thread_id: opts.threadId, before: opts.before, limit: opts.limit }),
     ),
+  /** 本文の全文検索（メインチャットとスレッドの両方。新しい順。空白で区切った語をすべて含むもの） */
+  searchMessages: (opts: { q: string; before?: string | null; limit?: number }) =>
+    request<Message[]>('GET', '/api/messages/search' + qs({ q: opts.q, before: opts.before, limit: opts.limit })),
   threads: () => request<Thread[]>('GET', '/api/threads'),
   thread: (id: string) => request<Thread>('GET', `/api/threads/${encodeURIComponent(id)}`),
   /** タイトル・アーカイブを変える（スレッドを立てた人だけ） */

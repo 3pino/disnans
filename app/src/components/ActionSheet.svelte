@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { Component } from 'svelte';
   import SmilePlus from '@lucide/svelte/icons/smile-plus';
   import MenuItem from './ui/MenuItem.svelte';
+  import type { IconRef } from '../lib/icons.svelte';
 
-  type Item = { label: string; icon: Component<{ size?: number }>; danger?: boolean; run: () => void };
+  type Item = { id?: string; label: string; icon: IconRef; danger?: boolean; run: () => void };
 
   let {
     items,
@@ -50,7 +50,7 @@
     </div>
   {/if}
   <div class="action-sheet-items" role="menu">
-    {#each items as it (it.label)}
+    {#each items as it (it.id ?? it.label)}
       <MenuItem
         class="action-sheet-item"
         icon={it.icon}

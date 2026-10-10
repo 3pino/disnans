@@ -15,7 +15,7 @@
   import { api } from '../lib/api';
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
-  import { TAG_ICON_NAMES, tagIcon } from '../lib/tagIcons';
+  import { tagIcon } from '../lib/tagIcons';
   import { MAX_TAGS, MAX_TAG_LABEL, MAX_TITLE } from '../lib/thread';
 
   // スレッドのタイトル・タグ・アーカイブを編集する。
@@ -30,8 +30,6 @@
   let title = $state(initial?.title ?? '');
   let archived = $state(initial?.archived ?? false);
   let tags = $state<ThreadTag[]>((initial?.tags ?? []).map((t) => ({ ...t })));
-  /** アイコンを選んでいるタグの位置 */
-  let picking = $state<number | null>(null);
   let saving = $state(false);
   let usages = $state<ThreadTagUsage[]>([]);
 
@@ -54,17 +52,10 @@
   function addTag(tag: ThreadTag = { label: '', icon: null }) {
     if (tags.length >= MAX_TAGS) return;
     tags.push({ ...tag });
-    if (!tag.label) picking = null;
   }
 
   function removeTag(i: number) {
     tags.splice(i, 1);
-    picking = null;
-  }
-
-  function pickIcon(i: number, name: string | null) {
-    tags[i].icon = name;
-    picking = null;
   }
 
   async function save() {
@@ -100,31 +91,11 @@
         {#each tags as tag, i (i)}
           {@const Icon = tag.icon ? tagIcon(tag.icon) : Tag}
           <li class="thread-edit-tag">
-            <IconButton
-              label="アイコンを選ぶ"
-              title={tag.icon ?? 'アイコンなし'}
-              active={picking === i}
-              onclick={() => (picking = picking === i ? null : i)}><Icon size={16} /></IconButton
-            >
+            <!-- 保存済みのアイコンは表示して、そのまま残す（ここでは選べない） -->
+            <span class="thread-edit-tag-icon" title={tag.icon ?? undefined}><Icon size={16} /></span>
             <TextInput bind:value={tag.label} maxlength={MAX_TAG_LABEL} placeholder="タグ（絵文字も使えます）" aria-label="タグの名前" />
             <IconButton label="タグを外す" onclick={() => removeTag(i)}><X size={16} /></IconButton>
           </li>
-          {#if picking === i}
-            <li class="thread-edit-icons" aria-label="アイコン">
-              <button type="button" class="thread-edit-icon" class:thread-edit-icon-on={!tag.icon} onclick={() => pickIcon(i, null)}>なし</button>
-              {#each TAG_ICON_NAMES as name (name)}
-                {@const C = tagIcon(name)}
-                <button
-                  type="button"
-                  class="thread-edit-icon"
-                  class:thread-edit-icon-on={tag.icon === name}
-                  title={name}
-                  aria-label={name}
-                  onclick={() => pickIcon(i, name)}><C size={16} /></button
-                >
-              {/each}
-            </li>
-          {/if}
         {/each}
       </ul>
       <div>
@@ -195,33 +166,13 @@
     align-items: center;
     gap: 4px;
   }
-  .thread-edit-icons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2px;
-    padding: 6px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-  }
-  .thread-edit-icon {
+  .thread-edit-tag-icon {
     display: grid;
     place-items: center;
-    min-width: 30px;
+    flex: none;
+    width: 30px;
     height: 30px;
-    padding: 0 4px;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: none;
-    color: var(--text);
-    font-size: 12px;
-  }
-  .thread-edit-icon:hover {
-    background: var(--hover);
-  }
-  .thread-edit-icon.thread-edit-icon-on {
-    background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--text-muted);
   }
   .thread-edit-suggest {
     display: flex;

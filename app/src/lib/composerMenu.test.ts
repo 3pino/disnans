@@ -3,12 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   addComposerMenuCommand,
   composerMenuItems,
-  dropSlot,
   normalizeComposerMenu,
   removeComposerMenuEntry,
   reorderComposerMenuEntry,
   setComposerMenuHidden,
-  slotToIndex,
   type ComposerMenuEntry,
   type ComposerMenuPrefs,
 } from './composerMenu';
@@ -100,28 +98,6 @@ describe('composer menu edits', () => {
     const next = reorderComposerMenuEntry(prefs, available, 'builtin:file', 1);
     expect(ids(composerMenuItems(available, next, { includeHidden: true })).slice(0, 2)).toEqual(['action:plugin:dice:roll', 'builtin:file']);
     expect(next.hidden).toEqual(['action:plugin:dice:roll']);
-  });
-
-  it('差し込み位置は行の中央で決まる', () => {
-    const rows = [
-      { top: 0, bottom: 40 },
-      { top: 44, bottom: 84 },
-      { top: 88, bottom: 128 },
-    ];
-    expect(dropSlot(rows, -10)).toBe(0);
-    expect(dropSlot(rows, 19)).toBe(0);
-    expect(dropSlot(rows, 21)).toBe(1);
-    expect(dropSlot(rows, 100)).toBe(2);
-    expect(dropSlot(rows, 500)).toBe(3);
-  });
-
-  it('差し込み位置を、抜いたあとの並びの位置に直す', () => {
-    // 2番目（0 始まりで1）の行を、その前（slot 1）に戻す → 同じ位置
-    expect(slotToIndex(1, 1)).toBe(1);
-    // 1 の行を、末尾の後ろ（slot 3）に入れる → 最後（2）
-    expect(slotToIndex(0, 3)).toBe(2);
-    // 2 の行を、先頭の前（slot 0）に入れる → 先頭（0）
-    expect(slotToIndex(2, 0)).toBe(0);
   });
 
   it('出す・出さないを切り替える', () => {

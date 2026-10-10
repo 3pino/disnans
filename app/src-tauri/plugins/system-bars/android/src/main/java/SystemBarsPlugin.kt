@@ -22,6 +22,12 @@ class NavigationBarArgs {
   var hidden: Boolean = false
 }
 
+@InvokeArg
+class ImmersiveArgs {
+  /** 没入モード（ステータスバーとナビゲーションバーを隠す）にするなら true */
+  var on: Boolean = false
+}
+
 @TauriPlugin
 class SystemBarsPlugin(private val activity: Activity) : Plugin(activity) {
   /** バーの色や edge-to-edge はそのままに、アイコンの明暗だけを変える */
@@ -63,11 +69,32 @@ class SystemBarsPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  /** 没入モード（画面共有の閲覧の全画面など）。Android の WebView には Fullscreen API が無いので、ネイティブで切り替える */
+  private var immersive = false
+
+  /**
+   * 没入モードにする・戻す。ステータスバーとナビゲーションバーを隠し、端からスワイプすると一時的に出る。
+   * 戻すときは、ナビゲーションバーを隠す設定（setNavigationBarHidden）に従う
+   */
+  @Command
+  fun setImmersive(invoke: Invoke) {
+    val args = invoke.parseArgs(ImmersiveArgs::class.java)
+    activity.runOnUiThread {
+      try {
+        immersive = args.on
+        applyNavigationBar()
+        invoke.resolve()
+      } catch (ex: Exception) {
+        invoke.reject(ex.message)
+      }
+    }
+  }
+
   // ほかのアプリから戻ったときなどに、システムがバーを出し直すことがあるので、かけ直す。
   // onResume(activity) は AppCompatActivity が要り、このプラグインからは見えないので古いほうを使う
   @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
   override fun onResume() {
-    if (!navigationHidden) return
+    if (!navigationHidden && !immersive) return
     activity.runOnUiThread {
       try {
         applyNavigationBar()
@@ -80,6 +107,13 @@ class SystemBarsPlugin(private val activity: Activity) : Plugin(activity) {
   private fun applyNavigationBar() {
     val window = activity.window
     val controller = WindowCompat.getInsetsController(window, window.decorView)
+    if (immersive) {
+      controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+      controller.hide(WindowInsetsCompat.Type.systemBars())
+      return
+    }
+    // 没入モードから戻るときは、ステータスバーも出し直す
+    controller.show(WindowInsetsCompat.Type.statusBars())
     if (navigationHidden) {
       controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
       controller.hide(WindowInsetsCompat.Type.navigationBars())

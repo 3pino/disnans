@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- 画面のキャプチャ（MediaProjection）は、この型のフォアグラウンドサービスの中で行う -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <!--
+          ピクチャーインピクチャー（小窓）に入れるようにする。MainActivity は tauri android init の生成物（gen/）なので触らず、
+          マニフェストの統合で同じ名前の activity に属性を足す（notifier プラグインの共有の intent-filter と同じやり方）。
+        -->
+        <activity
+            android:name="dev.disnans.app.MainActivity"
+            android:exported="true"
+            android:supportsPictureInPicture="true" />
+
+        <!-- mediaProjection: 画面のキャプチャを続けるための種類（OS の確認のダイアログで許可されたあとに始める） -->
+        <service
+            android:name="dev.disnans.screen.CaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+    </application>
+</manifest>

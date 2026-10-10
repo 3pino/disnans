@@ -119,6 +119,84 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
         .collect())
 }
 
+/// 本文の全文検索。空白で区切った語をすべて含むメッセージを、`before` より古いものから新しい順に最大 `limit` 件返す。
+/// メインチャットもスレッドの返信も対象にする（`thread_id` で、どこのメッセージかわかる）。
+pub async fn search(
+    pool: &SqlitePool,
+    query: &str,
+    before: Option<&str>,
+    limit: u32,
+) -> sqlx::Result<Vec<Message>> {
+    let ids = search_ids(pool, query, before, limit).await?;
+    load(pool, &ids).await
+}
+
+/// 検索に一致するメッセージの ID（新しい順）。
+async fn search_ids(
+    pool: &SqlitePool,
+    query: &str,
+    before: Option<&str>,
+    limit: u32,
+) -> sqlx::Result<Vec<String>> {
+    let terms: Vec<&str> = query.split_whitespace().collect();
+    if terms.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // trigram の索引は 3 文字以上の語でしか引けない。短い語を含むときは LIKE で探す（遅いが、件数は多くない）
+    if terms.iter().all(|t| t.chars().count() >= 3) {
+        // 語ごとにフレーズにして、AND でつなぐ（フレーズ内の二重引用符は二つに直す）
+        let expr = terms
+            .iter()
+            .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
+            .collect::<Vec<_>>()
+            .join(" AND ");
+        let ids: Vec<String> = sqlx::query_scalar(
+            "SELECT id FROM messages
+             WHERE id IN (SELECT id FROM messages_fts WHERE messages_fts MATCH ?)
+               AND (? IS NULL OR id < ?)
+             ORDER BY id DESC
+             LIMIT ?",
+        )
+        .bind(expr)
+        .bind(before)
+        .bind(before)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?;
+        return Ok(ids);
+    }
+
+    let conds = vec!["body LIKE ? ESCAPE '\\'"; terms.len()].join(" AND ");
+    let sql = format!(
+        "SELECT id FROM messages
+         WHERE {conds} AND (? IS NULL OR id < ?)
+         ORDER BY id DESC
+         LIMIT ?"
+    );
+    let mut q = sqlx::query_scalar::<_, String>(&sql);
+    for term in &terms {
+        q = q.bind(format!("%{}%", escape_like(term)));
+    }
+    q.bind(before)
+        .bind(before)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+}
+
+/// LIKE のワイルドカード（`%` `_`）と、エスケープの `\` を文字として扱えるようにする。
+fn escape_like(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// メインチャット（`thread_id` が `None`）またはスレッドの返信を、`before` より古いものから
 /// 新しい順に最大 `limit` 件取り、古い順に並べて返す。
 pub async fn page(

@@ -27,3 +27,15 @@ export async function setNavigationBarHidden(hidden: boolean): Promise<void> {
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('plugin:system-bars|set_navigation_bar_hidden', { hidden });
 }
+
+/**
+ * Android で没入モードにする・戻す（API v9 の `disnans.ui.setImmersive`）。ステータスバーとナビゲーションバーを隠し、
+ * 画面の端からスワイプすると一時的に出る。Android の WebView には Fullscreen API（requestFullscreen）が無いので、画面共有の閲覧などの全画面に使う。
+ * 実際にネイティブで切り替えたら true。デスクトップやブラウザでは何もせず false
+ */
+export async function setImmersive(on: boolean): Promise<boolean> {
+  if (!isTauri() || !isAndroid()) return false;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('plugin:system-bars|set_immersive', { on });
+  return true;
+}

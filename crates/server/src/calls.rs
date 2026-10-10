@@ -24,8 +24,10 @@ const MAX_DEVICE_CHARS: usize = 32;
 
 /// 送り手ごとの制限（トークンバケット）。1回の `call.emit` の重さは `1 + payload の KB`。
 /// 音声（50ms ごと・約 1KB）は毎秒 40 ほどなので十分余る。超えた分は黙って捨てる。
-const BUCKET_CAPACITY: f64 = 400.0;
-const BUCKET_REFILL_PER_SEC: f64 = 300.0;
+/// 画面共有の映像（base64 の JSON）が毎秒 2〜3MB 相当まで流れるように、Tailscale 内の少人数向けに広めにしている。
+/// 受け手の送信待ちが詰まったときの間引きは、これとは別に `send_lossy_to_conns` が行う。
+const BUCKET_CAPACITY: f64 = 4000.0;
+const BUCKET_REFILL_PER_SEC: f64 = 3000.0;
 
 struct Bucket {
     tokens: f64,
@@ -285,8 +287,8 @@ mod tests {
         }
         // 時間をおかずに大量に送ると途中で止まる
         let t1 = t0 + Duration::from_secs(60);
-        let sent = (0..1000).filter(|_| b.allow(t1, 1100)).count();
-        assert!(sent > 100 && sent < 400, "sent = {sent}");
+        let sent = (0..5000).filter(|_| b.allow(t1, 1100)).count();
+        assert!(sent > 1000 && sent < 2500, "sent = {sent}");
         // 待てば戻る
         assert!(b.allow(t1 + Duration::from_secs(2), 1100));
     }
@@ -295,7 +297,28 @@ mod tests {
     fn bucket_limits_big_payloads_by_size() {
         let t0 = Instant::now();
         let mut b = Bucket::new(t0);
-        let sent = (0..100).filter(|_| b.allow(t0, 60 * 1024)).count();
-        assert!(sent <= 7, "sent = {sent}");
+        let sent = (0..200).filter(|_| b.allow(t0, 60 * 1024)).count();
+        assert!(sent <= 66, "sent = {sent}");
+    }
+
+    #[test]
+    fn bucket_allows_screen_share_rate() {
+        // 画面共有: 毎秒 2MB 相当（40KB × 50 回）を、音声（毎秒 40 回・約 1KB）と一緒に続けて送れる
+        let t0 = Instant::now();
+        let mut b = Bucket::new(t0);
+        for i in 0..600u32 {
+            let t = t0 + Duration::from_millis(20 * u64::from(i));
+            assert!(b.allow(t, 40 * 1024), "frame {i}");
+            if i % 2 == 0 {
+                assert!(b.allow(t, 1100), "audio {i}");
+            }
+        }
+        // 毎秒 5MB 相当は続かない
+        let t1 = t0 + Duration::from_secs(60);
+        let mut b = Bucket::new(t1);
+        let sent = (0..1000u32)
+            .filter(|i| b.allow(t1 + Duration::from_millis(8 * u64::from(*i)), 40 * 1024))
+            .count();
+        assert!(sent < 800, "sent = {sent}");
     }
 }

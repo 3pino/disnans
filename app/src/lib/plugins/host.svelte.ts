@@ -2,6 +2,8 @@ import { api } from '../api';
 import { getItem, setItem } from '../storage';
 import { registerSlashCommand } from '../slashCommands.svelte';
 import { registerComposerAction } from '../composerActions';
+import { registerMessageAction } from '../messageActions.svelte';
+import { timelinePanels } from '../stores/timelinePanel.svelte';
 import { registerCommand } from '../commands.svelte';
 import type { MessageCard } from '../protocol/MessageCard';
 import type { PluginInfo } from '../protocol/PluginInfo';
@@ -18,6 +20,8 @@ import { toPluginUser, VersionConflictError } from './sessions';
 import { createUi } from './ui';
 import { holdBackground } from './background';
 import { audio } from './audio';
+import { pipApi, screenCaptureApi } from './nativeScreen';
+import { setImmersive } from '../systemBars';
 import { callApi } from '../call/instance.svelte';
 import { loadLucide, registerIcon } from '../icons.svelte';
 import { API_VERSION, errorMessage, type HostServices, type Manifest, type PluginClass } from './types';
@@ -207,6 +211,9 @@ class PluginHost {
     registerSlashCommand,
     registerComposerAction,
     registerCommand,
+    registerMessageAction,
+    findMessage: (id) => client.findMessage(id),
+    openTimeline: (spec) => timelinePanels.open(spec),
     openPanel: (plugin, view, sessionId) => ui.openPluginView(plugin, view, sessionId),
     openSettings: (plugin) => ui.openPluginSettings(plugin),
     closePanel: (plugin) => {
@@ -237,10 +244,17 @@ class PluginHost {
     const host: Disnans.Host = Object.freeze({
       apiVersion: API_VERSION,
       Plugin: PluginBase,
-      ui: createUi({ toast: (t, k) => ui.toast(t, k), confirm: (o) => ui.confirm(o) }),
+      ui: createUi({
+        toast: (t, k) => ui.toast(t, k),
+        confirm: (o) => ui.confirm(o),
+        onBack: (run) => ui.addPluginBack(run),
+        setImmersive: (on) => setImmersive(on),
+      }),
       VersionConflictError,
       audio,
       call: callApi,
+      screenCapture: screenCaptureApi,
+      pip: pipApi,
     });
     (window as unknown as { disnans: Disnans.Host }).disnans = host;
 

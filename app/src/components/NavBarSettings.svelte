@@ -1,7 +1,5 @@
 <script lang="ts">
   import Plus from '@lucide/svelte/icons/plus';
-  import ChevronUp from '@lucide/svelte/icons/chevron-up';
-  import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import X from '@lucide/svelte/icons/x';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import Puzzle from '@lucide/svelte/icons/puzzle';
@@ -11,11 +9,13 @@
   import MenuItem from './ui/MenuItem.svelte';
   import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
+  import SortableList from './ui/SortableList.svelte';
   import { commandList, type AppCommand } from '../lib/commands.svelte';
-  import { addNavItem, moveNavItem, NAV_REQUIRED_IDS, removeNavItem } from '../lib/navBar';
+  import { addNavItem, NAV_REQUIRED_IDS, removeNavItem, reorderNavItem } from '../lib/navBar';
   import { navBar } from '../lib/stores/navBar.svelte';
 
-  // 設定の「ナビゲーションバー」: 下（デスクトップではサイドバーの下）に出すコマンドを、追加・削除・並べ替えで決める。
+  // 設定の「ナビゲーションバー」: 下（デスクトップではサイドバーの下）に出すコマンドを、並べ替え・追加・削除で決める。
+  // 並べ替えは共通の SortableList（左のつまみをドラッグ。つまみにフォーカスして上下キーでも動かせる）。
   // 保存はこの端末だけ（localStorage）。チャットと設定は外せない（設定に戻れるように）
 
   let pickerOpen = $state(false);
@@ -29,8 +29,8 @@
   /** まだ並べていないコマンド */
   const addable = $derived(available.filter((c) => !navBar.items.includes(c.id)));
 
-  function move(id: string, dir: -1 | 1) {
-    navBar.set(moveNavItem(navBar.items, availableIds, id, dir));
+  function reorder(id: string, toIndex: number) {
+    navBar.set(reorderNavItem(navBar.items, availableIds, id, toIndex));
   }
 
   function remove(id: string) {
@@ -48,25 +48,19 @@
     画面の下に出す項目です。並べ替えや、追加・削除ができます。チャットと設定は外せません。この設定はこの端末だけに保存されます
   </p>
 
-  {#each shown as c, i (c.id)}
-    <SettingRow name={c.name} description={c.source ?? '本体'} icon={c.icon ?? Puzzle} class="nav-bar-settings-row">
-      {#snippet control()}
-        <div class="nav-bar-settings-controls">
-          <IconButton label="上へ" class="nav-bar-settings-up" disabled={i === 0} onclick={() => move(c.id, -1)}>
-            <ChevronUp size={16} />
-          </IconButton>
-          <IconButton label="下へ" class="nav-bar-settings-down" disabled={i === shown.length - 1} onclick={() => move(c.id, 1)}>
-            <ChevronDown size={16} />
-          </IconButton>
+  <SortableList items={shown} getId={(c) => c.id} getLabel={(c) => c.name} onmove={reorder} class="nav-bar-settings-list">
+    {#snippet row(c)}
+      <SettingRow name={c.name} description={c.source ?? '本体'} icon={c.icon ?? Puzzle}>
+        {#snippet control()}
           {#if !NAV_REQUIRED_IDS.includes(c.id)}
             <IconButton label="ナビゲーションバーから外す" class="nav-bar-settings-remove" onclick={() => remove(c.id)}>
               <X size={16} />
             </IconButton>
           {/if}
-        </div>
-      {/snippet}
-    </SettingRow>
-  {/each}
+        {/snippet}
+      </SettingRow>
+    {/snippet}
+  </SortableList>
 
   <div class="nav-bar-settings-actions">
     <span class="nav-bar-settings-add">
@@ -91,11 +85,6 @@
   .nav-bar-settings-note {
     margin: 0;
     font-size: 13px;
-  }
-  .nav-bar-settings-controls {
-    display: flex;
-    align-items: center;
-    gap: 2px;
   }
   .nav-bar-settings-actions {
     display: flex;

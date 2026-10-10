@@ -43,6 +43,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/users", get(users::list))
         .route("/avatars/{id}", get(users::avatar))
         .route("/messages", get(messages::list))
+        .route("/messages/search", get(messages::search))
         .route("/threads", get(threads::list))
         .route("/threads/{id}", get(threads::get).patch(threads::update))
         .route("/threads/{id}/tags", put(threads::set_tags))

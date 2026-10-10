@@ -22,6 +22,7 @@
   - [ui.setting](#uisetting)
   - [ui.toast](#uitoast)
   - [ui.confirm](#uiconfirm)
+  - [ui.onBack / ui.setImmersive](#uionback--uisetimmersive)
 - [CSS クラス](#css-クラス)
 
 ```js
@@ -248,6 +249,17 @@ ui.confirm(opts: { title: string; body?: string; okLabel?: string; ngLabel?: str
 ```js
 const ok = await ui.confirm({ title: 'やり直しますか？', okLabel: 'やり直す', ngLabel: 'やめる', danger: true });
 ```
+
+### ui.onBack / ui.setImmersive
+
+```ts
+ui.onBack(handler: () => void): () => void
+ui.setImmersive(on: boolean): Promise<boolean>
+```
+
+（API v9）`onBack` は、戻る操作（Android の戻るボタン・ジェスチャー、PC の Alt+←）で閉じる層を足します。戻る操作のたびに、本体のパネルなどより先に、足した新しいものから 1 つずつ `handler` が呼ばれます。戻り値の関数で外します（`this.register` に渡して片付けます）。
+
+`setImmersive` は、Android でステータスバーとナビゲーションバーを隠す没入モードにします（端からスワイプすると一時的に出ます）。Android の WebView には Fullscreen API が無いので、全画面の表示に使います。ネイティブで切り替えたら `true`、それ以外の環境では何もせず `false` なので、`requestFullscreen` を使ってください。
 
 ---
 

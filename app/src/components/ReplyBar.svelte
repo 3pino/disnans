@@ -1,6 +1,7 @@
 <script lang="ts">
   import CornerUpLeft from '@lucide/svelte/icons/corner-up-left';
   import X from '@lucide/svelte/icons/x';
+  import AuthorAvatar from './AuthorAvatar.svelte';
   import IconButton from './ui/IconButton.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { reply } from '../lib/stores/reply.svelte';
@@ -8,7 +9,7 @@
   import { mentionsToText } from '../lib/markdown';
   import { replyPreviewOf } from '../lib/reply';
 
-  // 入力欄の上に出す「返信先: 名前 本文の冒頭 ×」のバー
+  // 入力欄の上に出す「返信先のアイコン 本文の冒頭 ×」のバー（名前は出さず、アイコンで相手を示す）
   let { threadId }: { threadId: string | null } = $props();
 
   const target = $derived(reply.get(threadId));
@@ -23,8 +24,9 @@
 {#if target && author}
   <div class="reply-bar">
     <CornerUpLeft size={14} />
-    <span class="reply-bar-label">返信先:</span>
-    <span class="reply-bar-name">{author.name}</span>
+    <span class="reply-bar-avatar" title={author.name}>
+      <AuthorAvatar {author} user={client.user(target.author_id)} id={target.author_id} size={18} />
+    </span>
     <span class="reply-bar-text">{text}</span>
     <IconButton label="返信をやめる" onclick={() => reply.clear(threadId)}><X size={16} /></IconButton>
   </div>
@@ -49,13 +51,9 @@
     margin-left: auto;
     flex: none;
   }
-  .reply-bar-label {
+  .reply-bar-avatar {
+    display: inline-flex;
     flex: none;
-  }
-  .reply-bar-name {
-    flex: none;
-    font-weight: 600;
-    color: var(--text);
   }
   .reply-bar-text {
     min-width: 0;

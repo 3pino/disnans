@@ -1,7 +1,7 @@
 import { parseHotkey } from './hotkey';
 import { SLASH_NAME_RE } from '../slashCommands.svelte';
 import { SessionsImpl, type SessionImpl } from './sessions';
-import { errorMessage, type Cleanup, type HostServices, type Manifest, type PluginClass } from './types';
+import { errorMessage, type Cleanup, type HostTimelineEntry, type HostTimelineHandle, type HostServices, type Manifest, type PluginClass } from './types';
 
 /** パネルの上部（題名・アイコン）。null は既定（プラグイン名・プラグインのアイコン）、空文字列は出さない */
 export type ViewHeader = { title: string | null; icon: string | null };
@@ -56,6 +56,12 @@ export class PluginBase implements Disnans.Plugin {
   }
   addCommand(cmd: Disnans.Command): void {
     rt(this).addCommand(cmd);
+  }
+  addMessageAction(action: Disnans.MessageAction): void {
+    rt(this).addMessageAction(action);
+  }
+  openTimeline(opts: Disnans.TimelineOptions): Disnans.TimelineHandle {
+    return rt(this).openTimeline(opts);
   }
   addSettingTab(tab: Disnans.SettingTab): void {
     rt(this).addSettingTab(tab);
@@ -131,6 +137,7 @@ export class PluginRuntime {
   private cleanups: Cleanup[] = [];
   private broadcastListeners = new Map<string, Set<(payload: unknown, from: Disnans.User) => void>>();
   private openViews = new Set<ViewHandle>();
+  private openTimelines = new Set<Disnans.TimelineHandle>();
 
   constructor(
     readonly manifest: Manifest,
@@ -185,6 +192,7 @@ export class PluginRuntime {
     this.cardRenderer = null;
     this.settingTabs.length = 0;
     for (const h of [...this.openViews]) h.close();
+    for (const h of [...this.openTimelines]) h.close();
     this.services.closePanel(this.id);
     this.sessions.dispose();
     this.broadcastListeners.clear();
@@ -265,6 +273,118 @@ export class PluginRuntime {
       source: this.manifest.name,
     });
     this.register(off);
+  }
+
+  addMessageAction(action: Disnans.MessageAction): void {
+    if (this.stopped) return;
+    const services = this.services;
+    const id = this.id;
+    if (typeof action.id !== 'string' || !action.id || typeof action.label !== 'string' || !action.label) {
+      this.addError('メッセージの操作には id と label が要ります');
+      return;
+    }
+    const placement = action.placement ?? 'both';
+    if (placement !== 'menu' && placement !== 'toolbar' && placement !== 'both') {
+      this.addError(`メッセージの操作「${action.label}」の placement「${String(placement)}」を読めません（menu / toolbar / both）`);
+      return;
+    }
+    const ctxOf = (c: { place: string | null; inThread: boolean }): Disnans.MessageActionContext => ({ threadId: c.place, inThread: c.inThread });
+    const off = services.registerMessageAction({
+      // 本体や他のプラグインとぶつからないように、プラグイン ID を前に付ける
+      id: `plugin:${id}:${action.id}`,
+      label: action.label,
+      // 省くとプラグインのアイコン。icon.svg はあとから読めることがあるので、表示のたびに引く
+      get icon() {
+        return action.icon || services.pluginIcon(id);
+      },
+      placement,
+      danger: !!action.danger,
+      order: typeof action.order === 'number' && Number.isFinite(action.order) ? action.order : undefined,
+      when: action.when
+        ? (c) => {
+            // 判定の例外はログにして、その項目だけ出さない
+            try {
+              return !!action.when?.(c.message as unknown as Disnans.Message, ctxOf(c));
+            } catch (e) {
+              this.log(`メッセージの操作「${action.label}」の when で例外`, e);
+              return false;
+            }
+          }
+        : undefined,
+      // run の例外は本体（メッセージの操作）がトーストで知らせる
+      run: (c) => action.run(c.message as unknown as Disnans.Message, ctxOf(c)),
+      source: this.manifest.name,
+    });
+    this.register(off);
+  }
+
+  /** メッセージの集合をパネルに開く（API v9） */
+  openTimeline(opts: Disnans.TimelineOptions): Disnans.TimelineHandle {
+    if (opts.messages && opts.messageIds) throw new Error('openTimeline には messages と messageIds のどちらか一方を渡してください');
+    const services = this.services;
+    type Source = Pick<Disnans.TimelineOptions, 'messages' | 'messageIds' | 'depths'>;
+    let source: Source = { messages: opts.messages, messageIds: opts.messageIds, depths: opts.depths };
+    // 最新の内容を返す。読み込み済みのものは最新に差し替え、読み込まれていない ID は飛ばす
+    const entriesOf =
+      (src: Source) => (): HostTimelineEntry[] => {
+        const found = src.messageIds
+          ? src.messageIds.map((id) => services.findMessage(id))
+          : (src.messages ?? []).map((m) => services.findMessage(m.id) ?? (m as unknown as ReturnType<typeof services.findMessage>));
+        const out: HostTimelineEntry[] = [];
+        for (const m of found) {
+          if (!m) continue;
+          const d = src.depths?.[m.id];
+          out.push({ message: m, depth: typeof d === 'number' && d > 0 ? Math.floor(d) : 0 });
+        }
+        return out;
+      };
+    let closed = false;
+    const handle: Disnans.TimelineHandle = {
+      get closed() {
+        return closed;
+      },
+      update: (patch) => {
+        if (closed) return;
+        if (patch.messages && patch.messageIds) throw new Error('update には messages と messageIds のどちらか一方を渡してください');
+        const hostPatch: Parameters<HostTimelineHandle['update']>[0] = {};
+        if (patch.title !== undefined) hostPatch.title = String(patch.title);
+        if (patch.icon !== undefined) hostPatch.icon = patch.icon;
+        if (patch.empty !== undefined) hostPatch.empty = patch.empty;
+        if (patch.messages || patch.messageIds || patch.depths) {
+          // 渡した方に切り替える（depths だけなら並びはそのまま）
+          source = {
+            messages: patch.messageIds ? undefined : (patch.messages ?? source.messages),
+            messageIds: patch.messages ? undefined : (patch.messageIds ?? source.messageIds),
+            depths: patch.depths ?? source.depths,
+          };
+          hostPatch.entries = entriesOf(source);
+        }
+        host.update(hostPatch);
+      },
+      close: () => host.close(),
+    };
+    const host = services.openTimeline({
+      title: String(opts.title),
+      icon: opts.icon,
+      empty: opts.empty,
+      entries: entriesOf(source),
+      onClose: () => {
+        if (closed) return;
+        closed = true;
+        this.openTimelines.delete(handle);
+        try {
+          opts.onClose?.();
+        } catch (e) {
+          this.log('タイムラインの onClose で例外', e);
+        }
+      },
+    });
+    if (this.stopped) {
+      host.close();
+    } else {
+      this.openTimelines.add(handle);
+    }
+    return handle;
   }
 
   addCommand(cmd: Disnans.Command): void {

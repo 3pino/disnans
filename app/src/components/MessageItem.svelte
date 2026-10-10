@@ -1,10 +1,5 @@
 <script lang="ts">
-  import SmilePlus from '@lucide/svelte/icons/smile-plus';
-  import MessageSquare from '@lucide/svelte/icons/message-square';
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
-  import Pencil from '@lucide/svelte/icons/pencil';
-  import Trash2 from '@lucide/svelte/icons/trash-2';
-  import Copy from '@lucide/svelte/icons/copy';
   import Reply from '@lucide/svelte/icons/reply';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import X from '@lucide/svelte/icons/x';
@@ -20,6 +15,7 @@
   import MessageCard from './MessageCard.svelte';
   import Button from './ui/Button.svelte';
   import IconButton from './ui/IconButton.svelte';
+  import Icon from './ui/Icon.svelte';
   import type { Message } from '../lib/protocol/Message';
   import type { PendingMessage } from '../lib/stores/timeline.svelte';
   import { client } from '../lib/stores/client.svelte';
@@ -33,7 +29,9 @@
   import { formatFull, formatStamp, formatTime, relative } from '../lib/format';
   import { QUICK_REACTIONS } from '../lib/emoji';
   import { extractMentions } from '../lib/markdown';
-  import { copyText } from '../lib/clipboard';
+  import { resolveMessageActions, type MessageActionContext } from '../lib/messageActions.svelte';
+  import { registerCoreMessageActions, removeMessage } from '../lib/messageActionsCore';
+  import { timelinePanels } from '../lib/stores/timelinePanel.svelte';
   import { swipeAxis, swipeOffset, swipeProgress, swipeTriggered, type SwipeAxis } from '../lib/swipe';
 
   let {
@@ -63,23 +61,25 @@
   const author = $derived(authorOf(message, client.users));
   /** 自分の発言（吹き出しの右側）。ボットの発言は、自分が実行したものでも他人の発言として出す */
   const isMine = $derived(isOwnMessage(message, client.me?.id));
-  /** 削除できるか（自分が投稿者のもの。ボットの発言も、自分が実行したものなら削除できる） */
-  const deletable = $derived(!!client.me && client.me.id === message.author_id);
   const mentionsMe = $derived(!!client.me && extractMentions(message.body).includes(client.me.id));
   const editing = $derived(ui.editing === message.id && !pending && !message.card);
-  const canThread = $derived(!inThread && !pending && message.thread_id === null);
   /** このメッセージが起点のスレッドの未読数 */
   const unread = $derived(message.thread ? unreadStore.count(message.id) : 0);
-  /** プラグインのカードとボットの発言は本文を編集できない（削除はできる） */
-  const canEdit = $derived(isMine && !message.card && !author.isBot);
-  /** 本文のコピー（カードや本文のない発言は対象外） */
-  const canCopy = $derived(!pending && !message.card && message.body.length > 0);
   /** 返信できるか（同じ場所のメッセージに返信する） */
   const canReply = $derived(!pending);
   /** 返信を送る場所（スレッドの ID。メインチャットなら null） */
   const place = $derived(placeOf(message, inThread));
   /** 左へのスワイプで返信できるか（メニューの「返信」と同じ） */
   const canSwipe = $derived(canReply && !editing);
+
+  // メッセージの操作（長押しのメニュー・ホバーのツールバー）。本体の項目もプラグインの項目も、同じ登録簿から並べる
+  registerCoreMessageActions();
+  const actionCtx = $derived<MessageActionContext>({ message: message as Message, inThread, place });
+  const menuActions = $derived(pending ? [] : resolveMessageActions(actionCtx, 'menu'));
+  const toolbarActions = $derived(pending ? [] : resolveMessageActions(actionCtx, 'toolbar'));
+  /** 本文の末尾（インライン）に「返信あり」のアイコンを出す。本文がなければ（カード・添付だけ）下に単独で出す */
+  const repliedShown = $derived(replied && !pending);
+  const repliedInline = $derived(repliedShown && !message.card && message.body.length > 0);
 
   /** 一覧のとき、名前と時刻（ヘッダー）を出しているか。アイコンを押すと出し入れする（既定は隠す）。画面全体で1つだけ（ui.headerMessage） */
   const headerShown = $derived(ui.headerMessage === message.id);
@@ -126,31 +126,25 @@
     }
     if (!body && message.attachments.length === 0) {
       ui.editing = null;
-      void remove();
+      void removeMessage(message as Message);
       return;
     }
     client.editMessage(message, body);
     ui.editing = null;
   }
 
-  async function remove() {
-    const ok = await ui.confirm({
-      title: 'メッセージを削除しますか？',
-      body: message.thread
-        ? 'このメッセージから始まったスレッドの返信もすべて削除されます。元には戻せません。'
-        : message.card
-          ? 'このカードのセッション（プラグインの状態）も削除されます。元には戻せません。'
-          : '削除すると元には戻せません。',
-      okLabel: '削除',
-      danger: true,
-    });
-    if (ok) client.deleteMessage(message);
+  /** 項目を実行する。例外は握りつぶさずトーストで知らせる */
+  async function runAction(a: { label: string; run: (anchor: DOMRect, openPicker: (anchor: DOMRect) => void) => void | Promise<void> }, anchor: DOMRect) {
+    try {
+      await a.run(anchor, (r) => (picker = r));
+    } catch (e) {
+      ui.toast(`「${a.label}」に失敗しました: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
   }
 
-  async function copyBody() {
-    if (!canCopy) return;
-    if (await copyText(message.body)) ui.toast('コピーしました');
-    else ui.toast('コピーできませんでした', 'error');
+  /** このメッセージを起点にした返信のツリーを、パネルに開く */
+  function openReplyTree() {
+    timelinePanels.openReplyTree(message, place);
   }
 
   function startPress(e: TouchEvent) {
@@ -227,6 +221,19 @@
 
 {#snippet edited()}
   <span class="message-edited" title={message.edited_at ? formatFull(message.edited_at) : undefined}>（編集済み）</span>
+{/snippet}
+
+<!-- 返信を受けたメッセージの目印。押すと、そのメッセージを起点にした返信のツリーを開く -->
+{#snippet repliedButton()}
+  <button type="button" class="message-replied" aria-label="返信のツリーを開く" title="返信のツリーを開く" onclick={openReplyTree}
+    ><MessagesSquare size={13} /></button
+  >
+{/snippet}
+
+<!-- 本文の末尾に添えるもの（編集済み・返信あり）。本文の最後の行の右に続けて出る -->
+{#snippet bodySuffix()}
+  {#if message.edited_at}{@render edited()}{/if}
+  {#if repliedInline}{@render repliedButton()}{/if}
 {/snippet}
 
 {#snippet timeTag(cls: string, text: string)}
@@ -339,7 +346,7 @@
           {:else if message.body}
             <div class="message-bubble" class:message-bubble-mine={bubble && isMine} class:message-bubble-other={bubble && !isMine}>
               <div class="message-body">
-                <Markdown body={message.body} suffix={message.edited_at ? edited : undefined} />
+                <Markdown body={message.body} suffix={message.edited_at || repliedInline ? bodySuffix : undefined} />
               </div>
             </div>
           {/if}
@@ -381,9 +388,9 @@
         {/if}
       </div>
 
-      {#if replied && !message.thread && !pending}
-        <!-- 返信を受けているが、スレッドはないメッセージ。目印に小さなアイコンだけ出す -->
-        <span class="message-replied" role="img" aria-label="返信があります" title="返信があります"><MessagesSquare size={13} /></span>
+      {#if repliedShown && !repliedInline}
+        <!-- 本文がないメッセージ（カード・添付だけ）は、本文の横には置けないので横に単独で出す -->
+        <span class="message-replied-alone">{@render repliedButton()}</span>
       {/if}
 
       {#if bubble && !isMine}{@render stamp()}{/if}
@@ -398,30 +405,18 @@
   {#if !pending && !editing}
     <div class="message-toolbar" role="toolbar" aria-label="メッセージの操作">
       {#each QUICK_REACTIONS.slice(0, 3) as e (e)}
-        <IconButton class="message-toolbar-emoji" label="{e} でリアクション" onclick={() => client.toggleReaction(message, e)}>{e}</IconButton>
+        <IconButton class="message-toolbar-emoji" label="{e} でリアクション" onclick={() => client.toggleReaction(message as Message, e)}>{e}</IconButton>
       {/each}
-      <IconButton label="リアクション" title="リアクション" onclick={(e) => (picker = e.currentTarget.getBoundingClientRect())}
-        ><SmilePlus size={17} /></IconButton
-      >
-      {#if canReply}
-        <IconButton label="返信" title="返信" onclick={startReply}><Reply size={17} /></IconButton>
-      {/if}
-      {#if canThread}
+      {#each toolbarActions as a (a.id)}
         <IconButton
-          label={message.thread ? 'スレッドを開く' : 'スレッドを立てる'}
-          title={message.thread ? 'スレッドを開く' : 'スレッドを立てる'}
-          onclick={() => client.openThreadFrom(message)}><MessageSquare size={17} /></IconButton
+          class={a.danger ? 'message-toolbar-delete' : ''}
+          label={a.label}
+          title={a.label}
+          onclick={(e) => runAction(a, e.currentTarget.getBoundingClientRect())}
         >
-      {/if}
-      {#if canCopy}
-        <IconButton label="コピー" title="コピー" onclick={copyBody}><Copy size={16} /></IconButton>
-      {/if}
-      {#if canEdit}
-        <IconButton label="編集" title="編集" onclick={() => (ui.editing = message.id)}><Pencil size={16} /></IconButton>
-      {/if}
-      {#if deletable}
-        <IconButton class="message-toolbar-delete" label="削除" title="削除" onclick={remove}><Trash2 size={16} /></IconButton>
-      {/if}
+          <Icon icon={a.icon ?? 'puzzle'} size={17} />
+        </IconButton>
+      {/each}
     </div>
   {/if}
 </div>
@@ -443,15 +438,13 @@
     reactions={QUICK_REACTIONS}
     onreact={(e) => client.toggleReaction(message, e)}
     onmorereactions={() => (picker = new DOMRect(window.innerWidth / 2 + 140, window.innerHeight / 3, 0, 0))}
-    items={[
-      ...(canCopy ? [{ label: 'コピー', icon: Copy, run: copyBody }] : []),
-      ...(canReply ? [{ label: '返信', icon: Reply, run: startReply }] : []),
-      ...(canThread
-        ? [{ label: message.thread ? 'スレッドを開く' : 'スレッドを立てる', icon: MessageSquare, run: () => client.openThreadFrom(message) }]
-        : []),
-      ...(canEdit ? [{ label: '編集', icon: Pencil, run: () => (ui.editing = message.id) }] : []),
-      ...(deletable ? [{ label: '削除', icon: Trash2, danger: true, run: remove }] : []),
-    ]}
+    items={menuActions.map((a) => ({
+      id: a.id,
+      label: a.label,
+      icon: a.icon ?? 'puzzle',
+      danger: a.danger,
+      run: () => runAction(a, new DOMRect(window.innerWidth / 2 + 140, window.innerHeight / 3, 0, 0)),
+    }))}
   />
 {/if}
 
@@ -565,24 +558,38 @@
     user-select: none;
   }
   /* 返信を受けたメッセージの目印（スレッドはないとき）。吹き出しでは右、一覧では本文の右端に出す */
+  /* 返信を受けたメッセージの目印（押すと返信のツリー）。本文の末尾に続けて出す */
   .message-replied {
-    flex: none;
-    align-self: flex-end;
     display: inline-grid;
     place-items: center;
+    margin-left: 4px;
     padding: 2px;
+    border: none;
+    border-radius: 4px;
+    background: none;
     color: var(--text-muted);
     opacity: 0.8;
     line-height: 0;
+    vertical-align: -2px;
+    cursor: pointer;
     -webkit-user-select: none;
     user-select: none;
   }
-  .message-item[data-layout='list'] .message-replied {
+  .message-replied:hover {
+    opacity: 1;
+    color: var(--text);
+    background: var(--surface-2);
+  }
+  /* 本文がないメッセージ用。吹き出しの横の下端 / 一覧では右下 */
+  .message-replied-alone {
+    flex: none;
+    align-self: flex-end;
+  }
+  .message-item[data-layout='list'] .message-replied-alone {
     display: flex;
     justify-content: flex-end;
     align-self: auto;
     width: 100%;
-    padding: 2px 0 0;
   }
   /* ボットの発言の印。目立たせず、灰色の小さな札にする */
   .message-bot-badge {

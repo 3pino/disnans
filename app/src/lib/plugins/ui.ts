@@ -6,6 +6,10 @@ import { createIcon } from '../icons.svelte';
 export type UiDeps = {
   toast(text: string, kind?: 'info' | 'error'): void;
   confirm(opts: { title: string; body?: string; okLabel: string; ngLabel: string; danger?: boolean }): Promise<boolean>;
+  /** 戻る操作（Android の戻るジェスチャーなど）で閉じる層を足す（API v9）。省くと何もしない */
+  onBack?(run: () => void): () => void;
+  /** 没入モード（システムバーを隠す。Android）。ネイティブで切り替えたら true（API v9） */
+  setImmersive?(on: boolean): Promise<boolean>;
 };
 
 /** ボタンの中のアイコンの大きさ（components/ui/Button.svelte と同じ） */
@@ -200,6 +204,18 @@ export function createUi(deps: UiDeps): Disnans.Ui {
       }
       containerEl.append(row);
       return row;
+    },
+
+    onBack(handler) {
+      return deps.onBack?.(() => handler()) ?? (() => {});
+    },
+
+    async setImmersive(on) {
+      try {
+        return (await deps.setImmersive?.(!!on)) ?? false;
+      } catch {
+        return false;
+      }
     },
 
     toast(text, kind = 'info') {

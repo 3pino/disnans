@@ -21,6 +21,8 @@ const uiDeps: UiDeps = { toast: () => {}, confirm: async () => true };
   VersionConflictError,
   audio: { listOutputs: async () => [], setOutput: async () => false, listInputs: async () => [], attach: () => () => {} },
   call: {} as Disnans.Call,
+  screenCapture: {} as Disnans.ScreenCapture,
+  pip: {} as Disnans.Pip,
 };
 
 const users = [

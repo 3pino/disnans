@@ -22,7 +22,7 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 - 設計: [`SPEC.md`](../SPEC.md) の 3.3 と 9章
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
 - UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](PLUGIN_UI.md)
-- ホスト API のバージョン: **7**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から。`holdBackground` の通知のボタン `actions` / `onAction` と `update()` は 4 から。`disnans.audio` は 5、`postMessage` の `notify` と `openSettings` は 6、`disnans.call`（通話の拡張）は 7 から）
+- ホスト API のバージョン: **9**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から。`holdBackground` の通知のボタン `actions` / `onAction` と `update()` は 4 から。`disnans.audio` は 5、`postMessage` の `notify` と `openSettings` は 6、`disnans.call`（通話の拡張）は 7 から、`addMessageAction` / `openTimeline` は 9 から）
 - 通話（ボイスチャット）は**アプリ本体の機能**です。画面共有などの拡張は `disnans.call` で作れます（→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)）
 
 ## 目次
@@ -114,7 +114,7 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `7`（`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `9`（`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -240,6 +240,8 @@ app/node_modules/.bin/tsc -p examples/dice
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント（v3）。いまつながっている人に届く |
 | `this.addStatusBarItem()` | 常時表示のステータス欄（画面上部の枠。通話のバーと同じ）に出す要素（v3） |
 | `this.holdBackground({ microphone, actions, onAction })` | 画面を切っても動き続ける（v3。Android のフォアグラウンドサービス）。通知のボタンと `update()` は v4 |
+| `this.addMessageAction(action)` | メッセージの長押しメニュー・ホバーのツールバーに項目を足す（v9。→ [メッセージの操作とタイムライン](#メッセージの操作とタイムラインv9)）。例: `examples/messages` |
+| `this.openTimeline(opts)` | メッセージの集合を、本体のメッセージ表示のままパネルに出す（v9。同上） |
 | `this.addSettingTab(tab)` | プラグインの設定画面（設定 → プラグインの一覧で、トグルの右の歯車から開く） |
 | `this.addIcon(name, svg)` | 独自のアイコンを登録する（→ [PLUGIN_UI.md](PLUGIN_UI.md#addicon独自のアイコン)） |
 | `this.loadData()` / `this.saveData(data)` | その端末にだけ保存するデータ |
@@ -248,7 +250,9 @@ app/node_modules/.bin/tsc -p examples/dice
 | `disnans.VersionConflictError` | `session.update` がぶつかったときのエラー |
 | `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（v5）。Android は通話中の出力先（受話口・スピーカー・イヤホン・Bluetooth）、デスクトップは `setSinkId`。使えない環境では一覧が空 |
 | `disnans.call.*` | 本体の通話の状態の読み取りと、参加者どうしのデータの送受信、通話のバーのボタン（v8。→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)） |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 8） |
+| `disnans.ui.onBack(handler)` / `ui.setImmersive(on)` | 戻る操作（Android の戻るジェスチャー・PC の Alt+←）で閉じる層を足す／Android で全画面（システムバーを隠す没入モード）にする（v9。→ [画面共有のためのネイティブ API](#画面共有のためのネイティブ-apiv9)） |
+| `disnans.screenCapture.*` / `disnans.pip.*` | Android の画面のキャプチャ（MediaProjection）と、ピクチャーインピクチャー（v9。同上） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 9） |
 
 ### コマンド（パレット・ホットキー・スラッシュコマンド）
 
@@ -323,6 +327,43 @@ this.addComposerAction({
 // <svg> の中身だけを渡すと、既定は fill="none" stroke="currentColor" stroke-width="2"（Lucide と同じ）
 this.addIcon('dice-cube', '<path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="m3 7 9 5 9-5M12 12v10"/>…');
 ```
+
+### メッセージの操作とタイムライン（v9）
+
+メッセージを長押ししたときのメニュー（モバイル）と、デスクトップでホバーしたときのツールバーに、項目を足せます。本体の項目（返信・スレッドを立てる・コピー・編集・削除、ツールバーのリアクション）も同じ仕組みで並んでいて、`order`（小さいほど前）で並びが決まります。
+
+```js
+this.addMessageAction({
+  id: 'later',
+  label: 'あとで読む',
+  icon: 'bookmark',          // アイコンの名前。省略するとプラグインのアイコン
+  placement: 'both',         // 'menu'（長押し）| 'toolbar'（ホバー）| 'both'。省略は both
+  order: 1000,               // 省略は 1000。本体は 返信 200・スレッド 300・コピー 400・編集 500・削除 9000（リアクションはツールバー先頭の 100）
+  danger: false,             // true で注意の色
+  when: (msg, ctx) => !msg.card,           // 省略すると常に出す。送信中の仮表示には出ない
+  run: (msg, ctx) => { /* ctx = { threadId, inThread } */ },
+});
+```
+
+`msg` は本体のメッセージ（`id` `author_id` `thread_id` `reply_to` `body` `reactions` `created_at` `edited_at` `card` `bot` など。型は `Disnans.Message`）。`when` が例外を投げた項目は出さず、`run` の例外はトーストで知らせます。
+
+`openTimeline` は、メッセージの集合を**本体のメッセージ表示**（リアクション・返信の引用・長押しメニューもそのまま）で、パネル（デスクトップは右、モバイルは全画面）に並べます。スレッドのパネルや返信のツリーと同じ枠です。
+
+```js
+const panel = this.openTimeline({
+  title: 'あとで読む',
+  icon: 'bookmark',
+  messageIds: ['…', '…'],   // 本体が読み込み済みのメッセージだけが並ぶ（読み込まれていない・削除されたものは飛ばす）。リアクション・編集は常に最新
+  // messages: [msg, …],    // ID の代わりにメッセージそのものを渡してもよい（どちらか一方）。読み込み済みなら最新に差し替わる
+  depths: { '<id>': 1 },    // 字下げの深さ（省略は 0）。ツリーを見せたいときに
+  empty: '空のときの文言',
+  onClose: () => {},        // 閉じたとき（利用者が閉じた・別のパネルに替わった・close()・プラグインを外した）に 1 回
+});
+panel.update({ messageIds: [...] }); // 題名・アイコン・中身・字下げを差し替える
+panel.close();
+```
+
+パネルは同時に 1 つ（別のパネルを開くと前のものは閉じる）。本体の「返信のツリー」（返信を受けたメッセージの本文の末尾のアイコン）も同じパネルです。
 
 ### view
 
@@ -692,7 +733,7 @@ call.leave();
 ```
 
 - **状態の変化**: `call.onChange(cb)`（参加・退出・参加者の出入り・ミュート・しゃべり始めなど。しゃべっている人の変化も含むので、重い処理はしない）
-- **データを送る**: `call.emit(name, payload)` で、通話の参加者全員（自分以外）にサーバー経由で送ります（保存されません）。`payload` は JSON にして 64 KB まで、`name` は 1〜64 文字（`audio` は本体が使うので使えません）。通話に参加していないときは例外です。送りすぎるとサーバーが黙って捨てます（目安は 1 秒に 250 KB ほどまで。音声の分を含む）。画像を送るなら、縮小して JPEG などにしてフレームレートを抑えてください
+- **データを送る**: `call.emit(name, payload)` で、通話の参加者全員（自分以外）にサーバー経由で送ります（保存されません）。`payload` は JSON にして 64 KB まで、`name` は 1〜64 文字（`audio` は本体が使うので使えません）。通話に参加していないときは例外です。送りすぎるとサーバーが黙って捨てます（目安は 1 秒に 3 MB ほどまで。音声の分を含む。受け手の送信待ちが詰まっているときも、その受け手には送られません）。画像を送るなら、縮小して JPEG などにしてフレームレートを抑えてください
 - **データを受け取る**: `call.onEvent(name, ({ peer, user, payload }) => ...)`。自分が送ったものは届きません。戻り値の関数で外します
 - **バーのボタン**: `call.addButton({ icon, label, onClick, active?, disabled? })` で、通話のバー（参加中だけ表示）にボタンを足します。戻り値の `update(patch)` / `remove()` で変えたり外したりします
 - コールバックの登録の戻り値の関数は、プラグインが外されるときに自動では外れないので、`this.register(...)` に渡して片付けます
@@ -709,16 +750,53 @@ async function share() {
 this.register(call.onEvent('screen', ({ user, payload }) => { /* <img> に payload.img を出す */ }));
 ```
 
-実例は **画面共有**（[`examples/screenshare/`](../examples/screenshare/)）です。通話のバーのボタンから `getDisplayMedia` で取った画面を、縮小した JPEG にして `call.emit` で送ります。
+実例は **画面共有**（[`examples/screenshare/`](../examples/screenshare/)、v9）です。通話のバーのボタンから画面を取り、縮小した画像（JPEG / WebP / PNG）にして `call.emit` で送ります。
 
-- 送る側: 1 回の payload の上限（64 KB）を超えるフレームは分割して送り（`{ f: フレーム番号, i, n, d: base64 の一部 }`）、受け手が組み立てます（欠けたフレームは捨てる）。サーバーの流量制限（容量 400・毎秒 300 回復・1 回の重さ = 1 + payload の KB）に収まるよう、直前のフレームの大きさから次の間隔を決め、大きすぎれば画質→解像度の順に下げ、画面が変わらなければ送りません。既定（標準）は長辺 1280px・3fps まで・映像の予算は毎秒 100 KB ほどです（音声が毎秒 40 ほど使うので、いちばん高い設定でも 160 KB まで）
-- 見る側: プラグインが `document.body` に全画面のオーバーレイを足して表示します（本体に専用の API はありません。ダイアログ・トーストより下、Esc で閉じる）。共有者が複数ならタブで切り替えます
-- `getDisplayMedia` が無い環境（Android の WebView、Linux の WebKitGTK など）では共有ボタンを出さず、見るだけです
+- 取る側: `getDisplayMedia` があればそれ（デスクトップ。Linux の WebKitGTK でも、`xdg-desktop-portal` と PipeWire があれば動きます）、無ければ `disnans.screenCapture`（Android）を使います。どちらも無ければ共有ボタンを出さず、見るだけです
+- 送る側: 1 回の payload の上限（64 KB）を超えるフレームは分割して送り（`{ f: フレーム番号, i, n, d: base64 の一部 }`）、受け手が組み立てます（欠けたフレームは捨てる）。画像の形式は先頭のバイトから見分けるので、送り手は JPEG・WebP・PNG のどれでも送れます。サーバーの流量制限（容量 4000・毎秒 3000 回復・1 回の重さ = 1 + payload の KB）に収まるよう、映像の予算を毎秒 2400 KB（重さ）にして、直前のフレームの大きさから次の間隔を決め、大きすぎれば画質→解像度の順に下げ、画面が変わらなければ送りません
+- 設定: FPS（5 / 20）、画質（480p・品質 50% / 720p・品質 60% / 1080p・品質 80%）、色数（フルカラー / 256 色 / グレースケール）。色数を減らす設定では、減色した画像を PNG・WebP・JPEG のうち小さいもので送ります（JPEG は減色の効果が薄いため）。設定画面に、今の設定で符号化した画像と 1 フレームのおおよそのサイズ・帯域のプレビューがあります（サンプルの画面か、自分の画面を一度だけ取り込んだもの）
+- 見る側: プラグインが `document.body` に全画面のオーバーレイを足して表示します（ダイアログ・トーストより下、Esc でも閉じる）。共有者が複数ならタブで切り替えます。ピンチ・ホイールで拡大縮小、ドラッグでパン、ダブルタップ（ダブルクリック）で拡大／元に戻す。全画面は `ui.setImmersive`（Android）か Fullscreen API、戻るジェスチャーは `ui.onBack` で全画面の解除→閲覧を閉じる、の順。PiP は Android なら `disnans.pip`、デスクトップなら受け取った画像を `<canvas>` に描いて `captureStream()` した `<video>` の `requestPictureInPicture()`
 
 本体の通話のしくみ（参加者の管理と kick はサーバー、音声とデータもサーバー経由）は [`SPEC.md`](../SPEC.md) の 9.11、サーバーの経路は [`API.md`](API.md) の WebSocket を参照してください。
 マイクを使うには**アプリ版（Tauri）が必要**です（WebView の `getUserMedia` は安全なコンテキストでしか動かないため、`http://` で開いたブラウザー版では使えません）。
 
 ---
+
+### 画面共有のためのネイティブ API（v9）
+
+画面共有の実例が使う、本体の API です。Android の WebView には `getDisplayMedia` も Fullscreen API も無いため、ネイティブの機能を本体が包んで渡します。型は [`index.d.ts`](../packages/plugin-sdk/index.d.ts)。
+
+```js
+const { ui, screenCapture, pip } = disnans;
+
+// 戻る操作で閉じる層。戻る操作のたびに、新しいものから 1 つずつ handler が呼ばれる（本体のパネルなどより先）
+const off = ui.onBack(() => close());
+this.register(off);
+
+// 全画面。Android はシステムバーを隠す没入モード（true）。ほかの環境では何もせず false なので Fullscreen API を使う
+if (!(await ui.setImmersive(true))) await el.requestFullscreen();
+
+// Android: MediaProjection で画面を撮る（OS の確認のダイアログと、通知欄の常駐が出る）
+if (screenCapture.supported) {
+  await screenCapture.start(
+    { maxEdge: 1280, quality: 0.6, fps: 5, color: 'full', onEnd: () => onStopped() },
+    ({ data, mime, width, height }) => send(data), // data は base64
+  );
+  await screenCapture.update({ quality: 0.5 }); // 撮りながら変える
+  await screenCapture.stop();
+}
+
+// Android: Activity の PiP（小窓）。小窓の間はアプリの画面がそのまま小さく出るので、onChange で表示を切り替える
+if (pip.supported) {
+  this.register(pip.onChange((active) => setCompact(active)));
+  await pip.enter({ aspect: { width: 16, height: 9 } });
+}
+```
+
+- `screenCapture.start` は、断られたら例外です。フレームは、画面が変わったときと、変わらなくても `keepaliveMs`（既定 5 秒）ごとに 1 枚届きます。`color` が `c256` / `gray` のときは、減色したうえで可逆の WebP（Android 11 以降。それ以前は PNG）と lossy の WebP を比べて小さいほうを渡します
+- `onEnd` は、通知欄の「停止」やシステム側の操作で止められたときに呼ばれます（`stop()` では呼ばれません）
+- デスクトップ・ブラウザーでは `screenCapture.supported` と `pip.supported` は `false` です。PiP は `<video>` の `requestPictureInPicture()` を使ってください
+- 通話中にアプリを裏に回しても共有が続くのは、通話のフォアグラウンドサービス（マイク）と、画面のキャプチャのフォアグラウンドサービス（`mediaProjection`）が動いているためです
 
 ## 見た目（CSS）
 

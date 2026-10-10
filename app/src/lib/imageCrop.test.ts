@@ -88,11 +88,14 @@ describe('isFullRect and canCropImage', () => {
 });
 
 describe('output format and name', () => {
-  it('uses PNG only with alpha', () => {
-    expect(outputMime(true)).toBe('image/png');
-    expect(outputMime(false)).toBe('image/jpeg');
+  it('uses WebP by default, and PNG or JPEG (by alpha) when WebP cannot be made', () => {
+    expect(outputMime(true, false)).toBe('image/webp');
+    expect(outputMime(true, true)).toBe('image/webp');
+    expect(outputMime(false, true)).toBe('image/png');
+    expect(outputMime(false, false)).toBe('image/jpeg');
   });
   it('changes the extension to match the format', () => {
+    expect(outputName('IMG_0001.HEIC', 'image/webp')).toBe('IMG_0001.webp');
     expect(outputName('IMG_0001.HEIC', 'image/jpeg')).toBe('IMG_0001.jpg');
     expect(outputName('logo.webp', 'image/png')).toBe('logo.png');
     expect(outputName('photo', 'image/jpeg')).toBe('photo.jpg');

@@ -1,9 +1,13 @@
+import { moveItem } from './sortable';
+
 // ナビゲーションバーに出すコマンドの並び（端末ごと。lib/stores/navBar.svelte.ts に保存する）
 // 項目は本体・プラグインのコマンドの ID（app:open-chat など）。登録されていないもの（外したプラグインなど）は出さないが、並びには残す
 
 export const NAV_CHAT_ID = 'app:open-chat';
 export const NAV_THREADS_ID = 'app:open-threads';
 export const NAV_SETTINGS_ID = 'app:open-settings';
+/** 通話の画面。既定の並びには入れない（利用者が追加する）。コマンドとして登録される（lib/call/commands.ts） */
+export const NAV_CALL_ID = 'app:call-open';
 
 /** 本体の3つ（チャット・スレッド・設定）。コマンドの登録より前に出るので、登録されていなくても出す */
 export const NAV_BUILTIN_IDS: readonly string[] = [NAV_CHAT_ID, NAV_THREADS_ID, NAV_SETTINGS_ID];
@@ -45,15 +49,14 @@ export function removeNavItem(list: readonly string[], id: string): string[] {
 }
 
 /**
- * 項目を1つ上（dir -1）か下（dir 1）に動かす。動かすのは available にあるもの同士の並びだけで、
- * 登録されていない項目は位置を変えずに残す。端なら変えない
+ * 項目を、表示の並び（available にあるものの並び）の toIndex 番目に動かす（並べ替えのリストで使う）。
+ * 登録されていない項目は位置を変えずに残す
  */
-export function moveNavItem(list: readonly string[], available: ReadonlySet<string>, id: string, dir: -1 | 1): string[] {
+export function reorderNavItem(list: readonly string[], available: ReadonlySet<string>, id: string, toIndex: number): string[] {
   const shown = list.filter((x) => available.has(x));
-  const i = shown.indexOf(id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= shown.length) return [...list];
-  [shown[i], shown[j]] = [shown[j], shown[i]];
+  const from = shown.indexOf(id);
+  if (from < 0) return [...list];
+  const next = moveItem(shown, from, toIndex);
   let k = 0;
-  return list.map((x) => (available.has(x) ? shown[k++] : x));
+  return list.map((x) => (available.has(x) ? next[k++] : x));
 }

@@ -10,9 +10,12 @@ import type { UpdateSession } from '../protocol/UpdateSession';
 import type { SlashCommandDef } from '../slashCommands.svelte';
 import type { ComposerAction } from '../composerActions';
 import type { AppCommand } from '../commands.svelte';
+import type { MessageAction } from '../messageActions.svelte';
+import type { Message } from '../protocol/Message';
+import type { TimelineEntry, TimelineHandle, TimelineSpec } from '../stores/timelinePanel.svelte';
 
 /** ホスト API のバージョン。index.d.ts を変えたら上げる */
-export const API_VERSION = 8;
+export const API_VERSION = 9;
 
 export type Manifest = Disnans.Manifest;
 export type Cleanup = Disnans.Cleanup;
@@ -24,6 +27,10 @@ export type PluginClass = new () => Disnans.Plugin;
 export type HostSlashCommand = SlashCommandDef;
 export type HostComposerAction = ComposerAction;
 export type HostCommand = AppCommand;
+export type HostMessageAction = MessageAction;
+export type HostTimelineEntry = TimelineEntry;
+export type HostTimelineSpec = TimelineSpec;
+export type HostTimelineHandle = TimelineHandle;
 
 /**
  * プラグインの実行に必要な本体の機能。
@@ -43,6 +50,12 @@ export interface HostServices {
   registerComposerAction(action: HostComposerAction): Cleanup;
   /** コマンド（ホットキー・パレット・スラッシュコマンド）を登録する（lib/commands.svelte.ts） */
   registerCommand(cmd: HostCommand): Cleanup;
+  /** メッセージの操作（長押しのメニュー・ホバーのツールバー）に項目を足す（API v9）。返り値の関数で外す */
+  registerMessageAction(action: HostMessageAction): Cleanup;
+  /** 読み込み済みのメッセージを ID で探す（なければ undefined。API v9 の openTimeline の messageIds で使う） */
+  findMessage(id: string): Message | undefined;
+  /** メッセージの集合をパネルに開く（API v9） */
+  openTimeline(spec: HostTimelineSpec): HostTimelineHandle;
   /** パネルに view を開く */
   openPanel(pluginId: string, view: string, sessionId: string): void;
   /** そのプラグインの設定画面を開く（API v6。ui.openPluginSettings） */

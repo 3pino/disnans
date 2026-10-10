@@ -1,0 +1,13 @@
+[package]
+name = "tauri-plugin-screen"
+version = "0.1.0"
+description = "Android で画面のキャプチャ（MediaProjection）とピクチャーインピクチャーを使う"
+edition = "2021"
+publish = false
+links = "tauri-plugin-screen"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

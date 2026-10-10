@@ -5,7 +5,7 @@
   import UiNavBar, { type NavBarItem } from './ui/NavBar.svelte';
   import { commandList, findCommand } from '../lib/commands.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
-  import { NAV_CHAT_ID, NAV_SETTINGS_ID, NAV_THREADS_ID, visibleNavItems } from '../lib/navBar';
+  import { NAV_CALL_ID, NAV_CHAT_ID, NAV_SETTINGS_ID, NAV_THREADS_ID, visibleNavItems } from '../lib/navBar';
   import { navBar } from '../lib/stores/navBar.svelte';
   import { unread } from '../lib/stores/unread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -17,7 +17,7 @@
   let { withThreads }: { withThreads: boolean } = $props();
 
   // 選んでいる項目。デスクトップではスレッドを開いていてもチャットは見えているので、設定以外は Chat を選択中にする
-  const current = $derived(ui.tab === 'settings' ? NAV_SETTINGS_ID : withThreads && ui.tab === 'threads' ? NAV_THREADS_ID : NAV_CHAT_ID);
+  const current = $derived(ui.tab === 'settings' ? NAV_SETTINGS_ID : ui.tab === 'call' ? NAV_CALL_ID : withThreads && ui.tab === 'threads' ? NAV_THREADS_ID : NAV_CHAT_ID);
 
   /** 登録されている（出せる）コマンドの ID */
   const available = $derived(new Set(commandList().map((c) => c.id)));

@@ -4,7 +4,9 @@
   import ChatView from './ChatView.svelte';
   import ThreadPanel from './ThreadPanel.svelte';
   import PluginPanel from './PluginPanel.svelte';
+  import TimelinePanel from './TimelinePanel.svelte';
   import SettingsView from './SettingsView.svelte';
+  import CallView from './CallView.svelte';
   import PluginSettingsPage from './PluginSettingsPage.svelte';
   import ConnectionBanner from './ConnectionBanner.svelte';
   import NavBar from './NavBar.svelte';
@@ -14,7 +16,7 @@
   import { commandHost } from '../lib/commandHost.svelte';
 
   const panelOpen = $derived(ui.panel !== null);
-  const showChat = $derived(ui.isMobile ? ui.tab === 'chat' : ui.tab !== 'settings');
+  const showChat = $derived(ui.isMobile ? ui.tab === 'chat' : ui.tab !== 'settings' && ui.tab !== 'call');
 
   // 設定（ホットキーなど）の読み込み・本体のコマンドの登録・ホットキーの受け付けを始める
   onMount(() => commandHost.start());
@@ -53,6 +55,10 @@
     </div>
   {/if}
 
+  {#if ui.tab === 'call'}
+    <div class="shell-call"><CallView /></div>
+  {/if}
+
   {#if ui.isMobile && ui.tab === 'threads'}
     <div class="shell-mobile-threads"><Sidebar showMain={false} /></div>
   {/if}
@@ -60,6 +66,13 @@
   {#if ui.panel?.kind === 'thread'}
     <div class="shell-thread-panel">
       <ThreadPanel threadId={ui.panel.id} />
+    </div>
+  {:else if ui.panel?.kind === 'timeline'}
+    <!-- メッセージの集合（返信のツリー・プラグインのタイムライン）。枠はスレッドのパネルと同じ -->
+    <div class="shell-thread-panel">
+      {#key ui.panel.id}
+        <TimelinePanel id={ui.panel.id} />
+      {/key}
     </div>
   {:else if ui.panel?.kind === 'plugin'}
     <!-- プラグインの view。枠はスレッドのパネルと同じ -->
@@ -104,6 +117,10 @@
     min-width: 0;
     min-height: 0;
   }
+  .shell-call {
+    min-width: 0;
+    min-height: 0;
+  }
   .shell-settings-list {
     height: 100%;
   }
@@ -138,6 +155,7 @@
   }
   .shell-mobile .shell-main-chat,
   .shell-mobile .shell-settings,
+  .shell-mobile .shell-call,
   .shell-mobile-threads {
     flex: 1;
     min-height: 0;

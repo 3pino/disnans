@@ -5,9 +5,10 @@ import type { User } from '../protocol/User';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
-/** 右側のパネル（モバイルでは全画面）。スレッドか、プラグインの view */
+/** 右側のパネル（モバイルでは全画面）。スレッド、メッセージの集合（timeline。lib/stores/timelinePanel.svelte.ts）、プラグインの view */
 export type Panel =
   | { kind: 'thread'; id: string }
+  | { kind: 'timeline'; id: number }
   | { kind: 'plugin'; plugin: string; view: string; sessionId: string }
   | null;
 
@@ -46,13 +47,15 @@ class Ui {
   hideNavigationBar = $state(getItem(HIDE_NAV_BAR_KEY) === '1');
   isMobile = $state(false);
   /** モバイルのボトムナビ。デスクトップでは chat と settings だけを使う */
-  tab = $state<'chat' | 'threads' | 'settings'>('chat');
+  tab = $state<'chat' | 'threads' | 'settings' | 'call'>('chat');
   panel = $state<Panel>(null);
   /** 設定で開いているプラグインの設定画面（プラグインの ID）。設定のタブでだけ使う */
   pluginSettings = $state<string | null>(null);
   /** 設定で開いている「操作」のサブページ。設定のタブでだけ使う */
   settingsSub = $state<SettingsSubpage | null>(null);
   lightbox = $state<{ src: string; alt: string; downloadUrl: string } | null>(null);
+  /** メッセージ検索の画面を開いているか（コマンドから開く。モバイルでは全画面の代わりに出す） */
+  searchOpen = $state(false);
   toasts = $state<Toast[]>([]);
   confirmReq = $state<ConfirmRequest | null>(null);
   /** インライン編集中のメッセージ */
@@ -99,10 +102,21 @@ class Ui {
     this.panel = { kind: 'thread', id };
   }
 
+  /** メッセージの集合のパネルを開く（中身は timelinePanels の id で引く） */
+  openTimeline(id: number): void {
+    if (!this.isMobile && this.tab === 'settings') this.tab = 'chat';
+    this.panel = { kind: 'timeline', id };
+  }
+
   /** プラグインの view でセッションを開く */
   openPluginView(plugin: string, view: string, sessionId: string): void {
     if (!this.isMobile && this.tab === 'settings') this.tab = 'chat';
     this.panel = { kind: 'plugin', plugin, view, sessionId };
+  }
+
+  /** メッセージ検索を開く */
+  openSearch(): void {
+    this.searchOpen = true;
   }
 
   /** 設定を開く。設定を開いているときにもう一度押したら、プラグインの設定画面から一覧に戻る */
@@ -111,6 +125,14 @@ class Ui {
     this.pluginSettings = null;
     this.settingsSub = null;
     if (!this.isMobile) this.panel = null;
+  }
+
+  /** 通話の画面（全画面版）を開く。モバイルではスレッドなどのパネルを閉じる */
+  openCall(): void {
+    this.tab = 'call';
+    this.pluginSettings = null;
+    this.settingsSub = null;
+    if (this.isMobile) this.panel = null;
   }
 
   /** 設定の中で、プラグインの設定画面を開く */
@@ -137,7 +159,7 @@ class Ui {
 
   /**
    * 戻る操作で閉じられるもの（下から順）。Android の戻るボタンは、これを上から1つずつ閉じる。
-   * チャット以外のタブ → 設定のサブページ・プラグインの設定画面 → パネル。チャットで何も開いていなければ空
+   * チャット以外のタブ → 設定のサブページ・プラグインの設定画面 → パネル → プラグインの層（画面共有の閲覧など）→ 検索 → 画像の全画面（一番上）。何も開いていなければ空
    */
   backLayers(): (() => void)[] {
     const layers: (() => void)[] = [];
@@ -150,11 +172,29 @@ class Ui {
     if (this.tab === 'settings' && this.pluginSettings) layers.push(() => this.closePluginSettings());
     if (this.tab === 'settings' && this.settingsSub) layers.push(() => this.closeSettingsSub());
     if (this.panel) layers.push(() => this.closePanel());
+    for (const b of this.pluginBack) layers.push(b.run);
+    if (this.searchOpen) layers.push(() => (this.searchOpen = false));
+    // 画像の全画面は一番上（戻る操作で、まず全画面を解除する）
+    if (this.lightbox) layers.push(() => (this.lightbox = null));
     return layers;
   }
 
   closePanel(): void {
     this.panel = null;
+  }
+
+  /**
+   * プラグインが登録した「戻る」で閉じるもの（`disnans.ui.onBack`。API v9）。古い順。
+   * 戻る操作では、パネルなど本体の層よりも上（先）に閉じる。返り値の関数で外す
+   */
+  pluginBack = $state<{ run: () => void }[]>([]);
+
+  addPluginBack(run: () => void): () => void {
+    const entry = { run };
+    this.pluginBack = [...this.pluginBack, entry];
+    return () => {
+      this.pluginBack = this.pluginBack.filter((e) => e !== entry);
+    };
   }
 
   toast(text: string, kind: Toast['kind'] = 'info', action?: Toast['action'], ms = 5000, avatar?: ToastAvatar): void {

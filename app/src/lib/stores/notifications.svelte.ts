@@ -162,7 +162,7 @@ class Notifications {
     // デスクトップでは、ウィンドウが見えていても別のアプリを使っていれば見ていないとみなす
     if (this.backend !== 'android' && !document.hasFocus()) return false;
     if (threadId) return ui.panel?.kind === 'thread' && ui.panel.id === threadId;
-    return ui.isMobile ? ui.tab === 'chat' : ui.tab !== 'settings';
+    return ui.isMobile ? ui.tab === 'chat' : ui.tab !== 'settings' && ui.tab !== 'call';
   }
 
   private showSystem(ev: NotifyEvent): boolean {

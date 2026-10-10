@@ -283,7 +283,10 @@ export class CallStore {
   async join(): Promise<void> {
     if (this.joined || this.joining) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      this.deps.toast('この環境ではマイクを使えません（アプリ版で使ってください）', 'error');
+      // WebKitGTK では、メディアストリームの設定が効いていない・安全なコンテキストでないと mediaDevices が無い
+      const why = `mediaDevices なし（secureContext=${String(window.isSecureContext)}, origin=${location.origin}）`;
+      console.error('[call] マイクを使えません:', why);
+      this.deps.toast(`この環境ではマイクを使えません（${why}）。アプリ版で使ってください`, 'error');
       return;
     }
     this.joining = true;
@@ -294,8 +297,9 @@ export class CallStore {
         stream = await this.openMic();
       } catch (e) {
         const name = errName(e);
+        console.error('[call] マイクを開けませんでした', e);
         if (name === 'NotAllowedError' || name === 'SecurityError') {
-          this.deps.toast('マイクの使用が許可されていません。端末の設定で許可してください', 'error');
+          this.deps.toast(`マイクの使用が許可されていません（${name}）。端末の設定で許可してください`, 'error');
         } else if (name === 'NotFoundError') {
           this.deps.toast('マイクが見つかりません', 'error');
         } else {
@@ -323,21 +327,29 @@ export class CallStore {
       }
 
       this.localStream = stream;
-      this.ctx = new AudioContext();
-      void this.ctx.resume().catch(() => {});
-      this.ctxDetach = this.deps.audio.attach(this.ctx);
-      this.localMeter = makeMeter(this.ctx.createAnalyser());
-      await this.setupSend(stream, this.ctx, this.localMeter);
+      try {
+        this.ctx = new AudioContext();
+        void this.ctx.resume().catch(() => {});
+        this.ctxDetach = this.deps.audio.attach(this.ctx);
+        this.localMeter = makeMeter(this.ctx.createAnalyser());
+        await this.setupSend(stream, this.ctx, this.localMeter);
 
-      this.peerId = randomId();
-      this.muted = this.settings.joinMuted;
-      this.deafened = false;
-      this.applyMute();
-      this.joined = true;
-      this.deps.send({ type: 'call.join', peer: this.peerId, status: this.status() });
-      void this.restoreOutput();
-      this.startWorker();
-      this.reconcile();
+        this.peerId = randomId();
+        this.muted = this.settings.joinMuted;
+        this.deafened = false;
+        this.applyMute();
+        this.joined = true;
+        this.deps.send({ type: 'call.join', peer: this.peerId, status: this.status() });
+        void this.restoreOutput();
+        this.startWorker();
+        this.reconcile();
+      } catch (e) {
+        // マイクを開いたあとの失敗（AudioContext など）。握りつぶさず原因を出し、開いたマイクも閉じる
+        console.error('[call] 通話に参加できませんでした', e);
+        this.deps.toast(`通話に参加できませんでした: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`, 'error');
+        this.leave(this.joined);
+        stream.getTracks().forEach((t) => t.stop());
+      }
     } finally {
       this.joining = false;
       this.refresh();

@@ -6,6 +6,7 @@ import TextCursorInput from '@lucide/svelte/icons/text-cursor-input';
 import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
 import ArrowDownToLine from '@lucide/svelte/icons/arrow-down-to-line';
 import Command from '@lucide/svelte/icons/command';
+import Search from '@lucide/svelte/icons/search';
 import SunMoon from '@lucide/svelte/icons/sun-moon';
 import ChevronsDown from '@lucide/svelte/icons/chevrons-down';
 import ChevronsUp from '@lucide/svelte/icons/chevrons-up';
@@ -116,6 +117,14 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       name: 'チャットを開く',
       icon: MessageCircle,
       run: () => showChat(),
+    },
+    {
+      id: id('search'),
+      name: 'メッセージを検索',
+      icon: Search,
+      // Ctrl+F（macOS では Cmd+F）。入力欄にいても開ける
+      defaultHotkey: 'Mod+F',
+      run: () => ui.openSearch(),
     },
     {
       id: id('open-threads'),

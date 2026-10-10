@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   addNavItem,
   DEFAULT_NAV_ITEMS,
-  moveNavItem,
   NAV_CHAT_ID,
   NAV_SETTINGS_ID,
   NAV_THREADS_ID,
   normalizeNavItems,
   removeNavItem,
+  reorderNavItem,
   visibleNavItems,
 } from './navBar';
 
@@ -58,11 +58,13 @@ describe('追加・削除・並べ替え', () => {
     expect(removeNavItem(DEFAULT_NAV_ITEMS, NAV_SETTINGS_ID)).toEqual(DEFAULT_NAV_ITEMS);
   });
 
-  it('上下に動かす。端は動かさない。登録されていない項目は位置を変えずに残す', () => {
-    expect(moveNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_SETTINGS_ID, -1)).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID, NAV_THREADS_ID]);
-    expect(moveNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_CHAT_ID, -1)).toEqual(DEFAULT_NAV_ITEMS);
-    expect(moveNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_SETTINGS_ID, 1)).toEqual(DEFAULT_NAV_ITEMS);
+  it('表示の並びの指定した位置に動かす。登録されていない項目は位置を変えずに残す', () => {
+    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_SETTINGS_ID, 1)).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID, NAV_THREADS_ID]);
+    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_CHAT_ID, 2)).toEqual([NAV_THREADS_ID, NAV_SETTINGS_ID, NAV_CHAT_ID]);
+    // 範囲外は端に収める
+    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_CHAT_ID, 99)).toEqual([NAV_THREADS_ID, NAV_SETTINGS_ID, NAV_CHAT_ID]);
+    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_SETTINGS_ID, -5)).toEqual([NAV_SETTINGS_ID, NAV_CHAT_ID, NAV_THREADS_ID]);
     const list = ['dice:gone', NAV_CHAT_ID, 'dice:roll', NAV_SETTINGS_ID];
-    expect(moveNavItem(list, ALL, 'dice:roll', -1)).toEqual(['dice:gone', 'dice:roll', NAV_CHAT_ID, NAV_SETTINGS_ID]);
+    expect(reorderNavItem(list, ALL, NAV_SETTINGS_ID, 0)).toEqual(['dice:gone', NAV_SETTINGS_ID, NAV_CHAT_ID, 'dice:roll']);
   });
 });

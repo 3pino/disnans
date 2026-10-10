@@ -38,10 +38,19 @@ export function startCapture(ctx: AudioContext, src: AudioNode, onChunk: (chunk:
     const code =
       "class C extends AudioWorkletProcessor{process(i){const c=i[0]&&i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor('call-capture',C)";
     const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+    // addModule が返ってこない環境（WebKitGTK など）でも音を取り出せるよう、待ちすぎたら ScriptProcessor にする
+    let fellBack = false;
+    const timer = setTimeout(() => {
+      if (fellBack) return;
+      fellBack = true;
+      console.warn('[call] AudioWorklet の読み込みが終わりません。ScriptProcessor で代わりにします');
+      useScriptProcessor();
+    }, 1500);
     ctx.audioWorklet
       .addModule(url)
       .then(() => {
-        if (stopped) return;
+        clearTimeout(timer);
+        if (stopped || fellBack) return;
         const node = new AudioWorkletNode(ctx, 'call-capture', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1 });
         node.port.onmessage = (ev) => onChunk(ev.data);
         src.connect(node);
@@ -54,6 +63,9 @@ export function startCapture(ctx: AudioContext, src: AudioNode, onChunk: (chunk:
         };
       })
       .catch((err) => {
+        clearTimeout(timer);
+        if (fellBack) return;
+        fellBack = true;
         console.warn('[call] AudioWorklet を使えません。ScriptProcessor で代わりにします', err);
         useScriptProcessor();
       })

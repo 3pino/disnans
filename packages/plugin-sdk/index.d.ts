@@ -1,5 +1,5 @@
 /**
- * disnans プラグインの型定義（ホスト API バージョン 7）。
+ * disnans プラグインの型定義（ホスト API バージョン 9）。
  *
  * プラグインの main.js は ES モジュールで、`Plugin` を継承したクラスを `export default` する。
  * ホスト API はグローバルの `disnans` から取る（`import` は使わない）。
@@ -56,7 +56,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 7） */
+      /** ホスト API のバージョン（いまは 9） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -68,6 +68,70 @@ declare global {
       readonly audio: Audio;
       /** 本体の通話（API v8）。画面共有などの拡張向け。通話そのもの（参加・ミュート・出力先）は本体の機能で、ここからは状態の読み取りと、参加者どうしのデータの送受信だけ */
       readonly call: Call;
+      /** 画面のキャプチャ（API v9。Android のネイティブ）。画面共有向け。`supported` が false の環境では `getDisplayMedia` を使う */
+      readonly screenCapture: ScreenCapture;
+      /** ピクチャーインピクチャー（API v9。Android のネイティブ）。デスクトップは `<video>` の `requestPictureInPicture` を使う */
+      readonly pip: Pip;
+    }
+
+    /** `screenCapture.start` に渡す設定（API v9） */
+    type ScreenCaptureOptions = {
+      /** 画像の長辺の最大（ピクセル） */
+      maxEdge: number;
+      /** 符号化の品質（0〜1。JPEG / WebP の lossy） */
+      quality: number;
+      /** 1 秒あたりのフレーム数の上限 */
+      fps: number;
+      /** 画像の形式（既定は `jpeg`） */
+      format?: 'jpeg' | 'webp';
+      /** 色数。`c256` は 256 色相当に減色（このときは可逆の WebP / PNG と比べて小さいほうを使う）、`gray` はグレースケール。既定は `full` */
+      color?: 'full' | 'c256' | 'gray';
+      /** 前のフレームとの差（0〜255 の平均）がこれ以下なら送らない。既定は 1.5 */
+      diffThreshold?: number;
+      /** 画面が変わらなくても送り直す間隔（ミリ秒）。既定は 5000 */
+      keepaliveMs?: number;
+      /** OS 側（通知欄の停止ボタンなど）で止められたときに呼ばれる。`stop()` では呼ばれない */
+      onEnd?: () => void;
+    };
+
+    /** `screenCapture` が渡す 1 フレーム（API v9） */
+    type ScreenCaptureFrame = {
+      /** 画像の base64（`data:` の接頭辞なし） */
+      data: string;
+      /** `image/jpeg` `image/webp` `image/png` */
+      mime: string;
+      width: number;
+      height: number;
+    };
+
+    /**
+     * 画面のキャプチャ（API v9）。Android の WebView には `getDisplayMedia` が無いので、MediaProjection で撮った
+     * 縮小済みの画像を渡す。開始すると OS の確認のダイアログが出て、通知欄に常駐の表示（フォアグラウンドサービス）が出る。
+     * Android 以外では `supported` が false で、`start` は例外になる
+     */
+    interface ScreenCapture {
+      readonly supported: boolean;
+      /** 許可を求めて撮り始める。断られたら例外。フレームは `onFrame` に届く（変化が無い間は届かない） */
+      start(opts: ScreenCaptureOptions, onFrame: (frame: ScreenCaptureFrame) => void): Promise<void>;
+      /** 撮りながら品質を変える。`scale` は取得した画像をさらに縮める倍率（0〜1） */
+      update(patch: { quality?: number; scale?: number }): Promise<void>;
+      /** 止める（撮っていなければ何もしない） */
+      stop(): Promise<void>;
+    }
+
+    /**
+     * ピクチャーインピクチャー（API v9）。Android では Activity を小窓にする（`enter`）。
+     * 小窓の間は、アプリの画面がそのまま小さく表示されるので、プラグインが小窓用の表示に切り替える（`onChange`）。
+     * Android 以外では `supported` が false で、`enter` は false を返す
+     */
+    interface Pip {
+      readonly supported: boolean;
+      /** いま小窓になっている */
+      readonly active: boolean;
+      /** 小窓にする。入れたら true。`aspect` は小窓の縦横比（既定 16:9） */
+      enter(opts?: { aspect?: { width: number; height: number } }): Promise<boolean>;
+      /** 小窓になった・戻ったとき。戻り値の関数で外す */
+      onChange(cb: (active: boolean) => void): Cleanup;
     }
 
     /** 通話の参加者1人分（API v7〜）。同じ人が2台で入れば2つ */
@@ -132,7 +196,7 @@ declare global {
       leave(): void;
       /**
        * 通話の参加者全員（自分以外）に、データをサーバー経由で送る。保存はされない。
-       * `payload` は JSON にして 64 KB まで。送りすぎると（目安は 1 秒に 250 KB ほど。音声の分を含む）サーバーが黙って捨てる。
+       * `payload` は JSON にして 64 KB まで。送りすぎると（目安は 1 秒に 3 MB ほど。音声の分を含む）サーバーが黙って捨てる。
        * `name` は 1〜64 文字で、`audio` は本体が使う。通話に参加していないときは例外
        */
       emit(name: string, payload: unknown): void;
@@ -213,6 +277,18 @@ declare global {
        * hotkey（既定のホットキー）・slash（入力欄の `/name`）からも実行できる
        */
       addCommand(cmd: Command): void;
+      /**
+       * メッセージの操作に項目を足す（API v9）。メッセージを長押ししたときのメニュー（モバイル）と、
+       * デスクトップでメッセージにホバーしたときのツールバーに出る。本体の項目（返信・スレッドを立てる・コピー・編集・削除）と
+       * 同じ仕組みで並ぶ（並び順は order。既定では本体の項目のあと、削除の前）
+       */
+      addMessageAction(action: MessageAction): void;
+      /**
+       * メッセージの集合を、本体のメッセージ表示（リアクション・返信の表示などもそのまま）で、
+       * パネル（デスクトップは右、モバイルは全画面）に出す（API v9）。返り値で中身の差し替え・閉じる操作ができる。
+       * 別のパネルを開く・利用者が閉じるなどで閉じたときは onClose が呼ばれる。プラグインを外すと自動で閉じる
+       */
+      openTimeline(opts: TimelineOptions): TimelineHandle;
       /** 設定画面にプラグインの欄を出す */
       addSettingTab(tab: SettingTab): void;
       /** このプラグインの設定画面を開く（API v6）。設定タブに切り替える */
@@ -381,6 +457,89 @@ declare global {
       /** アイコン（省略するとプラグインのアイコン）。独自の SVG は addIcon で登録してから名前で指定する */
       icon?: IconName;
       run(ctx: { threadId: string | null }): void | Promise<void>;
+    };
+
+    /** メッセージ（API v9）。本体が渡すもの。プラグインが作るものではない（addMessageAction の when / run や app から受け取って使う） */
+    type Message = {
+      readonly id: string;
+      readonly author_id: string;
+      /** スレッド内の返信ならそのスレッドの ID。メインチャットなら null */
+      readonly thread_id: string | null;
+      /** 返信なら返信先のメッセージの ID */
+      readonly reply_to: string | null;
+      /** Markdown サブセットの生テキスト。メンションは `<@user_id>` */
+      readonly body: string;
+      readonly reactions: readonly { emoji: string; user_ids: readonly string[] }[];
+      readonly created_at: number;
+      readonly edited_at: number | null;
+      /** プラグインのカードなら入る（本文は空） */
+      readonly card: unknown | null;
+      /** プラグインがボットとして投稿したなら入る */
+      readonly bot: { plugin: string; name: string } | null;
+      readonly attachments: readonly unknown[];
+      readonly thread: unknown | null;
+      readonly reply_preview: unknown | null;
+    };
+
+    type MessageActionContext = {
+      /** メッセージのいるスレッドの ID（メインチャットなら null。スレッドのパネルで起点のメッセージを見ているときはそのスレッド） */
+      threadId: string | null;
+      /** スレッドのパネルの中で見ているか */
+      inThread: boolean;
+    };
+
+    type MessageAction = {
+      /** プラグインの中で一意な ID */
+      id: string;
+      /** 表示名（メニューの文字・ツールバーのツールチップ） */
+      label: string;
+      /** アイコン（省略するとプラグインのアイコン）。独自の SVG は addIcon で登録してから名前で指定する */
+      icon?: IconName;
+      /** 出す場所。menu は長押しのメニュー、toolbar はホバーのツールバー。省略すると both */
+      placement?: 'menu' | 'toolbar' | 'both';
+      /** 注意の色にする（削除など） */
+      danger?: boolean;
+      /**
+       * 並び順（小さいほど前）。省略すると 1000。本体の項目は 返信 200・スレッド 300・コピー 400・編集 500・削除 9000
+       * （リアクションはツールバーの先頭 100）。同じ順なら登録した順
+       */
+      order?: number;
+      /** このメッセージに出すか。省略すると常に出す（送信中の仮表示には出さない）。例外を投げると出さない */
+      when?(msg: Message, ctx: MessageActionContext): boolean;
+      /** 選ばれたとき。例外は本体がトーストで知らせる */
+      run(msg: Message, ctx: MessageActionContext): void | Promise<void>;
+    };
+
+    type TimelineOptions = {
+      /** パネルの題名 */
+      title: string;
+      /** 題名の横のアイコン（省略するとメッセージのアイコン） */
+      icon?: IconName;
+      /**
+       * 出すメッセージ（この並びのまま）。本体が読み込んでいるものは常に最新（リアクション・編集）に差し替わる。
+       * messageIds とはどちらか一方
+       */
+      messages?: Message[];
+      /**
+       * 出すメッセージの ID（この並びのまま）。本体が読み込み済みのメッセージだけ解決され、
+       * 読み込まれていないもの・削除されたものは飛ばされる。リアクションなどは常に最新
+       */
+      messageIds?: string[];
+      /** 字下げの深さ（メッセージの ID → 0 以上の整数）。ツリーを見せたいときに使う。省略は 0 */
+      depths?: Record<string, number>;
+      /** メッセージが 0 件のときの文言 */
+      empty?: string;
+      /** パネルが閉じたとき（利用者が閉じた・別のパネルに替わった・close()・プラグインを外した）に 1 回呼ばれる */
+      onClose?(): void;
+    };
+
+    type TimelineHandle = {
+      /** 題名・アイコン・メッセージ・字下げを差し替える（渡した項目だけ変わる。messages と messageIds はどちらか一方） */
+      update(patch: Partial<Omit<TimelineOptions, 'onClose'>>): void;
+      /** 閉じる（何度呼んでもよい） */
+      close(): void;
+      /** 閉じたあとは true */
+      readonly closed: boolean;
     };
 
     type Command = {
@@ -577,6 +736,18 @@ declare global {
         containerEl: HTMLElement,
         opts: { name: string; description?: string; icon?: IconName; control?: HTMLElement },
       ): HTMLElement;
+      /**
+       * 戻る操作（Android の戻るボタン・ジェスチャー、PC の Alt+←）で閉じる層を足す（API v9）。
+       * 戻る操作のたびに、本体の層（パネルなど）より先に、足した新しいものから 1 つずつ `handler` が呼ばれる。
+       * 閉じたら戻り値の関数で外す（外さずに残した層は、次の戻る操作でも呼ばれる）
+       */
+      onBack(handler: () => void): Cleanup;
+      /**
+       * 没入モード（API v9）。Android でステータスバーとナビゲーションバーを隠す（端からスワイプすると一時的に出る）。
+       * Android の WebView には Fullscreen API が無いので、全画面の表示に使う。
+       * ネイティブで切り替えたら true。それ以外の環境（デスクトップ・ブラウザー）では何もせず false なので、`requestFullscreen` を使う
+       */
+      setImmersive(on: boolean): Promise<boolean>;
       /** トースト */
       toast(text: string, kind?: 'info' | 'error'): void;
       /** 確認ダイアログ。OK なら true。okLabel の既定は「OK」、ngLabel（取り消すボタン）の既定は「キャンセル」 */

@@ -3,6 +3,7 @@
  *
  * 切り抜く範囲（CropRect）は元の画像の画素で持つ。ダイアログの表示との変換・範囲の計算は純粋関数
  * （imageCrop.test.ts で試す）。canvas を使うのは readImageInfo と prepareUpload だけ。切り抜きは送信するときに行う。
+ * 切り抜いたものは WebP にする（送る画像の標準。WebView が WebP を作れなければ PNG か JPEG に戻る）。
  * 向きは createImageBitmap の imageOrientation: 'from-image' で直してから描く（EXIF の回転を反映する）。
  */
 
@@ -175,15 +176,19 @@ export function isAnimatedImage(head: Uint8Array): boolean {
   return false;
 }
 
-/** 切り抜いたあとの形式。透過があれば PNG、なければ JPEG */
-export function outputMime(alpha: boolean): 'image/png' | 'image/jpeg' {
+/**
+ * 切り抜いたあとの形式。WebP が作れればそれ（既定）。作れない WebView では、透過があれば PNG、なければ JPEG
+ */
+export function outputMime(webp: boolean, alpha: boolean): 'image/webp' | 'image/png' | 'image/jpeg' {
+  if (webp) return 'image/webp';
   return alpha ? 'image/png' : 'image/jpeg';
 }
 
 /** 切り抜いたあとのファイル名（拡張子を形式に合わせる。名前の元の部分は残す） */
 export function outputName(name: string, mime: string): string {
   const stem = name.replace(/\.[^.]*$/, '') || 'image';
-  return stem + (mime === 'image/png' ? '.png' : '.jpg');
+  const ext = mime === 'image/webp' ? '.webp' : mime === 'image/png' ? '.png' : '.jpg';
+  return stem + ext;
 }
 
 // ---- ここから canvas を使う部分 ----
@@ -215,6 +220,19 @@ function makeSurface(width: number, height: number): Surface {
     ctx: c.getContext('2d')!,
     encode: (mime, quality) => new Promise((resolve) => c.toBlob(resolve, mime, quality)),
   };
+}
+
+/** 送信する画像の品質（WebP・JPEG） */
+const QUALITY = 0.9;
+
+/** 指定の形式で作る。作れないとき（形式が違うものが返るとき）は null */
+async function encodeAs(s: Surface, mime: string): Promise<Blob | null> {
+  try {
+    const blob = await s.encode(mime, QUALITY);
+    return blob && blob.type === mime ? blob : null;
+  } catch {
+    return null;
+  }
 }
 
 function sampleAlpha(bitmap: ImageBitmap): boolean {
@@ -249,7 +267,7 @@ export async function readImageInfo(file: File): Promise<ImageInfo | null> {
 
 /**
  * 送信のときに、添付するファイルを用意する。crop が null（全体）や、切り抜く必要がなければ元のファイルを返す。
- * 切り抜くときは JPEG（透過があれば PNG）にする。
+ * 切り抜くときは WebP にする（WebP を作れない WebView では PNG か JPEG）。
  */
 export async function prepareUpload(file: File, crop: CropRect | null): Promise<File> {
   if (!crop) return file;
@@ -264,11 +282,13 @@ export async function prepareUpload(file: File, crop: CropRect | null): Promise<
     const alpha =
       (file.type === 'image/png' || file.type === 'image/webp') &&
       anyTransparent(s.ctx.getImageData(0, 0, r.w, r.h).data);
-    const mime = outputMime(alpha);
-    const blob = await s.encode(mime, 0.9);
+    // WebP を作れなければ（blob の形式が違えば）、PNG か JPEG にする
+    const webp = await encodeAs(s, 'image/webp');
+    const blob = webp ?? (await s.encode(outputMime(false, alpha), QUALITY));
     if (!blob) throw new Error('画像を切り抜けませんでした');
-    return new File([blob], outputName(file.name, blob.type || mime), {
-      type: blob.type || mime,
+    const mime = blob.type || outputMime(false, alpha);
+    return new File([blob], outputName(file.name, mime), {
+      type: mime,
       lastModified: file.lastModified,
     });
   } finally {

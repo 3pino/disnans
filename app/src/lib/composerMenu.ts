@@ -2,6 +2,7 @@ import Paperclip from '@lucide/svelte/icons/paperclip';
 import type { IconRef } from './icons.svelte';
 import { composerActions } from './composerActions';
 import { commandList, runCommand } from './commands.svelte';
+import { moveItem } from './sortable';
 
 /**
  * 入力欄の「＋」メニューの項目を、利用者の設定（prefs の composerMenu）で並べ替え・絞り込みする。
@@ -121,7 +122,7 @@ function visibleIds(available: ComposerMenuEntry[], prefs: ComposerMenuPrefs): s
 }
 
 /**
- * 項目を、表示の並びの toIndex 番目に動かす（ドラッグ・上下キーの両方で使う）。
+ * 項目を、表示の並びの toIndex 番目に動かす（並べ替えのリストで使う）。
  * toIndex は範囲に収めて扱う。動かさないときは同じ prefs を返す
  */
 export function reorderComposerMenuEntry(
@@ -135,22 +136,7 @@ export function reorderComposerMenuEntry(
   if (from < 0) return prefs;
   const to = Math.max(0, Math.min(ids.length - 1, toIndex));
   if (to === from) return prefs;
-  ids.splice(from, 1);
-  ids.splice(to, 0, id);
-  return { ...prefs, order: orderWith(available, prefs, ids) };
-}
-
-/**
- * ドラッグ中の差し込み位置（slot）。rows は並びの上から各行の上端と下端、y はポインターの縦位置。
- * 行の中央より上にある行の数を返す（0 なら先頭の前、rows.length なら末尾の後ろ）
- */
-export function dropSlot(rows: { top: number; bottom: number }[], y: number): number {
-  return rows.filter((r) => (r.top + r.bottom) / 2 < y).length;
-}
-
-/** 差し込み位置を、動かしたあとの並びの位置に直す（from の行を抜いた分だけ、後ろの位置が1つ詰まる） */
-export function slotToIndex(from: number, slot: number): number {
-  return slot > from ? slot - 1 : slot;
+  return { ...prefs, order: orderWith(available, prefs, moveItem(ids, from, to)) };
 }
 
 /** 出す・出さないを切り替える */

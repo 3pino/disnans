@@ -24,6 +24,7 @@
 | `StatusLine` | `.status-line`（`-muted` / `-ok` / `-accent` / `-warn` / `-error`） | `<StatusLine kind="ok" icon={CircleCheck}>最新です</StatusLine>`。`busy` で回るアイコン |
 | `Menu` / `MenuItem` | `.menu` / `.menu-backdrop` / `.menu-item`（`.menu-item-danger`） | `<Menu class="..." onclose={...}><MenuItem icon={Paperclip} onclick={...}>添付</MenuItem></Menu>`。位置は使う側で決める。`icon` は名前でもよい |
 | `SuggestList` | `.suggest-list` / `.suggest-list-item`（`-selected`） / `-item-title` / `-item-detail` | 入力欄の補完候補。下を参照 |
+| `SortableList` | `.sortable-list`（中の `.sortable-list-item` / `-grip` / `-body` は部品の中で書く） | `<SortableList items={...} getId={...} getLabel={...} onmove={(id, to) => ...}>{#snippet row(item)}...{/snippet}</SortableList>`。左のつまみをドラッグ（上下キーでも動かせる）。ほかの行が空きへ滑って、入る位置が見える。並びの保存は `onmove` で親が行う。本体だけの部品で、プラグインの `disnans.ui` には出さない |
 | `Modal` | `.modal-scrim` / `.modal` / `.modal-title` / `.modal-actions` | `<Modal title="..." onclose={...}>...</Modal>`。ボタンの並びは `.modal-actions` |
 
 ほかのグローバルクラス: `.field-label`（入力欄の上の小さな見出し）、`.muted`、`.scroll`、`.badge`、`.kbd`（キーボードのキー）、`.spin`、`.sr-only`、`.top-bar`。

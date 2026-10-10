@@ -1,0 +1,9 @@
+{
+  "id": "read-later",
+  "name": "あとで読む",
+  "version": "0.1.0",
+  "description": "メッセージの操作に「あとで読む」を足し、集めたメッセージをパネルに並べる（API v9 の addMessageAction / openTimeline の例）",
+  "author": "sanpino",
+  "minApiVersion": 9,
+  "icon": "bookmark"
+}

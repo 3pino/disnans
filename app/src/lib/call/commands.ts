@@ -3,6 +3,7 @@ import PhoneOff from '@lucide/svelte/icons/phone-off';
 import MicOff from '@lucide/svelte/icons/mic-off';
 import VolumeX from '@lucide/svelte/icons/volume-x';
 import Headphones from '@lucide/svelte/icons/headphones';
+import AudioLines from '@lucide/svelte/icons/audio-lines';
 import Settings from '@lucide/svelte/icons/settings';
 import { registerComposerAction } from '../composerActions';
 import { APP_COMMAND_PREFIX, type AppCommand } from '../commands.svelte';
@@ -13,6 +14,8 @@ import { call } from './instance.svelte';
 export function callCommands(): AppCommand[] {
   const id = (name: string) => `${APP_COMMAND_PREFIX}call-${name}`;
   return [
+    // ナビゲーションバーに追加して使う（既定の並びには入れない）
+    { id: id('open'), name: '通話を開く', icon: AudioLines, run: () => ui.openCall() },
     { id: id('join'), name: '通話に参加する', icon: Phone, slash: 'vc-join', description: '通話に参加する', run: () => call.join() },
     { id: id('leave'), name: '通話から抜ける', icon: PhoneOff, slash: 'vc-leave', description: '通話から抜ける', run: () => call.leave() },
     {
