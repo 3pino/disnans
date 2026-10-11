@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { closeTopLayer, isBackKey, startBackNav } from './backNav';
+import { isBackKey, startBackNav } from './backNav';
 
 /** 戻る・進むを非同期の popstate で知らせる、履歴のまね */
 function fakeHistory() {
@@ -34,42 +34,33 @@ function fakeHistory() {
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('backNav', () => {
-  it('戻るボタンで上の層から1つずつ閉じる', async () => {
+  it('戻るボタンで1つずつ戻る', async () => {
     const f = fakeHistory();
-    const open = { tab: false, sub: false, panel: false };
-    const layers = () => {
-      const ls: (() => void)[] = [];
-      if (open.tab)
-        ls.push(() => {
-          open.tab = false;
-          open.sub = false;
-        });
-      if (open.tab && open.sub) ls.push(() => (open.sub = false));
-      if (open.panel) ls.push(() => (open.panel = false));
-      return ls;
-    };
-    const nav = startBackNav(layers, f.h as never, f.w as never);
+    // 開いた順に積む、簡単な履歴
+    const stack: string[] = [];
+    const nav = startBackNav({ depth: () => stack.length, back: () => stack.pop() !== undefined }, f.h as never, f.w as never);
 
-    open.tab = true;
+    stack.push('settings');
     nav.sync();
-    open.sub = true;
+    stack.push('sub');
     nav.sync();
     expect(f.index()).toBe(2);
 
     f.h.go(-1);
     await flush();
-    expect(open).toEqual({ tab: true, sub: false, panel: false });
+    expect(stack).toEqual(['settings']);
     f.h.go(-1);
     await flush();
-    expect(open).toEqual({ tab: false, sub: false, panel: false });
+    expect(stack).toEqual([]);
     expect(f.index()).toBe(0);
     nav.stop();
   });
 
-  it('画面のボタンで閉じたら、その分だけ履歴を戻す', async () => {
+  it('画面のボタンで戻ったら、その分だけ履歴を戻す', async () => {
     const f = fakeHistory();
     let n = 0;
-    const nav = startBackNav(() => Array.from({ length: n }, () => () => n--), f.h as never, f.w as never);
+    const back = () => (n > 0 ? (n--, true) : false);
+    const nav = startBackNav({ depth: () => n, back }, f.h as never, f.w as never);
     n = 2;
     nav.sync();
     expect(f.index()).toBe(2);
@@ -83,6 +74,17 @@ describe('backNav', () => {
     expect(f.index()).toBe(1);
     nav.stop();
   });
+
+  it('戻っても深さが減らない相手でも、回り続けない', async () => {
+    const f = fakeHistory();
+    let calls = 0;
+    const nav = startBackNav({ depth: () => 1, back: () => (calls++, true) }, f.h as never, f.w as never);
+    nav.sync();
+    f.h.go(-1);
+    await flush();
+    expect(calls).toBeLessThanOrEqual(32);
+    nav.stop();
+  });
 });
 
 describe('isBackKey', () => {
@@ -94,14 +96,5 @@ describe('isBackKey', () => {
     expect(k({ ctrlKey: true })).toBe(false);
     expect(k({ shiftKey: true })).toBe(false);
     expect(k({ isComposing: true })).toBe(false);
-  });
-});
-
-describe('closeTopLayer', () => {
-  it('上の層から1つだけ閉じる。層がなければ false', () => {
-    const log: string[] = [];
-    expect(closeTopLayer([])).toBe(false);
-    expect(closeTopLayer([() => log.push('tab'), () => log.push('panel')])).toBe(true);
-    expect(log).toEqual(['panel']);
   });
 });

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import AudioLines from '@lucide/svelte/icons/audio-lines';
   import Smartphone from '@lucide/svelte/icons/smartphone';
   import Tablet from '@lucide/svelte/icons/tablet';
@@ -47,7 +48,10 @@
     else call.toggleLocalMute(p.peer);
   }
 
-  const outputLabel = $derived(call.outputs.find((o) => o.selected)?.label ?? '出力先');
+  const selectedOutput = $derived(call.outputs.find((o) => o.selected)?.id ?? '');
+
+  // 出力先の一覧は、開いたときに取り直す（参加中は store が定期的にも取り直す）
+  onMount(() => void call.refreshOutputs());
 
   // プラグインの領域（call.addPanel。API v10）。要素はプラグインが持ち、この画面が開いている間だけここに入れる
   const panels = $derived(call.joined ? call.panels.filter((p) => p.visible) : []);
@@ -144,7 +148,17 @@
         iconSize={22}
         onclick={() => call.toggleDeafen()}
       />
-      <IconButton label="音の出力先を切り替える" title={`出力先: ${outputLabel}（押すと次へ）`} icon={Speaker} iconSize={22} onclick={() => call.cycleOutput()} />
+      {#if call.outputs.length > 0}
+        <!-- 音の出力先（設定の「通話」と同じ選択欄） -->
+        <label class="call-view-output" title="音の出力先">
+          <Speaker size={18} aria-hidden="true" />
+          <select class="input call-view-output-select" aria-label="音の出力先" value={selectedOutput} onchange={(e) => void call.chooseOutput(e.currentTarget.value)}>
+            {#each call.outputs as o (o.id)}
+              <option value={o.id}>{o.label}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
       <IconButton label="通話の設定" title="通話の設定" icon={Settings} iconSize={22} onclick={() => ui.openSettingsSub('call')} />
       <IconButton class="call-leave" label="通話から抜ける" title="通話から抜ける" icon={PhoneOff} iconSize={22} onclick={() => call.leave()} />
     {:else}
@@ -282,6 +296,20 @@
     padding: 10px 12px;
     border-top: 1px solid var(--border);
     background: var(--surface);
+  }
+  .call-view-output {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--text-muted);
+  }
+  /* 長い機器名は「…」で省略する（設定の「通話」の選択欄と同じ） */
+  .call-view-output-select {
+    max-width: 180px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   .call-view-controls :global(.call-active) {
     background: var(--danger-soft);

@@ -93,8 +93,7 @@ function isTyping(target: EventTarget | null): boolean {
 
 /** メインチャットを出す（設定やモバイルのスレッドの一覧から戻る） */
 async function showChat(): Promise<void> {
-  ui.tab = 'chat';
-  if (ui.isMobile) ui.closePanel();
+  ui.showMain();
   await tick();
 }
 
@@ -133,8 +132,7 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       icon: MessagesSquare,
       run: async () => {
         if (ui.isMobile) {
-          ui.closePanel();
-          ui.tab = 'threads';
+          ui.selectTab('threads', true);
           return;
         }
         // デスクトップでは横に出ているので、一覧の先頭にフォーカスする

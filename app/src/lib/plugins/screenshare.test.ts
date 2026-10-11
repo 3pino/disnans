@@ -6,7 +6,7 @@ import { createUi } from './ui';
 import { setLucideForTest } from '../icons.svelte';
 import { API_VERSION, type HostServices, type PluginClass } from './types';
 import { VersionConflictError } from './sessions';
-import { toCaptureError } from './nativeScreen';
+import { toCaptureError, toSnapshotError } from './nativeScreen';
 
 type Mod = typeof import('../../../../examples/screenshare/main.js');
 const load = () => import('../../../../examples/screenshare/main.js') as Promise<Mod & { default: PluginClass }>;
@@ -167,6 +167,14 @@ describe('間隔・画質の調整', () => {
     expect(describeError({ message: 'native' })).toBe('native');
   });
 
+  it('snapshotFailureReason: 本体の「画面を撮れませんでした（理由）」から理由だけを取り出す', async () => {
+    const { snapshotFailureReason } = await load();
+    expect(snapshotFailureReason(new Error('画面を撮れませんでした（PixelCopy が失敗: 時間切れ (ERROR_TIMEOUT)）'))).toBe(
+      'PixelCopy が失敗: 時間切れ (ERROR_TIMEOUT)',
+    );
+    expect(snapshotFailureReason(new Error('この環境では画面を撮れません'))).toBe('この環境では画面を撮れません');
+  });
+
   it('hasAudience / canShareScreen / parseSettings', async () => {
     const { hasAudience, canShareScreen, parseSettings } = await load();
     expect(hasAudience([{ self: true }])).toBe(false);
@@ -283,6 +291,15 @@ describe('本体: ネイティブの取得のエラー', () => {
     expect(other.name).toBe('Error');
     expect(other.message).toBe('サービスを始められません');
     expect(toCaptureError('文字列').message).toBe('文字列');
+  });
+
+  it('toSnapshotError: ネイティブの理由はそのまま、Tauri の英語のエラーは利用者向けに言い換える', () => {
+    expect(toSnapshotError({ message: '画面を撮れませんでした（PixelCopy が失敗: 時間切れ (ERROR_TIMEOUT)）' }).message).toBe(
+      '画面を撮れませんでした（PixelCopy が失敗: 時間切れ (ERROR_TIMEOUT)）',
+    );
+    expect(toSnapshotError('screen.snapshot not allowed. Command not found').message).toMatch(/^この版のアプリは画面の静止画に対応していません/);
+    expect(toSnapshotError({ message: 'No command snapshot found for plugin dev.disnans.screen.ScreenPlugin' }).message).toMatch(/アプリを更新/);
+    expect(toSnapshotError(new Error('boom')).message).toBe('画面を撮れませんでした（boom）');
   });
 });
 

@@ -13,7 +13,7 @@
   import { notifications } from './lib/stores/notifications.svelte';
   import { startShareReceiver } from './lib/share';
   import { pluginHost } from './lib/plugins/host.svelte';
-  import { closeTopLayer, isBackKey, startBackNav } from './lib/backNav';
+  import { isBackKey, startBackNav } from './lib/backNav';
   import { startDropGuard } from './lib/dropGuard';
   import { startContextMenuGuard } from './lib/contextMenu';
   import { startUpdateWatch } from './lib/updateWatch';
@@ -40,7 +40,7 @@
     };
   });
 
-  // PC の Alt+←: Android の戻るボタンと同じく、開いているものを上から1つずつ閉じる（Android では戻るボタンを使う）
+  // PC の Alt+←: Android の戻るボタンと同じく、遷移の履歴を1つ戻る（ui.back。Android では戻るボタンを使う）
   onMount(() => {
     if (isAndroid()) return;
     const onKey = (e: KeyboardEvent) => {
@@ -50,7 +50,7 @@
       const typing = t instanceof HTMLElement && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable);
       if (isMac() && typing) return;
       e.preventDefault();
-      closeTopLayer(ui.backLayers());
+      ui.back();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -91,13 +91,13 @@
     return () => document.removeEventListener('click', onClick);
   });
 
-  // 戻る操作（Android の戻るボタン）で、パネル → プラグインの設定画面 → チャット以外のタブ の順に閉じる。
-  // チャットで何も開いていなければ、履歴が尽きてアプリが裏に回る。モバイルの表示か Android のときだけ使う
+  // 戻る操作（Android の戻るボタン）で、遷移の履歴を1つずつ戻る（画像の全画面 → プラグインの層 → 来た画面。lib/navHistory.ts）。
+  // チャットのトップで何も開いていなければ、履歴が尽きてアプリが裏に回る。モバイルの表示か Android のときだけ使う
   $effect(() => {
     if (!ui.isMobile && !isAndroid()) return;
-    const nav = startBackNav(() => ui.backLayers());
+    const nav = startBackNav({ depth: () => ui.backDepth(), back: () => ui.back() });
     $effect(() => {
-      void ui.backLayers().length;
+      void ui.backDepth();
       untrack(() => nav.sync());
     });
     return () => nav.stop();

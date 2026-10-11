@@ -88,7 +88,7 @@ class Notifications {
 
   private openTarget(threadId: string | null | undefined): void {
     if (threadId) ui.openThread(threadId);
-    else ui.tab = 'chat';
+    else ui.showMain('never');
   }
 
   /** Android の常駐サービスの状態を読み直す */

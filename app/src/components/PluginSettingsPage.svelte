@@ -21,7 +21,7 @@
 <div id="plugin-settings-page" class="plugin-settings-page" data-plugin={id}>
   <header class="top-bar"></header>
   <div class="plugin-settings-page-header">
-    <IconButton class="plugin-settings-page-back" label="戻る" onclick={() => ui.closePluginSettings()}><ArrowLeft size={20} /></IconButton>
+    <IconButton class="plugin-settings-page-back" label="戻る" onclick={() => ui.back()}><ArrowLeft size={20} /></IconButton>
     <div class="plugin-settings-page-title">
       <Icon icon={entry?.icon ?? pluginHost.pluginIcon(id)} size={18} />
       <span class="plugin-settings-page-title-text">{name}</span>

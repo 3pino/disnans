@@ -158,12 +158,46 @@ async function snapshotDesktop(): Promise<Disnans.ScreenSnapshot> {
   return { dataUrl: cv.toDataURL('image/jpeg', SNAPSHOT_QUALITY), width, height, source };
 }
 
+/** Android の snapshot の応答を待つ上限（ネイティブ側も 8 秒で打ち切る。応答そのものが来ないときのため） */
+const SNAPSHOT_ANDROID_TIMEOUT_MS = 12_000;
+
+/**
+ * Android の snapshot の失敗を、利用者に見せられる文言の Error にする。
+ * ネイティブ側の文言（「画面を撮れませんでした（理由）」）はそのまま使い、Tauri の英語のエラー（権限・コマンドが無い）は言い換える
+ */
+export function toSnapshotError(e: unknown): Error {
+  const err = toCaptureError(e);
+  const m = err.message;
+  if (/not allowed|No command|not found|InvalidCommand/i.test(m)) {
+    return new Error(`この版のアプリは画面の静止画に対応していません。アプリを更新してください（${m}）`);
+  }
+  if (/Plugin .* not initialized/i.test(m)) {
+    return new Error(`画面の機能（screen プラグイン）が読み込まれていません（${m}）`);
+  }
+  if (!/画面を撮れ|画面を取得/.test(m)) return new Error(`画面を撮れませんでした（${m}）`);
+  return err;
+}
+
 async function snapshotAndroid(): Promise<Disnans.ScreenSnapshot> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const f = await invokeScreen<CaptureFramePayload>('snapshot', { maxEdge: 1920, quality: SNAPSHOT_QUALITY });
-    return { dataUrl: `data:${f.mime};base64,${f.data}`, width: f.width, height: f.height, source: 'app' };
+    const f = await Promise.race([
+      invokeScreen<CaptureFramePayload | null>('snapshot', { maxEdge: 1920, quality: SNAPSHOT_QUALITY }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`画面を撮れませんでした（${SNAPSHOT_ANDROID_TIMEOUT_MS / 1000} 秒待ってもアプリから応答がありません）`)),
+          SNAPSHOT_ANDROID_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    if (!f || typeof f.data !== 'string' || !f.data || !(f.width > 0) || !(f.height > 0)) {
+      throw new Error('画面を撮れませんでした（アプリから届いた画像が空です）');
+    }
+    return { dataUrl: `data:${f.mime || 'image/jpeg'};base64,${f.data}`, width: f.width, height: f.height, source: 'app' };
   } catch (e) {
-    throw toCaptureError(e);
+    throw toSnapshotError(e);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

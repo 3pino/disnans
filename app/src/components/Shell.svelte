@@ -68,10 +68,17 @@
       <ThreadPanel threadId={ui.panel.id} />
     </div>
   {:else if ui.panel?.kind === 'timeline'}
-    <!-- メッセージの集合（返信のツリー・プラグインのタイムライン）。枠はスレッドのパネルと同じ -->
+    <!-- メッセージの集合（プラグインのタイムライン）。枠はスレッドのパネルと同じ -->
     <div class="shell-thread-panel">
       {#key ui.panel.id}
         <TimelinePanel id={ui.panel.id} />
+      {/key}
+    </div>
+  {:else if ui.panel?.kind === 'replyTree'}
+    <!-- 返信のツリー。表示はメッセージの集合と同じ -->
+    <div class="shell-thread-panel">
+      {#key `${ui.panel.place ?? ''}/${ui.panel.messageId}`}
+        <TimelinePanel tree={{ messageId: ui.panel.messageId, place: ui.panel.place }} />
       {/key}
     </div>
   {:else if ui.panel?.kind === 'plugin'}

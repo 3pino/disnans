@@ -302,11 +302,14 @@ class Client {
         unread.onDeleted(ev.message_id, ev.thread_id, tl?.find(ev.message_id)?.author_id);
         tl?.remove(ev.message_id);
         for (const t of this.timelines.values()) t.setReplyPreview(ev.message_id, null);
+        // 消えたメッセージを起点にした返信のツリーは、開いていれば閉じ、遷移の履歴からも外す
+        ui.forgetPanel((p) => p.kind === 'replyTree' && p.messageId === ev.message_id);
         if (threads.get(ev.message_id) || this.timelines.has(ev.message_id)) {
           threads.remove(ev.message_id);
           unread.removeScope(ev.message_id);
           this.timelines.delete(ev.message_id);
-          if (ui.panel?.kind === 'thread' && ui.panel.id === ev.message_id) ui.closePanel();
+          const id = ev.message_id;
+          ui.forgetPanel((p) => (p.kind === 'thread' && p.id === id) || (p.kind === 'replyTree' && p.place === id));
         }
         reply.drop(ev.message_id);
         break;

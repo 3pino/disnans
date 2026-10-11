@@ -30,9 +30,7 @@ async function receive(share: Share): Promise<void> {
   }
   if (files.length === 0 && !share.text) return;
   // メインチャットの入力欄に入るので、開いているスレッドや設定は閉じてチャットを見せる
-  ui.tab = 'chat';
-  ui.panel = null;
-  ui.pluginSettings = null;
+  ui.showMain('always');
   shareInbox.push(files, share.text);
 }
 

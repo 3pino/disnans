@@ -43,13 +43,15 @@
   const items = $derived(ids.map(toItem).filter((x): x is NavBarItem => x !== null));
 
   function select(id: string) {
+    // タブの切り替えは遷移の履歴を捨てる（チャット以外のタブで戻ると、チャットのトップへ）
     if (id === NAV_CHAT_ID) {
-      if (!withThreads) ui.closePanel();
-      ui.tab = 'chat';
+      ui.selectTab('chat', !withThreads);
     } else if (id === NAV_THREADS_ID) {
-      ui.tab = 'threads';
+      ui.selectTab('threads');
     } else if (id === NAV_SETTINGS_ID) {
       ui.openSettings();
+    } else if (id === NAV_CALL_ID) {
+      ui.openCall('reset');
     } else {
       const c = findCommand(id);
       if (c) void commandHost.run(c, 'palette');

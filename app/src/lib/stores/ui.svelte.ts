@@ -2,18 +2,11 @@ import type { AuthorView } from '../author';
 import { getItem, setItem } from '../storage';
 import { setNavigationBarHidden, syncSystemBars } from '../systemBars';
 import type { User } from '../protocol/User';
+import { forgetPanelIn, navBack, navBackDepth, navigate, normalizeNav, type NavMode, type NavState, type NavTab, type Panel, type SettingsSubpage } from '../navHistory';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
-/** 右側のパネル（モバイルでは全画面）。スレッド、メッセージの集合（timeline。lib/stores/timelinePanel.svelte.ts）、プラグインの view */
-export type Panel =
-  | { kind: 'thread'; id: string }
-  | { kind: 'timeline'; id: number }
-  | { kind: 'plugin'; plugin: string; view: string; sessionId: string }
-  | null;
-
-/** 設定の中のサブページ（一覧の代わりに出す）。入力欄のキー・ホットキー・ナビゲーションバー・＋メニュー・通話 */
-export type SettingsSubpage = 'enterKeys' | 'hotkeys' | 'navBar' | 'composerMenu' | 'call';
+export type { Panel, SettingsSubpage, NavTab, NavState, NavMode } from '../navHistory';
 
 /** トーストの先頭に出す、送った人のアイコン（AuthorAvatar で描く。ボットならプラグインのアイコン） */
 export type ToastAvatar = { author: AuthorView; user?: User; id: string };
@@ -47,7 +40,7 @@ class Ui {
   hideNavigationBar = $state(getItem(HIDE_NAV_BAR_KEY) === '1');
   isMobile = $state(false);
   /** モバイルのボトムナビ。デスクトップでは chat と settings だけを使う */
-  tab = $state<'chat' | 'threads' | 'settings' | 'call'>('chat');
+  tab = $state<NavTab>('chat');
   panel = $state<Panel>(null);
   /** 設定で開いているプラグインの設定画面（プラグインの ID）。設定のタブでだけ使う */
   pluginSettings = $state<string | null>(null);
@@ -99,107 +92,157 @@ class Ui {
     syncSystemBars(dark);
   }
 
+  // ---- 画面の遷移（履歴は lib/navHistory.ts） ----
+
+  /** 遷移の履歴（古い順）。開く操作で「開く前の状態」を積み、戻る操作（back）で取り出す */
+  navStack = $state.raw<NavState[]>([]);
+
+  /** いまの画面の状態 */
+  navState(): NavState {
+    return normalizeNav({ tab: this.tab, settingsSub: this.settingsSub, pluginSettings: this.pluginSettings, panel: this.panel, searchOpen: this.searchOpen });
+  }
+
+  private applyNav(s: NavState): void {
+    this.tab = s.tab;
+    this.settingsSub = s.settingsSub;
+    this.pluginSettings = s.pluginSettings;
+    this.panel = s.panel;
+    this.searchOpen = s.searchOpen;
+  }
+
+  /** いまの状態に patch を当てた画面へ移る（mode は履歴の積み方） */
+  navigate(patch: Partial<NavState>, mode: NavMode = 'push'): void {
+    const from = this.navState();
+    const to = normalizeNav({ ...from, ...patch });
+    this.navStack = navigate(this.navStack, from, to, mode);
+    this.applyNav(to);
+  }
+
+  /** パネルを開く。デスクトップの設定のタブからはチャットに戻す */
+  private openPanel(panel: NonNullable<Panel>): void {
+    this.navigate({ panel, ...(!this.isMobile && this.tab === 'settings' ? { tab: 'chat' as const } : {}) });
+  }
+
   openThread(id: string): void {
-    if (!this.isMobile && this.tab === 'settings') this.tab = 'chat';
-    this.panel = { kind: 'thread', id };
+    this.openPanel({ kind: 'thread', id });
+  }
+
+  /** メッセージを起点にした返信のツリーを開く。place はそのメッセージのいる場所（スレッドの ID。メインチャットなら null） */
+  openReplyTree(messageId: string, place: string | null): void {
+    this.openPanel({ kind: 'replyTree', messageId, place });
   }
 
   /** メッセージの集合のパネルを開く（中身は timelinePanels の id で引く） */
   openTimeline(id: number): void {
-    if (!this.isMobile && this.tab === 'settings') this.tab = 'chat';
-    this.panel = { kind: 'timeline', id };
+    this.openPanel({ kind: 'timeline', id });
   }
 
   /** プラグインの view でセッションを開く */
   openPluginView(plugin: string, view: string, sessionId: string): void {
-    if (!this.isMobile && this.tab === 'settings') this.tab = 'chat';
-    this.panel = { kind: 'plugin', plugin, view, sessionId };
+    this.openPanel({ kind: 'plugin', plugin, view, sessionId });
   }
 
   /** メッセージ検索を始める（メインチャットを見せる。モバイルでパネルが開いていれば閉じる） */
   openSearch(): void {
-    if (this.tab !== 'chat') {
-      this.tab = 'chat';
-      this.pluginSettings = null;
-      this.settingsSub = null;
-    }
-    if (this.isMobile) this.panel = null;
-    this.searchOpen = true;
+    this.navigate({ tab: 'chat', searchOpen: true, ...(this.isMobile ? { panel: null } : {}) });
     this.searchFocusTick++;
   }
 
   /** 検索を終えて通常の入力欄・タイムラインに戻る */
   closeSearch(): void {
-    this.searchOpen = false;
+    this.navigate({ searchOpen: false }, 'replace');
   }
 
-  /** 設定を開く。設定を開いているときにもう一度押したら、プラグインの設定画面から一覧に戻る */
+  /**
+   * ナビゲーションバー（デスクトップはサイドバー）でタブを選ぶ。タブの切り替えは履歴を捨てる
+   * （チャット以外のタブで戻ると、チャットのトップへ。Android のボトムナビと同じ）。closePanel ならパネルも閉じる
+   */
+  selectTab(tab: NavTab, closePanel = false): void {
+    this.navigate({ tab, settingsSub: null, pluginSettings: null, ...(closePanel ? { panel: null } : {}) }, 'reset');
+  }
+
+  /** メインチャットを見せる（メッセージへの移動・共有の受け取りなど）。closePanel: パネルを閉じるか（mobile はモバイルのときだけ） */
+  showMain(closePanel: 'mobile' | 'always' | 'never' = 'mobile'): void {
+    const close = closePanel === 'always' || (closePanel === 'mobile' && this.isMobile);
+    this.navigate({ tab: 'chat', ...(close ? { panel: null } : {}) });
+  }
+
+  /** 設定を開く（タブの切り替えと同じく履歴を捨てる）。設定を開いているときにもう一度押したら、サブページから一覧に戻る */
   openSettings(): void {
-    this.tab = 'settings';
-    this.pluginSettings = null;
-    this.settingsSub = null;
-    if (!this.isMobile) this.panel = null;
+    this.navigate({ tab: 'settings', pluginSettings: null, settingsSub: null, ...(!this.isMobile ? { panel: null } : {}) }, 'reset');
   }
 
-  /** 通話の画面（全画面版）を開く。モバイルではスレッドなどのパネルを閉じる */
-  openCall(): void {
-    this.tab = 'call';
-    this.pluginSettings = null;
-    this.settingsSub = null;
-    if (this.isMobile) this.panel = null;
+  /**
+   * 通話の画面（全画面版）を開く。モバイルではスレッドなどのパネルを閉じる。
+   * 通話のバーなどから開いたときは、戻ると元の画面へ（push）。ナビゲーションバーのタブから開いたときは reset
+   */
+  openCall(mode: NavMode = 'push'): void {
+    this.navigate({ tab: 'call', ...(this.isMobile ? { panel: null } : {}) }, mode);
   }
 
   /** 設定の中で、プラグインの設定画面を開く */
   openPluginSettings(id: string): void {
-    this.tab = 'settings';
-    this.settingsSub = null;
-    this.pluginSettings = id;
+    this.navigate({ tab: 'settings', settingsSub: null, pluginSettings: id });
   }
 
   closePluginSettings(): void {
-    this.pluginSettings = null;
+    this.navigate({ pluginSettings: null }, 'replace');
   }
 
-  /** 設定の中で、「操作」のサブページ（入力欄のキーなど）を開く */
+  /** 設定の中で、「操作」のサブページ（入力欄のキーなど）を開く。戻ると開いた元の画面（通話の画面など）へ */
   openSettingsSub(page: SettingsSubpage): void {
-    this.tab = 'settings';
-    this.pluginSettings = null;
-    this.settingsSub = page;
+    this.navigate({ tab: 'settings', pluginSettings: null, settingsSub: page });
   }
 
   closeSettingsSub(): void {
-    this.settingsSub = null;
-  }
-
-  /**
-   * 戻る操作で閉じられるもの（下から順）。Android の戻るボタンは、これを上から1つずつ閉じる。
-   * チャット以外のタブ → 設定のサブページ・プラグインの設定画面 → パネル → プラグインの層（画面共有の閲覧など）→ 検索 → 画像の全画面（一番上）。何も開いていなければ空
-   */
-  backLayers(): (() => void)[] {
-    const layers: (() => void)[] = [];
-    if (this.tab !== 'chat')
-      layers.push(() => {
-        this.tab = 'chat';
-        this.pluginSettings = null;
-        this.settingsSub = null;
-      });
-    if (this.tab === 'settings' && this.pluginSettings) layers.push(() => this.closePluginSettings());
-    if (this.tab === 'settings' && this.settingsSub) layers.push(() => this.closeSettingsSub());
-    if (this.panel) layers.push(() => this.closePanel());
-    for (const b of this.pluginBack) layers.push(b.run);
-    if (this.searchOpen) layers.push(() => this.closeSearch());
-    // 画像の全画面は一番上（戻る操作で、まず全画面を解除する）
-    if (this.lightbox) layers.push(() => (this.lightbox = null));
-    return layers;
+    this.navigate({ settingsSub: null }, 'replace');
   }
 
   closePanel(): void {
-    this.panel = null;
+    this.navigate({ panel: null }, 'replace');
+  }
+
+  /** パネルが無くなった（スレッドの削除・プラグインのセッションの終了など）。開いていれば閉じ、履歴からも外す */
+  forgetPanel(match: (p: NonNullable<Panel>) => boolean): void {
+    if (this.panel && match(this.panel)) this.closePanel();
+    this.navStack = forgetPanelIn(this.navStack, match);
+  }
+
+  /**
+   * 戻る操作（Android の戻るボタン・PC の Alt+←・画面の「戻る」ボタン）。
+   * 画像の全画面 → プラグインの層（新しい順）→ 遷移の履歴 の順に1つ戻す。戻る先がなければ false
+   */
+  back(): boolean {
+    if (this.lightbox) {
+      this.lightbox = null;
+      return true;
+    }
+    const top = this.pluginBack.at(-1);
+    if (top) {
+      // 先に外す（プラグインが外し忘れても、戻る操作が空回りしないように）
+      this.pluginBack = this.pluginBack.slice(0, -1);
+      try {
+        top.run();
+      } catch (e) {
+        console.error('プラグインの戻る操作で例外', e);
+      }
+      return true;
+    }
+    const r = navBack(this.navStack, this.navState());
+    if (!r) return false;
+    this.navStack = r.stack;
+    this.applyNav(r.to);
+    return true;
+  }
+
+  /** 戻る操作を何回できるか（Android の履歴の深さをこれに合わせる） */
+  backDepth(): number {
+    return (this.lightbox ? 1 : 0) + this.pluginBack.length + navBackDepth(this.navStack, this.navState());
   }
 
   /**
    * プラグインが登録した「戻る」で閉じるもの（`disnans.ui.onBack`。API v9）。古い順。
-   * 戻る操作では、パネルなど本体の層よりも上（先）に閉じる。返り値の関数で外す
+   * 戻る操作では、遷移の履歴よりも上（先）に閉じる（back）。返り値の関数で外す
    */
   pluginBack = $state<{ run: () => void }[]>([]);
 

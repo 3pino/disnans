@@ -221,7 +221,7 @@
     <div id="settings-sub-page" class="settings-sub-page" data-sub={ui.settingsSub}>
       <header class="top-bar"></header>
       <div class="settings-sub-page-header">
-        <IconButton class="settings-sub-page-back" label="戻る" onclick={() => ui.closeSettingsSub()}><ArrowLeft size={20} /></IconButton>
+        <IconButton class="settings-sub-page-back" label="戻る" onclick={() => ui.back()}><ArrowLeft size={20} /></IconButton>
       </div>
       <div class="scroll settings-sub-page-body">
         <div class="settings-sub-page-content">

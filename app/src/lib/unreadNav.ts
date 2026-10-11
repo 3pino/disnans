@@ -28,8 +28,7 @@ export function nextUnreadTarget(dir: 1 | -1 = 1): { threadId: string | null } |
 export function openAtFirstUnread(threadId: string | null): void {
   if (threadId === null) {
     // モバイルではスレッドのパネルがチャットを覆うので閉じる。デスクトップはチャットが横に見えているので閉じない
-    if (ui.isMobile) ui.closePanel();
-    ui.tab = 'chat';
+    ui.showMain();
   } else {
     ui.openThread(threadId);
   }

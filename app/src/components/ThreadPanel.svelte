@@ -40,7 +40,7 @@
   <header class="thread-panel-header">
     {#if ui.isMobile}
       <!-- モバイルは戻るボタンだけ -->
-      <IconButton class="thread-panel-back" label="戻る" onclick={() => ui.closePanel()}><ArrowLeft size={20} /></IconButton>
+      <IconButton class="thread-panel-back" label="戻る" onclick={() => ui.back()}><ArrowLeft size={20} /></IconButton>
     {:else}
       <div class="thread-panel-title">
         <MessagesSquare size={16} />

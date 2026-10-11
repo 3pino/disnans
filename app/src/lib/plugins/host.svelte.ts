@@ -216,9 +216,8 @@ class PluginHost {
     openTimeline: (spec) => timelinePanels.open(spec),
     openPanel: (plugin, view, sessionId) => ui.openPluginView(plugin, view, sessionId),
     openSettings: (plugin) => ui.openPluginSettings(plugin),
-    closePanel: (plugin) => {
-      if (ui.panel?.kind === 'plugin' && ui.panel.plugin === plugin) ui.closePanel();
-    },
+    // プラグインが閉じた view は、遷移の履歴からも外す（戻る操作で開き直さない）
+    closePanel: (plugin) => ui.forgetPanel((p) => p.kind === 'plugin' && p.plugin === plugin),
     toast: (text, kind) => ui.toast(text, kind),
     storage: { get: (k) => getItem(k), set: (k, v) => setItem(k, v) },
     pluginIcon: (id) => this.pluginIcon(id),
@@ -304,8 +303,7 @@ class PluginHost {
         // カードのメッセージが消えるとセッションも消える。開いている view を閉じ、キャッシュを捨てる
         const dropped = new Set<string>();
         for (const l of this.loaded.values()) for (const id of l.runtime.dropSessionsByMessage(ev.message_id)) dropped.add(id);
-        const p = ui.panel;
-        if (p?.kind === 'plugin' && dropped.has(p.sessionId)) ui.closePanel();
+        ui.forgetPanel((p) => p.kind === 'plugin' && dropped.has(p.sessionId));
         break;
       }
     }

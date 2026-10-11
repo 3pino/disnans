@@ -104,8 +104,7 @@
   function takeShared() {
     const got = shareInbox.take();
     // チャットを見せる。モバイルでパネルが開いていれば閉じる（パネルがチャットを覆うため）
-    ui.tab = 'chat';
-    if (ui.isMobile) ui.closePanel();
+    ui.showMain();
     if (got.text) input?.appendText(got.text);
     if (got.files.length > 0) addFiles(got.files);
     input?.focus();

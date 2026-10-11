@@ -143,8 +143,7 @@
     if (threadId) {
       ui.openThread(threadId);
     } else {
-      ui.tab = 'chat';
-      if (ui.isMobile) ui.closePanel();
+      ui.showMain();
     }
     const target = await until(() =>
       document.querySelector<HTMLElement>(threadId ? '.shell-thread-panel .message-list-scroller' : '#main-chat .message-list-scroller'),

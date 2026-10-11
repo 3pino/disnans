@@ -385,6 +385,17 @@ export function describeError(e) {
 }
 
 /**
+ * snapshot の失敗の理由だけを取り出す（本体の文言「画面を撮れませんでした（理由）」の外側を外す）。
+ * 「画面を撮れなかったため、プレビューはありません（理由）」に入れるため
+ * @param {unknown} e
+ */
+export function snapshotFailureReason(e) {
+  const text = describeError(e);
+  const m = /^画面を撮れませんでした（(.*)）$/s.exec(text);
+  return m ? m[1] : text;
+}
+
+/**
  * 見ている人がいるか（自分以外の参加者がいるか）。いなければフレームを作らず送らない。
  * @param {readonly { self: boolean }[]} participants
  */
@@ -2076,7 +2087,7 @@ export default class ScreenSharePlugin extends Plugin {
       this.previewIsApp = shot.source === 'app';
     } catch (e) {
       console.warn('[screenshare] プレビューの画面を撮れません', e);
-      this.showNoPreview(`画面を撮れなかったため、プレビューはありません（${describeError(e)}）`);
+      this.showNoPreview(`画面を撮れなかったため、プレビューはありません（${snapshotFailureReason(e)}）`);
       return;
     } finally {
       this.previewBusy = false;

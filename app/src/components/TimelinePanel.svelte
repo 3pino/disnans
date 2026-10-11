@@ -11,9 +11,10 @@
 
   // メッセージの集合を、本体のメッセージ表示（MessageItem）のまま出すパネル（枠は ThreadPanel と同じ）。
   // 返信のツリーと、プラグインの openTimeline が使う。深さ（depth）があれば、その分だけ字下げして線で結ぶ
-  let { id }: { id: number } = $props();
+  // id: timelinePanels のパネル（プラグインの openTimeline）。tree: 返信のツリー（中身はその場で作る）
+  let { id, tree }: { id?: number; tree?: { messageId: string; place: string | null } } = $props();
 
-  const spec = $derived(timelinePanels.get(id));
+  const spec = $derived(id !== undefined ? timelinePanels.get(id) : tree ? timelinePanels.replyTreeSpec(tree.messageId, tree.place) : undefined);
   const entries = $derived(spec?.entries() ?? []);
 
   /** 字下げする深さの上限（これより深いものは同じ位置に並べる。狭い画面で本文が潰れないように） */
@@ -22,13 +23,18 @@
   const INDENT_PX = 14;
 
   // パネルが外れたら（閉じた・別のパネルに替わった）後片付けする
-  onMount(() => () => timelinePanels.release(id));
+  onMount(() => {
+    const mine = id;
+    return () => {
+      if (mine !== undefined) timelinePanels.release(mine);
+    };
+  });
 </script>
 
 <div class="timeline-panel">
   <header class="timeline-panel-header">
     {#if ui.isMobile}
-      <IconButton class="timeline-panel-back" label="戻る" onclick={() => ui.closePanel()}><ArrowLeft size={20} /></IconButton>
+      <IconButton class="timeline-panel-back" label="戻る" onclick={() => ui.back()}><ArrowLeft size={20} /></IconButton>
       <div class="timeline-panel-title timeline-panel-title-mobile">{spec?.title ?? ''}</div>
     {:else}
       <div class="timeline-panel-title">

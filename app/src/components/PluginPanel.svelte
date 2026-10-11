@@ -67,7 +67,7 @@
   <header class="plugin-panel-header">
     {#if ui.isMobile}
       <!-- モバイルは戻るボタンと題名 -->
-      <IconButton class="plugin-panel-back" label="戻る" onclick={() => ui.closePanel()}><ArrowLeft size={20} /></IconButton>
+      <IconButton class="plugin-panel-back" label="戻る" onclick={() => ui.back()}><ArrowLeft size={20} /></IconButton>
       <div class="plugin-panel-title">{#if title}<span class="plugin-panel-title-text">{title}</span>{/if}</div>
     {:else}
       <div class="plugin-panel-title">

@@ -7,7 +7,7 @@ import { ui } from './ui.svelte';
 
 /**
  * 「メッセージの集合」を、本体のメッセージ表示のまま、パネル（デスクトップは右、モバイルは全画面）に出す。
- * 本体の返信のツリーと、プラグインの openTimeline が使う。
+ * プラグインの openTimeline が使う（本体の返信のツリーも同じ表示。こちらは id を持たず replyTreeSpec で中身を作る）。
  * 並びは entries が決める（呼び出しのたびに最新を返す。リアクティブな値を読めば、変わったときに描き直される）
  */
 export type TimelineEntry = TreeEntry;
@@ -49,18 +49,24 @@ class TimelinePanels {
         if (cur) this.specs.set(id, { ...cur, ...patch });
       },
       close: () => {
-        if (ui.panel?.kind === 'timeline' && ui.panel.id === id) ui.closePanel();
+        const shown = ui.panel?.kind === 'timeline' && ui.panel.id === id;
+        // 開いていれば閉じ（片付けは TimelinePanel が外れたとき）、遷移の履歴からも外す
+        ui.forgetPanel((p) => p.kind === 'timeline' && p.id === id);
         // パネルがもう出ていない（開く前に別のものに替わった）ときは、ここで片付ける
-        else this.release(id);
+        if (!shown) this.release(id);
       },
     };
   }
 
-  /** パネルを片付ける（TimelinePanel が外れたとき）。onClose を1回だけ呼ぶ */
+  /**
+   * パネルを片付ける（TimelinePanel が外れたとき）。onClose を1回だけ呼ぶ。
+   * 中身はもう引けないので、遷移の履歴からも外す（戻る操作で空のパネルを開き直さない）
+   */
   release(id: number): void {
     const spec = this.specs.get(id);
     if (!spec) return;
     this.specs.delete(id);
+    ui.forgetPanel((p) => p.kind === 'timeline' && p.id === id);
     try {
       spec.onClose?.();
     } catch (e) {
@@ -68,15 +74,22 @@ class TimelinePanels {
     }
   }
 
-  /** メッセージを起点にした返信のツリーを開く。place はそのメッセージのいる場所（スレッドの ID。メインチャットなら null） */
-  openReplyTree(message: Pick<Message, 'id'>, place: string | null): TimelineHandle {
-    const id = message.id;
-    return this.open({
+  /**
+   * メッセージを起点にした返信のツリーを開く。place はそのメッセージのいる場所（スレッドの ID。メインチャットなら null）。
+   * パネルは { kind: 'replyTree' } で、中身（replyTreeSpec）はその場で作る。戻る操作で開き直せるよう、ID の発行や後片付けは要らない
+   */
+  openReplyTree(message: Pick<Message, 'id'>, place: string | null): void {
+    ui.openReplyTree(message.id, place);
+  }
+
+  /** 返信のツリーの中身 */
+  replyTreeSpec(messageId: string, place: string | null): TimelineSpec {
+    return {
       title: '返信のツリー',
       // 読み込み済みのメッセージから作る。返信は起点より新しいので、起点があれば返信もそろっている
-      entries: () => replyTree(client.peekTimeline(place)?.messages ?? [], id),
+      entries: () => replyTree(client.peekTimeline(place)?.messages ?? [], messageId),
       empty: 'このメッセージは読み込まれていません。',
-    });
+    };
   }
 }
 
