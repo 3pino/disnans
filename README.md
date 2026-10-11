@@ -46,6 +46,19 @@
 - **Linux のトレイ**: システムトレイのアイコンに `libayatana-appindicator3-1` が要ります（`.deb` は依存として入れます。AppImage などでは `sudo apt install libayatana-appindicator3-1`。GNOME ではトレイを出す拡張機能「AppIndicator and KStatusNotifierItem Support」も要ります）。トレイでは左クリックがメニューの表示になる環境があります
 - 通話の音声は**常にサーバーを経由**します（WebRTC は使いません）。友達が別のネットワーク（モバイル回線など）から Tailscale でつないでいても話せます。参加者が増えるとサーバーの送信が人数の二乗で増えるので、10 人ほどまでを想定しています
 
+### Linux の診断ログ
+
+通話のフリーズなどを調べるときは、先にトレイの「終了」でアプリを完全に終了し、リポジトリで次を実行します。
+
+```sh
+scripts/log-linux.sh                             # deb で入れた disnans-app
+scripts/log-linux.sh /path/to/disnans.AppImage    # AppImage の場合
+```
+
+GTK・GStreamer・Rust のログを `${XDG_STATE_HOME:-$HOME/.local/state}/disnans/logs/` に保存して起動します（保存先は起動時に表示）。ターミナルを閉じても記録は続き、ファイルはその利用者だけが読める権限で作ります。JavaScript の Console はこのログに保存されません。普段の起動設定は変わりません。
+
+`DISNANS_LOG_DIR` で保存先、`GST_DEBUG` で詳細度（既定は `3`）を指定できます。ログは自動で削除しないので、不要なものは手動で整理してください。共有前に端末名・パスなどの個人情報を確認してください。
+
 ### アップデート
 
 アプリの「設定」→「アップデートを確認」から更新できます。
