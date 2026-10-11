@@ -23,6 +23,18 @@ export const RELAY_SILENCE = 0.004;
 /** call.emit のイベント名 */
 export const EV_AUDIO = 'audio';
 
+/**
+ * 受け取った音の上限（リミッター）。上限は dBFS で、これを超える音だけを抑える（通常の声はそのまま通す）。
+ * 先読み（ルックアヘッド）の分だけ音が遅れるが、大きい音が来る前から下げ始めるので、急な落下音も上限を超えない。
+ */
+export const LIMIT_DB_MIN = -18;
+export const LIMIT_DB_MAX = -3;
+export const LIMIT_DB_DEFAULT = -6;
+/** 先読みの長さ・下げ始めの速さ（アタック）・戻りの時定数（リリース）。ミリ秒 */
+export const LIMIT_LOOKAHEAD_MS = 5;
+export const LIMIT_ATTACK_MS = 3;
+export const LIMIT_RELEASE_MS = 150;
+
 /** マイクの音量（倍率）の範囲と、相手の音量（0〜1）の範囲 */
 export const MIC_VOLUME_MAX = 2;
 export const OUT_VOLUME_MAX = 1;
@@ -44,9 +56,32 @@ export type CallSettingsData = {
   inputId: string;
   /** 選んだ出力先 */
   output: SavedOutput | null;
+  /** 受け取った大きい音を抑える（既定は入） */
+  limiter: boolean;
+  /** 抑える上限（dBFS。LIMIT_DB_MIN〜LIMIT_DB_MAX） */
+  limitDb: number;
 };
 
-export const DEFAULT_CALL_SETTINGS: CallSettingsData = { joinMuted: false, micVolume: 1, outVolume: 1, inputId: '', output: null };
+export const DEFAULT_CALL_SETTINGS: CallSettingsData = {
+  joinMuted: false,
+  micVolume: 1,
+  outVolume: 1,
+  inputId: '',
+  output: null,
+  limiter: true,
+  limitDb: LIMIT_DB_DEFAULT,
+};
+
+/** 上限（dBFS）を範囲に収める。数でなければ既定値 */
+export function clampLimitDb(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return LIMIT_DB_DEFAULT;
+  return Math.min(LIMIT_DB_MAX, Math.max(LIMIT_DB_MIN, v));
+}
+
+/** dB を振幅の倍率に直す（-6 dB ≒ 0.501） */
+export function dbToLinear(db: number): number {
+  return Math.pow(10, db / 20);
+}
 
 /** 音量の値を範囲に収める。数でなければ既定値 */
 export function clampVolume(v: unknown, max: number, fallback = 1): number {
@@ -63,6 +98,8 @@ export function parseCallSettings(saved: unknown): CallSettingsData {
   s.micVolume = clampVolume(r.micVolume, MIC_VOLUME_MAX, 1);
   s.outVolume = clampVolume(r.outVolume, OUT_VOLUME_MAX, 1);
   if (typeof r.inputId === 'string') s.inputId = r.inputId;
+  if (typeof r.limiter === 'boolean') s.limiter = r.limiter;
+  s.limitDb = clampLimitDb(r.limitDb);
   const o = r.output as Record<string, unknown> | null | undefined;
   if (o && typeof o.id === 'string' && typeof o.kind === 'string' && typeof o.label === 'string') {
     s.output = { id: o.id, kind: o.kind, label: o.label };
@@ -235,6 +272,90 @@ export function base64ToPcm(b64: unknown): Int16Array | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 受け取った音の上限（リミッター）。先読みつきのピーク制限で、相手1人の音ごとに持つ（状態をまたいで続けて通す）。
+ * 上限を超えそうな音は、先読みの分だけ前から音量を下げる（アタックは速さを制限し、急に段差を作らない）。
+ * 下げきれなかった分は最後に上限でクリップして、出力は必ず上限以下になる。上限より小さい音は変えない。
+ */
+export class PeakLimiter {
+  private readonly lookahead: number;
+  /** 1サンプルで下げてよい量（ゲインの単位）。アタックの時間で 1 から 0 まで下がる速さ */
+  private readonly attackStep: number;
+  /** 1サンプルごとに、元の 1 へ戻す割合の残り（指数の戻り） */
+  private readonly releaseCoef: number;
+  private ceiling: number;
+  /** いま適用しているゲイン（0〜1） */
+  private gain = 1;
+  /** まだ出していない、直前の L 個の入力と、その音が求めるゲインの上限 */
+  private xs: Float32Array;
+  private gs: Float32Array;
+
+  constructor(sampleRate = RELAY_RATE, ceilingDb = LIMIT_DB_DEFAULT) {
+    this.lookahead = Math.max(1, Math.round((LIMIT_LOOKAHEAD_MS * sampleRate) / 1000));
+    this.attackStep = 1 / Math.max(1, (LIMIT_ATTACK_MS * sampleRate) / 1000);
+    this.releaseCoef = Math.exp(-1 / Math.max(1, (LIMIT_RELEASE_MS * sampleRate) / 1000));
+    this.ceiling = dbToLinear(clampLimitDb(ceilingDb));
+    this.xs = new Float32Array(this.lookahead);
+    this.gs = new Float32Array(this.lookahead).fill(1);
+  }
+
+  /** 上限を変える（次の音から効く） */
+  setCeilingDb(db: number): void {
+    this.ceiling = dbToLinear(clampLimitDb(db));
+  }
+
+  /** 入れた音と同じ長さの音を返す（先読みの分だけ遅れる）。続けて渡すこと */
+  process(input: Float32Array): Float32Array {
+    const L = this.lookahead;
+    const n = input.length;
+    const m = L + n;
+    const x = new Float32Array(m);
+    x.set(this.xs, 0);
+    x.set(input, L);
+    // 各サンプルが求めるゲインの上限（そのサンプルが上限を超えないための値）
+    const req = new Float32Array(m);
+    req.set(this.gs, 0);
+    for (let i = L; i < m; i++) {
+      const a = Math.abs(x[i]!);
+      req[i] = a > this.ceiling ? this.ceiling / a : 1;
+    }
+    const out = new Float32Array(n);
+    // 単調キューで、いまのサンプルから先 L 個の中の最小（＝守るべき最も小さいゲイン）を求める
+    const dq = new Int32Array(m);
+    let head = 0;
+    let tail = 0;
+    for (let j = 0; j < m; j++) {
+      while (tail > head && req[dq[tail - 1]!]! >= req[j]!) tail--;
+      dq[tail++] = j;
+      while (dq[head]! < j - L) head++;
+      if (j < L) continue;
+      const i = j - L;
+      const target = req[dq[head]!]!;
+      if (target < this.gain) this.gain = Math.max(target, this.gain - this.attackStep);
+      else this.gain = target + (this.gain - target) * this.releaseCoef;
+      const y = x[i]! * this.gain;
+      out[i] = y > this.ceiling ? this.ceiling : y < -this.ceiling ? -this.ceiling : y;
+    }
+    this.xs = x.slice(n);
+    this.gs = req.slice(n);
+    return out;
+  }
+}
+
+/**
+ * 合計の音を上限で切る最後の段（WaveShaper の曲線）。相手が重なって上限を超えたときだけ効く。
+ * 曲線は入力 -1〜1 を -c〜c に収める直線の切り取り。c が 1 なら素通し。
+ */
+export function clipCurve(ceiling: number, size = 4096): Float32Array<ArrayBuffer> {
+  const c = Math.min(1, Math.max(0, ceiling));
+  const out = new Float32Array(size);
+  for (let i = 0; i < size; i++) {
+    const x = (2 * i) / (size - 1) - 1;
+    out[i] = Math.max(-c, Math.min(c, x));
+  }
+  return out;
 }
 
 export function rms(f: Float32Array): number {

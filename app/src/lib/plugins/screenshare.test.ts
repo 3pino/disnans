@@ -259,10 +259,11 @@ describe('画像の形式・色数・見積もり', () => {
     expect(formatBytes(1.5 * 1024 * 1024)).toBe('1.5 MB');
   });
 
-  it('shareBackend: getDisplayMedia があれば web、無くてもネイティブなら native', async () => {
+  it('shareBackend: ネイティブを優先し、無ければ getDisplayMedia', async () => {
     const { shareBackend } = await load();
     const web = { mediaDevices: { getDisplayMedia: () => {} } };
-    expect(shareBackend(web, { supported: true })).toBe('web');
+    expect(shareBackend(web, { supported: true })).toBe('native');
+    expect(shareBackend(web, { supported: false })).toBe('web');
     expect(shareBackend({}, { supported: true })).toBe('native');
     expect(shareBackend({}, { supported: false })).toBeNull();
     expect(shareBackend({}, undefined)).toBeNull();
@@ -551,6 +552,58 @@ afterEach(() => {
 });
 
 describe('examples/screenshare', () => {
+  it('共有ボタンは通話の全画面だけに置く', async () => {
+    const s = await setup({ display: true });
+    expect(s.button()?.location).toBe('view');
+    s.r.stop();
+  });
+
+  it('参加直後に問い合わせを再送し、退出したら止める', async () => {
+    const s = await setup({ display: false });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(emitted(s.call, 'screen.query')).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(emitted(s.call, 'screen.query')).toHaveLength(2);
+    s.call.participants.push({ peer: 'pb', self: false });
+    s.changed();
+    expect(emitted(s.call, 'screen.query')).toHaveLength(3);
+    s.call.joined = false;
+    s.changed();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(emitted(s.call, 'screen.query')).toHaveLength(3);
+    s.r.stop();
+  });
+
+  it('ネイティブの最初のフレームが start の応答より早くても捨てず、web の取得を使わない', async () => {
+    const start = vi.fn(async (_opts: Disnans.ScreenCaptureOptions, onFrame: (f: Disnans.ScreenCaptureFrame) => void) => {
+      onFrame({ data: '/9j/QUJDRA==', mime: 'image/jpeg', width: 1280, height: 720 });
+    });
+    const s = await setup({ display: true, native: { supported: true, start, stop: vi.fn(async () => {}), update: vi.fn(async () => {}) } });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.getDisplayMedia).not.toHaveBeenCalled();
+    expect(emitted(s.call, 'screen.frame')).toHaveLength(1);
+    expect(s.button()?.active).toBe(true);
+    s.r.stop();
+  });
+
+  it('ネイティブの許可待ち中に退出したら、開始も取り消して共有中にしない', async () => {
+    let release!: () => void;
+    const start = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
+    const stop = vi.fn(async () => {});
+    const s = await setup({ display: true, native: { supported: true, start, stop, update: vi.fn(async () => {}) } });
+    s.button()!.onClick();
+    expect(start).toHaveBeenCalledOnce();
+    s.call.joined = false;
+    s.changed();
+    expect(stop).toHaveBeenCalledOnce();
+    release();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.button()?.active).not.toBe(true);
+    expect(emitted(s.call, 'screen.state')).toHaveLength(0);
+    s.r.stop();
+  });
+
   it('getDisplayMedia が無い環境では共有ボタンを出さず、見ることはできる', async () => {
     const s = await setup({ display: false });
     expect(s.call.addButton).not.toHaveBeenCalled();

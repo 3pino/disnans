@@ -15,7 +15,7 @@ import type { Message } from '../protocol/Message';
 import type { TimelineEntry, TimelineHandle, TimelineSpec } from '../stores/timelinePanel.svelte';
 
 /** ホスト API のバージョン。index.d.ts を変えたら上げる */
-export const API_VERSION = 11;
+export const API_VERSION = 12;
 
 export type Manifest = Disnans.Manifest;
 export type Cleanup = Disnans.Cleanup;

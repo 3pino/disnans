@@ -56,7 +56,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 10） */
+      /** ホスト API のバージョン（いまは 12） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -68,7 +68,7 @@ declare global {
       readonly audio: Audio;
       /** 本体の通話（API v8。`addPanel` と `bufferedAmount` は v10）。画面共有などの拡張向け。通話そのもの（参加・ミュート・出力先）は本体の機能で、ここからは状態の読み取りと、参加者どうしのデータの送受信だけ */
       readonly call: Call;
-      /** 画面のキャプチャ（API v9。Android のネイティブ。`snapshot` は v11 でデスクトップも）。画面共有向け。`supported` が false の環境では `getDisplayMedia` を使う */
+      /** 画面のキャプチャ（API v9。Android のネイティブ、v12 で Linux の portal / PipeWire。`snapshot` は v11 でデスクトップも）。画面共有向け。`supported` が false の環境では `getDisplayMedia` を使う */
       readonly screenCapture: ScreenCapture;
       /** ピクチャーインピクチャー（API v9。Android のネイティブ）。デスクトップは `<video>` の `requestPictureInPicture` を使う */
       readonly pip: Pip;
@@ -82,7 +82,7 @@ declare global {
       quality: number;
       /** 1 秒あたりのフレーム数の上限 */
       fps: number;
-      /** 画像の形式（既定は `jpeg`） */
+      /** 画像の形式（既定は `jpeg`。Linux は JPEG のみ） */
       format?: 'jpeg' | 'webp';
       /** 色数。`c256` は 256 色相当に減色（このときは可逆の WebP / PNG と比べて小さいほうを使う）、`gray` はグレースケール。既定は `full` */
       color?: 'full' | 'c256' | 'gray';
@@ -117,7 +117,8 @@ declare global {
     /**
      * 画面のキャプチャ（API v9）。Android の WebView には `getDisplayMedia` が無いので、MediaProjection で撮った
      * 縮小済みの画像を渡す。開始すると OS の確認のダイアログが出て、通知欄に常駐の表示（フォアグラウンドサービス）が出る。
-     * Android 以外では `supported` が false で、`start` は例外になる
+     * Linux のアプリ版は portal / PipeWire で選んだ画面を撮る（API v12）。`start` で OS の画面選択が出る。
+     * Android / Linux のアプリ版以外では `supported` が false で、`start` は例外になる
      */
     interface ScreenCapture {
       readonly supported: boolean;
@@ -191,6 +192,8 @@ declare global {
       /** 押されている状態の見た目にする（共有中など） */
       active?: boolean;
       disabled?: boolean;
+      /** 表示先（API v12）。既定は both（上部のバーと通話の画面）。view は通話の画面だけ */
+      location?: 'both' | 'view';
     };
 
     type CallButton = {

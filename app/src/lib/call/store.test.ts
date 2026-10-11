@@ -7,6 +7,7 @@ import type { ClientEvent } from '../protocol/ClientEvent';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import { createCallApi } from './api';
 import { CallSettings } from './settings.svelte';
+import { dbToLinear, pcmToBase64 } from './pure';
 import { CallStore, type CallDeps } from './store.svelte';
 
 // マイクの取り出しは本物の AudioContext が要るので、偽物にする（音は store の onCapture に直接渡す）
@@ -41,8 +42,17 @@ class FakeAudioContext {
   destination = {};
   /** 鳴らした音の数 */
   plays = 0;
+  buffers: Float32Array[] = [];
+  shapers: { curve: Float32Array | null; connect: ReturnType<typeof vi.fn> }[] = [];
   createBuffer(_ch: number, n: number) {
-    return { getChannelData: () => new Float32Array(n) };
+    const data = new Float32Array(n);
+    this.buffers.push(data);
+    return { getChannelData: () => data };
+  }
+  createWaveShaper() {
+    const node = { curve: null as Float32Array | null, connect: vi.fn() };
+    this.shapers.push(node);
+    return node;
   }
   createBufferSource() {
     return { buffer: null, connect: () => {}, start: () => void this.plays++ };
@@ -65,7 +75,7 @@ class FakeAudioContext {
 
 // ---- サーバーの代わり ----
 
-type Client = { store: CallStore; userId: string; conn: number; toast: ReturnType<typeof vi.fn>; confirm: ReturnType<typeof vi.fn>; hold: ReturnType<typeof vi.fn>; sent: ClientEvent[] };
+type Client = { store: CallStore; settings: CallSettings; userId: string; conn: number; toast: ReturnType<typeof vi.fn>; confirm: ReturnType<typeof vi.fn>; hold: ReturnType<typeof vi.fn>; sent: ClientEvent[] };
 
 class FakeServer {
   clients: Client[] = [];
@@ -127,6 +137,7 @@ function makeClient(userId: string, opts: { device?: string } = {}): Client {
   const confirm = vi.fn(async () => true);
   const hold = vi.fn(async () => Object.assign(() => {}, { update: vi.fn() }));
   const client = { userId, conn: server.clients.length + 1, toast, confirm, hold, sent: [] as ClientEvent[] } as Client;
+  client.settings = new CallSettings();
   const deps: CallDeps = {
     send: (ev) => server.handle(client, ev),
     meId: () => userId,
@@ -143,7 +154,7 @@ function makeClient(userId: string, opts: { device?: string } = {}): Client {
       listInputs: async () => [],
       attach: () => () => {},
     },
-    settings: new CallSettings(),
+    settings: client.settings,
     deviceKind: () => opts.device ?? 'laptop',
     openSettings: () => {},
     now: () => performance.now(),
@@ -243,6 +254,34 @@ describe('参加と音声', () => {
     expect(plays(b)).toBeGreaterThan(0);
     expect(plays(c)).toBeGreaterThan(0);
     expect(plays(a)).toBe(0);
+  });
+
+  it('大きい受信音を既定で抑え、設定変更とオフ・オンが次のフレームに効く', async () => {
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await connect(a, b);
+    const ctx = (b.store as unknown as { ctx: FakeAudioContext }).ctx;
+    const hot = pcmToBase64(new Int16Array(800).fill(32767));
+    const send = async (pcm = hot) => {
+      server.handle(a, { type: 'call.emit', name: 'audio', payload: { pcm } });
+      await flush();
+      return ctx.buffers.at(-1)!;
+    };
+    const peak = (data: Float32Array) => data.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    expect(peak(await send())).toBeLessThanOrEqual(dbToLinear(-6) + 1e-6);
+    expect(ctx.shapers).toHaveLength(1);
+    expect(ctx.shapers[0]!.connect).toHaveBeenCalledWith(ctx.destination);
+    expect(peak(ctx.shapers[0]!.curve!)).toBeCloseTo(dbToLinear(-6), 6);
+    b.settings.patch({ limitDb: -12 });
+    expect(peak(await send())).toBeLessThanOrEqual(dbToLinear(-12) + 1e-6);
+    expect(peak(ctx.shapers[0]!.curve!)).toBeCloseTo(dbToLinear(-12), 6);
+    b.settings.patch({ limiter: false });
+    expect(peak(await send())).toBeGreaterThan(0.99);
+    expect(ctx.shapers[0]!.curve).toBeNull();
+    b.settings.patch({ limiter: true });
+    // オフにする前の先読みの大きい音が残っていない
+    expect(peak(await send(pcmToBase64(new Int16Array(800))))).toBe(0);
+    expect(ctx.shapers).toHaveLength(1);
   });
 
   it('1人だけのあいだは声を送らない。無音も送らない', async () => {
@@ -437,6 +476,19 @@ describe('拡張 API', () => {
     expect(a.store.barButtons[0]).toMatchObject({ label: '画面共有', active: true });
     btn.remove();
     expect(a.store.barButtons).toHaveLength(0);
+  });
+
+  it('view のボタンは通話の全画面だけに出し、既存のボタンは上部にも出す', () => {
+    const a = makeClient('u1');
+    const both = a.store.addBarButton({ icon: 'test', label: '両方', onClick: () => {} });
+    const view = a.store.addBarButton({ icon: 'monitor-up', label: '画面共有', location: 'view', onClick: () => {} });
+    expect(a.store.barButtons.map((b) => b.label)).toEqual(['両方', '画面共有']);
+    expect(a.store.topBarButtons.map((b) => b.label)).toEqual(['両方']);
+    view.update({ location: 'both' });
+    expect(a.store.topBarButtons).toHaveLength(2);
+    both.remove();
+    view.remove();
+    expect(a.store.topBarButtons).toHaveLength(0);
   });
 
   it('通話の画面の領域（addPanel）を足して、出し入れ・外せる。文書に入った・外れたことが届く', () => {

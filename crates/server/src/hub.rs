@@ -23,6 +23,12 @@ const QUEUE_SIZE: usize = 1024;
 /// キューの半分（512 件）まで待たずに、少しでも詰まったら捨てる。
 const LOSSY_BACKLOG: usize = 32;
 
+/// 間引いてよいものの中でも、小さい通知（画面共有の「共有中」の知らせや問い合わせなど）の大きさの上限（バイト）。
+/// 映像は 40KB ずつに分けて送り、音声は 1 本が 2KB を超えるので、これより小さいものだけがこの特例を受ける。
+const CONTROL_MAX_BYTES: usize = 1024;
+/// 小さい通知を間引く送信待ちの上限。映像より後まで残すが、キューが満杯になる前に止める（切断はしない）。
+const CONTROL_BACKLOG: usize = QUEUE_SIZE / 2;
+
 struct Conn {
     user_id: String,
     /// 接続元の IP アドレス。Tailscale では端末ごとに決まるので、端末の識別に使う。
@@ -101,8 +107,10 @@ impl Hub {
         self.deliver(event, |_, c| c.user_id == user_id && c.ip == ip);
     }
 
-    /// 指定した接続に送るが、送信待ちが [`LOSSY_BACKLOG`] 件より多い接続には送らずに捨てる（切断しない）。
-    /// 通話の音声のように、遅れて届くより捨てたほうがよいもの用。
+    /// 指定した接続に送るが、送信待ちが多い接続には送らずに捨てる（切断しない）。
+    /// 通話の音声・映像のように、遅れて届くより捨てたほうがよいもの用。
+    /// ただし [`CONTROL_MAX_BYTES`] 以下の小さい通知は、送信待ちが [`CONTROL_BACKLOG`] 件までは捨てない
+    /// （捨てると、画面共有の「共有中」の知らせや問い合わせが届かず、相手に見えないため）。
     pub fn send_lossy_to_conns(&self, conns: &[ConnId], event: &ServerEvent) {
         self.deliver_with(event, |id, _| conns.contains(&id), true);
     }
@@ -118,10 +126,16 @@ impl Hub {
         lossy: bool,
     ) {
         let text = encode(event);
+        // 間引くときの送信待ちの上限。小さい通知は映像より多く残す
+        let limit = if text.len() <= CONTROL_MAX_BYTES {
+            CONTROL_BACKLOG
+        } else {
+            LOSSY_BACKLOG
+        };
         let mut conns = self.lock();
         let mut dead = Vec::new();
         for (&id, conn) in conns.iter().filter(|(id, c)| filter(**id, c)) {
-            if lossy && QUEUE_SIZE - conn.tx.capacity() > LOSSY_BACKLOG {
+            if lossy && QUEUE_SIZE - conn.tx.capacity() > limit {
                 continue;
             }
             if let Err(err) = conn.tx.try_send(text.clone()) {
@@ -152,11 +166,43 @@ mod tests {
     use super::*;
     use std::net::Ipv4Addr;
 
+    /// 間引きの対象になる大きさ（映像の 1 かけらに近い）の通知
+    fn big_event() -> ServerEvent {
+        ServerEvent::CallEvent {
+            peer: "p".into(),
+            from: "u".into(),
+            name: "screen.frame".into(),
+            payload: serde_json::Value::String("x".repeat(4096)),
+        }
+    }
+
+    /// 小さい通知（画面共有の状態の知らせ）
+    fn small_event() -> ServerEvent {
+        ServerEvent::CallEvent {
+            peer: "p".into(),
+            from: "u".into(),
+            name: "screen.state".into(),
+            payload: serde_json::json!({ "on": true }),
+        }
+    }
+
+    fn drain(rx: &mut mpsc::Receiver<Utf8Bytes>) -> usize {
+        let mut n = 0;
+        while rx.try_recv().is_ok() {
+            n += 1;
+        }
+        n
+    }
+
     #[test]
     fn lossy_drops_when_backlog_grows_but_keeps_others() {
         let hub = Hub::new();
-        let ev = ServerEvent::CallKicked { by: "u".into() };
-        let (id, mut rx) = hub.register("u1", IpAddr::V4(Ipv4Addr::LOCALHOST), &ev);
+        let ev = big_event();
+        let (id, mut rx) = hub.register(
+            "u1",
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            &ServerEvent::CallKicked { by: "u".into() },
+        );
         // hello の 1 件がたまっている。送信待ちが LOSSY_BACKLOG 件を超えるまでは入る
         for _ in 0..100 {
             hub.send_lossy_to_conns(&[id], &ev);
@@ -177,5 +223,45 @@ mod tests {
         }
         // 間引いてよいもの LOSSY_BACKLOG + 1 件と、間引かないもの 1 件
         assert_eq!(n, LOSSY_BACKLOG + 2);
+    }
+
+    #[test]
+    fn lossy_keeps_small_control_events_longer_than_big_ones() {
+        let hub = Hub::new();
+        let (id, mut rx) = hub.register(
+            "u1",
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            &ServerEvent::CallKicked { by: "u".into() },
+        );
+        // 映像のかけらで送信待ちを一杯にする（間引かれるのは LOSSY_BACKLOG を超えたぶん）
+        for _ in 0..100 {
+            hub.send_lossy_to_conns(&[id], &big_event());
+        }
+        // そのあとの「共有中」の知らせは、送信待ちが詰まっていても届く
+        for _ in 0..10 {
+            hub.send_lossy_to_conns(&[id], &small_event());
+        }
+        // 映像はもう入らない
+        hub.send_lossy_to_conns(&[id], &big_event());
+        assert_eq!(drain(&mut rx), 1 + LOSSY_BACKLOG + 10);
+    }
+
+    #[test]
+    fn small_control_events_are_bounded_by_control_backlog() {
+        let hub = Hub::new();
+        let (id, mut rx) = hub.register(
+            "u1",
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            &ServerEvent::CallKicked { by: "u".into() },
+        );
+        // 小さい通知だけを大量に送っても、キューを満杯にして切断することはない（上限で間引く）
+        for _ in 0..2000 {
+            hub.send_lossy_to_conns(&[id], &small_event());
+        }
+        let n = drain(&mut rx);
+        assert_eq!(n, CONTROL_BACKLOG + 1);
+        // 切断されていないので、あとからの通知は届く
+        hub.send_to_conn(id, &small_event());
+        assert_eq!(drain(&mut rx), 1);
     }
 }

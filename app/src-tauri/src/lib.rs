@@ -12,6 +12,10 @@ mod dev_plugins;
 #[cfg(desktop)]
 mod snapshot;
 
+// Linux の画面共有: portal / PipeWire。静止画のプレビューとは別の取得経路
+#[cfg(target_os = "linux")]
+mod linux_capture;
+
 /// 他のアプリから共有されたファイルを読む（Android）。
 /// notifier プラグインがキャッシュの `disnans-share/` にコピーしたものだけを読み、読んだら消す。
 /// 大きなファイルを base64 の JSON にせず、バイナリのまま WebView に渡すためのコマンド。
@@ -128,13 +132,30 @@ pub fn run() {
             .plugin(tauri_plugin_notification::init())
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_fs::init())
-            .plugin(tauri_plugin_clipboard_manager::init())
-            .invoke_handler(tauri::generate_handler![
+            .plugin(tauri_plugin_clipboard_manager::init());
+        #[cfg(not(target_os = "linux"))]
+        {
+            builder = builder.invoke_handler(tauri::generate_handler![
                 open_devtools,
                 dev_plugins::dev_plugins_scan,
                 dev_plugins::dev_plugin_read,
                 snapshot::screen_snapshot
             ]);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            builder = builder
+                .manage(linux_capture::LinuxScreenState::default())
+                .invoke_handler(tauri::generate_handler![
+                    open_devtools,
+                    dev_plugins::dev_plugins_scan,
+                    dev_plugins::dev_plugin_read,
+                    snapshot::screen_snapshot,
+                    linux_capture::linux_screen_start,
+                    linux_capture::linux_screen_stop,
+                    linux_capture::linux_screen_update
+                ]);
+        }
     }
     // Android: システムバーのアイコンの明暗をアプリのテーマに合わせる
     #[cfg(target_os = "android")]
@@ -176,7 +197,15 @@ pub fn run() {
         });
     }
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    app.run(|_app, _event| {
+        #[cfg(target_os = "linux")]
+        if matches!(_event, tauri::RunEvent::Exit) {
+            use tauri::Manager;
+            // async runtime と portal の接続が生きている間に、画面共有の資源を外す
+            _app.state::<linux_capture::LinuxScreenState>().shutdown();
+        }
+    });
 }

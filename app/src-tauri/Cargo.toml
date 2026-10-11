@@ -44,6 +44,20 @@ webkit2gtk = { version = "2", features = ["v2_40"] }
 # 画面の静止画（screen_snapshot）: X11 のルートウィンドウを撮る（tauri が使うものと同じ版。新しいクレートは増えない）
 gdk = "0.18"
 
+# Linux のネイティブ画面共有（linux_capture.rs）: xdg-desktop-portal の ScreenCast（ashpd）で選んだ画面を、
+# GStreamer の pipewiresrc → appsink で受ける。ビルドには libgstreamer1.0-dev / libgstreamer-plugins-base1.0-dev が要る
+# （実行時は gstreamer1.0-pipewire・gstreamer1.0-plugins-base・xdg-desktop-portal）。
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "screencast"] }
+gstreamer = "0.24"
+gstreamer-app = "0.24"
+gstreamer-video = "0.24"
+# JPEG の符号化（純 Rust・依存なし）。縮小と減色の結果を JPEG にする
+jpeg-encoder = "0.6"
+base64 = "0.22"
+tokio = { version = "1", features = ["time"] }
+tokio-util = "0.7"
+futures-util = "0.3"
+
 # 画面の静止画（screen_snapshot）: GDI で主モニターを撮る（tauri が使うものと同じ版。新しいクレートは増えない）
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }

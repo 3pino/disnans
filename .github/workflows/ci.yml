@@ -35,3 +35,33 @@ jobs:
       - run: npx svelte-check
       - run: npx vitest run
       - run: npm run build
+
+  # Linux の Rust（Tauri 本体と画面共有 linux_capture.rs）をビルドしてテストする。
+  # 画面共有の依存: GStreamer の開発パッケージ（gstreamer-app は plugins-base も要る）。実行時の gstreamer1.0-pipewire と xdg-desktop-portal は CI では使わない
+  app-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Linux の依存ライブラリ
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+      # tauri::generate_context! が読む frontendDist（app/dist は Git に入らない）を先に作る
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+        working-directory: app
+      - run: npm run build
+        working-directory: app
+      - name: テスト（画面共有の計算を含む）
+        working-directory: app/src-tauri
+        run: cargo test

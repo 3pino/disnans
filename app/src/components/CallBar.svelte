@@ -10,6 +10,7 @@
   import HeadphoneOff from '@lucide/svelte/icons/headphone-off';
   import VolumeX from '@lucide/svelte/icons/volume-x';
   import Settings from '@lucide/svelte/icons/settings';
+  import Maximize from '@lucide/svelte/icons/maximize';
   import Phone from '@lucide/svelte/icons/phone';
   import PhoneOff from '@lucide/svelte/icons/phone-off';
   import Avatar from './Avatar.svelte';
@@ -87,7 +88,8 @@
 
   {#if call.joined}
     <div class="call-controls">
-      {#each call.barButtons as b (b.id)}
+      <IconButton label="通話を全画面で開く" title="通話を全画面で開く" icon={Maximize} onclick={() => ui.openCall()} />
+      {#each call.topBarButtons as b (b.id)}
         <IconButton
           class={b.active ? 'call-active' : ''}
           label={b.label}
@@ -114,6 +116,7 @@
     </div>
   {:else if !call.joining}
     <div class="call-controls">
+      <IconButton label="通話を全画面で開く" title="通話を全画面で開く" icon={Maximize} onclick={() => ui.openCall()} />
       <Button variant="primary" icon={Phone} onclick={() => void call.join()}>参加</Button>
     </div>
   {/if}

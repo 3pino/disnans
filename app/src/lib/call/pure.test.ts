@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_CALL_SETTINGS,
+  LIMIT_LOOKAHEAD_MS,
+  PeakLimiter,
+  RELAY_RATE,
   Framer,
   Resampler,
   SPEAK_HOLD_MS,
   base64ToPcm,
   byteLevel,
+  clampLimitDb,
   clampVolume,
+  clipCurve,
+  dbToLinear,
   diffPeers,
   floatToInt16,
   int16ToFloat,
@@ -70,8 +76,25 @@ describe('設定の読み込み', () => {
       inputId: 5,
       output: { id: 'speaker', kind: 'speaker', label: 'スピーカー' },
     });
-    expect(s).toEqual({ joinMuted: true, micVolume: 2, outVolume: 0, inputId: '', output: { id: 'speaker', kind: 'speaker', label: 'スピーカー' } });
+    expect(s).toEqual({
+      joinMuted: true,
+      micVolume: 2,
+      outVolume: 0,
+      inputId: '',
+      output: { id: 'speaker', kind: 'speaker', label: 'スピーカー' },
+      limiter: true,
+      limitDb: -6,
+    });
     expect(parseCallSettings({ output: { id: 1 } }).output).toBeNull();
+  });
+
+  it('大きい音を抑える設定は、既定で入、上限は範囲に収める（保存値が壊れていれば既定）', () => {
+    expect(DEFAULT_CALL_SETTINGS.limiter).toBe(true);
+    expect(DEFAULT_CALL_SETTINGS.limitDb).toBe(-6);
+    expect(parseCallSettings({ limiter: false, limitDb: -12 })).toMatchObject({ limiter: false, limitDb: -12 });
+    expect(parseCallSettings({ limiter: 'no', limitDb: 'x' })).toMatchObject({ limiter: true, limitDb: -6 });
+    expect(parseCallSettings({ limitDb: -40 }).limitDb).toBe(-18);
+    expect(parseCallSettings({ limitDb: 5 }).limitDb).toBe(-3);
   });
 });
 
@@ -172,5 +195,123 @@ describe('リレー音声', () => {
     expect(scheduleFrame(st, 11, 0.05)).toBeCloseTo(11.12);
     st.next = 12;
     expect(scheduleFrame(st, 11, 0.05)).toBeNull();
+  });
+});
+
+describe('受け取った音の上限（リミッター）', () => {
+  // 16kHz・先読み 5ms = 80 サンプル
+  const L = Math.round((LIMIT_LOOKAHEAD_MS * RELAY_RATE) / 1000);
+  /** 決まった並びの乱数（テストを毎回同じにする） */
+  const rng = (seed: number) => () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  const peak = (f: Float32Array) => f.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+
+  it('dB と倍率の換算、上限の範囲', () => {
+    expect(dbToLinear(0)).toBe(1);
+    expect(dbToLinear(-6)).toBeCloseTo(0.501, 3);
+    expect(dbToLinear(-20)).toBeCloseTo(0.1, 6);
+    expect(clampLimitDb(-6)).toBe(-6);
+    expect(clampLimitDb(NaN)).toBe(-6);
+    expect(clampLimitDb(-30)).toBe(-18);
+    expect(clampLimitDb(0)).toBe(-3);
+  });
+
+  it('上限より小さい音は変えず、先読みの分だけ遅らせる（通常の声は素通し）', () => {
+    const lim = new PeakLimiter(RELAY_RATE, -6);
+    const input = Float32Array.from({ length: 4000 }, (_, i) => 0.3 * Math.sin(i / 7));
+    const out = lim.process(input);
+    expect(out.length).toBe(input.length);
+    for (let i = 0; i < L; i++) expect(out[i]).toBe(0); // 最初は前の音（無音）
+    for (let i = L; i < input.length; i++) expect(out[i]).toBeCloseTo(input[i - L]!, 6);
+  });
+
+  it('チャンクに分けて渡しても、まとめて渡したときと同じ結果になる', () => {
+    const r = rng(7);
+    const input = Float32Array.from({ length: 6000 }, () => (r() * 2 - 1) * 1.4);
+    const whole = new PeakLimiter(RELAY_RATE, -6).process(input);
+    const lim = new PeakLimiter(RELAY_RATE, -6);
+    const parts = [lim.process(input.subarray(0, 800)), lim.process(input.subarray(800, 2345)), lim.process(input.subarray(2345))];
+    const joined = Float32Array.from(parts.flatMap((p) => [...p]));
+    expect(joined.length).toBe(whole.length);
+    for (let i = 0; i < whole.length; i++) expect(joined[i]).toBeCloseTo(whole[i]!, 6);
+  });
+
+  it('フルスケールの落下音（1サンプルのクリック）も上限を超えない', () => {
+    const lim = new PeakLimiter(RELAY_RATE, -6);
+    const input = new Float32Array(2000);
+    input[1000] = 1;
+    input[1001] = -1;
+    const out = lim.process(input);
+    expect(peak(out)).toBeLessThanOrEqual(dbToLinear(-6) + 1e-6);
+  });
+
+  it('大きい音が続いても、どの時点でも上限以下（乱数・ふつうの声を超える音で確かめる）', () => {
+    for (const db of [-3, -6, -12]) {
+      const r = rng(db + 100);
+      const lim = new PeakLimiter(RELAY_RATE, db);
+      const ceil = dbToLinear(db);
+      for (let k = 0; k < 40; k++) {
+        const chunk = Float32Array.from({ length: 800 }, () => (r() * 2 - 1) * (k % 3 === 0 ? 3 : 1));
+        expect(peak(lim.process(chunk))).toBeLessThanOrEqual(ceil + 1e-6);
+      }
+    }
+  });
+
+  it('大きい音はほぼ上限まで抑え、来る前（先読みの分）から下げ始める', () => {
+    const ceil = dbToLinear(-6);
+    const lim = new PeakLimiter(RELAY_RATE, -6);
+    // 0.4 の音のなかに、フルスケールの1サンプルが来る（p）。先読みがあれば、その直前の 0.4 もすでに下がっている
+    const p = 1500;
+    const input = new Float32Array(3000).fill(0.4);
+    input[p] = 1;
+    const out = lim.process(input);
+    expect(out[p + L - 1]!).toBeCloseTo(0.4 * ceil, 2); // 直前の音（入力 p-1）は、上限の比率まで下がっている
+    expect(out[p + L]!).toBeLessThanOrEqual(ceil + 1e-6); // 大きい音そのもの
+    expect(peak(out.subarray(p + L))).toBeGreaterThan(0.38);
+  });
+
+  it('上限ぎりぎりの正弦波は、上限の近くで滑らかに抑えられる（わざと頭を切らない）', () => {
+    const ceil = dbToLinear(-6);
+    const lim = new PeakLimiter(RELAY_RATE, -6);
+    const input = Float32Array.from({ length: 4000 }, (_, i) => Math.sin(i / 5));
+    const out = lim.process(input);
+    // 鳴っている部分の山は上限と同じ大きさ（小さく抑えすぎない）
+    expect(peak(out.subarray(1000))).toBeGreaterThan(ceil * 0.97);
+    expect(peak(out.subarray(1000))).toBeLessThanOrEqual(ceil + 1e-6);
+  });
+
+  it('大きい音が終わったあとは、ゆっくり元の大きさに戻る（リリース）', () => {
+    const lim = new PeakLimiter(RELAY_RATE, -6);
+    const n = RELAY_RATE * 2;
+    const input = new Float32Array(n).fill(0.4);
+    input[100] = 1; // 1 回の大きい音で下がる
+    const out = lim.process(input);
+    // 大きい音の直後は下がっている
+    expect(Math.abs(out[100 + L + 2]!)).toBeLessThan(0.4 * 0.95);
+    // 約 2 秒後（時定数 150ms の 10 倍以上）にはほぼ元の 0.4 へ戻る
+    expect(out[n - 1]!).toBeCloseTo(0.4, 3);
+  });
+
+  it('上限を変えると、次の音から反映される', () => {
+    const lim = new PeakLimiter(RELAY_RATE, -6);
+    const hot = Float32Array.from({ length: 4000 }, () => 1);
+    lim.process(hot);
+    lim.setCeilingDb(-12);
+    const out = lim.process(hot);
+    expect(peak(out.subarray(1000))).toBeLessThanOrEqual(dbToLinear(-12) + 1e-6);
+    expect(peak(out.subarray(1000))).toBeGreaterThan(dbToLinear(-12) * 0.9);
+  });
+
+  it('合計を抑える最後の段の曲線は、上限を超えず、上限以下はそのまま', () => {
+    const c = clipCurve(0.5, 5); // 入力 -1, -0.5, 0, 0.5, 1
+    expect([...c]).toEqual([-0.5, -0.5, 0, 0.5, 0.5]);
+    const id = clipCurve(1, 5);
+    expect([...id]).toEqual([-1, -0.5, 0, 0.5, 1]);
+    const big = clipCurve(dbToLinear(-6));
+    expect(peak(big)).toBeLessThanOrEqual(dbToLinear(-6) + 1e-7);
+    expect(big[big.length - 1]).toBeCloseTo(dbToLinear(-6), 6);
+    expect(big[big.length >> 1]).toBeCloseTo(0, 3);
   });
 });

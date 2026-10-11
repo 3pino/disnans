@@ -1,8 +1,9 @@
-import { isAndroid, isTauri } from '../config';
+import { isAndroid, isLinuxDesktop, isTauri } from '../config';
 
 /**
- * Android のネイティブ機能（screen プラグイン）への橋渡し。デスクトップ・ブラウザでは使えない（supported が false）。
- * - screenCapture（API v9）: MediaProjection で画面を撮り、縮小した JPEG / WebP を JS に渡す。WebView に getDisplayMedia が無いため
+ * ネイティブの画面取得への橋渡し。
+ * - screenCapture（API v9）: Android の MediaProjection で画面を撮り、縮小した JPEG / WebP を JS に渡す。
+ * - Linux（API v12）: portal / PipeWire → GStreamer で、選んだ画面を取得する。WebKitGTK の映像の描画には頼らない
  * - pip（API v9）: Activity のピクチャーインピクチャー
  * 画面の取得は、ユーザーの許可のダイアログ（システム）と、通知欄の常駐（フォアグラウンドサービス）を伴う。
  * - screenCapture.snapshot（API v11）: ダイアログなしの静止画 1 枚。デスクトップ（Windows / Linux）でも使える。
@@ -58,36 +59,67 @@ export function toCaptureError(e: unknown): Error {
   return err;
 }
 
-type CaptureFramePayload = { data: string; mime: string; width: number; height: number };
-type CaptureEndPayload = { reason?: string };
+type CaptureFramePayload = { data: string; mime: string; width: number; height: number; captureId?: number };
+type CaptureEndPayload = { reason?: string; message?: string; captureId?: number };
 
 let captureOff: (() => void)[] = [];
 let capturing = false;
+let captureSeq = 0;
+let captureBackend: 'android' | 'linux' | null = null;
+
+async function invokeCapture<T>(backend: 'android' | 'linux', operation: 'start' | 'stop' | 'update', args?: Record<string, unknown>): Promise<T> {
+  if (backend === 'android') return invokeScreen<T>(`${operation}_capture`, args);
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<T>(`linux_screen_${operation}`, operation === 'stop' ? undefined : { options: args });
+}
 
 export const screenCaptureApi: Disnans.ScreenCapture = {
   get supported() {
-    return native();
+    return native() || isLinuxDesktop();
   },
   async start(opts, onFrame) {
-    if (!native()) throw new Error('この環境では使えません');
+    if (!screenCaptureApi.supported) throw new Error('この環境では使えません');
     if (capturing) await screenCaptureApi.stop();
     capturing = true;
-    captureOff = [
-      listen<CaptureFramePayload>('capture_frame', (f) => {
-        try {
-          onFrame({ data: f.data, mime: f.mime, width: f.width, height: f.height });
-        } catch (e) {
-          console.error('画面キャプチャのフレームの処理で例外', e);
-        }
-      }),
-      listen<CaptureEndPayload>('capture_end', () => {
-        const wasCapturing = capturing;
-        cleanup();
-        if (wasCapturing) opts.onEnd?.();
-      }),
-    ];
+    const seq = ++captureSeq;
+    const backend = isLinuxDesktop() ? 'linux' : 'android';
+    captureBackend = backend;
+    const frame = (f: CaptureFramePayload) => {
+      if (!capturing || seq !== captureSeq || (backend === 'linux' && f.captureId !== seq)) return;
+      try {
+        onFrame({ data: f.data, mime: f.mime, width: f.width, height: f.height });
+      } catch (e) {
+        console.error('画面キャプチャのフレームの処理で例外', e);
+      }
+    };
+    const end = (e: CaptureEndPayload) => {
+      if (!capturing || seq !== captureSeq || (backend === 'linux' && e.captureId !== seq)) return;
+      if (e.reason) console.info('[screen] 画面の取得を終了しました', e.reason, e.message ?? '');
+      cleanup();
+      opts.onEnd?.();
+    };
     try {
-      await invokeScreen('start_capture', {
+      if (backend === 'linux') {
+        const { listen: listenEvent } = await import('@tauri-apps/api/event');
+        // 最初のフレームを取りこぼさないよう、購読が完了してから取得を始める
+        const results = await Promise.allSettled([
+          listenEvent<CaptureFramePayload>('linux-screen-frame', (e) => frame(e.payload)),
+          listenEvent<CaptureEndPayload>('linux-screen-end', (e) => end(e.payload)),
+        ]);
+        const offs = results.flatMap((r) => r.status === 'fulfilled' ? [r.value] : []);
+        const failed = results.find((r) => r.status === 'rejected');
+        if (failed || !capturing || seq !== captureSeq) {
+          offs.forEach((off) => off());
+          throw failed?.reason ?? new DOMException('画面の共有は終了しました', 'AbortError');
+        }
+        captureOff = offs;
+      } else {
+        captureOff = [listen<CaptureFramePayload>('capture_frame', frame), listen<CaptureEndPayload>('capture_end', end)];
+        await Promise.all([attached.get('capture_frame'), attached.get('capture_end')]);
+      }
+      if (!capturing || seq !== captureSeq) throw new DOMException('画面の共有は終了しました', 'AbortError');
+      await invokeCapture(backend, 'start', {
+        ...(backend === 'linux' ? { captureId: seq } : {}),
         maxEdge: opts.maxEdge,
         quality: opts.quality,
         fps: opts.fps,
@@ -98,20 +130,21 @@ export const screenCaptureApi: Disnans.ScreenCapture = {
         keepaliveMs: opts.keepaliveMs ?? 5000,
       });
     } catch (e) {
-      cleanup();
+      if (seq === captureSeq) cleanup();
       throw toCaptureError(e);
     }
   },
   async update(patch) {
-    if (!capturing) return;
-    await invokeScreen('update_capture', { ...patch });
+    if (!capturing || !captureBackend) return;
+    await invokeCapture(captureBackend, 'update', { ...patch });
   },
   snapshot,
   async stop() {
-    if (!capturing) return;
+    if (!capturing || !captureBackend) return;
+    const backend = captureBackend;
     cleanup();
     try {
-      await invokeScreen('stop_capture');
+      await invokeCapture(backend, 'stop');
     } catch (e) {
       console.warn('画面のキャプチャを止められませんでした', e);
     }
@@ -120,6 +153,8 @@ export const screenCaptureApi: Disnans.ScreenCapture = {
 
 function cleanup(): void {
   capturing = false;
+  captureBackend = null;
+  captureSeq++;
   for (const off of captureOff) off();
   captureOff = [];
 }

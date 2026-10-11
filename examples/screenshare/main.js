@@ -5,9 +5,9 @@
  * 画面共有: 通話の拡張の実例（API v11 の disnans.call / screenCapture / pip / ui.onBack / ui.setImmersive）。
  *
  * できること:
- * 1. 通話のバーの [画面を共有] を押すと画面を選び、縮小した画像（JPEG / WebP / PNG）を一定間隔で call.emit（サーバー中継）に流す。
+ * 1. 通話の全画面の [画面を共有] を押すと画面を選び、縮小した画像（JPEG / WebP / PNG）を一定間隔で call.emit（サーバー中継）に流す。
  *    もう一度押すと止まる。OS 側で止めた・通話から抜けたときも止まる。
- *    取得は、getDisplayMedia があればそれ（デスクトップ）、無ければ本体のネイティブ（disnans.screenCapture。Android の MediaProjection）
+ *    取得は、本体のネイティブ（Android の MediaProjection、Linux の portal / PipeWire）を優先し、無ければ getDisplayMedia（Windows / ブラウザー）
  * 2. 誰かが共有を始めると、ステータス欄に [○○の画面を見る] が出る。押すと全画面の表示が開き、共有者が複数なら上のタブで切り替えられる。
  *    通話の画面（「通話を開く」）にも、参加者の上に配信が出る（call.addPanel）。
  *    既定は画面全体が収まる表示。ピンチ・Ctrl+ホイール（トラックパッドのピンチ）でカーソルの位置を中心に拡大縮小、
@@ -156,14 +156,14 @@ export function canShareScreen(nav) {
 }
 
 /**
- * 画面を取る方法。getDisplayMedia があればそれ（web）、無ければ本体のネイティブ（native。Android）、どちらも無ければ null。
+ * 画面を取る方法。本体のネイティブ（Android / Linux）を優先し、無ければ getDisplayMedia（web）。どちらも無ければ null。
  * @param {{ mediaDevices?: { getDisplayMedia?: unknown } } | undefined | null} nav
  * @param {{ supported?: boolean } | undefined | null} native disnans.screenCapture
  * @returns {'web' | 'native' | null}
  */
 export function shareBackend(nav, native) {
-  if (canShareScreen(nav)) return 'web';
-  return native?.supported ? 'native' : null;
+  if (native?.supported) return 'native';
+  return canShareScreen(nav) ? 'web' : null;
 }
 
 /** 本体の静止画の取得（screenCapture.snapshot。API v11）があるか */
@@ -936,6 +936,9 @@ export default class ScreenSharePlugin extends Plugin {
   knownPeers = new Set();
   /** 前に見たときに通話に参加していたか（参加した瞬間に問い合わせるため） */
   wasJoined = false;
+  /** 参加直後の問い合わせは、取りこぼしに備えて 2 回だけ再送する */
+  queryRetries = 0;
+  lastQueryAt = 0;
   tuned = { quality: 0.6, scale: 1 };
   /** 画像の形式（null なら次のフレームで候補を試して決める） */
   format = /** @type {string | null} */ (null);
@@ -1008,6 +1011,7 @@ export default class ScreenSharePlugin extends Plugin {
       this.button = this.call.addButton({
         icon: 'monitor-up',
         label: '画面を共有',
+        location: 'view',
         onClick: () => void this.toggleShare(),
       });
       this.register(() => this.button?.remove());
@@ -1129,6 +1133,7 @@ export default class ScreenSharePlugin extends Plugin {
 
   /** getDisplayMedia で画面を選んで始める */
   async startWeb() {
+    const seq = this.shareSeq;
     /** @type {MediaStream | null} */
     let stream;
     try {
@@ -1140,7 +1145,7 @@ export default class ScreenSharePlugin extends Plugin {
     }
     if (!stream) return;
     // 許可待ちのあいだに通話を抜けた・プラグインが外れた場合は使わない
-    if (!this.call.joined) {
+    if (!this.call.joined || seq !== this.shareSeq) {
       for (const t of stream.getTracks()) t.stop();
       return;
     }
@@ -1165,8 +1170,12 @@ export default class ScreenSharePlugin extends Plugin {
     this.scheduleTick(0);
   }
 
-  /** 本体のネイティブ（Android の MediaProjection）で始める。許可のダイアログが出る */
+  /** 本体のネイティブ（Android / Linux）で始める。許可のダイアログが出る */
   async startNative() {
+    const seq = this.shareSeq;
+    let ended = false;
+    /** @type {Disnans.ScreenCaptureFrame | null} */
+    let firstFrame = null;
     const preset = QUALITY_PRESETS[this.settings.quality];
     try {
       await disnans.screenCapture.start(
@@ -1178,9 +1187,15 @@ export default class ScreenSharePlugin extends Plugin {
           color: /** @type {'full' | 'c256' | 'gray'} */ (this.settings.color),
           diffThreshold: DIFF_THRESHOLD,
           keepaliveMs: KEEPALIVE_FRAME_MS,
-          onEnd: () => this.stopShare(true),
+          onEnd: () => {
+            ended = true;
+            this.stopShare(true);
+          },
         },
-        (f) => this.onNativeFrame(f),
+        (f) => {
+          if (this.backend === 'native' && this.sharing) this.onNativeFrame(f);
+          else firstFrame = f;
+        },
       );
     } catch (e) {
       // 許可のダイアログでキャンセルしたとき（AbortError）は知らせない
@@ -1190,12 +1205,14 @@ export default class ScreenSharePlugin extends Plugin {
       ui.toast(`画面を取得できませんでした（${msg}）`, 'error');
       return;
     }
-    if (!this.call.joined) {
+    if (!this.call.joined || seq !== this.shareSeq || ended) {
       void disnans.screenCapture.stop();
       return;
     }
     this.backend = 'native';
     this.beginSharing();
+    // 最初の 1 枚が start の応答より早く届いても捨てない（静止した画面でもすぐ見える）
+    if (firstFrame) this.onNativeFrame(firstFrame);
   }
 
   /** 共有の開始の共通の処理 */
@@ -1233,7 +1250,10 @@ export default class ScreenSharePlugin extends Plugin {
     this.sharing = false;
     this.shareSeq++;
     this.backend = null;
-    if (backend === 'native') void disnans.screenCapture.stop().catch(() => {});
+    if (backend === 'native' || (this.starting && disnans.screenCapture?.supported)) {
+      // 許可を待っている間に退出・プラグインを無効化したときも、ネイティブの開始を取り消す
+      void disnans.screenCapture.stop().catch(() => {});
+    }
     if (this.stream) for (const t of this.stream.getTracks()) t.stop();
     this.stream = null;
     if (this.video) {
@@ -1585,10 +1605,22 @@ export default class ScreenSharePlugin extends Plugin {
     this.renderStatus();
   }
 
+  /** 共有中の人に知らせ直してもらう */
+  queryShares() {
+    try {
+      this.call.emit(EVENT_QUERY, {});
+      this.lastQueryAt = Date.now();
+    } catch (e) {
+      console.warn('[screenshare] 共有中の人を問い合わせられません', e);
+    }
+  }
+
   /** 通話の状態が変わったとき */
   onCallChange() {
     if (!this.call.joined) {
       this.wasJoined = false;
+      this.queryRetries = 0;
+      this.lastQueryAt = 0;
       this.knownPeers.clear();
       // 通話から抜けた: 共有を止め、見ていたものも消す
       this.stopShare(false);
@@ -1601,17 +1633,14 @@ export default class ScreenSharePlugin extends Plugin {
       return;
     }
     const peers = new Set(this.call.participants.map((p) => p.peer));
-    if (!this.wasJoined) {
-      this.wasJoined = true;
-      // 入った直後: 共有中の人に知らせ直してもらう（ハートビートを待たずに「〜の画面を見る」を出す）
-      try {
-        this.call.emit(EVENT_QUERY, {});
-      } catch (e) {
-        console.warn('[screenshare] 共有中の人を問い合わせられません', e);
-      }
-    }
+    const justJoined = !this.wasJoined;
+    this.wasJoined = true;
     // 新しく来た人がいれば、共有中なら待たずに知らせる
     const added = [...peers].some((p) => !this.knownPeers.has(p));
+    if (justJoined || added) {
+      this.queryShares();
+      this.queryRetries = 2;
+    }
     this.knownPeers = peers;
     if (added) this.announce();
     for (const peer of [...this.sharers.keys()]) if (!peers.has(peer)) this.removeSharer(peer);
@@ -1620,6 +1649,10 @@ export default class ScreenSharePlugin extends Plugin {
   /** 毎秒: 共有の知らせを送り直し、音沙汰のない共有者を消す */
   watch() {
     const now = Date.now();
+    if (this.call.joined && this.queryRetries > 0 && now - this.lastQueryAt >= WATCH_MS) {
+      this.queryShares();
+      this.queryRetries--;
+    }
     for (const [peer, s] of [...this.sharers]) if (now - s.lastSeen > SHARER_TIMEOUT_MS) this.removeSharer(peer);
     if (this.sharing && this.call.joined && now - this.lastHeartbeat >= HEARTBEAT_MS) this.sendState(true);
     // ネイティブの取得は画面が変わらないと届かないので、見る人が増えたら最後のフレームを送り直す

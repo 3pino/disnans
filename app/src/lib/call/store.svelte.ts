@@ -8,6 +8,10 @@ import {
   EV_AUDIO,
   Framer,
   LEVEL_MS,
+  PeakLimiter,
+  clipCurve,
+  clampLimitDb,
+  dbToLinear,
   OUTPUTS_REFRESH_TICKS,
   RELAY_HOLD_MS,
   RELAY_RATE,
@@ -73,7 +77,7 @@ export type CallDataEvent = { peer: string; userId: string; payload: unknown };
 const RESERVED_EVENTS = new Set([EV_AUDIO]);
 
 /** 通話のバーに足すボタン */
-export type BarButtonDef = { icon: IconRef; label: string; onClick: () => void; active?: boolean; disabled?: boolean };
+export type BarButtonDef = { icon: IconRef; label: string; onClick: () => void; active?: boolean; disabled?: boolean; location?: 'both' | 'view' };
 export type BarButton = BarButtonDef & { id: number };
 
 /** 通話の画面（CallView）に、プラグインが足す領域 */
@@ -85,7 +89,7 @@ type PeerView = { speaking: boolean; localMuted: boolean };
 
 type Meter = { analyser: AnalyserNode; buf: Uint8Array; lastLoud: number; speaking: boolean };
 
-type RelayIn = { gain: GainNode; meter: Meter | null; st: { next: number } };
+type RelayIn = { gain: GainNode; meter: Meter | null; st: { next: number }; limiter: PeakLimiter | null };
 
 /** 通話にいる自分以外の接続1つ分の状態 */
 type Entry = {
@@ -142,6 +146,9 @@ export class CallStore {
   private ctx: AudioContext | null = null;
   private ctxDetach: (() => void) | null = null;
   private localMeter: Meter | null = null;
+  /** 受け取った音の合計を上限で抑える最後の段（無ければ出力先に直接） と、その設定の控え */
+  private limitBus: WaveShaperNode | null = null;
+  private limitKey = '';
   private worker: { terminate(): void } | null = null;
   private background: Disnans.BackgroundHandle | null = null;
   private notifyKey = '';
@@ -168,6 +175,11 @@ export class CallStore {
   /** 自分以外の参加者 */
   private get others(): CallMember[] {
     return this.members.filter((m) => m.peer !== this.peerId);
+  }
+
+  /** 上部のバー用。通話の全画面だけに出すボタンは除く */
+  get topBarButtons(): BarButton[] {
+    return this.barButtons.filter((b) => b.location !== 'view');
   }
 
   /** 通話のバーを出すか（参加中、またはだれかがいる） */
@@ -389,6 +401,8 @@ export class CallStore {
     this.ctxDetach = null;
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
+    this.limitBus = null;
+    this.limitKey = '';
     this.background?.();
     this.background = null;
     this.refresh();
@@ -640,6 +654,27 @@ export class CallStore {
     }
   }
 
+  /** 上限の設定（オフなら null） */
+  private limitDb(): number | null {
+    return this.settings.limiter ? clampLimitDb(this.settings.limitDb) : null;
+  }
+
+  /** 受け取りの出口。合計を抑える段があれば、いまの上限に合わせて返す（無ければ出力先に直接） */
+  private receiveOut(ctx: AudioContext, db: number | null): AudioNode {
+    if (typeof ctx.createWaveShaper !== 'function') return ctx.destination;
+    if (!this.limitBus) {
+      this.limitBus = ctx.createWaveShaper();
+      this.limitBus.connect(ctx.destination);
+    }
+    const key = db === null ? 'off' : String(db);
+    if (key !== this.limitKey) {
+      this.limitKey = key;
+      // オフなら曲線を外し、合計が 1 を超えてもこの段では加工しない
+      this.limitBus.curve = db === null ? null : clipCurve(dbToLinear(db));
+    }
+    return this.limitBus;
+  }
+
   private onRelayAudio(peer: string, payload: unknown): void {
     const p = payload as { pcm?: unknown } | null;
     const ctx = this.ctx;
@@ -648,16 +683,28 @@ export class CallStore {
     const pcm = base64ToPcm(p.pcm);
     if (!pcm) return;
     try {
+      const db = this.limitDb();
+      const out = this.receiveOut(ctx, db);
       if (!e.relay) {
         const gain = ctx.createGain();
         const analyser = ctx.createAnalyser();
-        gain.connect(ctx.destination);
+        gain.connect(out);
         gain.connect(analyser);
-        e.relay = { gain, meter: makeMeter(analyser), st: { next: 0 } };
+        e.relay = { gain, meter: makeMeter(analyser), st: { next: 0 }, limiter: null };
         this.applyEntryAudio(e);
       }
-      const buf = ctx.createBuffer(1, pcm.length, RELAY_RATE);
-      buf.getChannelData(0).set(int16ToFloat(pcm));
+      // 大きすぎる音を上限で抑える（音量の設定より前。端末の音量ではなく、受け取った音の大きさで決める）
+      let samples = int16ToFloat(pcm);
+      if (db !== null) {
+        e.relay.limiter ??= new PeakLimiter(RELAY_RATE, db);
+        e.relay.limiter.setCeilingDb(db);
+        samples = e.relay.limiter.process(samples);
+      } else {
+        // 入れ直したときに、オフにする前の先読みの音を再生しない
+        e.relay.limiter = null;
+      }
+      const buf = ctx.createBuffer(1, samples.length, RELAY_RATE);
+      buf.getChannelData(0).set(samples);
       const at = scheduleFrame(e.relay.st, ctx.currentTime, pcm.length / RELAY_RATE);
       if (at === null) return;
       const node = ctx.createBufferSource();
