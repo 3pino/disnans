@@ -9,6 +9,8 @@
   import { navBar } from '../lib/stores/navBar.svelte';
   import { unread } from '../lib/stores/unread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { updater } from '../lib/stores/updater.svelte';
+  import { showUpdateBadge, UPDATE_BADGE_LABEL } from '../lib/updateCheck';
 
   // モバイルでは画面の下、デスクトップではサイドバーの下に出す。見た目は ui/NavBar（.nav-bar）。
   // 並びと出す項目は端末ごとの設定（lib/stores/navBar.svelte.ts）。チャット・スレッド・設定は本体の項目で、
@@ -33,7 +35,8 @@
       return { id, label, icon: 'disnans-logo', badge: unread.main };
     }
     if (id === NAV_THREADS_ID) return { id, label, icon: MessagesSquare, badge: unread.threadTotal };
-    if (id === NAV_SETTINGS_ID) return { id, label, icon: Settings };
+    // 設定には、新しい版があるときに点を出す（デスクトップではサイドバーのこの項目も同じ）
+    if (id === NAV_SETTINGS_ID) return { id, label, icon: Settings, alert: showUpdateBadge(updater.state) ? UPDATE_BADGE_LABEL : null };
     return { id, label, icon: c?.icon ?? Puzzle };
   }
 

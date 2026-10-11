@@ -442,6 +442,29 @@ function fakeStream() {
   return { stream: { getTracks: () => [track], getVideoTracks: () => [track] }, track, end: () => listeners.ended() };
 }
 
+/** jsdom は画像を読み込まないので、src を入れたら決めた大きさで onload を呼ぶ Image に差し替える。戻り値で戻す */
+function fakeImageLoad(width: number, height: number): () => void {
+  const proto = HTMLImageElement.prototype;
+  const saved = (['src', 'naturalWidth', 'naturalHeight'] as const).map((k) => [k, Object.getOwnPropertyDescriptor(proto, k)] as const);
+  const desc = saved[0][1]!;
+  Object.defineProperty(HTMLImageElement.prototype, 'naturalWidth', { configurable: true, get: () => width });
+  Object.defineProperty(HTMLImageElement.prototype, 'naturalHeight', { configurable: true, get: () => height });
+  Object.defineProperty(HTMLImageElement.prototype, 'src', {
+    configurable: true,
+    get: desc.get,
+    set(this: HTMLImageElement, v: string) {
+      desc.set!.call(this, v);
+      queueMicrotask(() => this.onload?.(new Event('load')));
+    },
+  });
+  return () => {
+    for (const [k, d] of saved) {
+      if (d) Object.defineProperty(proto, k, d);
+      else Reflect.deleteProperty(proto, k);
+    }
+  };
+}
+
 async function setup(opts: { display: boolean; native?: Partial<Disnans.ScreenCapture>; pip?: Partial<Disnans.Pip> }) {
   const c = makeCall();
   (g.disnans as { call: unknown }).call = c.call;
@@ -814,8 +837,10 @@ describe('examples/screenshare', () => {
     s.r.stop();
   });
 
-  it('設定画面: 説明は無く、FPS は 5 と 20、画質は解像度と品質、色数を選べる。自分の画面を取り込んでプレビューを出す（サンプルは無い）', async () => {
-    const s = await setup({ display: true });
+  it('設定画面: 説明は無く、FPS は 5 と 20、画質は解像度と品質、色数を選べる。snapshot で自分の画面を撮ってプレビューを出す（選択のダイアログは出さない）', async () => {
+    const snapshot = vi.fn(async () => ({ dataUrl: 'data:image/jpeg;base64,/9j/QUJD', width: 1920, height: 1080, source: 'screen' as const }));
+    const s = await setup({ display: true, native: { supported: false, snapshot } });
+    const restoreImage = fakeImageLoad(1920, 1080);
     const container = document.createElement('div');
     document.body.append(container);
     // 設定タブの描画（addSettingTab で登録されたもの）。プレビューの符号化は jsdom の canvas に合わせて差し替える
@@ -830,23 +855,53 @@ describe('examples/screenshare', () => {
     expect(options(0)).toEqual(['5', '20']);
     expect(options(1)).toEqual(['480p・品質 50%', '720p・品質 60%', '1080p・品質 80%']);
     expect(options(2)).toEqual(['フルカラー', '256 色', 'グレースケール']);
-    // 開いたときに 1 回だけ自動で画面を取り込む（取り込んだら止める）
-    await vi.advanceTimersByTimeAsync(500);
-    expect(s.getDisplayMedia).toHaveBeenCalledOnce();
-    expect(s.fs.track.stop).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(snapshot).toHaveBeenCalledOnce();
+    // getDisplayMedia（画面の選択のダイアログ）は使わない
+    expect(s.getDisplayMedia).not.toHaveBeenCalled();
     const info = container.querySelector('.screenshare-preview-info')!.textContent;
     expect(info).toMatch(/1280×720.*JPEG.*1 フレーム 約 \d+ KB.*5 FPS/);
     expect(info).not.toContain('サンプル');
-    // 開き直しても、取り込んだ画面を使い回す（何度も選ばせない）
+    expect(info).not.toContain('disnans の画面');
+    expect(container.querySelector<HTMLImageElement>('.screenshare-preview-img')!.hidden).toBe(false);
+    // 開き直すと撮り直す（ダイアログは出ないので毎回でよい）
     container.replaceChildren();
     s.r.settingTabs[0].display(container);
-    await vi.advanceTimersByTimeAsync(500);
-    expect(s.getDisplayMedia).toHaveBeenCalledOnce();
-    expect(container.querySelector('.screenshare-preview-info')!.textContent).toMatch(/1280×720/);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(snapshot).toHaveBeenCalledTimes(2);
+    expect(s.getDisplayMedia).not.toHaveBeenCalled();
+    restoreImage();
     s.r.stop();
   });
 
-  it('設定画面: 取り込めない環境ではプレビューが無いと書く', async () => {
+  it('設定画面: snapshot が disnans 自身の画面なら、そう書く', async () => {
+    const snapshot = vi.fn(async () => ({ dataUrl: 'data:image/jpeg;base64,/9j/QUJD', width: 1080, height: 1920, source: 'app' as const }));
+    const s = await setup({ display: false, native: { supported: true, snapshot } });
+    const restoreImage = fakeImageLoad(1080, 1920);
+    const container = document.createElement('div');
+    document.body.append(container);
+    s.r.settingTabs[0].display(container);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(container.querySelector('.screenshare-preview-info')!.textContent).toContain('disnans の画面');
+    restoreImage();
+    s.r.stop();
+  });
+
+  it('設定画面: snapshot が失敗したらプレビューは無いと書く（ダイアログは出さない）', async () => {
+    const snapshot = vi.fn(async () => Promise.reject(new Error('この環境では画面を撮れません')));
+    const s = await setup({ display: true, native: { supported: false, snapshot } });
+    const container = document.createElement('div');
+    document.body.append(container);
+    s.r.settingTabs[0].display(container);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(snapshot).toHaveBeenCalledOnce();
+    expect(s.getDisplayMedia).not.toHaveBeenCalled();
+    expect(container.querySelector('.screenshare-preview-info')!.textContent).toContain('プレビューはありません');
+    expect(container.querySelector<HTMLImageElement>('.screenshare-preview-img')!.hidden).toBe(true);
+    s.r.stop();
+  });
+
+  it('設定画面: snapshot の無い本体ではプレビューが無いと書く', async () => {
     const s = await setup({ display: false });
     const container = document.createElement('div');
     document.body.append(container);

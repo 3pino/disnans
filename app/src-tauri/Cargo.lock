@@ -826,6 +826,7 @@ dependencies = [
 name = "disnans-app"
 version = "0.1.0"
 dependencies = [
+ "gdk",
  "serde",
  "serde_json",
  "tauri",
@@ -843,6 +844,7 @@ dependencies = [
  "tauri-plugin-system-bars",
  "tauri-plugin-updater",
  "webkit2gtk",
+ "windows",
 ]
 
 [[package]]

@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the set_immersive command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-immersive",
+          "markdownDescription": "Enables the set_immersive command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_immersive command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-immersive",
+          "markdownDescription": "Denies the set_immersive command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_navigation_bar_hidden command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-navigation-bar-hidden",
@@ -319,10 +331,10 @@
           "markdownDescription": "Denies the set_style command without any pre-configured scope."
         },
         {
-          "description": "システムバーのアイコンの明暗の変更と、ナビゲーションバーを隠すことを許可する\n#### This default permission set includes:\n\n- `allow-set-style`\n- `allow-set-navigation-bar-hidden`",
+          "description": "システムバーのアイコンの明暗の変更と、ナビゲーションバーを隠すこと、没入モードを許可する\n#### This default permission set includes:\n\n- `allow-set-style`\n- `allow-set-navigation-bar-hidden`\n- `allow-set-immersive`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "システムバーのアイコンの明暗の変更と、ナビゲーションバーを隠すことを許可する\n#### This default permission set includes:\n\n- `allow-set-style`\n- `allow-set-navigation-bar-hidden`"
+          "markdownDescription": "システムバーのアイコンの明暗の変更と、ナビゲーションバーを隠すこと、没入モードを許可する\n#### This default permission set includes:\n\n- `allow-set-style`\n- `allow-set-navigation-bar-hidden`\n- `allow-set-immersive`"
         }
       ]
     }

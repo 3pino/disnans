@@ -22,7 +22,7 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 - 設計: [`SPEC.md`](../SPEC.md) の 3.3 と 9章
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
 - UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](PLUGIN_UI.md)
-- ホスト API のバージョン: **10**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から。`holdBackground` の通知のボタン `actions` / `onAction` と `update()` は 4 から。`disnans.audio` は 5、`postMessage` の `notify` と `openSettings` は 6、`disnans.call`（通話の拡張）は 7 から、`addMessageAction` / `openTimeline`・`disnans.screenCapture` / `disnans.pip`・`ui.onBack` / `ui.setImmersive` は 9 から、通話の画面の領域 `call.addPanel` と送信待ちの量 `call.bufferedAmount` は 10 から）
+- ホスト API のバージョン: **11**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から。`holdBackground` の通知のボタン `actions` / `onAction` と `update()` は 4 から。`disnans.audio` は 5、`postMessage` の `notify` と `openSettings` は 6、`disnans.call`（通話の拡張）は 7 から、`addMessageAction` / `openTimeline`・`disnans.screenCapture` / `disnans.pip`・`ui.onBack` / `ui.setImmersive` は 9 から、通話の画面の領域 `call.addPanel` と送信待ちの量 `call.bufferedAmount` は 10 から、ダイアログなしの静止画 `screenCapture.snapshot` は 11 から）
 - 通話（ボイスチャット）は**アプリ本体の機能**です。画面共有などの拡張は `disnans.call` で作れます（→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)）
 
 ## 目次
@@ -114,7 +114,7 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `10`（`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `11`（`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -251,8 +251,8 @@ app/node_modules/.bin/tsc -p examples/dice
 | `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（v5）。Android は通話中の出力先（受話口・スピーカー・イヤホン・Bluetooth）、デスクトップは `setSinkId`。使えない環境では一覧が空 |
 | `disnans.call.*` | 本体の通話の状態の読み取りと、参加者どうしのデータの送受信、通話のバーのボタン（v8）、通話の画面の領域と送信待ちの量（v10。→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)） |
 | `disnans.ui.onBack(handler)` / `ui.setImmersive(on)` | 戻る操作（Android の戻るジェスチャー・PC の Alt+←）で閉じる層を足す／Android で全画面（システムバーを隠す没入モード）にする（v9。→ [画面共有のためのネイティブ API](#画面共有のためのネイティブ-apiv9)） |
-| `disnans.screenCapture.*` / `disnans.pip.*` | Android の画面のキャプチャ（MediaProjection）と、ピクチャーインピクチャー（v9。同上） |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 10） |
+| `disnans.screenCapture.*` / `disnans.pip.*` | Android の画面のキャプチャ（MediaProjection）と、ピクチャーインピクチャー（v9。同上）。ダイアログなしの静止画 `screenCapture.snapshot()`（v11。デスクトップでも使える） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 11） |
 
 ### コマンド（パレット・ホットキー・スラッシュコマンド）
 
@@ -752,13 +752,13 @@ async function share() {
 this.register(call.onEvent('screen', ({ user, payload }) => { /* <img> に payload.img を出す */ }));
 ```
 
-実例は **画面共有**（[`examples/screenshare/`](../examples/screenshare/)、v10）です。通話のバーのボタンから画面を取り、縮小した画像（JPEG / WebP / PNG）にして `call.emit` で送ります。
+実例は **画面共有**（[`examples/screenshare/`](../examples/screenshare/)、v11）です。通話のバーのボタンから画面を取り、縮小した画像（JPEG / WebP / PNG）にして `call.emit` で送ります。
 
 - 取る側: `getDisplayMedia` があればそれ（デスクトップ。Linux の WebKitGTK でも、`xdg-desktop-portal` と PipeWire があれば動きます）、無ければ `disnans.screenCapture`（Android）を使います。どちらも無ければ共有ボタンを出さず、見るだけです
 - 送る側: 1 回の payload の上限（64 KB）を超えるフレームは分割して送り（`{ f: フレーム番号, i, n, d: base64 の一部 }`）、受け手が組み立てます（欠けたフレームは捨てる）。画像の形式は先頭のバイトから見分けるので、送り手は JPEG・WebP・PNG のどれでも送れます。サーバーの流量制限（容量 4000・毎秒 3000 回復・1 回の重さ = 1 + payload の KB）に収まるよう、映像の予算を毎秒 2400 KB（重さ）にして、直前のフレームの大きさから次の間隔を決め、大きすぎれば画質→解像度の順に下げ、画面が変わらなければ送りません（変化は 64×36 に縮めた画像の平均の差と、1 画素の最大の差で見るので、文字の入力のような小さな変化も送る）。送信待ち（`call.bufferedAmount`）が 192 KB を超えているあいだは次のフレームを作らずに待ちます（回線が細いときに古いフレームを溜めない）
 - 参加: 通話に入った人（とプラグインを読み込み直した人）は `screen.query` を送り、共有中の人は `screen.state` とフレームをすぐに送り直します。新しい参加者が来たときも、共有中の人はハートビートを待たずに知らせます
 - 取り込めないとき: Linux の WebKitGTK などで、文書に入っていない `<video>` を canvas に描けないことがあるので、取り込み用の `<video>` を見えない大きさで文書に入れています。それでも映像が来ない・空（全部透明）のままなら、`ImageCapture` があればそれに替え、だめならログ（`[screenshare]`）とトーストで知らせます
-- 設定: FPS（5 / 20）、画質（480p・品質 50% / 720p・品質 60% / 1080p・品質 80%）、色数（フルカラー / 256 色 / グレースケール）。色数を減らす設定では、減色した画像を PNG・WebP・JPEG のうち小さいもので送ります（JPEG は減色の効果が薄いため）。設定画面に、今の設定で符号化した画像と 1 フレームのおおよそのサイズ・帯域のプレビューがあります。元は自分の実際の画面で、共有中ならその画面、そうでなければ設定を開いたときに 1 回だけ取り込みます（デスクトップは画面の選択、Android は許可のダイアログが出る。選択なしで撮る方法は WebView に無いため。取り込んだ画面はプラグインが動いている間使い回し、「画面を取り込み直す」で取り直せる）
+- 設定: FPS（5 / 20）、画質（480p・品質 50% / 720p・品質 60% / 1080p・品質 80%）、色数（フルカラー / 256 色 / グレースケール）。色数を減らす設定では、減色した画像を PNG・WebP・JPEG のうち小さいもので送ります（JPEG は減色の効果が薄いため）。設定画面に、今の設定で符号化した画像と 1 フレームのおおよそのサイズ・帯域のプレビューがあります。元は自分の実際の画面で、共有中ならその画面、そうでなければ設定を開くたびに `screenCapture.snapshot()`（v11）で 1 枚撮ります（選択や許可のダイアログは出ない。Windows と Linux の X11 は画面全体、Wayland と Android は disnans 自身の画面。撮れなければプレビューなしで文言だけ。「画面を取り込み直す」で撮り直せる）
 - 見る側: プラグインが `document.body` に全画面のオーバーレイを足して表示します（ダイアログ・トーストより下、Esc でも閉じる）。通話の画面にも `call.addPanel` で配信を出し、「大きく見る」でオーバーレイを開きます。共有者が複数ならタブで切り替えます。既定は画面全体が収まる表示（縦長のスマホの画面も切れない）。ピンチ・Ctrl+ホイール（トラックパッドのピンチ）でカーソルの位置を中心に拡大縮小、拡大中はドラッグ・ホイールで移動（Shift+ホイールで横）、等倍のときにホイールを上へ回すと拡大、ダブルタップ（ダブルクリック）で拡大／元に戻す、`+` / `-` / `0` キーでも拡大・縮小・元に戻す。全画面は `ui.setImmersive`（Android）か Fullscreen API、戻るジェスチャーは `ui.onBack` で全画面の解除→閲覧を閉じる、の順。PiP は Android なら `disnans.pip`、デスクトップなら受け取った画像を `<canvas>` に描いて `captureStream()` した `<video>` の `requestPictureInPicture()`
 
 本体の通話のしくみ（参加者の管理と kick はサーバー、音声とデータもサーバー経由）は [`SPEC.md`](../SPEC.md) の 9.11、サーバーの経路は [`API.md`](API.md) の WebSocket を参照してください。
@@ -790,6 +790,14 @@ if (screenCapture.supported) {
   await screenCapture.stop();
 }
 
+// 静止画を 1 枚（v11）。選択や許可のダイアログを出さない。supported に関係なくアプリ版（Tauri）で使える
+try {
+  const { dataUrl, width, height, source } = await screenCapture.snapshot(); // source: 'screen'（画面全体）| 'app'（disnans 自身）
+  img.src = dataUrl;
+} catch {
+  // ブラウザー版・macOS などでは撮れない
+}
+
 // Android: Activity の PiP（小窓）。小窓の間はアプリの画面がそのまま小さく出るので、onChange で表示を切り替える
 if (pip.supported) {
   this.register(pip.onChange((active) => setCompact(active)));
@@ -799,6 +807,7 @@ if (pip.supported) {
 
 - `screenCapture.start` は、断られたら例外です。ユーザーが許可のダイアログでキャンセルしたときの例外は `name` が `AbortError` です（v10。知らせずに終えてください）。フレームは、画面が変わったときと、変わらなくても `keepaliveMs`（既定 5 秒）ごとに 1 枚届きます。`color` が `c256` / `gray` のときは、減色したうえで可逆の WebP（Android 11 以降。それ以前は PNG）と lossy の WebP を比べて小さいほうを渡します
 - `onEnd` は、通知欄の「停止」やシステム側の操作で止められたときに呼ばれます（`stop()` では呼ばれません）
+- `screenCapture.snapshot()`（v11）は、設定のプレビューのような「いまの画面を 1 枚だけ見たい」用途向けです。`getDisplayMedia` や `start` と違って、どの画面を共有するかの選択も許可のダイアログも出しません。撮れるものは環境で違い、`source` で分かります: Windows は主モニター全体（GDI）、Linux は X11 なら主モニター全体（ルートウィンドウ）で Wayland などでは disnans 自身の画面（WebKitGTK のスナップショット）、Android は disnans 自身の画面（PixelCopy。MediaProjection は使わない）。長辺 1920 以下に縮めた JPEG の data URL を返します。ブラウザー版・macOS では例外です
 - デスクトップ・ブラウザーでは `screenCapture.supported` と `pip.supported` は `false` です。PiP は `<video>` の `requestPictureInPicture()` を使ってください
 - 通話中にアプリを裏に回しても共有が続くのは、通話のフォアグラウンドサービス（マイク）と、画面のキャプチャのフォアグラウンドサービス（`mediaProjection`）が動いているためです
 

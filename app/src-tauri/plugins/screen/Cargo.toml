@@ -1,7 +1,7 @@
 [package]
 name = "tauri-plugin-screen"
 version = "0.1.0"
-description = "Android で画面のキャプチャ（MediaProjection）とピクチャーインピクチャーを使う"
+description = "Android で画面のキャプチャ（MediaProjection）、自分の画面の静止画（PixelCopy）、ピクチャーインピクチャーを使う"
 edition = "2021"
 publish = false
 links = "tauri-plugin-screen"

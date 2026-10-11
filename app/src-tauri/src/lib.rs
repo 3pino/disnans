@@ -8,6 +8,10 @@ fn open_devtools(window: tauri::WebviewWindow) {
 #[cfg(desktop)]
 mod dev_plugins;
 
+// 画面の静止画（プラグイン API v11 の screenCapture.snapshot。ダイアログを出さない）
+#[cfg(desktop)]
+mod snapshot;
+
 /// 他のアプリから共有されたファイルを読む（Android）。
 /// notifier プラグインがキャッシュの `disnans-share/` にコピーしたものだけを読み、読んだら消す。
 /// 大きなファイルを base64 の JSON にせず、バイナリのまま WebView に渡すためのコマンド。
@@ -128,7 +132,8 @@ pub fn run() {
             .invoke_handler(tauri::generate_handler![
                 open_devtools,
                 dev_plugins::dev_plugins_scan,
-                dev_plugins::dev_plugin_read
+                dev_plugins::dev_plugin_read,
+                snapshot::screen_snapshot
             ]);
     }
     // Android: システムバーのアイコンの明暗をアプリのテーマに合わせる

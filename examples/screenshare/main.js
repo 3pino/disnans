@@ -2,7 +2,7 @@
 /// <reference path="../../packages/plugin-sdk/index.d.ts" />
 
 /*
- * 画面共有: 通話の拡張の実例（API v10 の disnans.call / screenCapture / pip / ui.onBack / ui.setImmersive）。
+ * 画面共有: 通話の拡張の実例（API v11 の disnans.call / screenCapture / pip / ui.onBack / ui.setImmersive）。
  *
  * できること:
  * 1. 通話のバーの [画面を共有] を押すと画面を選び、縮小した画像（JPEG / WebP / PNG）を一定間隔で call.emit（サーバー中継）に流す。
@@ -17,8 +17,8 @@
  *    [閉じる]（Esc・戻るジェスチャーでも閉じる）。共有者が止めた・通話から抜けたら自動で消える
  * 3. 設定で、FPS（5 / 20）・画質（解像度と品質）・色数（フルカラー / 256 色 / グレースケール）を選べる。
  *    今の設定で、エンコード後の画像と 1 フレームのおおよそのサイズ・帯域をプレビューできる。
- *    プレビューの元は自分の実際の画面（共有中ならその画面、そうでなければ設定を開いたときに 1 回だけ取り込む。
- *    デスクトップは画面の選択、Android は許可のダイアログが出る）
+ *    プレビューの元は自分の実際の画面（共有中ならその画面、そうでなければ設定を開いたときに screenCapture.snapshot で 1 枚撮る。
+ *    選択や許可のダイアログは出ない。Windows / Linux（X11）は画面全体、Wayland・Android は disnans 自身の画面。撮れなければプレビューなし）
  *
  * 映像も WebRTC ではなくサーバー経由（友達は別ネットワークで、P2P がつながらないため）。
  * サーバーは送り手ごとに「容量 4000・毎秒 3000 回復・1 回の重さ = 1 + payload の KB」で流量を制限し、超えた分を黙って捨てる
@@ -32,7 +32,7 @@
  * - addSettingTab / loadData / saveData ... FPS・画質・色数の設定とプレビュー
  * - registerInterval / registerDomEvent / register ... 見張りのタイマー、Esc キー、後片付け
  * - ui.setting / segmented / button / icon / toast / onBack / setImmersive
- * - screenCapture / pip ......... Android のネイティブ（画面の取得と PiP）
+ * - screenCapture / pip ......... Android のネイティブ（画面の取得と PiP）。snapshot（v11）は設定のプレビュー用の静止画
  *
  * 遅延を抑えるため、送信待ち（call.bufferedAmount）が多いあいだは次のフレームを作らずに待つ（古いフレームを溜めない）。
  *
@@ -164,6 +164,11 @@ export function canShareScreen(nav) {
 export function shareBackend(nav, native) {
   if (canShareScreen(nav)) return 'web';
   return native?.supported ? 'native' : null;
+}
+
+/** 本体の静止画の取得（screenCapture.snapshot。API v11）があるか */
+function canSnapshot() {
+  return typeof disnans.screenCapture?.snapshot === 'function';
 }
 
 /**
@@ -639,6 +644,15 @@ export function encodeFrame(cv, source, w, h, o) {
  * @returns {Promise<HTMLCanvasElement>}
  */
 function imageToCanvas(b64, mime) {
+  return urlToCanvas(`data:${mime};base64,${b64}`);
+}
+
+/**
+ * 画像の URL（data URL）を読み込んで canvas に描く（snapshot の静止画を、プレビューの元にするため）。
+ * @param {string} src
+ * @returns {Promise<HTMLCanvasElement>}
+ */
+function urlToCanvas(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -649,12 +663,9 @@ function imageToCanvas(b64, mime) {
       resolve(cv);
     };
     img.onerror = () => reject(new Error('画像を読み込めません'));
-    img.src = `data:${mime};base64,${b64}`;
+    img.src = src;
   });
 }
-
-/** @param {number} ms */
-const sleep = (ms) => new Promise((r) => setTimeout(() => r(undefined), ms));
 
 // ---- 表示の舞台（拡大縮小・パン） ----
 
@@ -969,8 +980,8 @@ export default class ScreenSharePlugin extends Plugin {
   /** プレビューの元（自分の画面を取り込んだもの） */
   /** @type {HTMLCanvasElement | null} */
   previewSource = null;
-  /** 設定を開いたときの自動の取り込みを、もう試した（断られたら何度も出さない） */
-  previewAutoTried = false;
+  /** プレビューの元が disnans 自身の画面（snapshot の source が app） */
+  previewIsApp = false;
   previewBusy = false;
   previewSeq = 0;
   /** @type {{ img: HTMLImageElement; info: HTMLElement } | null} */
@@ -1989,7 +2000,7 @@ export default class ScreenSharePlugin extends Plugin {
     const info = document.createElement('p');
     info.className = 'screenshare-preview-info';
     box.append(img, info);
-    if (shareBackend(navigator, disnans.screenCapture)) {
+    if (canSnapshot()) {
       const actions = document.createElement('div');
       actions.className = 'screenshare-preview-actions';
       actions.append(ui.button({ text: '画面を取り込み直す', icon: 'refresh-cw', variant: 'ghost', onClick: () => void this.capturePreview() }));
@@ -1997,25 +2008,9 @@ export default class ScreenSharePlugin extends Plugin {
     }
     containerEl.append(box);
     this.previewEls = { img, info };
+    // 前に撮ったものがあればまず出し、撮り直す（snapshot はダイアログを出さないので、開くたびに撮ってよい）
     if (this.previewSource) this.refreshPreview();
-    else void this.autoPreview();
-  }
-
-  /** 設定を開いたとき: 共有中ならその画面、そうでなければ 1 回だけ自動で取り込む */
-  async autoPreview() {
-    const els = this.previewEls;
-    if (!els) return;
-    if (!shareBackend(navigator, disnans.screenCapture)) {
-      els.info.textContent = 'この環境では画面を取り込めないため、プレビューはありません';
-      return;
-    }
-    if (await this.previewFromSharing()) return;
-    if (this.previewAutoTried) {
-      els.info.textContent = '「画面を取り込み直す」を押すと、自分の画面で今の設定の見え方を確かめられます';
-      return;
-    }
-    this.previewAutoTried = true;
-    await this.capturePreview();
+    void this.capturePreview();
   }
 
   /** 共有中なら、いま共有している画面をプレビューの元にする。できたら true */
@@ -2040,6 +2035,7 @@ export default class ScreenSharePlugin extends Plugin {
       console.warn('[screenshare] 共有中の画面をプレビューにできません', e);
       return false;
     }
+    this.previewIsApp = false;
     this.refreshPreview();
     return true;
   }
@@ -2058,24 +2054,29 @@ export default class ScreenSharePlugin extends Plugin {
     this.previewSource = cv;
   }
 
-  /** 自分の画面を一度だけ取り込んで、プレビューの元にする（デスクトップは画面の選択、Android は許可のダイアログが出る） */
+  /**
+   * 自分の画面を 1 枚撮って、プレビューの元にする。共有中ならその画面、そうでなければ screenCapture.snapshot（API v11）。
+   * snapshot は選択や許可のダイアログを出さない。撮れなければプレビューなし（文言だけ）にする
+   */
   async capturePreview() {
     if (this.previewBusy) return;
-    if (await this.previewFromSharing()) return;
-    const backend = shareBackend(navigator, disnans.screenCapture);
-    if (!backend || this.starting) return;
     const els = this.previewEls;
-    if (els?.img.isConnected) els.info.textContent = '画面を取り込んでいます…';
     this.previewBusy = true;
     try {
-      const ok = backend === 'web' ? await this.capturePreviewWeb() : await this.capturePreviewNative();
-      if (!ok) {
-        if (els?.img.isConnected && !this.previewSource) els.info.textContent = '「画面を取り込み直す」を押すと、自分の画面で今の設定の見え方を確かめられます';
+      if (await this.previewFromSharing()) return;
+      if (!canSnapshot()) {
+        this.showNoPreview('この環境では画面を撮れないため、プレビューはありません');
         return;
       }
+      if (els?.img.isConnected && !this.previewSource) els.info.textContent = '画面を撮っています…';
+      const shot = await disnans.screenCapture.snapshot();
+      const cv = await urlToCanvas(shot.dataUrl);
+      if (cv.width > 1920 || cv.height > 1920) this.setPreviewSource(cv, cv.width, cv.height);
+      else this.previewSource = cv;
+      this.previewIsApp = shot.source === 'app';
     } catch (e) {
-      console.warn('[screenshare] プレビューの取り込みに失敗', e);
-      if (els?.img.isConnected) els.info.textContent = `画面を取り込めませんでした（${describeError(e)}）`;
+      console.warn('[screenshare] プレビューの画面を撮れません', e);
+      this.showNoPreview(`画面を撮れなかったため、プレビューはありません（${describeError(e)}）`);
       return;
     } finally {
       this.previewBusy = false;
@@ -2083,51 +2084,17 @@ export default class ScreenSharePlugin extends Plugin {
     this.refreshPreview();
   }
 
-  /** getDisplayMedia で 1 枚だけ取る。キャンセルされたら false */
-  async capturePreviewWeb() {
-    const stream = await this.pickDisplay(5);
-    if (!stream) return false;
-    const video = this.makeCaptureVideo(stream);
-    try {
-      // 最初のフレームが来るまで待つ（最大 3 秒）
-      for (let i = 0; i < 30 && !video.videoWidth; i++) await sleep(100);
-      await sleep(150);
-      if (!video.videoWidth) throw new Error('映像が始まりません');
-      this.setPreviewSource(video, video.videoWidth, video.videoHeight);
-      return true;
-    } finally {
-      for (const t of stream.getTracks()) t.stop();
-      video.srcObject = null;
-      video.remove();
-    }
-  }
-
-  /** 本体のネイティブ（Android）で 1 枚だけ取る。キャンセルされたら false */
-  async capturePreviewNative() {
-    const sc = disnans.screenCapture;
-    /** @type {(f: Disnans.ScreenCaptureFrame) => void} */
-    let got = () => {};
-    /** @type {Promise<Disnans.ScreenCaptureFrame | null>} */
-    const first = new Promise((resolve) => {
-      got = resolve;
-      setTimeout(() => resolve(null), 5000);
-    });
-    try {
-      await sc.start({ maxEdge: 1920, quality: 0.9, fps: 5, format: 'jpeg', color: 'full', keepaliveMs: 500 }, (f) => got(f));
-    } catch (e) {
-      if (isCancelError(e) || /cancel|denied|キャンセル/i.test(describeError(e))) return false;
-      throw e;
-    }
-    let f;
-    try {
-      f = await first;
-    } finally {
-      // 共有を始めていなければ止める（取り込みの途中で共有を始めたら、そのまま使う）
-      if (!this.sharing) await sc.stop().catch(() => {});
-    }
-    if (!f) throw new Error('画面が届きません');
-    this.previewSource = await imageToCanvas(f.data, f.mime);
-    return true;
+  /**
+   * プレビューを出さず、文言だけにする
+   * @param {string} text
+   */
+  showNoPreview(text) {
+    this.previewSource = null;
+    const els = this.previewEls;
+    if (!els?.img.isConnected) return;
+    els.img.hidden = true;
+    els.img.removeAttribute('src');
+    els.info.textContent = text;
   }
 
   /** 今の設定でプレビューを作り直す */
@@ -2149,7 +2116,8 @@ export default class ScreenSharePlugin extends Plugin {
       els.info.textContent =
         `${size.w}×${size.h}・${kind}・1 フレーム 約 ${formatBytes(est.imageBytes)}` +
         `・${this.settings.fps} FPS で動き続けると 約 ${formatBytes(est.bytesPerSec)}/秒` +
-        (est.capped ? '（上限で間引かれます）' : '');
+        (est.capped ? '（上限で間引かれます）' : '') +
+        (this.previewIsApp ? '（プレビューは disnans の画面）' : '');
     } catch (e) {
       els.info.textContent = 'プレビューを作れませんでした';
       console.warn('[screenshare] プレビューに失敗', e);

@@ -1,5 +1,6 @@
 //! Android の画面まわりのネイティブ機能。
 //! - 画面のキャプチャ（MediaProjection）: 縮小した JPEG / WebP / PNG のフレームを JS にイベントで渡す（`disnans.screenCapture`）
+//! - disnans 自身の画面の静止画（PixelCopy。許可のダイアログなし）（`disnans.screenCapture.snapshot`）
 //! - ピクチャーインピクチャー（Activity の小窓）（`disnans.pip`）
 //! コマンドは Rust 側で処理せず、そのまま Kotlin のプラグインに渡る。
 

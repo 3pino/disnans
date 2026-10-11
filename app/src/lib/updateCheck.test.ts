@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canBackgroundCheck, isCheckDue, versionToNotify } from './updateCheck';
+import { canBackgroundCheck, isCheckDue, showUpdateBadge, versionToNotify } from './updateCheck';
 import type { UpdateState } from './stores/updater.svelte';
 
 const HOUR = 60 * 60 * 1000;
@@ -53,5 +53,23 @@ describe('versionToNotify', () => {
   it('新しい版がなければ null', () => {
     expect(versionToNotify({ kind: 'latest' }, null)).toBeNull();
     expect(versionToNotify({ kind: 'error', message: 'x' }, null)).toBeNull();
+  });
+});
+
+describe('showUpdateBadge', () => {
+  it('新しい版が見つかっていて、まだ入れていない間は出す', () => {
+    expect(showUpdateBadge({ kind: 'available', version: '0.2.0', notes: null })).toBe(true);
+    expect(showUpdateBadge({ kind: 'permission' })).toBe(true);
+    expect(showUpdateBadge({ kind: 'downloading', downloaded: 10, total: 100 })).toBe(true);
+  });
+  it('確認中・最新・エラー・インストール中は出さない', () => {
+    const none: UpdateState[] = [
+      { kind: 'idle' },
+      { kind: 'checking' },
+      { kind: 'latest' },
+      { kind: 'error', message: 'x' },
+      { kind: 'installing' },
+    ];
+    for (const s of none) expect(showUpdateBadge(s)).toBe(false);
   });
 });

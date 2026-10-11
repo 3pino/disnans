@@ -5,6 +5,8 @@ import { isAndroid, isTauri } from '../config';
  * - screenCapture（API v9）: MediaProjection で画面を撮り、縮小した JPEG / WebP を JS に渡す。WebView に getDisplayMedia が無いため
  * - pip（API v9）: Activity のピクチャーインピクチャー
  * 画面の取得は、ユーザーの許可のダイアログ（システム）と、通知欄の常駐（フォアグラウンドサービス）を伴う。
+ * - screenCapture.snapshot（API v11）: ダイアログなしの静止画 1 枚。デスクトップ（Windows / Linux）でも使える。
+ *   デスクトップは本体の `screen_snapshot` コマンド（src-tauri/src/snapshot.rs）、Android は screen プラグインの `snapshot`（PixelCopy）
  */
 
 const native = (): boolean => isTauri() && isAndroid();
@@ -104,6 +106,7 @@ export const screenCaptureApi: Disnans.ScreenCapture = {
     if (!capturing) return;
     await invokeScreen('update_capture', { ...patch });
   },
+  snapshot,
   async stop() {
     if (!capturing) return;
     cleanup();
@@ -119,6 +122,55 @@ function cleanup(): void {
   capturing = false;
   for (const off of captureOff) off();
   captureOff = [];
+}
+
+// ---- 静止画（API v11） ----
+
+/** プレビューなどに使う静止画の JPEG の品質 */
+const SNAPSHOT_QUALITY = 0.85;
+
+/**
+ * デスクトップの `screen_snapshot` が返すバイナリ（先頭 12 バイトのヘッダー＋RGBA）を読む。
+ * Rust 側に画像のエンコーダーを入れないよう、JPEG への符号化は canvas で行う（snapshotDesktop）
+ */
+export function decodeSnapshotBytes(buf: ArrayBuffer): { width: number; height: number; source: 'screen' | 'app'; rgba: Uint8ClampedArray } {
+  if (buf.byteLength < 12) throw new Error('画面の画像が壊れています');
+  const view = new DataView(buf);
+  const width = view.getUint32(0, true);
+  const height = view.getUint32(4, true);
+  const source = view.getUint8(8) === 0 ? 'screen' : 'app';
+  const len = width * height * 4;
+  if (!width || !height || buf.byteLength < 12 + len) throw new Error('画面の画像が壊れています');
+  return { width, height, source, rgba: new Uint8ClampedArray(buf, 12, len) };
+}
+
+async function snapshotDesktop(): Promise<Disnans.ScreenSnapshot> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const res = await invoke<ArrayBuffer | number[]>('screen_snapshot');
+  const buf = res instanceof ArrayBuffer ? res : new Uint8Array(res).buffer;
+  const { width, height, source, rgba } = decodeSnapshotBytes(buf);
+  const cv = document.createElement('canvas');
+  cv.width = width;
+  cv.height = height;
+  const ctx = cv.getContext('2d');
+  if (!ctx) throw new Error('画像を作れません');
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), width, height), 0, 0);
+  return { dataUrl: cv.toDataURL('image/jpeg', SNAPSHOT_QUALITY), width, height, source };
+}
+
+async function snapshotAndroid(): Promise<Disnans.ScreenSnapshot> {
+  try {
+    const f = await invokeScreen<CaptureFramePayload>('snapshot', { maxEdge: 1920, quality: SNAPSHOT_QUALITY });
+    return { dataUrl: `data:${f.mime};base64,${f.data}`, width: f.width, height: f.height, source: 'app' };
+  } catch (e) {
+    throw toCaptureError(e);
+  }
+}
+
+/** 静止画を 1 枚撮る。選択や許可のダイアログは出さない */
+async function snapshot(): Promise<Disnans.ScreenSnapshot> {
+  if (!isTauri()) throw new Error('この環境では画面を撮れません');
+  return isAndroid() ? snapshotAndroid() : snapshotDesktop();
 }
 
 // ---- ピクチャーインピクチャー ----

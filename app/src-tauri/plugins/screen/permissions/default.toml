@@ -1,11 +1,12 @@
 "$schema" = "schemas/schema.json"
 
 [default]
-description = "画面のキャプチャと、ピクチャーインピクチャーを許可する"
+description = "画面のキャプチャ、自分の画面の静止画、ピクチャーインピクチャーを許可する"
 permissions = [
   "allow-start-capture",
   "allow-update-capture",
   "allow-stop-capture",
+  "allow-snapshot",
   "allow-enter-pip",
   "allow-register-listener",
   "allow-remove-listener",

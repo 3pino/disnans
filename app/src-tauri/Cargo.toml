@@ -41,6 +41,12 @@ tauri-plugin-clipboard-manager = "2"
 [target.'cfg(target_os = "linux")'.dependencies]
 # getUserMedia / WebRTC を有効にする設定（tauri が使うものと同じ版）
 webkit2gtk = { version = "2", features = ["v2_40"] }
+# 画面の静止画（screen_snapshot）: X11 のルートウィンドウを撮る（tauri が使うものと同じ版。新しいクレートは増えない）
+gdk = "0.18"
+
+# 画面の静止画（screen_snapshot）: GDI で主モニターを撮る（tauri が使うものと同じ版。新しいクレートは増えない）
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-apk-updater = { path = "plugins/apk-updater" }

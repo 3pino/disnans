@@ -3,6 +3,13 @@ package dev.disnans.screen
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.os.Handler
+import android.os.HandlerThread
+import android.util.Base64
+import android.view.PixelCopy
+import java.io.ByteArrayOutputStream
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.util.Rational
@@ -39,6 +46,14 @@ class StartCaptureArgs {
 class UpdateCaptureArgs {
   var quality: Double? = null
   var scale: Double? = null
+}
+
+@InvokeArg
+class SnapshotArgs {
+  /** 画像の長辺の最大（ピクセル） */
+  var maxEdge: Int = 1920
+  /** JPEG の品質（0〜1） */
+  var quality: Double = 0.85
 }
 
 @InvokeArg
@@ -156,6 +171,80 @@ class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
     val o = JSObject()
     o.put("reason", reason)
     activity.runOnUiThread { trigger("capture_end", o) }
+  }
+
+  // ---- 静止画（disnans 自身の画面） ----
+
+  /**
+   * disnans 自身の画面（Activity のウィンドウ）を 1 枚だけ撮って JPEG の base64 で返す。
+   * MediaProjection は使わないので、許可のダイアログも通知欄の常駐も出ない（ほかのアプリの画面は撮れない）。
+   * Android 8 以降は PixelCopy（WebView のハードウェア描画も写る）、それ未満は View を Canvas に描く
+   */
+  @Command
+  fun snapshot(invoke: Invoke) {
+    val args = invoke.parseArgs(SnapshotArgs::class.java)
+    activity.runOnUiThread {
+      try {
+        val window = activity.window
+        val decor = window.decorView
+        val w = decor.width
+        val h = decor.height
+        if (w <= 0 || h <= 0) {
+          invoke.reject("画面がまだ表示されていません")
+          return@runOnUiThread
+        }
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          val thread = HandlerThread("disnans-snapshot").apply { start() }
+          try {
+            PixelCopy.request(window, bmp, { result ->
+              thread.quitSafely()
+              if (result == PixelCopy.SUCCESS) {
+                resolveSnapshot(invoke, bmp, args)
+              } else {
+                bmp.recycle()
+                invoke.reject("画面を撮れませんでした（PixelCopy: $result）")
+              }
+            }, Handler(thread.looper))
+          } catch (ex: Exception) {
+            thread.quitSafely()
+            bmp.recycle()
+            invoke.reject(ex.message ?: "画面を撮れませんでした")
+          }
+        } else {
+          decor.draw(Canvas(bmp))
+          Thread { resolveSnapshot(invoke, bmp, args) }.start()
+        }
+      } catch (ex: Exception) {
+        invoke.reject(ex.message ?: "画面を撮れませんでした")
+      }
+    }
+  }
+
+  /** 縮小して JPEG にし、`{ data, mime, width, height }` で返す（UI スレッドの外で呼ぶ） */
+  private fun resolveSnapshot(invoke: Invoke, src: Bitmap, args: SnapshotArgs) {
+    try {
+      val maxEdge = args.maxEdge.coerceIn(64, 4096)
+      val scale = minOf(1.0, maxEdge.toDouble() / maxOf(src.width, src.height))
+      val bmp = if (scale < 1.0) {
+        val w = (src.width * scale).toInt().coerceAtLeast(1)
+        val h = (src.height * scale).toInt().coerceAtLeast(1)
+        Bitmap.createScaledBitmap(src, w, h, true).also { src.recycle() }
+      } else {
+        src
+      }
+      val out = ByteArrayOutputStream()
+      bmp.compress(Bitmap.CompressFormat.JPEG, (args.quality * 100).toInt().coerceIn(1, 100), out)
+      val o = JSObject()
+      o.put("data", Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP))
+      o.put("mime", "image/jpeg")
+      o.put("width", bmp.width)
+      o.put("height", bmp.height)
+      bmp.recycle()
+      invoke.resolve(o)
+    } catch (ex: Exception) {
+      invoke.reject(ex.message ?: "画像にできませんでした")
+    }
   }
 
   // ---- ピクチャーインピクチャー ----

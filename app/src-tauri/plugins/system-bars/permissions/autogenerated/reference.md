@@ -1,11 +1,12 @@
 ## Default Permission
 
-システムバーのアイコンの明暗の変更と、ナビゲーションバーを隠すことを許可する
+システムバーのアイコンの明暗の変更と、ナビゲーションバーを隠すこと、没入モードを許可する
 
 #### This default permission set includes the following:
 
 - `allow-set-style`
 - `allow-set-navigation-bar-hidden`
+- `allow-set-immersive`
 
 ## Permission Table
 
@@ -15,6 +16,32 @@
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`system-bars:allow-set-immersive`
+
+</td>
+<td>
+
+Enables the set_immersive command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`system-bars:deny-set-immersive`
+
+</td>
+<td>
+
+Denies the set_immersive command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>

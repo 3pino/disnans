@@ -68,7 +68,7 @@ declare global {
       readonly audio: Audio;
       /** 本体の通話（API v8。`addPanel` と `bufferedAmount` は v10）。画面共有などの拡張向け。通話そのもの（参加・ミュート・出力先）は本体の機能で、ここからは状態の読み取りと、参加者どうしのデータの送受信だけ */
       readonly call: Call;
-      /** 画面のキャプチャ（API v9。Android のネイティブ）。画面共有向け。`supported` が false の環境では `getDisplayMedia` を使う */
+      /** 画面のキャプチャ（API v9。Android のネイティブ。`snapshot` は v11 でデスクトップも）。画面共有向け。`supported` が false の環境では `getDisplayMedia` を使う */
       readonly screenCapture: ScreenCapture;
       /** ピクチャーインピクチャー（API v9。Android のネイティブ）。デスクトップは `<video>` の `requestPictureInPicture` を使う */
       readonly pip: Pip;
@@ -104,6 +104,16 @@ declare global {
       height: number;
     };
 
+    /** `screenCapture.snapshot` が返す静止画（API v11） */
+    type ScreenSnapshot = {
+      /** `data:image/jpeg;base64,...` */
+      dataUrl: string;
+      width: number;
+      height: number;
+      /** `screen`: 画面全体（主モニター）、`app`: disnans 自身の画面（ほかのアプリは写らない） */
+      source: 'screen' | 'app';
+    };
+
     /**
      * 画面のキャプチャ（API v9）。Android の WebView には `getDisplayMedia` が無いので、MediaProjection で撮った
      * 縮小済みの画像を渡す。開始すると OS の確認のダイアログが出て、通知欄に常駐の表示（フォアグラウンドサービス）が出る。
@@ -120,6 +130,13 @@ declare global {
       update(patch: { quality?: number; scale?: number }): Promise<void>;
       /** 止める（撮っていなければ何もしない） */
       stop(): Promise<void>;
+      /**
+       * 静止画を 1 枚だけ撮る（API v11）。どの画面を共有するかの選択や、許可のダイアログを出さない（設定のプレビューなど向け）。
+       * `supported` に関係なく、本体のアプリ（Tauri）で使える。撮れるもの: Windows は主モニター全体、
+       * Linux は X11 なら主モニター全体・Wayland などでは disnans 自身の画面、Android は disnans 自身の画面（`source` で分かる）。
+       * 長辺は 1920 以下に縮める。ブラウザ・macOS など撮れない環境では例外
+       */
+      snapshot(): Promise<ScreenSnapshot>;
     }
 
     /**

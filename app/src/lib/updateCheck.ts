@@ -23,3 +23,14 @@ export function versionToNotify(state: UpdateState, notifiedVersion: string | nu
   if (state.kind !== 'available') return null;
   return state.version === notifiedVersion ? null : state.version;
 }
+
+/** 新しい版があることを示す点（ナビゲーションの設定の項目）の読み上げ用の文言 */
+export const UPDATE_BADGE_LABEL = '新しいバージョンがあります';
+
+/**
+ * 新しい版があることを示す点を出すか。新しい版が見つかっていて、まだ入れていない間（待機・許可待ち・ダウンロード中）だけ true。
+ * 確認中・最新・エラー・インストール中は false（入れ終わって新しい版がなくなったら消える）
+ */
+export function showUpdateBadge(state: UpdateState): boolean {
+  return state.kind === 'available' || state.kind === 'permission' || state.kind === 'downloading';
+}

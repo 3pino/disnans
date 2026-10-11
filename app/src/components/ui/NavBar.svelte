@@ -7,6 +7,8 @@
     icon: IconRef;
     /** 右上に出す数字など（0・空文字列・null なら出さない） */
     badge?: number | string | null;
+    /** 新しいものがあることを示す点（右上に出す）。値は読み上げ用の文言（null・空文字列なら出さない） */
+    alert?: string | null;
   };
 </script>
 
@@ -47,6 +49,9 @@
         <Icon icon={it.icon} size={22} />
         {#if it.badge !== undefined && it.badge !== null && it.badge !== 0 && it.badge !== ''}
           <span class="badge nav-bar-item-badge">{it.badge}</span>
+        {/if}
+        {#if it.alert}
+          <span class="nav-bar-item-alert" role="img" aria-label={it.alert}></span>
         {/if}
       </span>
       <span class="nav-bar-item-label">{it.label}</span>

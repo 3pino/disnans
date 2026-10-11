@@ -3,6 +3,7 @@ const COMMANDS: &[&str] = &[
     "start_capture",
     "update_capture",
     "stop_capture",
+    "snapshot",
     "enter_pip",
     "register_listener",
     "remove_listener",

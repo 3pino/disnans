@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-update-capture"
+description = "Enables the update_capture command without any pre-configured scope."
+commands.allow = ["update_capture"]
+
+[[permission]]
+identifier = "deny-update-capture"
+description = "Denies the update_capture command without any pre-configured scope."
+commands.deny = ["update_capture"]
