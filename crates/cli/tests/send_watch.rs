@@ -132,6 +132,7 @@ enum Script {
     /// `message.send` にエラーで答える。client_id の付け方は `ids` で決める。
     Error { code: &'static str, ids: ErrorIds },
     /// 1 本目の接続は message.created を送ってから切る。2 本目以降は開いたままにする。
+    #[cfg_attr(not(unix), allow(dead_code))]
     WatchReconnect,
     /// 1 本目の接続は message.created を送ってから切る。2 本目以降は upgrade を 401 で拒否する。
     WatchReconnectThen401,
@@ -456,6 +457,7 @@ fn wait_timeout(child: &mut Child, timeout: Duration) -> ExitStatus {
 }
 
 /// `watch` を起動したまま、NDJSON を 1 行ずつ受け取る。
+#[cfg_attr(not(unix), allow(dead_code))]
 struct Watch {
     guard: ChildGuard,
     lines: mpsc::Receiver<String>,

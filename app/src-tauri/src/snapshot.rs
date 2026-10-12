@@ -37,7 +37,7 @@ impl Shot {
     /// 全部真っ黒（または透明）か。X11 のルートウィンドウが中身を持たない環境（XWayland など）で起きる
     fn is_blank(&self) -> bool {
         // 全部を見ると重いので、間引いて見る
-        self.rgba.chunks_exact(4).step_by(97).all(|p| p[0] == 0 && p[1] == 0 && p[2] == 0)
+        self.rgba.as_chunks::<4>().0.iter().step_by(97).all(|p| p[0] == 0 && p[1] == 0 && p[2] == 0)
     }
 }
 
@@ -225,7 +225,7 @@ mod windows_gdi {
                         Err("画面を撮れませんでした（GetDIBits）".to_string())
                     } else {
                         // BGRA → RGBA（GDI の α は意味を持たないので不透明にする）
-                        for p in buf.chunks_exact_mut(4) {
+                        for p in buf.as_chunks_mut::<4>().0 {
                             p.swap(0, 2);
                             p[3] = 255;
                         }

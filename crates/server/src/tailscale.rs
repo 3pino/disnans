@@ -6,12 +6,18 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
 use axum::body::Bytes;
+#[cfg(unix)]
 use http_body_util::{BodyExt, Empty};
+#[cfg(unix)]
 use hyper::{Request, StatusCode};
+#[cfg(unix)]
 use hyper_util::rt::TokioIo;
+#[cfg(unix)]
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
+#[cfg(unix)]
 use tokio::net::UnixStream;
 
 /// whois の結果を覚えておく時間。同じ端末（IP）からのリクエストのたびに問い合わせないようにする。
@@ -27,6 +33,7 @@ pub struct Profile {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(not(unix), allow(dead_code))]
 #[serde(rename_all = "PascalCase")]
 struct WhoIsResponse {
     user_profile: UserProfile,
@@ -79,6 +86,15 @@ impl Tailscale {
         cache.get(&ip).map(|(_, p)| p.clone())
     }
 
+    #[cfg(not(unix))]
+    async fn fetch(&self, _addr: SocketAddr) -> Result<Option<Profile>, String> {
+        Err(format!(
+            "tailscaled の unix ソケット（{}）はこの OS では使えません",
+            self.socket.display()
+        ))
+    }
+
+    #[cfg(unix)]
     async fn fetch(&self, addr: SocketAddr) -> Result<Option<Profile>, String> {
         let stream = UnixStream::connect(&self.socket).await.map_err(|e| {
             format!(
@@ -135,6 +151,7 @@ impl Tailscale {
     }
 }
 
+#[cfg_attr(not(unix), allow(dead_code))]
 fn parse_profile(p: UserProfile) -> Profile {
     let display_name = if p.display_name.trim().is_empty() {
         default_display_name(&p.login_name)
