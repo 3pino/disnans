@@ -40,6 +40,20 @@
 - GUI と CLI/TUI が同一下書きを別々に更新した場合、後から保存した内容が優先される。逐次保存と同時書込みでファイルが壊れない。
 - Linux と Windows で共有ファイルの配置・権限、CLI の設定読込、インストール後の起動を確認する。実機 UI/TUI の見た目と操作感は利用者に最終確認を依頼する。
 
+### ステップ3: CLI send / watch
+
+試験は `crates/cli/tests/send_watch.rs`。実サーバー（開発モード・一時データ）と、障害を注入する fake WebSocket サーバーを使う。すべての子プロセスは一時ディレクトリに隔離し、10 秒で強制終了する。
+
+- 実サーバー: `send` の成功は確認済みの message.id を標準出力に 1 行で書き、`messages --json` で本文が見える。`--json` は `message_id` と `client_id` を持つ。`--stdin` は複数行を保ち、末尾の改行を 1 個だけ除く。`--silent` も受理される。
+- 入力エラー: 空本文、10001 文字、TEXT と `--stdin` の併用、本文がない（stdin が空/null）は終了コード 2 で、何も送らない。10000 文字ちょうどは送れる。
+- 接続拒否（送信前・`watch` の初回）は 3。`watch` の初回接続で HTTP 401 は 1。
+- `watch --json` は `stream.connected`（generation 1）のあと、別プロセスの送信を `message.created` として 1 件だけ出す（履歴は再送しない）。Unix では SIGINT で 130 で終わる。標準出力の読み手がいなくなったら 0 で終わる。
+- fake サーバーで、送信後の切断・ack 無し（隠し環境変数 `DISNANS_CLI_ACK_TIMEOUT_MS` で短縮）・`internal` など不明なエラーは 4。確実な拒否コード（`empty_message`、`body_too_long` など 7 種）は 1。別の client_id または client_id なしのエラーは、この送信の確定判断に使われず ack 待ちのタイムアウトで 4。どの場合も `message.send` が fake に 1 件だけ届き、再接続しない（自動再送なし）。
+- fake サーバーで、切断後の再接続は `stream.gap`（理由付き）を挟んで generation 2 の `stream.connected` を出す。
+- fake サーバーで、再接続が 401 で拒否されると `watch` は stderr に診断を出して 1 で終わる。出力を待ち続けず、有界の時間で終了する。
+- 送信の ack 待ちの時間は `DISNANS_CLI_ACK_TIMEOUT_MS` で短くして試験する。不正な値は CLI が終了コード 2 で拒む。
+- 保証外: TTY の標準入力（pty が必要なため自動試験にしない。stdin が null/閉じられた場合は試験する）、Windows の Ctrl-C（SIGINT 試験は Unix のみ）、wss、実機のネットワーク断、idle timeout（90 秒のため対象外）、GUI の WebSocket 表示との連携、見た目・端末表示の確認。
+
 ## CI・配布検証（別段階）
 
 - Linux は既存の `cargo test --workspace` が新しい core/CLI と結合テストも実行するため、追加のテストステップは不要。Windows は新しい `client-windows` ジョブで core/CLI の clippy と `cargo test -p disnans-client-core -p disnans-cli --locked` を実行し、パス・終了コード・子プロセス終了も検証する。

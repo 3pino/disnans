@@ -1,5 +1,8 @@
 mod args;
+mod live;
 mod output;
+mod send;
+mod watch;
 
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -7,7 +10,7 @@ use std::process::ExitCode;
 use args::{Cli, Command, ConfigAction};
 use clap::Parser;
 use disnans_client_core::{
-    ClientError, LocalStore, MessagesQuery, RestClient, ServerUrl, StoreError, UrlError,
+    ClientError, LocalStore, MessagesQuery, RestClient, ServerUrl, StoreError, UrlError, WsError,
 };
 
 #[derive(Debug)]
@@ -16,6 +19,28 @@ enum CliError {
     Store(StoreError),
     Url(UrlError),
     Client(ClientError),
+    Ws(WsError),
+    Body(send::BodyError),
+    /// サーバーが確実に未保存と示した拒否（終了コード1）。
+    SendRejected {
+        client_id: String,
+        code: String,
+        message: String,
+    },
+    /// 何も書き込む前に送信を断念した（終了コード1）。
+    SendNotSent(String),
+    /// 送信を試みた後で成否が分からない（終了コード4）。自動再送はしない。
+    SendUnknown {
+        client_id: Option<String>,
+        detail: String,
+    },
+    /// 再接続が認証拒否などで終端になった（終了コード1）。
+    WatchFailed {
+        reason: String,
+        http_status: Option<u16>,
+    },
+    /// Ctrl-C。送信前または watch の正常中断（終了コード130）。
+    Interrupted,
     Json(serde_json::Error),
     Io(io::Error),
 }
@@ -25,6 +50,12 @@ impl CliError {
         match self {
             Self::Usage(_) | Self::Url(_) | Self::Client(ClientError::InvalidDevUser) => 2,
             Self::Client(ClientError::Request(e)) if e.is_connect() || e.is_timeout() => 3,
+            Self::Ws(WsError::InvalidUrl(_) | WsError::InvalidDevUser) => 2,
+            Self::Ws(WsError::Connect(_) | WsError::Timeout) => 3,
+            Self::Body(send::BodyError::Io(_)) => 1,
+            Self::Body(_) => 2,
+            Self::SendUnknown { .. } => 4,
+            Self::Interrupted => 130,
             _ => 1,
         }
     }
@@ -37,6 +68,37 @@ impl std::fmt::Display for CliError {
             Self::Store(e) => write!(f, "{e}"),
             Self::Url(e) => write!(f, "{e}"),
             Self::Client(e) => write!(f, "{e}"),
+            Self::Ws(e) => write!(f, "{e}"),
+            Self::Body(e) => write!(f, "{e}"),
+            Self::SendRejected {
+                client_id,
+                code,
+                message,
+            } => write!(
+                f,
+                "サーバーが投稿を受け付けませんでした ({code}): {message} [client_id: {client_id}]"
+            ),
+            Self::SendNotSent(reason) => write!(f, "送信していません: {reason}"),
+            Self::SendUnknown { client_id, detail } => {
+                f.write_str(
+                    "送信結果が不明です。二重投稿を避けるため再送していません。`disnans messages` で確認してください",
+                )?;
+                if let Some(id) = client_id {
+                    write!(f, " [client_id: {id}]")?;
+                }
+                write!(f, " ({detail})")
+            }
+            Self::WatchFailed {
+                reason,
+                http_status,
+            } => {
+                write!(f, "監視を続けられません: {reason}")?;
+                if let Some(status) = http_status {
+                    write!(f, " (HTTP {status})")?;
+                }
+                Ok(())
+            }
+            Self::Interrupted => f.write_str("中断しました"),
             Self::Json(e) => write!(f, "JSONを生成できませんでした: {e}"),
             Self::Io(e) => write!(f, "標準出力に書けませんでした: {e}"),
         }
@@ -56,6 +118,16 @@ impl From<UrlError> for CliError {
 impl From<ClientError> for CliError {
     fn from(value: ClientError) -> Self {
         Self::Client(value)
+    }
+}
+impl From<WsError> for CliError {
+    fn from(value: WsError) -> Self {
+        Self::Ws(value)
+    }
+}
+impl From<send::BodyError> for CliError {
+    fn from(value: send::BodyError) -> Self {
+        Self::Body(value)
     }
 }
 impl From<serde_json::Error> for CliError {
@@ -137,6 +209,13 @@ async fn run(cli: Cli) -> Result<String, CliError> {
                 Ok(output::human_messages(&messages, &users))
             }
         }
+        Command::Send(args) => {
+            let body = live::read_send_body(&args)?;
+            let server = resolve_server(cli.server.as_deref(), saved_server)?;
+            live::send(server, cli.dev_user, body, args.silent, args.json).await
+        }
+        // `watch` は出力を逐次書くため `main` が直接扱う。
+        Command::Watch(_) => Err(CliError::Usage("watch は直接実行します".into())),
     }
 }
 
@@ -164,6 +243,16 @@ fn report_error(e: CliError, stderr: &mut impl Write) -> u8 {
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Command::Watch(opts) = &cli.command {
+        let result = match resolve_server(cli.server.as_deref(), saved_server) {
+            Ok(server) => live::watch(server, cli.dev_user.clone(), opts.json).await,
+            Err(e) => Err(e),
+        };
+        return ExitCode::from(match result {
+            Ok(()) => 0,
+            Err(e) => report_error(e, &mut io::stderr().lock()),
+        });
+    }
     let result = run(cli).await;
     ExitCode::from(report(
         result,

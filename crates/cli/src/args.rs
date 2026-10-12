@@ -27,6 +27,33 @@ pub enum Command {
     Me(JsonOption),
     /// メインチャットの履歴を表示する（古い順）。
     Messages(MessagesArgs),
+    /// メインチャットへ投稿する。自動再送はしない。
+    Send(SendArgs),
+    /// メインチャットの新着・編集・削除を1行ずつ表示し続ける。
+    Watch(JsonOption),
+}
+
+#[derive(Debug, Args)]
+pub struct SendArgs {
+    /// 投稿する本文。引数はプロセス一覧やシェル履歴に残るため、機密や長文・複数行は `--stdin` を使う。
+    #[arg(
+        value_name = "TEXT",
+        conflicts_with = "stdin",
+        required_unless_present = "stdin"
+    )]
+    pub text: Option<String>,
+
+    /// 標準入力を EOF まで読んで本文にする。
+    #[arg(long)]
+    pub stdin: bool,
+
+    /// 通知を送らずに投稿する。
+    #[arg(long)]
+    pub silent: bool,
+
+    /// 確認済みの message_id と client_id を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -126,10 +153,42 @@ mod tests {
 
     #[test]
     fn advertises_only_implemented_commands() {
-        for unavailable in ["send", "watch", "tui", "threads"] {
+        for unavailable in ["tui", "threads"] {
             let error = Cli::try_parse_from(["disnans", unavailable]).unwrap_err();
             assert_eq!(error.kind(), ErrorKind::InvalidSubcommand);
         }
+    }
+
+    #[test]
+    fn send_requires_exactly_one_body_source() {
+        assert!(Cli::try_parse_from(["disnans", "send"]).is_err());
+        assert!(Cli::try_parse_from(["disnans", "send", "本文", "--stdin"]).is_err());
+        let inline =
+            Cli::try_parse_from(["disnans", "send", "本文", "--silent", "--json"]).unwrap();
+        assert!(matches!(
+            inline.command,
+            Command::Send(SendArgs { text: Some(ref t), stdin: false, silent: true, json: true }) if t == "本文"
+        ));
+        let stdin = Cli::try_parse_from(["disnans", "send", "--stdin"]).unwrap();
+        assert!(matches!(
+            stdin.command,
+            Command::Send(SendArgs {
+                text: None,
+                stdin: true,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn watch_accepts_json_flag_and_no_thread_options() {
+        let watch = Cli::try_parse_from(["disnans", "watch", "--json"]).unwrap();
+        assert!(matches!(
+            watch.command,
+            Command::Watch(JsonOption { json: true })
+        ));
+        assert!(Cli::try_parse_from(["disnans", "watch", "--thread", "x"]).is_err());
+        assert!(Cli::try_parse_from(["disnans", "send", "--thread", "x", "a"]).is_err());
     }
 
     #[test]

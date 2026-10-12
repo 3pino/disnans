@@ -9,13 +9,15 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-disnans-client-core = { path = "../client-core" }
+disnans-client-core = { path = "../client-core", features = ["ws"] }
 disnans-shared = { path = "../shared" }
 serde = "1"
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "time", "io-util", "io-std"] }
 
 [dev-dependencies]
 axum = "0.8"
 disnans-server = { path = "../server" }
 tempfile = "3"
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }

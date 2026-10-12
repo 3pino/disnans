@@ -1,9 +1,29 @@
 # disnans-client-core
 
-Shared Rust client-side primitives for the GUI, CLI, and TUI. The initial API provides normalized server URLs, REST reads (`me`, `users`, and message history), and shared local config/draft storage. WebSocket transport, reconnect policy, and send-result correlation are deliberately not implemented in this crate yet.
+Shared Rust client-side primitives for the GUI, CLI, and TUI. The initial API provides normalized server URLs, REST reads (`me`, `users`, and message history), and shared local config/draft storage. The WebSocket client is available behind the `ws` feature (see below).
 
 ## Storage contract
 
 `LocalStore` methods do synchronous filesystem I/O; async callers must use a blocking context. Config and drafts live separately under platform user directories. Draft keys include normalized server URL, user ID, and main/thread place. Writes are serialized across processes with OS file locks and committed through a same-directory temporary file plus atomic replacement. Missing values and explicit clears are distinct (`StoredValue::Missing` vs `StoredValue::Cleared`); clears are persisted as tombstones so legacy values cannot reappear. `import_*_if_missing` methods import legacy data only when no shared value (including a tombstone) exists. Corrupt or unknown-schema data returns an error and is not overwritten.
 
 Linux uses XDG config/data roots (falling back to `~/.config` and `~/.local/share` if unset or non-absolute); Windows uses APPDATA/LOCALAPPDATA. Absolute `DISNANS_CLIENT_CONFIG_DIR` and `DISNANS_CLIENT_DATA_DIR` overrides support isolated tests; a present relative/empty override is an error. Newly created Unix directories/files are restricted to user-only permissions without changing permissions on existing directories. Windows relies on the user-profile directory ACL. Storage operations can fail and callers must preserve old values until a new write has succeeded.
+
+## WebSocket client (feature `ws`)
+
+Enable with `features = ["ws"]`. The desktop GUI keeps its TypeScript WebSocket and does not enable this feature.
+
+- `ChatConnection::connect(&server, ConnectOptions)` opens `/api/ws` (`ws://` or `wss://`). The development identity goes in the `X-Dev-User` header (visible ASCII only), never in the URL. Redirects are never followed. TLS uses the webpki root set. Frames larger than 8 MiB are rejected. The connection waits for `hello`; events before `hello` are ignored. `me()` and `users()` come from `hello`.
+- `ConnectOptions::idle_timeout` (default 90 s, matching the server): if no frame arrives for this long, `next_event` returns `Disconnected` with reason `"idle timeout"`. `send_message` refuses to write once this much time has passed without the client writing anything, because the server would have dropped the connection. Pongs are only written while the connection is being read.
+- `ChatConnection::send_message(body, silent, ack_timeout)` and `send_message_with_id(client_id, body, silent, ack_timeout)` send one main-chat message and return a `SendOutcome`. `new_client_id()` creates an ID you can print before sending. Only a `message.created` or `error` carrying this call's `client_id` on the same connection settles the result; errors for other IDs are ignored. `Rejected` is returned only for codes that guarantee the message was not committed (`empty_message`, `body_too_long`, `nested_thread`, `thread_not_found`, `reply_not_found`, `reply_other_place`, `invalid_attachment`). Everything else after the write is `Unknown`. Messages are never resent automatically. `NotSent` means nothing was written. Other events received while waiting are discarded, so do not use the same connection as a watch.
+- `ChatConnection::next_event()` is cancel-safe and returns `ServerEvent`s. Ping frames are answered internally.
+- `ChatWatch::start(&server, ConnectOptions)` opens the first connection and returns its error without retrying. `next()` yields:
+  - `Connected { generation, me }`: generation 1 is the first connection.
+  - `Event { generation, event }`.
+  - `Gap { generation, reason }`: the connection ended. Events from this point until the next `Connected` with generation 2 or more may be lost.
+  - `Failed { reason, http_status }`: reconnecting stopped (HTTP 401 or 403). This is terminal, and every later `next()` returns the same `Failed`.
+
+  After a disconnect the watch reconnects with jittered exponential backoff (1 s, doubling, capped at 30 s). The backoff resets only after a connection that lived at least 30 s. Events are not replayed.
+- Refetch rules: after `Connected { generation >= 2 }`, refetch history over REST and remove overlaps by message ID. Do not refetch during a disconnect gap; the next `Connected` covers it. For `Gap { reason: "lagged" }`, refetch now. The queue is bounded at 256 items. On overflow, queued events and older connection items are dropped, and one `lagged` gap plus the newest `Connected` are kept, so the queue cannot grow without bound.
+- Dropping a `ChatWatch` aborts its task. `close()` shuts it down gracefully.
+
+Both types must be used inside a Tokio runtime.

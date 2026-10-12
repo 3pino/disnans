@@ -110,7 +110,6 @@ ui.button({ icon: 'settings', label: '設定', variant: 'ghost', onClick: () => 
 ```
 
 - `variant: 'ghost'` は枠も背景もないボタンです。ホバー・フォーカス・押している間だけ背景に色が付きます
-
 - `disabled` はあとから `el.disabled = true` でも変えられます
 - 枠のない小さなアイコンのボタンは、`<button class="icon-btn">` に `ui.icon(...)` を入れて作れます
 
@@ -244,7 +243,7 @@ ui.confirm(opts: { title: string; body?: string; okLabel?: string; ngLabel?: str
 ```
 
 確認ダイアログを出し、OK なら `true` を返します。`danger` で OK ボタンが赤になります。
-ボタンの文字は `okLabel`（既定は「OK」）と `ngLabel`（取り消すほう。既定は「キャンセル」）で変えられます。
+ボタンの文字は `okLabel`（既定は「OK」）と `ngLabel`（既定は「キャンセル」）で変えられます。
 
 ```js
 const ok = await ui.confirm({ title: 'やり直しますか？', okLabel: 'やり直す', ngLabel: 'やめる', danger: true });
