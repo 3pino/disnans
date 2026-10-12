@@ -2,7 +2,7 @@
 /// <reference path="../../packages/plugin-sdk/index.d.ts" />
 
 /*
- * 画面共有: 通話の拡張の実例（API v11 の disnans.call / screenCapture / pip / ui.onBack / ui.setImmersive）。
+ * 画面共有: 通話の拡張の実例（API v12 の disnans.call / screenCapture / pip / ui.onBack / ui.setImmersive）。
  *
  * できること:
  * 1. 通話の全画面の [画面を共有] を押すと画面を選び、縮小した画像（JPEG / WebP / PNG）を一定間隔で call.emit（サーバー中継）に流す。

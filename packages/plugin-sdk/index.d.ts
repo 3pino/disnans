@@ -1,5 +1,5 @@
 /**
- * disnans プラグインの型定義（ホスト API バージョン 9）。
+ * disnans プラグインの型定義（ホスト API バージョン 12）。
  *
  * プラグインの main.js は ES モジュールで、`Plugin` を継承したクラスを `export default` する。
  * ホスト API はグローバルの `disnans` から取る（`import` は使わない）。
