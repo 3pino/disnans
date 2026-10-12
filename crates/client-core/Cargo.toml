@@ -1,0 +1,17 @@
+[package]
+name = "disnans-client-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+disnans-shared = { path = "../shared" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tempfile = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+unicode-normalization = "0.1"
+url = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "io-util"] }

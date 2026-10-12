@@ -19,6 +19,18 @@ jobs:
       - name: 生成した TypeScript の型がコミット済みか確認
         run: git diff --exit-code app/src/lib/protocol
 
+  # 共通ファイルの排他・置換と CLI のプロセス境界は Windows でも検証する。
+  client-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: swatinem/rust-cache@v2
+      - run: cargo clippy -p disnans-client-core -p disnans-cli --all-targets --locked -- -D warnings
+      - run: cargo test -p disnans-client-core -p disnans-cli --locked
+
   app:
     runs-on: ubuntu-latest
     defaults:

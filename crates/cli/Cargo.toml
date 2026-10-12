@@ -1,0 +1,21 @@
+[package]
+name = "disnans-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "disnans"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+disnans-client-core = { path = "../client-core" }
+disnans-shared = { path = "../shared" }
+serde = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+
+[dev-dependencies]
+axum = "0.8"
+disnans-server = { path = "../server" }
+tempfile = "3"

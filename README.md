@@ -134,6 +134,21 @@ cd app && npm install && npm run dev        # クライアント
 
 デスクトップ版では、配布版でも `Ctrl+Shift+I` で開発者ツールを開けます。
 
+### CLI（開発中）
+
+Rust の共通クライアント基盤と、読み取り用 CLI の土台を追加しています。現時点では設定・自分の情報・メインチャットの履歴を扱い、投稿・新着の監視・TUI はまだ使えません。GUI の保存先・通信は従来のままで、配布インストーラへの同梱も後続の段階です。
+
+別ターミナルで開発サーバーを起動したうえで、次を実行します。
+
+```sh
+cargo run -p disnans-cli -- --server http://127.0.0.1:8080 --dev-user alice me --json
+cargo run -p disnans-cli -- --server http://127.0.0.1:8080 --dev-user alice messages --json
+```
+
+`--dev-user` は開発サーバー専用です。本番では省略し、GUI と同じ Tailscale のサーバーへ接続します。接続先は `config set-server <URL>` で保存でき、`--server` は一時指定です。保存ファイルを GUI が読むようになるのは移行後です。JSON 出力には個人データが含まれるため、共有時は内容を確認してください。
+
+詳しくは [CLI の説明](crates/cli/README.md)、[CLI/TUI 要件](SPEC_cli_tui.md)、[共通基盤と移行の境界](docs/CLIENT_ARCHITECTURE.md) を参照してください。
+
 | ドキュメント | 内容 |
 |---|---|
 | [SPEC.md](SPEC.md) | 要件定義 |

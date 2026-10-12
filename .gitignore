@@ -11,5 +11,6 @@ node_modules/
 /app/src-tauri/plugins/*/android/.tauri
 
 # 個人的なファイル
+/.pi/
 scripts/deploy.sh
 CLAUDE.md
