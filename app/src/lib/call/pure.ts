@@ -78,6 +78,23 @@ export function clampLimitDb(v: unknown): number {
   return Math.min(LIMIT_DB_MAX, Math.max(LIMIT_DB_MIN, v));
 }
 
+const LIMIT_STRENGTH_DB = { weak: -3, medium: -6, strong: -12 } as const;
+export type LimiterStrength = 'none' | keyof typeof LIMIT_STRENGTH_DB;
+
+/** 保存形式は変えず、表示だけを4段階にまとめる。中間の保存値は近い段階で表示する */
+export function limiterStrength(s: Pick<CallSettingsData, 'limiter' | 'limitDb'>): LimiterStrength {
+  if (!s.limiter) return 'none';
+  const db = clampLimitDb(s.limitDb);
+  if (db > (LIMIT_STRENGTH_DB.weak + LIMIT_STRENGTH_DB.medium) / 2) return 'weak';
+  if (db > (LIMIT_STRENGTH_DB.medium + LIMIT_STRENGTH_DB.strong) / 2) return 'medium';
+  return 'strong';
+}
+
+/** 「なし」は以前の上限を残してオフにする。それ以外は上限とオンを一緒に保存する */
+export function limiterStrengthPatch(v: LimiterStrength): Pick<CallSettingsData, 'limiter'> & Partial<Pick<CallSettingsData, 'limitDb'>> {
+  return v === 'none' ? { limiter: false } : { limiter: true, limitDb: LIMIT_STRENGTH_DB[v] };
+}
+
 /** dB を振幅の倍率に直す（-6 dB ≒ 0.501） */
 export function dbToLinear(db: number): number {
   return Math.pow(10, db / 20);

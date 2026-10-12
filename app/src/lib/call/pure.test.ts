@@ -16,6 +16,8 @@ import {
   diffPeers,
   floatToInt16,
   int16ToFloat,
+  limiterStrength,
+  limiterStrengthPatch,
   normalizeDevice,
   notificationContent,
   parseCallSettings,
@@ -95,6 +97,41 @@ describe('設定の読み込み', () => {
     expect(parseCallSettings({ limiter: 'no', limitDb: 'x' })).toMatchObject({ limiter: true, limitDb: -6 });
     expect(parseCallSettings({ limitDb: -40 }).limitDb).toBe(-18);
     expect(parseCallSettings({ limitDb: 5 }).limitDb).toBe(-3);
+  });
+});
+
+describe('音量キャップの4段階', () => {
+  it('既定・以前のオン／オフと3つの上限を引き継ぐ', () => {
+    expect(limiterStrength(DEFAULT_CALL_SETTINGS)).toBe('medium');
+    expect(limiterStrength(parseCallSettings({ limiter: false, limitDb: -12 }))).toBe('none');
+    expect(limiterStrength(parseCallSettings({ limiter: true, limitDb: -3 }))).toBe('weak');
+    expect(limiterStrength(parseCallSettings({ limiter: true, limitDb: -6 }))).toBe('medium');
+    expect(limiterStrength(parseCallSettings({ limiter: true, limitDb: -12 }))).toBe('strong');
+  });
+
+  it('選択した強さの上限とオンを一緒に設定する', () => {
+    for (const [level, db] of [['weak', -3], ['medium', -6], ['strong', -12]] as const) {
+      const previous = parseCallSettings({ limiter: false, limitDb: -6 });
+      const saved = parseCallSettings({ ...previous, ...limiterStrengthPatch(level) });
+      expect(saved).toMatchObject({ limiter: true, limitDb: db });
+      expect(limiterStrength(saved)).toBe(level);
+    }
+  });
+
+  it('なしはオフにするが、以前の上限を消さない', () => {
+    const previous = parseCallSettings({ limiter: true, limitDb: -12 });
+    const saved = parseCallSettings({ ...previous, ...limiterStrengthPatch('none') });
+    expect(saved).toMatchObject({ limiter: false, limitDb: -12 });
+    expect(limiterStrength(saved)).toBe('none');
+  });
+
+  it('中間の保存値は近い段階で表示し、表示だけでは設定を変えない', () => {
+    const saved = parseCallSettings({ limitDb: -8 });
+    expect(limiterStrength(saved)).toBe('medium');
+    expect(saved.limitDb).toBe(-8);
+    expect(limiterStrength(parseCallSettings({ limitDb: -4 }))).toBe('weak');
+    expect(limiterStrength(parseCallSettings({ limitDb: -9 }))).toBe('strong');
+    expect(limiterStrength(parseCallSettings({ limitDb: NaN }))).toBe('medium');
   });
 });
 

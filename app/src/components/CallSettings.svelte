@@ -12,13 +12,19 @@
   import Toggle from './ui/Toggle.svelte';
   import { call } from '../lib/call/instance.svelte';
   import { callSettings } from '../lib/call/settings.svelte';
-  import { MIC_VOLUME_MAX, OUT_VOLUME_MAX, clampLimitDb } from '../lib/call/pure';
+  import { MIC_VOLUME_MAX, OUT_VOLUME_MAX, limiterStrength, limiterStrengthPatch, type LimiterStrength } from '../lib/call/pure';
   import { audio } from '../lib/plugins/audio';
 
   // 設定の「通話」。この端末だけの設定で、サーバーには送らない（lib/call/settings.svelte.ts）
 
   const s = $derived(callSettings.value);
   let inputs = $state<Disnans.AudioInput[]>([]);
+  const limiterOptions: { value: LimiterStrength; label: string }[] = [
+    { value: 'none', label: 'なし' },
+    { value: 'weak', label: '弱' },
+    { value: 'medium', label: '中' },
+    { value: 'strong', label: '強' },
+  ];
 
   onMount(() => {
     // 機器の一覧は、開いたときに取る（使えない環境では行ごと出さない）
@@ -73,28 +79,16 @@
     {/snippet}
   </SettingRow>
 
-  <SettingRow name="大きい音を抑える" description="急な大きい音（マイクの落下音など）を抑えます。端末自体の音量は別途調整してください" icon={ShieldCheck}>
+  <SettingRow name="大きい音を抑える" icon={ShieldCheck}>
     {#snippet control()}
-      <Toggle checked={s.limiter} label="大きい音を抑える" onchange={(v) => callSettings.patch({ limiter: v })} />
+      <SegmentedButton
+        label="大きい音を抑える"
+        options={limiterOptions}
+        value={limiterStrength(s)}
+        onchange={(v) => callSettings.patch(limiterStrengthPatch(v))}
+      />
     {/snippet}
   </SettingRow>
-
-  {#if s.limiter}
-    <SettingRow name="抑える大きさ" description="これより大きい音は、この大きさまでに抑えます">
-      {#snippet control()}
-        <SegmentedButton
-          label="抑える大きさ"
-          options={[
-            { value: '-3', label: '弱め' },
-            { value: '-6', label: '標準' },
-            { value: '-12', label: '強め' },
-          ]}
-          value={String(clampLimitDb(s.limitDb))}
-          onchange={(v) => callSettings.patch({ limitDb: Number(v) })}
-        />
-      {/snippet}
-    </SettingRow>
-  {/if}
 
   {#if call.outputs.length > 0}
     <SettingRow name="音の出力先" icon={Headphones}>
