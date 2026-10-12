@@ -8,6 +8,13 @@ fn open_devtools(window: tauri::WebviewWindow) {
 #[cfg(desktop)]
 mod dev_plugins;
 
+// Desktop shared server settings and drafts; browser/Android keep their existing storage.
+#[cfg(desktop)]
+mod client_storage;
+
+#[cfg(all(test, desktop))]
+mod client_storage_tests;
+
 // 画面の静止画（プラグイン API v11 の screenCapture.snapshot。ダイアログを出さない）
 #[cfg(desktop)]
 mod snapshot;
@@ -139,7 +146,10 @@ pub fn run() {
                 open_devtools,
                 dev_plugins::dev_plugins_scan,
                 dev_plugins::dev_plugin_read,
-                snapshot::screen_snapshot
+                snapshot::screen_snapshot,
+                client_storage::client_storage_read,
+                client_storage::client_storage_write,
+                client_storage::client_storage_import
             ]);
         }
         #[cfg(target_os = "linux")]
@@ -153,7 +163,10 @@ pub fn run() {
                     snapshot::screen_snapshot,
                     linux_capture::linux_screen_start,
                     linux_capture::linux_screen_stop,
-                    linux_capture::linux_screen_update
+                    linux_capture::linux_screen_update,
+                    client_storage::client_storage_read,
+                    client_storage::client_storage_write,
+                    client_storage::client_storage_import
                 ]);
         }
     }

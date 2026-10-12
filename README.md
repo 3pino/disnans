@@ -136,7 +136,7 @@ cd app && npm install && npm run dev        # クライアント
 
 ### CLI（開発中）
 
-Rust の共通クライアント基盤と、読み取り用 CLI の土台を追加しています。現時点では設定・自分の情報・メインチャットの履歴を扱い、投稿・新着の監視・TUI はまだ使えません。GUI の保存先・通信は従来のままで、配布インストーラへの同梱も後続の段階です。
+Rust の共通クライアント基盤と、読み取り用 CLI を追加しています。現時点では設定・自分の情報・メインチャットの履歴を扱い、投稿・新着の監視・TUI はまだ使えません。Windows/Linux のデスクトップ GUI は CLI と接続先・下書きファイルを共有します。旧設定・下書きは読戻し確認後に移行し、移行や保存の失敗は通知します。GUI の通信、Android・ブラウザー開発版の保存先は従来のままです。配布インストーラへの同梱と実機確認は後続の段階です。
 
 別ターミナルで開発サーバーを起動したうえで、次を実行します。
 
@@ -145,7 +145,7 @@ cargo run -p disnans-cli -- --server http://127.0.0.1:8080 --dev-user alice me -
 cargo run -p disnans-cli -- --server http://127.0.0.1:8080 --dev-user alice messages --json
 ```
 
-`--dev-user` は開発サーバー専用です。本番では省略し、GUI と同じ Tailscale のサーバーへ接続します。接続先は `config set-server <URL>` で保存でき、`--server` は一時指定です。保存ファイルを GUI が読むようになるのは移行後です。JSON 出力には個人データが含まれるため、共有時は内容を確認してください。
+`--dev-user` は開発サーバー専用です。本番では省略し、GUI と同じ Tailscale のサーバーへ接続します。接続先は `config set-server <URL>` で保存でき、`--server` は一時指定です。GUI で接続先の外部変更を検出しても、確認なしに別サーバーへ接続しません。JSON 出力には個人データが含まれるため、共有時は内容を確認してください。
 
 詳しくは [CLI の説明](crates/cli/README.md)、[CLI/TUI 要件](SPEC_cli_tui.md)、[共通基盤と移行の境界](docs/CLIENT_ARCHITECTURE.md) を参照してください。
 

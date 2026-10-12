@@ -122,6 +122,25 @@ describe('createSharedStorage', () => {
     expect(legacy.values.get(OLD_DRAFT)).toBe('old server draft');
   });
 
+  it('canonicalizes an existing server value before returning it to the GUI', async () => {
+    const files = fileStore();
+    files.values.set(JSON.stringify({ kind: 'server' }), 'HTTP://HOST:80/');
+    const shared = createSharedStorage({ enabled: true, files, legacy: legacyStore() });
+
+    expect(await shared.getServer()).toBe('http://host');
+  });
+
+  it('canonicalizes legacy server provenance and desktop server writes', async () => {
+    const legacy = legacyStore({ [SERVER_KEY]: 'HTTP://HOST:80/', [OLD_DRAFT]: 'from canonical host' });
+    const files = fileStore();
+    const shared = createSharedStorage({ enabled: true, files, legacy });
+
+    expect(await shared.getServer()).toBe('http://host');
+    expect(await shared.getDraft('http://host', 'u1', 'main')).toBe('from canonical host');
+    expect(await shared.setServer('HTTP://HOST:80/')).toEqual({ status: 'shared' });
+    expect(files.values.get(JSON.stringify({ kind: 'server' }))).toBe('http://host');
+  });
+
   it('legacy draft provenance is captured before the active server changes', async () => {
     const legacy = legacyStore({ [SERVER_KEY]: 'http://old.test:8080', [OLD_DRAFT]: 'belongs to old' });
     const files = fileStore();
@@ -132,6 +151,30 @@ describe('createSharedStorage', () => {
     expect(await shared.getDraft('http://old.test:8080', 'u1', 'main')).toBe('belongs to old');
   });
 
+  it('keeps an invalid legacy server as a visible fallback while passing its original text to core validation', async () => {
+    const legacy = legacyStore({ [SERVER_KEY]: 'ftp://legacy.example' });
+    const files = fileStore();
+    const imports: Array<{ key: SharedKey; value: string | null | undefined }> = [];
+    files.importIfMissing = async (key, value) => {
+      imports.push({ key, value });
+      throw new Error('invalid stored URL');
+    };
+    const shared = createSharedStorage({ enabled: true, files, legacy });
+
+    const result = await shared.getServerWithStatus();
+    expect(result).toEqual({ value: 'http://ftp//legacy.example', status: 'legacy-fallback' });
+    expect(imports).toEqual([{ key: { kind: 'server' }, value: 'ftp://legacy.example' }]);
+  });
+
+  it('reports server reads that fell back to localStorage', async () => {
+    const legacy = legacyStore({ [SERVER_KEY]: SERVER });
+    const files = fileStore();
+    files.failRead = true;
+    const shared = createSharedStorage({ enabled: true, files, legacy });
+
+    expect(await shared.getServerWithStatus()).toEqual({ value: SERVER, status: 'legacy-fallback' });
+  });
+
   it('retains legacy data and falls back if file import/readback fails', async () => {
     const legacy = legacyStore({ [SERVER_KEY]: SERVER, [OLD_DRAFT]: 'safe copy' });
     const files = fileStore();
@@ -140,6 +183,20 @@ describe('createSharedStorage', () => {
 
     expect(await shared.getDraft(SERVER, 'u1', 'main')).toBe('safe copy');
     expect(legacy.values.get(OLD_DRAFT)).toBe('safe copy');
+  });
+
+  it('does not change legacy server provenance when a desktop server write falls back', async () => {
+    const oldServer = 'http://old.test:8080';
+    const legacy = legacyStore({ [SERVER_KEY]: oldServer, [OLD_DRAFT]: 'belongs to old server' });
+    const files = fileStore();
+    files.failWrite = true;
+    const shared = createSharedStorage({ enabled: true, files, legacy });
+
+    expect(await shared.setServer(SERVER)).toEqual({ status: 'legacy-fallback' });
+    expect(legacy.values.get(SERVER_KEY)).toBe(oldServer);
+    const afterRestart = createSharedStorage({ enabled: true, files: fileStore(), legacy });
+    expect(await afterRestart.getDraft(oldServer, 'u1', 'main')).toBe('belongs to old server');
+    expect(await afterRestart.getDraft(SERVER, 'u1', 'main')).toBeNull();
   });
 
   it('does not clear legacy data after write/readback failure', async () => {
@@ -212,6 +269,14 @@ describe('createSharedStorage', () => {
     expect(await shared.getDraft(SERVER, 'u1', 'thread:t1')).toBe('thread');
     expect(await shared.getDraft('http://other.test', 'u1', 'main')).toBe('other server');
     expect(await shared.getDraft(SERVER, 'u2', 'main')).toBe('other user');
+  });
+
+  it('canonicalizes hosts, default ports, IDNs, and base paths before shared writes', async () => {
+    const files = fileStore();
+    const shared = createSharedStorage({ enabled: true, files, legacy: legacyStore() });
+
+    expect(await shared.setServer('https://Bücher.Example:443/Base Path/')).toEqual({ status: 'shared' });
+    expect(files.values.get(JSON.stringify({ kind: 'server' }))).toBe('https://xn--bcher-kva.example/Base%20Path');
   });
 
   it('normalizes server writes and stores empty URLs as tombstones', async () => {

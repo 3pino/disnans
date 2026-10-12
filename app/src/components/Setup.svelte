@@ -4,7 +4,8 @@
   import Button from './ui/Button.svelte';
   import TextInput from './ui/TextInput.svelte';
   import { api } from '../lib/api';
-  import { normalizeServerUrl, setServerUrl } from '../lib/config';
+  import { applyServerUrl, normalizeServerUrl } from '../lib/config';
+  import { saveServerUrl } from '../lib/desktopStorage';
 
   let { ondone }: { ondone: () => void } = $props();
 
@@ -12,6 +13,18 @@
   let checking = $state(false);
   let error = $state<string | null>(null);
   let failedOnce = $state(false);
+
+  async function persistServer(u: string): Promise<void> {
+    const result = await saveServerUrl(u);
+    if (result.status === 'shared') {
+      applyServerUrl(u);
+      return;
+    }
+    if (result.status === 'local') return;
+    throw new Error(result.status === 'legacy-fallback'
+      ? '共有ファイルへ保存できませんでした。接続先は共有されていません。'
+      : `別の接続先が保存されました: ${result.value ?? '未設定'}`);
+  }
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
@@ -21,7 +34,7 @@
     error = null;
     try {
       const me = await api.probe(u);
-      setServerUrl(u);
+      await persistServer(u);
       void me;
       ondone();
     } catch (err) {
@@ -32,11 +45,19 @@
     }
   }
 
-  function saveAnyway() {
+  async function saveAnyway() {
     const u = normalizeServerUrl(url);
-    if (!u) return;
-    setServerUrl(u);
-    ondone();
+    if (!u || checking) return;
+    checking = true;
+    error = null;
+    try {
+      await persistServer(u);
+      ondone();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      checking = false;
+    }
   }
 </script>
 

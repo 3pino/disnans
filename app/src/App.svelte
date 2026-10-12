@@ -5,7 +5,9 @@
   import ConfirmDialog from './components/ConfirmDialog.svelte';
   import Toasts from './components/Toasts.svelte';
   import Lightbox from './components/Lightbox.svelte';
-    import { needsServerSetup, isAndroid, isTauri } from './lib/config';
+  import { applyServerUrl, needsServerSetup, isAndroid, isTauri, getServerUrl } from './lib/config';
+  import { didInitializeWithLegacyFallback, getDesktopSharedStorage, initializeDesktopStorage, isDesktopStorageSupported } from './lib/desktopStorage';
+  import { flushDraftSaves } from './lib/drafts';
   import { isMac } from './lib/plugins/hotkey';
   import { startViewportSync, startZoomGuard } from './lib/viewport';
   import { client } from './lib/stores/client.svelte';
@@ -18,16 +20,93 @@
   import { startContextMenuGuard } from './lib/contextMenu';
   import { startUpdateWatch } from './lib/updateWatch';
 
-  let setup = $state(needsServerSetup());
+  const desktopStorageEnabled = isDesktopStorageSupported();
+  let bootReady = $state(!desktopStorageEnabled);
+  let setup = $state(desktopStorageEnabled || needsServerSetup());
 
   ui.init();
 
   $effect(() => {
-    if (setup) return;
+    if (!bootReady || setup) return;
     client.start();
     pluginHost.start();
     void notifications.init();
     void startShareReceiver();
+  });
+
+  onMount(() => {
+    if (!desktopStorageEnabled) return;
+    void initializeDesktopStorage().then((serverUrl) => {
+      applyServerUrl(serverUrl);
+      if (didInitializeWithLegacyFallback()) {
+        ui.toast('共有ストレージを読み込めません。端末内の設定で起動しました。接続先や下書きの変更は他のクライアントへ共有されません。', 'error', undefined, 12_000);
+      }
+    }).catch((error) => {
+      console.error('共有ストレージを初期化できませんでした', error);
+      ui.toast('共有ストレージを初期化できません。端末内の設定で起動しました。接続先や下書きの変更は他のクライアントへ共有されません。', 'error', undefined, 12_000);
+      // IPC未統合/障害時は既存localStorage設定で起動する（保存結果は各hostで通知）。
+      applyServerUrl(getServerUrl());
+    }).finally(() => {
+      setup = needsServerSetup();
+      bootReady = true;
+    });
+  });
+
+  // 別のdesktop clientが接続先を変えた場合、確認なしに通信先を切り替えない。
+  onMount(() => {
+    if (!desktopStorageEnabled) return;
+    let promptedServer: string | undefined;
+    const refreshSharedServer = async () => {
+      if (!bootReady) return;
+      const shared = getDesktopSharedStorage();
+      if (!shared) return;
+      let next: string | null;
+      try {
+        next = await shared.getServer();
+      } catch {
+        return;
+      }
+      const activeServer = getServerUrl() || null;
+      if (next === activeServer) {
+        promptedServer = undefined;
+        return;
+      }
+      const promptKey = next ?? '';
+      if (promptKey === promptedServer) return;
+      promptedServer = promptKey;
+      window.setTimeout(() => {
+        if (promptedServer === promptKey) promptedServer = undefined;
+      }, 60_000);
+      const destination = next ? `「${next}」` : '未設定';
+      ui.toast(
+        `別のクライアントで接続先が${destination}に変更されました。入力中の文章は保存後に再読み込みしてください。`,
+        'info',
+        {
+          label: '保存して再読み込み',
+          run: () => {
+            void (async () => {
+              try {
+                await flushDraftSaves();
+                location.reload();
+              } catch (error) {
+                promptedServer = undefined;
+                ui.toast(`入力中の文章や添付を保護できないため再読み込みしませんでした: ${error instanceof Error ? error.message : String(error)}`, 'error');
+              }
+            })();
+          },
+        },
+        60_000,
+      );
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshSharedServer();
+    };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   });
 
   // キーボードを出したときも、アプリの高さを見えている高さに合わせる。拡大（ピンチ・Ctrl+ホイールなど）は止める
@@ -111,7 +190,9 @@
   });
 </script>
 
-{#if setup}
+{#if !bootReady}
+  <!-- Shared desktop server settings must resolve before Setup or client startup. -->
+{:else if setup}
   <Setup ondone={() => (setup = false)} />
 {:else}
   <Shell />

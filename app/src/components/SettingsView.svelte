@@ -44,7 +44,8 @@
   import type { MessageLayout } from '../lib/messageLayout';
   import { ui, type SettingsSubpage, type ThemePref } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
-  import { devUser, getServerUrl, isAndroid, isCustomAvatar, isTauri, setServerUrl } from '../lib/config';
+  import { applyServerUrl, devUser, getServerUrl, isAndroid, isCustomAvatar, isTauri } from '../lib/config';
+  import { saveServerUrl } from '../lib/desktopStorage';
   import { notifications } from '../lib/stores/notifications.svelte';
 
   // 表示名は、カードの名前を押したときだけその場で編集する
@@ -206,8 +207,21 @@
       okLabel: '変更する',
     });
     if (!ok) return;
-    setServerUrl(null);
-    location.reload();
+    try {
+      const result = await saveServerUrl(null);
+      if (result.status === 'legacy-fallback') {
+        ui.toast('共有ファイルへ保存できませんでした。接続先は変更されていません。', 'error');
+        return;
+      }
+      if (result.status === 'superseded') {
+        ui.toast(`別の接続先が保存されました: ${result.value ?? '未設定'}`, 'error');
+        return;
+      }
+      if (result.status === 'shared') applyServerUrl(null);
+      location.reload();
+    } catch (err) {
+      ui.toast(`接続先を保存できませんでした: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
   }
 
   function mb(n: number): string {

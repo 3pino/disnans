@@ -11,13 +11,15 @@
   import IconButton from './ui/IconButton.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
-  import { tick, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { messageSearch } from '../lib/stores/search.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { reply } from '../lib/stores/reply.svelte';
-  import { draftKey, loadDraft, saveDraft } from '../lib/drafts';
+  import { draftLocation, loadDraft, loadDraftAt, registerDraftFlusher, saveDraftAt, type DraftLocation } from '../lib/drafts';
+  import { getServerUrl } from '../lib/config';
+  import { getDesktopSharedStorage, isDesktopStorageSupported } from '../lib/desktopStorage';
   import ImageCropDialog from './ImageCropDialog.svelte';
   import { readImageInfo, canCropImage, type CropRect, type ImageInfo } from '../lib/imageCrop';
   import { shareInbox } from '../lib/stores/shareInbox.svelte';
@@ -51,10 +53,90 @@
   let running = $state(false);
   let seq = 0;
 
-  /** 下書きを保存する場所（メインチャット・スレッドごと、ユーザーごと）。ユーザーがまだ分からないときは保存しない */
-  const draftId = $derived(client.me ? draftKey(client.me.id, threadId) : null);
-  /** 下書きの文章。場所を切り替えたら、その場所の下書きで入力欄を作り直す（{#key} の中） */
-  const draftText = $derived(draftId ? loadDraft(draftId) : '');
+  /** 下書きを保存する場所（接続先・ユーザー・メインチャット/スレッドごと）。 */
+  const desktopShared = isDesktopStorageSupported() ? getDesktopSharedStorage() : null;
+  const draftTarget = $derived(client.me ? draftLocation(getServerUrl(), client.me.id, threadId) : null);
+  const draftIdentity = $derived(draftTarget
+    ? JSON.stringify([draftTarget.serverUrl, draftTarget.userId, draftTarget.place])
+    : null);
+  const draftId = $derived(draftTarget ? (desktopShared ? draftIdentity : draftTarget.legacyKey) : null);
+  let loadedDraft = $state<{ identity: string; text: string; failed?: boolean } | null>(null);
+  let draftLoadAttempt = $state(0);
+  let draftLoadPromise: Promise<void> | null = null;
+  const draftWarningTimes = new Map<string, number>();
+
+  function warnDraftSave(identity: string, message: string) {
+    const now = Date.now();
+    const previous = draftWarningTimes.get(identity);
+    if (previous !== undefined && now - previous < 10_000) return;
+    draftWarningTimes.set(identity, now);
+    ui.toast(message, 'error');
+  }
+
+  onMount(() => {
+    if (!desktopShared) return;
+    return registerDraftFlusher(async () => {
+      await tick();
+      await draftLoadPromise;
+      await tick();
+      if (staged.length > 0) throw new Error('未送信の添付ファイルがあります');
+      if (running) throw new Error('コマンド実行中です');
+      if (shareInbox.files.length > 0 || shareInbox.text !== '') throw new Error('未処理の共有データがあります');
+      const target = draftTarget;
+      if (!target || !input) {
+        if (loadedDraft?.identity === draftIdentity && loadedDraft.failed) throw new Error('下書きを読み込めていません');
+        return;
+      }
+      const result = await saveDraftAt(target, input.getRawBody(), desktopShared);
+      if (result.status !== 'shared') throw new Error('A draft was not saved to shared storage');
+    });
+  });
+
+  function retryDraftLoad() {
+    draftLoadAttempt += 1;
+  }
+
+  // On desktop, do not mount an empty editor before the async shared/legacy migration read completes.
+  $effect(() => {
+    const target = draftTarget;
+    const identity = draftIdentity;
+    void draftLoadAttempt;
+    if (!desktopShared) return;
+    loadedDraft = null;
+    if (!target || !identity) return;
+    let current = true;
+    draftLoadPromise = loadDraftAt(target, desktopShared).then((text) => {
+      if (current) loadedDraft = { identity, text };
+    }).catch((error) => {
+      if (!current) return;
+      loadedDraft = { identity, text: '', failed: true };
+      ui.toast(
+        `下書きを読み込めませんでした。再試行してください: ${error instanceof Error ? error.message : String(error)}`,
+        'error',
+        { label: '再試行', run: retryDraftLoad },
+        60_000,
+      );
+    });
+    return () => { current = false; };
+  });
+
+  const draftText = $derived(desktopShared
+    ? (loadedDraft?.identity === draftIdentity ? loadedDraft.text : '')
+    : (draftId ? loadDraft(draftId) : ''));
+  const draftReady = $derived(!desktopShared || (!!draftIdentity && loadedDraft?.identity === draftIdentity && !loadedDraft.failed));
+
+  function persistDraft(target: NonNullable<typeof draftTarget>, body: string) {
+    const identity = JSON.stringify([target.serverUrl, target.userId, target.place]);
+    void saveDraftAt(target, body, desktopShared ?? undefined).then((result) => {
+      if (result.status === 'legacy-fallback') {
+        warnDraftSave(identity, '下書きは端末内だけに保存され、共有ファイルには保存されていません。');
+      } else if (result.status === 'superseded') {
+        warnDraftSave(identity, '下書きが別のクライアントで更新されました。入力中の文章はそのまま残しています。');
+      }
+    }).catch((error) => {
+      warnDraftSave(identity, `下書きを保存できませんでした。入力中の文章は残しています: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
 
   $effect(() => {
     const t = draftText;
@@ -97,6 +179,7 @@
   // 共有で受け取ったものを、メインチャットの入力欄が拾う（スレッドは対象外）
   $effect(() => {
     if (threadId !== null) return;
+    if (!draftReady || !input) return;
     if (shareInbox.files.length === 0 && shareInbox.text === '') return;
     untrack(() => takeShared());
   });
@@ -161,10 +244,10 @@
   function submit(silent = false) {
     if (!input || running) return;
     const parsed = parseSlashInput(input.getBody());
-    const key = draftId;
+    const target = draftTarget;
     // コマンドは送らずに実行する。添付はそのまま残す
     if (parsed.kind === 'command') {
-      if (client.ready) void runCommand(parsed.name, parsed.args, key);
+      if (client.ready) void runCommand(parsed.name, parsed.args, target, threadId, input, draftIdentity, input.getRawBody());
       return;
     }
     if (!canSend) return;
@@ -179,7 +262,7 @@
     reply.clear(threadId);
     input.clear();
     hasText = false;
-    if (key) saveDraft(key, '');
+    if (target) persistDraft(target, '');
     // 一覧用の見本の URL は、ここで破棄する（送るファイルは client が持つ）
     for (const s of staged) if (s.preview) URL.revokeObjectURL(s.preview);
     staged = [];
@@ -230,13 +313,25 @@
     submit();
   }
 
-  async function runCommand(name: string, args: string, key: string | null) {
+  async function runCommand(
+    name: string,
+    args: string,
+    target: DraftLocation | null,
+    targetThreadId: string | null,
+    editor: MessageInput | undefined,
+    identity: string | null,
+    submittedBody: string,
+  ) {
     running = true;
     try {
-      await runSlashCommand(name, args, threadId);
-      input?.clear();
-      hasText = false;
-      if (key) saveDraft(key, '');
+      await runSlashCommand(name, args, targetThreadId);
+      const stillSameEditor = !!editor && input === editor && draftIdentity === identity;
+      if (stillSameEditor && editor.getRawBody() === submittedBody) {
+        editor.clear();
+        hasText = false;
+        if (target) persistDraft(target, '');
+      }
+      // If the editor changed, retain its draft: it may contain newer input typed before switching.
     } catch (e) {
       ui.toast(e instanceof Error ? e.message : String(e), 'error');
     } finally {
@@ -328,21 +423,24 @@
       {/if}
     </div>
 
-    {#key draftId}
-      <MessageInput
-        bind:this={input}
-        {placeholder}
-        commands
-        initial={draftText}
-        onsubmit={submit}
-        onfiles={addFiles}
-        onarrowupempty={editLast}
-        oninput={(t) => {
-          hasText = t.trim().length > 0;
-          if (draftId && input) saveDraft(draftId, input.getRawBody());
-        }}
-      />
-    {/key}
+    {#if draftReady}
+      {#key draftId}
+        <MessageInput
+          bind:this={input}
+          {placeholder}
+          commands
+          initial={draftText}
+          onsubmit={submit}
+          onfiles={addFiles}
+          onarrowupempty={editLast}
+          oninput={(t) => {
+            hasText = t.trim().length > 0;
+            const target = draftTarget;
+            if (draftId && target && input) persistDraft(target, input.getRawBody());
+          }}
+        />
+      {/key}
+    {/if}
 
     <button
       type="button"

@@ -1,4 +1,4 @@
-# CLI / GUI 結合テスト計画（ステップ1）
+# CLI / GUI 結合テスト計画（ステップ1・2）
 
 ## 目的と範囲
 
@@ -26,12 +26,23 @@
 
 - CLI の投稿が GUI の WebSocket 更新に反映し、GUI の投稿も CLI が履歴取得で確認できる。
 - 接続断の再接続後に履歴を再取得する。送信後に応答が失われたケースは「成否不明」とし、自動再送・二重投稿がない。
-- GUI が使っていた localStorage の接続先/下書きを一時共通ファイルへ移行し、保存検証に成功してから切替える。失敗時は旧値を保持する。
+
+### ステップ2: GUI デスクトップ共有ストレージ移行
+
+- Tauri 起動時、共有ファイルから接続先を読み、移行/読戻しが完了してからメモリ上の接続先を更新し、WebSocket を開始する。読込が保留中の間は接続を開始しない。
+- localStorage の接続先/下書きは共有ファイルに import-if-missing し、読戻しで確認できた場合だけ旧下書きを消す。既存値または clear tombstone を優先し、失敗時は localStorage の値を保持する。下書き読込が失敗し復元可能な旧値もない場合は、空の下書きと誤認せずエラー表示にする。
+- 共有キーは `server` と `draft(serverUrl, userId, place)`。異なるサーバー/ユーザー/場所の下書きが混ざらないことを確認する。
+- 下書きの非同期読込に generation/current-key 検査を適用し、古い読込が編集中の入力やサーバー切替後の下書きを上書きしないことを確認する。保存・送信・clear は操作開始時に捕捉したキーを使い、未完了の初期読込で空下書きを保存しない。
+- ブラウザー/Android は Tauri invoke を使わず既存 localStorage に留める。prefs の REST 保存、call/notifier の WebSocket/プラグイン通信は移行対象にしない。
+- Vitest は fresh module と mock invoke/storage port を使い、desktop initializer の非同期読込・設定適用、IPC 状態、draft adapter の組合せを検証する。これらは storage/config の境界テストであり、`App.svelte` を mount して実際の `client.start()`/通信開始を検査するものではない。
+- `Composer` の DOM mount、入力操作、遅延 draft read が画面へ反映される挙動はこの統合テストでは直接検査しない。AST/source-text 契約テストや見た目の検査も行わない。
+
 - GUI と CLI/TUI が同一下書きを別々に更新した場合、後から保存した内容が優先される。逐次保存と同時書込みでファイルが壊れない。
 - Linux と Windows で共有ファイルの配置・権限、CLI の設定読込、インストール後の起動を確認する。実機 UI/TUI の見た目と操作感は利用者に最終確認を依頼する。
 
 ## CI・配布検証（別段階）
 
 - Linux は既存の `cargo test --workspace` が新しい core/CLI と結合テストも実行するため、追加のテストステップは不要。Windows は新しい `client-windows` ジョブで core/CLI の clippy と `cargo test -p disnans-client-core -p disnans-cli --locked` を実行し、パス・終了コード・子プロセス終了も検証する。
+- `app-linux` と新しい `app-windows` は Tauri の native Rust テストを実行し、DTO と隔離サブプロセス内の storage command を検証する。実 GUI の描画・入力操作・Tailscale 認証・インストーラ動作はこのテストでは保証しない。
 - Windows CI はクロスプラットフォームのプロセス/設定境界を確認する。インストーラからの PATH 起動・復旧、NSIS upgrade/uninstall は実機またはパッケージ検証として別途行う。
 - Windows NSIS / Linux `.deb` への CLI 同梱、PATH 追加・復旧、アップグレード、アンインストール検証はステップ5で行う。AppImage は PATH 自動登録を前提にしない。

@@ -153,12 +153,21 @@ impl LocalStore {
     /// Import a legacy value only if no shared config has ever been written, including a clear.
     /// Returns `true` only when the value was imported.
     pub fn import_server_url_if_missing(&self, url: &str) -> Result<bool, StoreError> {
-        let value = ServerUrl::parse(url)?.as_str().to_owned();
+        self.import_server_setting_if_missing(Some(url))
+    }
+
+    /// Import a legacy setting, including an explicit clear, without replacing existing data.
+    /// `None` is a tombstone; callers with no legacy setting should only read the current state.
+    pub fn import_server_setting_if_missing(&self, url: Option<&str>) -> Result<bool, StoreError> {
+        let value = url
+            .map(ServerUrl::parse)
+            .transpose()?
+            .map(|url| url.as_str().to_owned());
         let _lock = FileLock::acquire(&self.config_dir.join("config.lock"))?;
         if self.read_config()?.is_some() {
             return Ok(false);
         }
-        self.write_config(Some(value))?;
+        self.write_config(value)?;
         Ok(true)
     }
 
@@ -459,6 +468,47 @@ mod tests {
             !store
                 .import_server_url_if_missing("localhost:9000")
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn equivalent_canonical_server_urls_share_the_same_draft() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open_at(dir.path()).unwrap();
+        let input = DraftKey {
+            server: ServerUrl::parse("HTTPS://Bücher.Example:443/Base Path/").unwrap(),
+            user_id: "u1".into(),
+            place: DraftPlace::Main,
+        };
+        let canonical = DraftKey {
+            server: ServerUrl::parse("https://xn--bcher-kva.example/Base%20Path").unwrap(),
+            user_id: "u1".into(),
+            place: DraftPlace::Main,
+        };
+        store.save_draft(&input, Some("same server")).unwrap();
+        assert_eq!(
+            store.load_draft(&canonical).unwrap().as_deref(),
+            Some("same server")
+        );
+    }
+
+    #[test]
+    fn importing_an_explicit_clear_does_not_replace_an_existing_setting() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open_at(dir.path()).unwrap();
+        assert!(store.import_server_setting_if_missing(None).unwrap());
+        assert_eq!(store.server_setting().unwrap(), StoredValue::Cleared);
+        assert!(
+            !store
+                .import_server_url_if_missing("localhost:8080")
+                .unwrap()
+        );
+
+        store.set_server_url(Some("localhost:9090")).unwrap();
+        assert!(!store.import_server_setting_if_missing(None).unwrap());
+        assert_eq!(
+            store.server_url().unwrap().as_deref(),
+            Some("http://localhost:9090")
         );
     }
 

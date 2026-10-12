@@ -2,6 +2,7 @@ import { getItem, setItem } from './storage';
 
 const SERVER_KEY = 'disnans.server';
 const DEV_USER_KEY = 'disnans.devUser';
+let serverUrlOverride: string | undefined;
 
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -25,15 +26,53 @@ export function normalizeServerUrl(input: string): string {
   return s.replace(/\/+$/, '');
 }
 
+/** Canonical form for the Windows/Linux shared-file namespace; browser legacy behavior stays above. */
+export function canonicalServerUrl(input: string): string {
+  const unfolded = input.normalize('NFKC').trim();
+  const explicitScheme = unfolded.split('://', 2);
+  if (explicitScheme.length === 2 && !/^https?$/i.test(explicitScheme[0])) {
+    throw new Error('サーバー URL は http/https のみ利用できます');
+  }
+  const normalized = normalizeServerUrl(input);
+  if (!normalized) return '';
+  const parsed = new URL(normalized);
+  const authority = normalized.split('://', 2)[1]?.split(/[/?#]/, 1)[0] ?? '';
+  if (
+    !/^https?:$/.test(parsed.protocol) || !parsed.hostname || authority.includes('@') ||
+    parsed.username || parsed.password || normalized.includes('?') || normalized.includes('#')
+  ) {
+    throw new Error('サーバー URL が不正です');
+  }
+  return parsed.href.replace(/\/+$/, '');
+}
+
 /**
  * サーバーの URL。空文字は同一オリジン（ブラウザでの開発時、Vite のプロキシ経由）。
  */
 export function getServerUrl(): string {
-  return getItem(SERVER_KEY) ?? '';
+  return serverUrlOverride !== undefined ? serverUrlOverride : getItem(SERVER_KEY) ?? '';
 }
 
+/** Set the already-resolved shared-file value in memory without rewriting legacy storage. */
+export function applyServerUrl(url: string | null): void {
+  if (!url) {
+    serverUrlOverride = '';
+    return;
+  }
+  try {
+    serverUrlOverride = canonicalServerUrl(url);
+  } catch {
+    // Keep the prior GUI behavior for invalid legacy values; a shared IPC write will reject them.
+    serverUrlOverride = normalizeServerUrl(url);
+  }
+}
+
+/** Browser/Android-compatible synchronous setter. Desktop hosts persist through shared storage first. */
 export function setServerUrl(url: string | null): void {
-  setItem(SERVER_KEY, url ? normalizeServerUrl(url) : null);
+  const normalized = url ? normalizeServerUrl(url) : '';
+  setItem(SERVER_KEY, normalized || null);
+  // Legacy clients keep reading localStorage, including external changes and failed writes.
+  serverUrlOverride = undefined;
 }
 
 /** Tauri ではサーバーの指定が必須 */

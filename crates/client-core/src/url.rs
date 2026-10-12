@@ -3,7 +3,7 @@ use std::fmt;
 use unicode_normalization::UnicodeNormalization;
 use url::Url;
 
-/// An HTTP(S) base URL normalized with the same rules as the current GUI.
+/// An HTTP(S) base URL with GUI-compatible input normalization and canonical URL identity.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServerUrl(String);
 
@@ -75,7 +75,7 @@ impl ServerUrl {
                 "サーバーURLにquery/fragmentは指定できません".into(),
             ));
         }
-        Ok(Self(normalized))
+        Ok(Self(parsed.as_str().trim_end_matches('/').to_owned()))
     }
 
     pub fn as_str(&self) -> &str {
@@ -130,6 +130,30 @@ mod tests {
             "http://100.64.0.1:8080"
         );
         assert_eq!(normalize_server_url("  "), "");
+    }
+
+    #[test]
+    fn canonical_identity_matches_desktop_url_serialization() {
+        assert_eq!(
+            ServerUrl::parse("HTTP://HOST:80/").unwrap().as_str(),
+            "http://host"
+        );
+        assert_eq!(
+            ServerUrl::parse("https://Bücher.Example:443/Base Path/")
+                .unwrap()
+                .as_str(),
+            "https://xn--bcher-kva.example/Base%20Path"
+        );
+        assert_eq!(
+            ServerUrl::parse("http://100.64.0.1:8080/").unwrap(),
+            ServerUrl::parse("ｈｔｔｐ：／／１００．６４．０．１：８０８０").unwrap()
+        );
+        assert_eq!(
+            ServerUrl::parse("http://host/base/../chat/")
+                .unwrap()
+                .as_str(),
+            "http://host/chat"
+        );
     }
 
     #[test]

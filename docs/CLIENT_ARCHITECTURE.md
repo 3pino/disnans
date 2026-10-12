@@ -2,16 +2,17 @@
 
 要件は [`SPEC_cli_tui.md`](../SPEC_cli_tui.md)、通信契約は [`API.md`](API.md) と `crates/shared` を参照。ここでは実装の境界と段階を整理する。
 
-## 最初の実装範囲
+## 現在の実装範囲
 
-7ステップのうち、まずステップ1の土台を作る。共通ファイルと読み取りAPIは後続ステップのための基盤であり、GUI の保存先・通信をこの段階で切り替えない。
+ステップ1の基盤に続き、ステップ2で Windows/Linux の Tauri GUI を共通ファイルへ接続する。GUI の通信は従来の TypeScript のまま。
 
 - `crates/client-core` (`disnans-client-core`): 接続先の解釈、REST の読み取り、共通設定・下書きファイル。
 - `crates/cli` (`disnans-cli`、実行ファイル `disnans`): 引数、設定、読み取りコマンド、安全な端末向け出力。
-- `app/src/lib/sharedStorage.ts`: 将来のファイル移行を検証する非同期アダプター。まだ起動処理に組み込まない。
-- 一時データの開発サーバーを使う結合テスト。サーバー本番データや利用者の設定を使わない。
+- `app/src-tauri/src/client_storage.rs`: 論理キーだけを受け付ける非同期 IPC。同期ファイル I/O は blocking pool へ分離。
+- `app/src/lib/desktopStorage.ts` / `sharedStorage.ts`: 起動時の接続先移行・保存結果の確認。下書きはユーザー・場所が確定してから移行。
+- 一時データの開発サーバー・CLI サブプロセス、モック IPC、隔離した native command の結合テスト。本番データや利用者の設定は使わない。
 
-`send` / `watch`、WebSocket の再接続、TUI、GUI の実際の移行、インストーラへの同梱は後続ステップ。未実装のコマンドを使えるものとして公開しない。この土台だけでは P0 完了とはしない。
+Android・ブラウザー開発版・macOS GUI は既存 localStorage 経路を保持する。`send` / `watch`、WebSocket の再接続、TUI、インストーラへの同梱は後続ステップ。未実装のコマンドを使えるものとして公開しない。まだ P0 完了とはしない。
 
 ## 担当と統合境界
 
@@ -23,7 +24,7 @@
 | helper-3 | `crates/cli/tests/`、結合試験・CI・後続の配布 |
 | chief | 共通インターフェースの調整、workspace/lockfile、統合・検証 |
 
-ルートの Cargo workspace に core と CLI を追加する。`app/src-tauri` は独立 workspace のまま、GUI 移行時に core を相対 path 依存として追加する。Tauri 用 lockfile はその時点で更新する。
+ルートの Cargo workspace に core と CLI を登録し、`app/src-tauri` は独立 workspace のまま desktop の path 依存で core を利用する。両 workspace の lockfile を個別に管理する。
 
 ## 通信と認証
 
@@ -31,7 +32,7 @@
 - CLI の `--dev-user` は `DISNANS_DEV=1` の開発サーバー用。恒久設定や本番の認証情報にはしない。
 - 接続先は GUI と同様に IP・ホスト名・HTTP(S) URL を扱う。NFKC、前後の空白除去、HTTP スキーム補完、末尾スラッシュ除去を共通化する。CLI 独自の IP allowlist は設けない。
 - ブラウザー GUI の空の接続先は同一オリジンを意味する。CLI にはこの意味がないため、未設定なら明示的に失敗する。
-- core の URL は HTTP(S) の正しい URL として解析し、認証情報・query・fragment を含む接続先は拒否する。GUI 側の検証統一は移行時に行う。サーバーの base path は保持する。
+- core の URL は HTTP(S) の正しい URL として解析し、認証情報・query・fragment を含む接続先は拒否する。desktop GUI のファイル保存も同じ検証を使う。ホスト名・既定ポートなどの URL 正規化を共有値の比較に反映し、サーバーの base path は保持する。
 - REST は `disnans_shared` の型を返し、HTTP エラーの status/code/message を保持する。画面や翻訳、終了コードへの変換は呼び出し側の責務。
 - Svelte の状態管理、タイムライン、通知、描画は TypeScript に残す。ブラウザー開発版と Android の通知サービスは当面既存経路を使う。
 
@@ -77,7 +78,13 @@ Windows/Linux の Tauri GUI の接続先・下書きだけが対象。prefs の�
 3. 書き込みを読み戻して検証する。途中の失敗で旧値を削除したり、完了マーカーを立てたりしない。
 4. 成功した場合だけ正本を切り替える。失敗時は旧 localStorage を保持して従来経路へ戻す。
 
-共有ファイルへの保存成功と GUI の即時反映は別の契約。将来の起動・フォーカス・設定変更時の読み直しで接続先の変更を検出する。編集中の本文を外部更新で無条件に差し替えない。
+接続先を解決してから Setup / Shell を表示し、チャット・プラグインを起動する。共有値・明示 clear の tombstone を旧値より優先する。共有ファイルを読めない場合は旧設定を保ち、端末内 fallback であることを通知する。接続先の保存失敗では旧 localStorage のサーバー値を変更せず、未移行下書きの帰属を守る。
+
+下書きの非同期読込が終わるまで空の入力欄をマウントせず、場所の切替後に古い読込応答を採用しない。保存失敗・競合時は現在の本文とセッション内の未保存キャッシュを保持し、共有保存済みと扱わない。編集中の本文を外部更新で無条件に差し替えない。
+
+共有ファイルへの保存成功と GUI の接続変更は別の契約。起動時とフォーカス復帰時に接続先の変更を検出するが、自動で別サーバーへ切り替えない。利用者が再読み込みを選んだ場合も入力欄の保存を待ち、保存失敗・未送信添付などが残る間は再読み込みしない。
+
+IPC は `client_storage_read({key})`、`client_storage_write({args:{key,value}})`、`client_storage_import({args:{key,value?}})`。応答は `{state:'missing'}` / `{state:'value',value:string}` / `{state:'cleared'}`。import の value 省略は読込だけ、null は missing 時のみ tombstone を作成、文字列は missing 時のみ移行する。任意のファイルパスは受け付けない。
 
 ## 検証と後続の配布
 
