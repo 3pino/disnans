@@ -47,7 +47,7 @@ pub fn human_messages(messages: &[Message], users: &[User]) -> String {
             });
         let mut line = format!(
             "[{}] {} [{}]: {}",
-            message.created_at,
+            crate::timefmt::format_full(message.created_at),
             escape_human(author),
             escape_human(&message.id),
             escape_human(&message.body)

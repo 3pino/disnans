@@ -2,6 +2,7 @@ mod args;
 mod live;
 mod output;
 mod send;
+mod timefmt;
 mod tui;
 mod watch;
 

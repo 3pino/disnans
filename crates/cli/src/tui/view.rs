@@ -210,7 +210,7 @@ mod tests {
         App::new(
             None,
             Keymap::new(EnterKeys::default(), true),
-            0,
+            None,
             Box::new(move || {
                 n += 1;
                 format!("id{n}")

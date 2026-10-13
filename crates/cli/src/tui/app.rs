@@ -6,6 +6,8 @@ use std::collections::HashSet;
 use crossterm::event::KeyEvent;
 use disnans_shared::{Message, Reaction, User};
 
+use jiff::tz::TimeZone;
+
 use super::input::{Action, EnterKeys, Keymap};
 use super::textbuf::TextBuf;
 use super::transcript::{self, Row};
@@ -144,7 +146,8 @@ pub struct App {
     /// 一時的な通知（次の操作で消える）。
     pub notice: Option<String>,
     pub should_quit: bool,
-    pub utc_offset_secs: i32,
+    /// 表示に使うタイムゾーン。`None` は UTC（`Z` 付き）。
+    pub zone: Option<TimeZone>,
     /// 履歴の表示領域（桁・行）。描画のたびに更新する。
     pub viewport: (usize, usize),
     /// 最新から何行上を見ているか。0 は最新に追従。
@@ -163,7 +166,7 @@ impl App {
     pub fn new(
         draft: Option<String>,
         keymap: Keymap,
-        utc_offset_secs: i32,
+        zone: Option<TimeZone>,
         new_client_id: IdSource,
     ) -> Self {
         Self {
@@ -178,7 +181,7 @@ impl App {
             send: SendState::Idle,
             notice: None,
             should_quit: false,
-            utc_offset_secs,
+            zone,
             viewport: (80, 20),
             scroll: 0,
             loading_initial: true,
@@ -216,12 +219,12 @@ impl App {
         let width = self.viewport.0;
         self.messages
             .iter()
-            .flat_map(|m| transcript::message_rows(m, &self.users, width, self.utc_offset_secs))
+            .flat_map(|m| transcript::message_rows(m, &self.users, width, self.zone.as_ref()))
             .collect()
     }
 
     fn message_height(&self, message: &Message) -> usize {
-        transcript::message_rows(message, &self.users, self.viewport.0, self.utc_offset_secs).len()
+        transcript::message_rows(message, &self.users, self.viewport.0, self.zone.as_ref()).len()
     }
 
     fn total_rows(&self) -> usize {
@@ -638,7 +641,7 @@ mod tests {
         App::new(
             None,
             Keymap::new(EnterKeys::default(), true),
-            0,
+            None,
             Box::new(move || {
                 n += 1;
                 format!("cid{n}")

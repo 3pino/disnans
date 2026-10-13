@@ -28,13 +28,6 @@ use crate::{CliError, live};
 const DRAFT_DEBOUNCE: Duration = Duration::from_millis(500);
 
 pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliError> {
-    // `RestClient::messages` の future は Send ではないため、同じスレッド上のタスクとして動かす。
-    tokio::task::LocalSet::new()
-        .run_until(run_local(server, dev_user))
-        .await
-}
-
-async fn run_local(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliError> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(CliError::Usage(
             "tui は端末（TTY）で実行してください。パイプやリダイレクトでは使えません".into(),
@@ -57,7 +50,7 @@ async fn run_local(server: ServerUrl, dev_user: Option<String>) -> Result<(), Cl
     let mut app = App::new(
         draft,
         Keymap::new(EnterKeys::default(), false),
-        0,
+        crate::timefmt::system_zone(),
         Box::new(new_client_id),
     );
     app.notice = draft_warning;
@@ -233,7 +226,7 @@ fn spawn_terminal_reader(tx: UnboundedSender<event::Event>, stop: Arc<AtomicBool
 
 fn spawn_prefs(rest: &Arc<RestClient>, tx: &UnboundedSender<NetEvent>) {
     let (rest, tx) = (rest.clone(), tx.clone());
-    tokio::task::spawn_local(async move {
+    tokio::spawn(async move {
         // 取れなくても既定の割り当てのまま使える。
         if let Ok(prefs) = rest.prefs().await {
             let _ = tx.send(NetEvent::Prefs(EnterKeys::from_prefs(&prefs)));
@@ -249,7 +242,7 @@ fn spawn_history(
     limit: u32,
 ) {
     let (rest, tx) = (rest.clone(), tx.clone());
-    tokio::task::spawn_local(async move {
+    tokio::spawn(async move {
         let result = rest
             .messages(&MessagesQuery {
                 thread_id: None,
@@ -270,7 +263,7 @@ fn spawn_send(
     ack_timeout: Duration,
 ) {
     let (sender, tx) = (session.sender(), tx.clone());
-    tokio::task::spawn_local(async move {
+    tokio::spawn(async move {
         let outcome = sender.send(&client_id, &body, false, ack_timeout).await;
         let result = match outcome {
             SendOutcome::Confirmed { message, .. } => SendResult::Confirmed(Box::new(message)),

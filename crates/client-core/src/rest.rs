@@ -107,22 +107,8 @@ impl RestClient {
     }
 
     pub async fn messages(&self, query: &MessagesQuery) -> Result<Vec<Message>, ClientError> {
-        let mut serializer = form_urlencoded::Serializer::new(String::new());
-        if let Some(value) = &query.thread_id {
-            serializer.append_pair("thread_id", value);
-        }
-        if let Some(value) = &query.before {
-            serializer.append_pair("before", value);
-        }
-        if let Some(value) = query.limit {
-            serializer.append_pair("limit", &value.to_string());
-        }
-        let query = serializer.finish();
-        let path = if query.is_empty() {
-            "/api/messages".to_owned()
-        } else {
-            format!("/api/messages?{query}")
-        };
+        // Built before the await so no non-Send query encoder is held across it.
+        let path = messages_path(query);
         self.get_json(&path).await
     }
 
@@ -155,6 +141,26 @@ impl RestClient {
             };
         }
         response.json().await.map_err(ClientError::Request)
+    }
+}
+
+/// `/api/messages` with its query string. Pure, so the encoder is dropped before any await.
+fn messages_path(query: &MessagesQuery) -> String {
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    if let Some(value) = &query.thread_id {
+        serializer.append_pair("thread_id", value);
+    }
+    if let Some(value) = &query.before {
+        serializer.append_pair("before", value);
+    }
+    if let Some(value) = query.limit {
+        serializer.append_pair("limit", &value.to_string());
+    }
+    let query = serializer.finish();
+    if query.is_empty() {
+        "/api/messages".to_owned()
+    } else {
+        format!("/api/messages?{query}")
     }
 }
 
@@ -316,6 +322,36 @@ mod tests {
                 .await
                 .unwrap()
                 .starts_with("GET /api/me/prefs HTTP/1.1")
+        );
+    }
+}
+
+#[cfg(test)]
+mod send_check {
+    use super::*;
+
+    fn assert_send<T: Send>(_: &T) {}
+
+    /// Compile-time check: these futures can be moved into `tokio::spawn`.
+    #[allow(dead_code)]
+    async fn check(client: &RestClient, query: &MessagesQuery) {
+        assert_send(&client.me());
+        assert_send(&client.users());
+        assert_send(&client.prefs());
+        assert_send(&client.messages(query));
+    }
+
+    #[test]
+    fn messages_path_encodes_query() {
+        assert_eq!(messages_path(&MessagesQuery::default()), "/api/messages");
+        let query = MessagesQuery {
+            thread_id: Some("thread:1 x".into()),
+            before: Some("m-9".into()),
+            limit: Some(20),
+        };
+        assert_eq!(
+            messages_path(&query),
+            "/api/messages?thread_id=thread%3A1+x&before=m-9&limit=20"
         );
     }
 }
