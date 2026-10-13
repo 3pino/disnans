@@ -55,6 +55,12 @@ struct ApiErrorBody {
     message: String,
 }
 
+/// The development identity is sent as an HTTP header, so it must be non-blank visible ASCII
+/// (the server reads it with `HeaderValue::to_str`, which rejects anything else).
+pub(crate) fn is_valid_dev_user(value: &str) -> bool {
+    !value.trim().is_empty() && value.bytes().all(|b| (0x20..=0x7e).contains(&b))
+}
+
 pub struct RestClient {
     server: ServerUrl,
     client: Client,
@@ -65,7 +71,7 @@ impl RestClient {
     pub fn new(server: ServerUrl, dev_user: Option<&str>) -> Result<Self, ClientError> {
         let dev_user = dev_user
             .map(|value| {
-                if value.trim().is_empty() || value.contains('\r') || value.contains('\n') {
+                if !is_valid_dev_user(value) {
                     return Err(ClientError::InvalidDevUser);
                 }
                 HeaderValue::from_str(value).map_err(|_| ClientError::InvalidDevUser)
@@ -95,6 +101,11 @@ impl RestClient {
         self.get_json("/api/users").await
     }
 
+    /// The signed-in user's preferences (`GET /api/me/prefs`). A JSON object, or `{}` if unset.
+    pub async fn prefs(&self) -> Result<serde_json::Value, ClientError> {
+        self.get_json("/api/me/prefs").await
+    }
+
     pub async fn messages(&self, query: &MessagesQuery) -> Result<Vec<Message>, ClientError> {
         let mut serializer = form_urlencoded::Serializer::new(String::new());
         if let Some(value) = &query.thread_id {
@@ -115,11 +126,17 @@ impl RestClient {
         self.get_json(&path).await
     }
 
-    async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, ClientError> {
+    /// 開発用ヘッダー（X-Dev-User）を付けた GET の準備。`rest_api` の読み取りでも使う（status と本文を自分で扱うため）。
+    pub(crate) fn get_request(&self, path: &str) -> reqwest::RequestBuilder {
         let mut request = self.client.get(self.server.http_url(path));
         if let Some(user) = &self.dev_user {
             request = request.header("X-Dev-User", user);
         }
+        request
+    }
+
+    async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, ClientError> {
+        let request = self.get_request(path);
         let response = request.send().await.map_err(ClientError::Request)?;
         if !response.status().is_success() {
             let status = response.status();
@@ -279,8 +296,26 @@ mod tests {
             Err(ClientError::InvalidDevUser)
         ));
         assert!(matches!(
-            RestClient::new(url, Some("x\r\ny")),
+            RestClient::new(url.clone(), Some("x\r\ny")),
             Err(ClientError::InvalidDevUser)
         ));
+        assert!(matches!(
+            RestClient::new(url, Some("アリス")),
+            Err(ClientError::InvalidDevUser)
+        ));
+    }
+
+    #[tokio::test]
+    async fn prefs_fetches_the_preference_object() {
+        let (base, server) = mock_response("200 OK", r#"{"enter_sends":true}"#).await;
+        let client = RestClient::new(ServerUrl::parse(&base).unwrap(), None).unwrap();
+        let prefs = client.prefs().await.unwrap();
+        assert_eq!(prefs["enter_sends"], serde_json::Value::Bool(true));
+        assert!(
+            server
+                .await
+                .unwrap()
+                .starts_with("GET /api/me/prefs HTTP/1.1")
+        );
     }
 }

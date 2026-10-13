@@ -157,6 +157,8 @@ pub async fn watch(
             WatchItem::Event { generation, event } => {
                 (watch::event_line(generation, &event, json), false)
             }
+            // Reconnect attempts are not printed; ChatWatch does not return them anyway.
+            WatchItem::Connecting { .. } => (None, false),
         };
         let Some(line) = line else { continue };
         let written = if to_stderr {

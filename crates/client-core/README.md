@@ -25,5 +25,13 @@ Enable with `features = ["ws"]`. The desktop GUI keeps its TypeScript WebSocket 
   After a disconnect the watch reconnects with jittered exponential backoff (1 s, doubling, capped at 30 s). The backoff resets only after a connection that lived at least 30 s. Events are not replayed.
 - Refetch rules: after `Connected { generation >= 2 }`, refetch history over REST and remove overlaps by message ID. Do not refetch during a disconnect gap; the next `Connected` covers it. For `Gap { reason: "lagged" }`, refetch now. The queue is bounded at 256 items. On overflow, queued events and older connection items are dropped, and one `lagged` gap plus the newest `Connected` are kept, so the queue cannot grow without bound.
 - Dropping a `ChatWatch` aborts its task. `close()` shuts it down gracefully.
+- `ChatSession::start(&server, ConnectOptions)` is a reconnecting connection that both reads and sends, using one socket. It has the same receive rules as `ChatWatch` (gap, refetch, `Failed`, bounded queue), plus `WatchItem::Connecting { attempt }` before each reconnect attempt. `ChatWatch::next()` does not return `Connecting`.
+- `session.sender()` returns a `SessionSender` (cloneable, concurrent sends allowed):
+  - `send(client_id, body, silent, ack_timeout)`: a plain main-chat message.
+  - `send_request(client_id, SendRequest { thread_id, body, attachment_ids, start_thread, reply_to, silent }, ack_timeout)`: all `message.send` options. An empty body is allowed when there are attachments.
+  - `emit(ClientEvent)`: fire-and-forget events (edit, delete, reactions, thread creation, call and plugin signalling). Returns once written. `message.send` is refused with `EmitError::SendNotAllowed`.
+  Sends and emits made while not connected return `NotSent` / `EmitError::NotConnected` without writing.
+- `session.reconnect_now()` ends a running backoff at once and resets it to the first step. It does nothing while connected or while an attempt is in progress.
+- Rejected codes are the seven that the server returns before committing (`empty_message`, `body_too_long`, `nested_thread`, `thread_not_found`, `reply_not_found`, `reply_other_place`, `invalid_attachment`). The server rolls back the transaction on those paths.
 
 Both types must be used inside a Tokio runtime.

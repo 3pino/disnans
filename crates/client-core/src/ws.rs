@@ -3,6 +3,8 @@
 //! * [`ChatConnection`] is one connection for sending messages and reading events. Sends are
 //!   confirmed by `client_id` and are never retried automatically.
 //! * [`ChatWatch`] is a long-lived subscription that reconnects with backoff.
+//! * [`ChatSession`] is the same reconnecting subscription, plus sending through [`SessionSender`]
+//!   over the same connection. Use it when one client both reads and sends.
 //!
 //! # Gap and refetch contract (for [`ChatWatch`])
 //!
@@ -18,8 +20,9 @@
 //! the same time: `send_message` discards events that are not its own acknowledgement.
 
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     fmt,
+    future::Future,
     sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::Duration,
 };
@@ -30,9 +33,9 @@ pub use disnans_shared::{Message, ServerEvent, User};
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
     net::TcpStream,
-    sync::{Notify, oneshot},
+    sync::{Notify, mpsc, oneshot, watch},
     task::JoinHandle,
-    time::{Instant as TokioInstant, sleep, timeout, timeout_at},
+    time::{Instant as TokioInstant, sleep, sleep_until, timeout, timeout_at},
 };
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async_with_config,
@@ -64,7 +67,15 @@ const REJECTED_CODES: [&str; 7] = [
 ];
 /// `reason` of the gap emitted when the queue overflows.
 const LAGGED: &str = "lagged";
-/// A connection that lived at least this long resets the reconnect backoff.
+/// Queue depth for commands waiting for the session task.
+const COMMAND_QUEUE: usize = 64;
+/// Upper bound on a single frame write. A write that takes longer means the socket is stuck.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+const NOT_CONNECTED: &str = "接続していないため送信しませんでした";
+const IDLE_REASON: &str = "無通信が続いたため送信しませんでした。接続し直してください";
+const DUPLICATE_ID: &str = "同じ client_id の送信が確認待ちのため送信しませんでした";
+const SESSION_ENDED: &str = "セッションが終了しているため送信しませんでした";
+/// A connection that lived at least this long resets the backoff.
 const STABLE_CONNECTION: Duration = Duration::from_secs(30);
 
 /// Options for opening a WebSocket connection.
@@ -261,20 +272,13 @@ impl ChatConnection {
         silent: bool,
         ack_timeout: Duration,
     ) -> SendOutcome {
-        if client_id.is_empty() {
-            return SendOutcome::NotSent {
-                reason: "client_id が空です".into(),
-            };
-        }
-        if body.trim().is_empty() {
-            return SendOutcome::NotSent {
-                reason: "本文が空です".into(),
-            };
-        }
-        if body.chars().count() > MAX_BODY_CHARS {
-            return SendOutcome::NotSent {
-                reason: format!("本文は{MAX_BODY_CHARS}文字までです"),
-            };
+        let request = SendRequest {
+            body: body.to_owned(),
+            silent,
+            ..SendRequest::default()
+        };
+        if let Err(reason) = validate_send(client_id, &request) {
+            return SendOutcome::NotSent { reason };
         }
         if !self.sendable {
             return SendOutcome::NotSent {
@@ -290,16 +294,7 @@ impl ChatConnection {
         }
 
         let client_id = client_id.to_owned();
-        let event = ClientEvent::MessageSend {
-            client_id: client_id.clone(),
-            thread_id: None,
-            body: body.to_owned(),
-            attachment_ids: Vec::new(),
-            start_thread: false,
-            reply_to: None,
-            silent,
-        };
-        let text = match serde_json::to_string(&event) {
+        let text = match send_frame(&client_id, &request) {
             Ok(text) => text,
             Err(err) => {
                 return SendOutcome::NotSent {
@@ -434,6 +429,43 @@ impl ChatConnection {
     }
 }
 
+/// Checks shared by every send path. Nothing is written for an invalid request. The server
+/// decides the rest (nested threads, missing targets, and so on) and answers with a code.
+fn validate_send(client_id: &str, request: &SendRequest) -> Result<(), String> {
+    if client_id.is_empty() {
+        return Err("client_id が空です".into());
+    }
+    // The server accepts an empty body when there are attachments.
+    if request.body.trim().is_empty() && request.attachment_ids.is_empty() {
+        return Err("本文が空です".into());
+    }
+    if request.body.chars().count() > MAX_BODY_CHARS {
+        return Err(format!("本文は{MAX_BODY_CHARS}文字までです"));
+    }
+    let ids = request
+        .thread_id
+        .iter()
+        .chain(request.reply_to.iter())
+        .chain(request.attachment_ids.iter());
+    if ids.into_iter().any(String::is_empty) {
+        return Err("ID が空です".into());
+    }
+    Ok(())
+}
+
+/// The `message.send` frame for a main-chat or thread message.
+fn send_frame(client_id: &str, request: &SendRequest) -> Result<String, serde_json::Error> {
+    serde_json::to_string(&ClientEvent::MessageSend {
+        client_id: client_id.to_owned(),
+        thread_id: request.thread_id.clone(),
+        body: request.body.clone(),
+        attachment_ids: request.attachment_ids.clone(),
+        start_thread: request.start_thread,
+        reply_to: request.reply_to.clone(),
+        silent: request.silent,
+    })
+}
+
 fn unknown(client_id: String, reason: UnknownReason) -> SendOutcome {
     SendOutcome::Unknown { client_id, reason }
 }
@@ -514,21 +546,31 @@ fn map_connect_error(err: tungstenite::Error) -> WsError {
     }
 }
 
-/// One item from [`ChatWatch::next`]. Every item carries the generation of the connection it
-/// belongs to. Generation 1 is the first connection. See the module docs for the refetch rules.
+/// One item from [`ChatWatch::next`] or [`ChatSession::next`]. Every item carries the generation of
+/// the connection it belongs to, except [`WatchItem::Connecting`]. Generation 1 is the first
+/// connection. See the module docs for the refetch rules.
 // The event payload is the wire type itself, so the size gap is accepted rather than boxed.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum WatchItem {
-    /// A connection is ready (the first one, or after a reconnect).
-    Connected { generation: u64, me: User },
-    /// A server event from this generation's connection.
+    /// A reconnect attempt is starting. `attempt` counts from 1 within one outage and restarts
+    /// when a connection is up. Informational only: [`ChatWatch`] does not return it.
+    Connecting { attempt: u32 },
+    /// A connection is ready (the first one, or after a reconnect). `users` is the list from
+    /// `hello` on that connection.
+    Connected {
+        generation: u64,
+        me: User,
+        users: Vec<User>,
+    },
+    /// A server event from this generation's connection. In a [`ChatSession`] this includes the
+    /// `message.created` that confirms one of its own sends, and the `error` events for them.
     Event { generation: u64, event: ServerEvent },
     /// Events may have been lost. For a disconnect, wait for `Connected { generation >= 2 }` and
     /// then refetch over REST. For `"lagged"`, refetch now (see the module docs).
     Gap { generation: u64, reason: String },
     /// Reconnecting stopped for a reason that retrying cannot fix (HTTP 401 or 403). This is
-    /// terminal: after it is returned, every later [`ChatWatch::next`] returns the same `Failed`.
+    /// terminal: after it is returned, every later `next()` returns the same `Failed`.
     Failed {
         reason: String,
         http_status: Option<u16>,
@@ -537,9 +579,7 @@ pub enum WatchItem {
 
 /// Reconnecting event subscription. Dropping it stops the background task.
 pub struct ChatWatch {
-    shared: Arc<Shared>,
-    shutdown: Option<oneshot::Sender<()>>,
-    task: Option<JoinHandle<()>>,
+    session: ChatSession,
 }
 
 impl ChatWatch {
@@ -554,26 +594,106 @@ impl ChatWatch {
         opts: ConnectOptions,
         tuning: Tuning,
     ) -> Result<Self, WsError> {
+        Ok(Self {
+            session: ChatSession::start_with(server, opts, tuning).await?,
+        })
+    }
+
+    /// Wait for the next item. Cancel-safe: items stay queued if the future is dropped.
+    /// [`WatchItem::Connecting`] is not returned here.
+    pub async fn next(&mut self) -> WatchItem {
+        loop {
+            match self.session.next().await {
+                WatchItem::Connecting { .. } => continue,
+                item => return item,
+            }
+        }
+    }
+
+    /// Stop reconnecting, close the current connection, and wait briefly for the task to end.
+    pub async fn close(self) {
+        self.session.close().await;
+    }
+}
+
+/// A reconnecting WebSocket session: it reads events with [`ChatSession::next`] and sends
+/// messages through [`SessionSender`], both over the same connection. Dropping it stops the
+/// background task.
+///
+/// Receiving follows the same rules as [`ChatWatch`] (gap, refetch, `Failed`, bounded queue),
+/// plus [`WatchItem::Connecting`] before each reconnect attempt.
+///
+/// Sending:
+/// - A send while the session is not connected (reconnecting, or after a terminal failure)
+///   returns [`SendOutcome::NotSent`] and writes nothing.
+/// - A send is settled only by a `message.created` with its own `client_id` on the current
+///   connection (`Confirmed`), or by an `error` with its own `client_id` (`Rejected` for the
+///   allowlisted codes, `Unknown` otherwise). Errors for other IDs, and errors without an ID, do
+///   not settle it; such a send ends as `Unknown { Timeout }` at its `ack_timeout`.
+/// - If the connection ends before the send is settled, it is `Unknown { Disconnected }`. Sends
+///   are never retried automatically, even after reconnecting.
+/// - Sends may run concurrently. Each `client_id` is independent; a `client_id` that is already
+///   waiting for its acknowledgement is refused with `NotSent`.
+/// - Every server event is delivered through `next()`, including the confirmations of this
+///   session's own sends (the UI removes duplicates by ID).
+pub struct ChatSession {
+    shared: Arc<Shared>,
+    commands: mpsc::Sender<Command>,
+    reconnect: watch::Sender<u64>,
+    shutdown: Option<oneshot::Sender<()>>,
+    task: Option<JoinHandle<()>>,
+}
+
+impl ChatSession {
+    /// Open the first connection. If it fails, returns the error and does not retry.
+    /// Must be called inside a Tokio runtime.
+    pub async fn start(server: &ServerUrl, opts: ConnectOptions) -> Result<Self, WsError> {
+        Self::start_with(server, opts, Tuning::DEFAULT).await
+    }
+
+    async fn start_with(
+        server: &ServerUrl,
+        opts: ConnectOptions,
+        tuning: Tuning,
+    ) -> Result<Self, WsError> {
         let conn = ChatConnection::connect(server, opts.clone()).await?;
         let shared = Arc::new(Shared::new(tuning.queue_capacity));
-        shared.push_control(WatchItem::Connected {
-            generation: 1,
-            me: conn.me.clone(),
-        });
+        shared.push_control(connected(1, &conn), 1);
         let (shutdown, shutdown_rx) = oneshot::channel();
-        let task = tokio::spawn(run_watch(
-            server.clone(),
+        let (commands_tx, commands) = mpsc::channel(COMMAND_QUEUE);
+        let (reconnect, reconnect_rx) = watch::channel(0u64);
+        let link = Link {
+            server: server.clone(),
             opts,
             tuning,
-            shared.clone(),
-            conn,
-            shutdown_rx,
-        ));
+            shared: shared.clone(),
+            commands,
+            reconnect: reconnect_rx,
+            shutdown: shutdown_rx,
+        };
+        let task = tokio::spawn(run_session(link, conn));
         Ok(Self {
             shared,
+            commands: commands_tx,
+            reconnect,
             shutdown: Some(shutdown),
             task: Some(task),
         })
+    }
+
+    /// A cloneable handle for sending over this session.
+    pub fn sender(&self) -> SessionSender {
+        SessionSender {
+            commands: self.commands.clone(),
+        }
+    }
+
+    /// Reconnect now if the session is waiting out a backoff: the wait ends and the next attempt
+    /// starts at once, and the backoff restarts from its first step. Does nothing while
+    /// connected, while an attempt is in progress, or after a terminal failure.
+    pub fn reconnect_now(&self) {
+        self.reconnect
+            .send_modify(|count| *count = count.wrapping_add(1));
     }
 
     /// Wait for the next item. Cancel-safe: items stay queued if the future is dropped.
@@ -593,7 +713,8 @@ impl ChatWatch {
         }
     }
 
-    /// Stop reconnecting, close the current connection, and wait briefly for the task to end.
+    /// Stop reconnecting, settle pending sends as `Unknown`, close the connection, and wait
+    /// briefly for the task to end. Sends made afterwards return `NotSent`.
     pub async fn close(mut self) {
         if let Some(shutdown) = self.shutdown.take() {
             let _ = shutdown.send(());
@@ -607,10 +728,510 @@ impl ChatWatch {
     }
 }
 
-impl Drop for ChatWatch {
+impl Drop for ChatSession {
     fn drop(&mut self) {
         if let Some(task) = self.task.take() {
             task.abort();
+        }
+    }
+}
+
+/// One message to send, with the optional fields of `message.send`. `Default` is a plain
+/// main-chat message with an empty body; set `body` before sending.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SendRequest {
+    pub thread_id: Option<String>,
+    pub body: String,
+    /// Attachment IDs from `POST /api/files`. A body may be empty when attachments are given.
+    pub attachment_ids: Vec<String>,
+    /// Start a thread from this message. Not valid together with `thread_id` (the server
+    /// answers `nested_thread`).
+    pub start_thread: bool,
+    /// Reply target. It must be in the same place (main chat or the same thread).
+    pub reply_to: Option<String>,
+    pub silent: bool,
+}
+
+/// Why [`SessionSender::emit`] did not deliver an event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmitError {
+    /// Not connected. Nothing was written.
+    NotConnected,
+    /// The write failed or timed out, so delivery is unknown. The connection is being replaced.
+    WriteFailed,
+    /// `message.send` must go through [`SessionSender::send_request`], which tracks the
+    /// acknowledgement. Nothing was written.
+    SendNotAllowed,
+}
+
+impl fmt::Display for EmitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotConnected => write!(f, "接続していないため送信しませんでした"),
+            Self::WriteFailed => write!(f, "送信に失敗したか、結果が不明です"),
+            Self::SendNotAllowed => {
+                write!(f, "message.send は send_request で送ってください")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EmitError {}
+
+/// Cloneable handle for sending over a [`ChatSession`]. Sends may run concurrently.
+#[derive(Clone)]
+pub struct SessionSender {
+    commands: mpsc::Sender<Command>,
+}
+
+impl SessionSender {
+    /// Send one main-chat message (no thread, no attachments, no reply) with the caller's
+    /// `client_id`. See [`ChatSession`] for the outcome rules. `client_id` must be unique per
+    /// logical message; a duplicate of a pending ID is refused with `NotSent`.
+    pub async fn send(
+        &self,
+        client_id: &str,
+        body: &str,
+        silent: bool,
+        ack_timeout: Duration,
+    ) -> SendOutcome {
+        let request = SendRequest {
+            body: body.to_owned(),
+            silent,
+            ..SendRequest::default()
+        };
+        self.send_request(client_id, request, ack_timeout).await
+    }
+
+    /// Send one message with all `message.send` options. Same outcome rules as
+    /// [`SessionSender::send`].
+    pub async fn send_request(
+        &self,
+        client_id: &str,
+        request: SendRequest,
+        ack_timeout: Duration,
+    ) -> SendOutcome {
+        if let Err(reason) = validate_send(client_id, &request) {
+            return SendOutcome::NotSent { reason };
+        }
+        let (reply, outcome) = oneshot::channel();
+        let command = Command::Send(Outgoing {
+            client_id: client_id.to_owned(),
+            request,
+            ack_timeout,
+            reply,
+        });
+        if self.commands.send(command).await.is_err() {
+            return SendOutcome::NotSent {
+                reason: SESSION_ENDED.into(),
+            };
+        }
+        // The task dropped the request without answering it (it was aborted): the outcome is
+        // not known, so report Unknown rather than claim it was not sent.
+        outcome
+            .await
+            .unwrap_or_else(|_| unknown(client_id.to_owned(), UnknownReason::Disconnected))
+    }
+
+    /// Send an event that has no acknowledgement (edit, delete, reaction, thread creation, call
+    /// and plugin signalling). Returns once the frame is written. The server gives no per-event
+    /// confirmation; its result, if any, arrives as an event on `next()`.
+    pub async fn emit(&self, event: ClientEvent) -> Result<(), EmitError> {
+        if matches!(event, ClientEvent::MessageSend { .. }) {
+            return Err(EmitError::SendNotAllowed);
+        }
+        let (reply, outcome) = oneshot::channel();
+        if self
+            .commands
+            .send(Command::Emit { event, reply })
+            .await
+            .is_err()
+        {
+            return Err(EmitError::NotConnected);
+        }
+        outcome.await.unwrap_or(Err(EmitError::WriteFailed))
+    }
+}
+
+/// Connection-independent state of a session task.
+struct Link {
+    server: ServerUrl,
+    opts: ConnectOptions,
+    tuning: Tuning,
+    shared: Arc<Shared>,
+    commands: mpsc::Receiver<Command>,
+    reconnect: watch::Receiver<u64>,
+    shutdown: oneshot::Receiver<()>,
+}
+
+/// A request from a [`SessionSender`] to the session task.
+enum Command {
+    Send(Outgoing),
+    Emit {
+        event: ClientEvent,
+        reply: oneshot::Sender<Result<(), EmitError>>,
+    },
+}
+
+/// A send to write, answered exactly once on `reply`.
+struct Outgoing {
+    client_id: String,
+    request: SendRequest,
+    ack_timeout: Duration,
+    reply: oneshot::Sender<SendOutcome>,
+}
+
+/// A send written to the current connection and waiting for its acknowledgement.
+struct PendingSend {
+    deadline: TokioInstant,
+    reply: oneshot::Sender<SendOutcome>,
+}
+
+/// Sends waiting for acknowledgement on one connection, keyed by `client_id`.
+type Pending = HashMap<String, PendingSend>;
+
+enum Pumped {
+    Shutdown,
+    Ended(String),
+}
+
+fn connected(generation: u64, conn: &ChatConnection) -> WatchItem {
+    WatchItem::Connected {
+        generation,
+        me: conn.me.clone(),
+        users: conn.users.clone(),
+    }
+}
+
+/// Session task: runs connections one after another, reconnecting with backoff.
+async fn run_session(mut link: Link, first: ChatConnection) {
+    let mut generation = 1;
+    let mut conn = first;
+    let mut failures: u32 = 0;
+    loop {
+        let started = TokioInstant::now();
+        let reason = match pump(conn, &mut link, generation).await {
+            Pumped::Shutdown => break,
+            Pumped::Ended(reason) => reason,
+        };
+        failures = failures_after_disconnect(failures, started.elapsed(), &link.tuning);
+        link.shared
+            .push_control(WatchItem::Gap { generation, reason }, generation);
+        conn = match reconnect(&mut link, &mut failures, generation).await {
+            Some(next) => next,
+            None => break,
+        };
+        generation += 1;
+        link.shared
+            .push_control(connected(generation, &conn), generation);
+    }
+    // Stopped: refuse anything still queued, so those callers get NotSent rather than Unknown.
+    link.commands.close();
+    while let Ok(command) = link.commands.try_recv() {
+        refuse_command(command, NOT_CONNECTED);
+    }
+}
+
+/// Serve one connection until it ends or the session is shut down. Every send still pending
+/// when this returns is settled, and the connection is dropped before any backoff starts.
+async fn pump(mut conn: ChatConnection, link: &mut Link, generation: u64) -> Pumped {
+    let mut pending = Pending::new();
+    let outcome = loop {
+        let expiry = pending.values().map(|send| send.deadline).min();
+        tokio::select! {
+            _ = &mut link.shutdown => break Pumped::Shutdown,
+            command = next_command(&mut link.commands) => {
+                if let Err(reason) = run_command(&mut conn, &mut pending, command).await {
+                    break Pumped::Ended(reason);
+                }
+            }
+            _ = wait_until(expiry) => expire(&mut pending, TokioInstant::now()),
+            result = conn.next_event() => match result {
+                Ok(event) => route(&link.shared, generation, &mut pending, event),
+                Err(Disconnected { reason }) => break Pumped::Ended(reason),
+            },
+        }
+    };
+    // Nothing sent on this connection can be confirmed any more.
+    for (client_id, send) in pending.drain() {
+        let _ = send
+            .reply
+            .send(unknown(client_id, UnknownReason::Disconnected));
+    }
+    match outcome {
+        Pumped::Shutdown => conn.close().await,
+        Pumped::Ended(_) => drop(conn),
+    }
+    outcome
+}
+
+/// Wait for the next command. Pends forever once the channel is closed, so it never ends the
+/// select loop by itself.
+async fn next_command(commands: &mut mpsc::Receiver<Command>) -> Command {
+    match commands.recv().await {
+        Some(command) => command,
+        None => std::future::pending().await,
+    }
+}
+
+async fn wait_until(deadline: Option<TokioInstant>) {
+    match deadline {
+        Some(deadline) => sleep_until(deadline).await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Run one command on the live connection. `Err` ends the connection (a failed write may have
+/// left a partial frame in the socket buffer).
+async fn run_command(
+    conn: &mut ChatConnection,
+    pending: &mut Pending,
+    command: Command,
+) -> Result<(), String> {
+    match command {
+        Command::Send(outgoing) => start_send(conn, pending, outgoing).await,
+        Command::Emit { event, reply } => emit_frame(conn, event, reply).await,
+    }
+}
+
+/// Write one send. The request is registered in `pending` before the write, so its
+/// acknowledgement cannot arrive unmatched. A failed or timed-out write ends the connection,
+/// since a partial frame may be buffered; `Err` carries the reason.
+async fn start_send(
+    conn: &mut ChatConnection,
+    pending: &mut Pending,
+    outgoing: Outgoing,
+) -> Result<(), String> {
+    if pending.contains_key(&outgoing.client_id) {
+        refuse_send(outgoing, DUPLICATE_ID);
+        return Ok(());
+    }
+    if conn.last_sent.elapsed() >= conn.idle_timeout {
+        refuse_send(outgoing, IDLE_REASON);
+        return Ok(());
+    }
+    let text = match send_frame(&outgoing.client_id, &outgoing.request) {
+        Ok(text) => text,
+        Err(err) => {
+            refuse_send(outgoing, &format!("送信データを作れません: {err}"));
+            return Ok(());
+        }
+    };
+    let client_id = outgoing.client_id.clone();
+    pending.insert(
+        client_id.clone(),
+        PendingSend {
+            deadline: TokioInstant::now() + outgoing.ack_timeout,
+            reply: outgoing.reply,
+        },
+    );
+    match timeout(
+        WRITE_TIMEOUT,
+        conn.socket.send(WsMessage::Text(text.into())),
+    )
+    .await
+    {
+        Ok(Ok(())) => {
+            conn.last_sent = TokioInstant::now();
+            Ok(())
+        }
+        Ok(Err(_)) => {
+            settle_one(pending, &client_id, UnknownReason::WriteFailed);
+            Err("write failed".into())
+        }
+        Err(_) => {
+            settle_one(pending, &client_id, UnknownReason::Timeout);
+            Err("write timeout".into())
+        }
+    }
+}
+
+/// Write one event that has no acknowledgement. Refused (not written) when the connection has
+/// been silent too long, as for sends.
+async fn emit_frame(
+    conn: &mut ChatConnection,
+    event: ClientEvent,
+    reply: oneshot::Sender<Result<(), EmitError>>,
+) -> Result<(), String> {
+    if conn.last_sent.elapsed() >= conn.idle_timeout {
+        let _ = reply.send(Err(EmitError::NotConnected));
+        return Ok(());
+    }
+    let text = match serde_json::to_string(&event) {
+        Ok(text) => text,
+        Err(_) => {
+            let _ = reply.send(Err(EmitError::WriteFailed));
+            return Ok(());
+        }
+    };
+    match timeout(
+        WRITE_TIMEOUT,
+        conn.socket.send(WsMessage::Text(text.into())),
+    )
+    .await
+    {
+        Ok(Ok(())) => {
+            conn.last_sent = TokioInstant::now();
+            let _ = reply.send(Ok(()));
+            Ok(())
+        }
+        Ok(Err(_)) => {
+            let _ = reply.send(Err(EmitError::WriteFailed));
+            Err("write failed".into())
+        }
+        Err(_) => {
+            let _ = reply.send(Err(EmitError::WriteFailed));
+            Err("write timeout".into())
+        }
+    }
+}
+
+/// Route one server event: queue it, and if it settles a pending send, answer that send.
+/// The event is queued first, so a caller that sees `Confirmed` finds the event already queued.
+fn route(shared: &Shared, generation: u64, pending: &mut Pending, event: ServerEvent) {
+    let settled = match &event {
+        ServerEvent::MessageCreated {
+            client_id: Some(id),
+            message,
+        } if pending.contains_key(id) => Some((
+            id.clone(),
+            SendOutcome::Confirmed {
+                client_id: id.clone(),
+                message: message.clone(),
+            },
+        )),
+        ServerEvent::Error {
+            client_id: Some(id),
+            code,
+            message,
+        } if pending.contains_key(id) => {
+            let outcome = if REJECTED_CODES.contains(&code.as_str()) {
+                SendOutcome::Rejected {
+                    client_id: id.clone(),
+                    code: code.clone(),
+                    message: message.clone(),
+                }
+            } else {
+                unknown(
+                    id.clone(),
+                    UnknownReason::ServerError {
+                        code: code.clone(),
+                        message: message.clone(),
+                    },
+                )
+            };
+            Some((id.clone(), outcome))
+        }
+        _ => None,
+    };
+    shared.push_event(generation, event);
+    if let Some((client_id, outcome)) = settled {
+        settle_with(pending, &client_id, outcome);
+    }
+}
+
+/// Answer every pending send whose acknowledgement deadline has passed.
+fn expire(pending: &mut Pending, now: TokioInstant) {
+    let due: Vec<String> = pending
+        .iter()
+        .filter(|(_, send)| send.deadline <= now)
+        .map(|(client_id, _)| client_id.clone())
+        .collect();
+    for client_id in due {
+        settle_one(pending, &client_id, UnknownReason::Timeout);
+    }
+}
+
+fn settle_one(pending: &mut Pending, client_id: &str, reason: UnknownReason) {
+    settle_with(pending, client_id, unknown(client_id.to_owned(), reason));
+}
+
+fn settle_with(pending: &mut Pending, client_id: &str, outcome: SendOutcome) {
+    if let Some(send) = pending.remove(client_id) {
+        let _ = send.reply.send(outcome);
+    }
+}
+
+fn refuse_send(outgoing: Outgoing, reason: &str) {
+    let _ = outgoing.reply.send(SendOutcome::NotSent {
+        reason: reason.to_owned(),
+    });
+}
+
+/// Refuse a command without writing anything.
+fn refuse_command(command: Command, reason: &str) {
+    match command {
+        Command::Send(outgoing) => refuse_send(outgoing, reason),
+        Command::Emit { reply, .. } => {
+            let _ = reply.send(Err(EmitError::NotConnected));
+        }
+    }
+}
+
+/// Run `work` to completion while refusing commands. `None` if shutdown arrives first.
+async fn while_offline<F: Future>(
+    work: F,
+    shutdown: &mut oneshot::Receiver<()>,
+    commands: &mut mpsc::Receiver<Command>,
+) -> Option<F::Output> {
+    tokio::pin!(work);
+    loop {
+        tokio::select! {
+            _ = &mut *shutdown => return None,
+            output = &mut work => return Some(output),
+            command = next_command(commands) => refuse_command(command, NOT_CONNECTED),
+        }
+    }
+}
+
+/// Sleep for `wait`, or return early when [`ChatSession::reconnect_now`] is called. `true` if
+/// woken early. Calls made before this wait starts are ignored.
+async fn backoff_wait(wait: Duration, reconnect: &mut watch::Receiver<u64>) -> bool {
+    reconnect.borrow_and_update();
+    tokio::select! {
+        _ = sleep(jittered(wait)) => false,
+        changed = reconnect.changed() => changed.is_ok(),
+    }
+}
+
+/// Back off and reconnect until a connection is up. `None` means stop: shutdown, or a terminal
+/// failure (recorded in `shared` as `Failed`). Sends are refused while this runs.
+async fn reconnect(link: &mut Link, failures: &mut u32, generation: u64) -> Option<ChatConnection> {
+    let mut attempt: u32 = 0;
+    loop {
+        let wait = backoff_delay(*failures, &link.tuning);
+        *failures = failures.saturating_add(1);
+        let woken = while_offline(
+            backoff_wait(wait, &mut link.reconnect),
+            &mut link.shutdown,
+            &mut link.commands,
+        )
+        .await?;
+        if woken {
+            // An explicit reconnect starts the backoff from its first step again.
+            *failures = 0;
+        }
+        attempt += 1;
+        link.shared
+            .push_control(WatchItem::Connecting { attempt }, generation);
+        let server = link.server.clone();
+        let opts = link.opts.clone();
+        let result = while_offline(
+            ChatConnection::connect(&server, opts),
+            &mut link.shutdown,
+            &mut link.commands,
+        )
+        .await?;
+        match result {
+            Ok(conn) => return Some(conn),
+            Err(WsError::Http { status }) if status == 401 || status == 403 => {
+                link.shared.fail(WatchItem::Failed {
+                    reason: WsError::Http { status }.to_string(),
+                    http_status: Some(status),
+                });
+                return None;
+            }
+            Err(_) => {}
         }
     }
 }
@@ -684,12 +1305,12 @@ impl Shared {
     }
 
     /// Connection state changes are queued. When the queue is full they are collapsed, never
-    /// allowed to grow without bound.
-    fn push_control(&self, item: WatchItem) {
+    /// allowed to grow without bound. `generation` is the one the change belongs to.
+    fn push_control(&self, item: WatchItem, generation: u64) {
         {
             let mut state = self.lock();
             if state.queue.len() >= self.capacity {
-                collapse(&mut state.queue, item_generation(&item));
+                collapse(&mut state.queue, generation);
             }
             state.queue.push_back(item);
         }
@@ -718,15 +1339,6 @@ impl Shared {
     }
 }
 
-fn item_generation(item: &WatchItem) -> u64 {
-    match item {
-        WatchItem::Connected { generation, .. }
-        | WatchItem::Event { generation, .. }
-        | WatchItem::Gap { generation, .. } => *generation,
-        WatchItem::Failed { .. } => 0,
-    }
-}
-
 /// Replace the queued items by at most: the newest `Connected` (so a reconnect stays visible)
 /// and one `lagged` gap. Events and older control items are dropped; the gap tells the consumer
 /// to refetch history, which covers everything dropped.
@@ -744,92 +1356,6 @@ fn collapse(queue: &mut VecDeque<WatchItem>, generation: u64) {
         generation,
         reason: LAGGED.into(),
     });
-}
-
-enum Pumped {
-    Shutdown,
-    Ended(String),
-}
-
-/// Read events until the connection ends. The connection is dropped before this returns, so no
-/// socket is kept open during the backoff.
-async fn pump(
-    mut conn: ChatConnection,
-    shared: &Shared,
-    generation: u64,
-    shutdown: &mut oneshot::Receiver<()>,
-) -> Pumped {
-    loop {
-        let outcome = tokio::select! {
-            _ = &mut *shutdown => None,
-            result = conn.next_event() => Some(result),
-        };
-        match outcome {
-            None => {
-                conn.close().await;
-                return Pumped::Shutdown;
-            }
-            Some(Ok(event)) => shared.push_event(generation, event),
-            Some(Err(Disconnected { reason })) => return Pumped::Ended(reason),
-        }
-    }
-}
-
-async fn run_watch(
-    server: ServerUrl,
-    opts: ConnectOptions,
-    tuning: Tuning,
-    shared: Arc<Shared>,
-    first: ChatConnection,
-    mut shutdown: oneshot::Receiver<()>,
-) {
-    let mut generation = 1;
-    let mut conn = first;
-    let mut failures: u32 = 0;
-    loop {
-        let started = TokioInstant::now();
-        let reason = match pump(conn, &shared, generation, &mut shutdown).await {
-            Pumped::Shutdown => return,
-            Pumped::Ended(reason) => reason,
-        };
-        failures = failures_after_disconnect(failures, started.elapsed(), &tuning);
-        shared.push_control(WatchItem::Gap { generation, reason });
-
-        let mut wait = backoff_delay(failures, &tuning);
-        failures = failures.saturating_add(1);
-        conn = loop {
-            let stopped = tokio::select! {
-                _ = &mut shutdown => true,
-                _ = sleep(jittered(wait)) => false,
-            };
-            if stopped {
-                return;
-            }
-            let attempt = tokio::select! {
-                _ = &mut shutdown => return,
-                result = ChatConnection::connect(&server, opts.clone()) => result,
-            };
-            match attempt {
-                Ok(next) => break next,
-                Err(WsError::Http { status }) if status == 401 || status == 403 => {
-                    shared.fail(WatchItem::Failed {
-                        reason: WsError::Http { status }.to_string(),
-                        http_status: Some(status),
-                    });
-                    return;
-                }
-                Err(_) => {
-                    wait = backoff_delay(failures, &tuning);
-                    failures = failures.saturating_add(1);
-                }
-            }
-        };
-        generation += 1;
-        shared.push_control(WatchItem::Connected {
-            generation,
-            me: conn.me.clone(),
-        });
-    }
 }
 
 /// A random delay in `[delay/2, delay]`.
@@ -1671,9 +2197,14 @@ mod tests {
             .await
             .unwrap();
         match next_item(&mut watch).await {
-            WatchItem::Connected { generation, me } => {
+            WatchItem::Connected {
+                generation,
+                me,
+                users,
+            } => {
                 assert_eq!(generation, 1);
                 assert_eq!(me.login_name, "alice@test");
+                assert_eq!(users.len(), 1);
             }
             other => panic!("unexpected item: {other:?}"),
         }
@@ -1883,7 +2414,7 @@ mod tests {
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(300)).await;
-        let queued = watch.shared.lock().queue.len();
+        let queued = watch.session.shared.lock().queue.len();
         assert!(queued <= 4, "queue holds {queued} items");
 
         // Reconnects keep going while we drain, so only the first few items are inspected.
@@ -1900,5 +2431,653 @@ mod tests {
                 .any(|item| matches!(item, WatchItem::Gap { reason, .. } if reason == LAGGED))
         );
         watch.close().await;
+    }
+
+    // ----- ChatSession ---------------------------------------------------------------------
+
+    fn created(event: &ClientEvent) -> ServerEvent {
+        ServerEvent::MessageCreated {
+            client_id: Some(client_id_of(event)),
+            message: message("m-created", &body_of(event)),
+        }
+    }
+
+    async fn start_session(server: &ServerUrl, tuning: Tuning) -> ChatSession {
+        timeout(
+            WAIT,
+            ChatSession::start_with(server, ConnectOptions::default(), tuning),
+        )
+        .await
+        .expect("session start timed out")
+        .expect("session start failed")
+    }
+
+    /// Next item, including `Connecting`.
+    async fn next_session_raw(session: &mut ChatSession) -> WatchItem {
+        timeout(WAIT, session.next())
+            .await
+            .expect("timed out waiting for a session item")
+    }
+
+    /// Next item, skipping `Connecting`, for tests that do not look at reconnect attempts.
+    async fn next_session(session: &mut ChatSession) -> WatchItem {
+        loop {
+            match next_session_raw(session).await {
+                WatchItem::Connecting { .. } => continue,
+                item => return item,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn session_confirms_send_and_streams_the_created_event() {
+        let server = serve_chat(new_seen(), |event| vec![ack(event)]).await;
+        let mut session = start_session(&server, fast_tuning()).await;
+        let sender = session.sender();
+        match sender.send("c-1", "hello", false, WAIT).await {
+            SendOutcome::Confirmed { client_id, message } => {
+                assert_eq!(client_id, "c-1");
+                assert_eq!(message.body, "hello");
+            }
+            other => panic!("unexpected outcome: {other:?}"),
+        }
+        match next_session(&mut session).await {
+            WatchItem::Connected {
+                generation: 1,
+                users,
+                ..
+            } => {
+                assert_eq!(users.len(), 1);
+                assert_eq!(users[0].login_name, "alice@test");
+            }
+            other => panic!("unexpected item: {other:?}"),
+        }
+        // The confirmation is also an ordinary event, with its client_id still attached.
+        match next_session(&mut session).await {
+            WatchItem::Event {
+                generation: 1,
+                event:
+                    ServerEvent::MessageCreated {
+                        client_id: Some(id),
+                        message,
+                    },
+            } => {
+                assert_eq!(id, "c-1");
+                assert_eq!(message.body, "hello");
+            }
+            other => panic!("unexpected item: {other:?}"),
+        }
+        session.close().await;
+    }
+
+    #[tokio::test]
+    async fn session_send_while_reconnecting_is_not_sent_and_writes_nothing() {
+        let seen = new_seen();
+        let server = {
+            let seen = seen.clone();
+            serve(move |index, stream| {
+                let seen = seen.clone();
+                async move {
+                    let Ok(mut socket) = accept_async(stream).await else {
+                        return;
+                    };
+                    let _ = socket.send(json(&hello())).await;
+                    if index == 0 {
+                        let _ = socket.close(None).await;
+                        return;
+                    }
+                    while let Some(event) = read_client(&mut socket).await {
+                        seen.lock().unwrap().push(event.clone());
+                        let _ = socket.send(json(&created(&event))).await;
+                    }
+                }
+            })
+            .await
+        };
+        let tuning = Tuning {
+            backoff_min: Duration::from_millis(400),
+            backoff_max: Duration::from_millis(400),
+            ..Tuning::DEFAULT
+        };
+        let mut session = start_session(&server, tuning).await;
+        let sender = session.sender();
+        assert!(matches!(
+            next_session(&mut session).await,
+            WatchItem::Connected { generation: 1, .. }
+        ));
+        assert!(matches!(
+            next_session(&mut session).await,
+            WatchItem::Gap { generation: 1, .. }
+        ));
+        // The session is backing off now: the send is refused and nothing reaches the server.
+        assert!(matches!(
+            sender.send("c-offline", "x", false, WAIT).await,
+            SendOutcome::NotSent { .. }
+        ));
+        assert!(seen.lock().unwrap().is_empty());
+
+        assert!(matches!(
+            next_session(&mut session).await,
+            WatchItem::Connected { generation: 2, .. }
+        ));
+        assert!(matches!(
+            sender.send("c-online", "y", false, WAIT).await,
+            SendOutcome::Confirmed { .. }
+        ));
+        assert_eq!(sent_ids(&seen), vec!["c-online".to_owned()]);
+        session.close().await;
+    }
+
+    #[tokio::test]
+    async fn session_disconnect_before_ack_is_unknown_and_never_resent() {
+        let seen = new_seen();
+        let server = serve_chat(seen.clone(), |event| match body_of(event).as_str() {
+            "drop" => vec![Step::Close],
+            _ => vec![ack(event)],
+        })
+        .await;
+        let mut session = start_session(&server, fast_tuning()).await;
+        let sender = session.sender();
+        assert!(matches!(
+            sender.send("c-drop", "drop", false, WAIT).await,
+            SendOutcome::Unknown {
+                reason: UnknownReason::Disconnected,
+                ..
+            }
+        ));
+        assert!(matches!(
+            next_session(&mut session).await,
+            WatchItem::Connected { generation: 1, .. }
+        ));
+        assert!(matches!(
+            next_session(&mut session).await,
+            WatchItem::Gap { generation: 1, .. }
+        ));
+        assert!(matches!(
+            next_session(&mut session).await,
+            WatchItem::Connected { generation: 2, .. }
+        ));
+        // Give the new connection time to receive anything that would be a resend.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert_eq!(sent_ids(&seen), vec!["c-drop".to_owned()]);
+        session.close().await;
+    }
+
+    #[tokio::test]
+    async fn session_settles_concurrent_sends_independently() {
+        // One error for another client arrives first, then both sends are answered in reverse.
+        let server = serve(|_, stream| async move {
+            let Ok(mut socket) = accept_async(stream).await else {
+                return;
+            };
+            let _ = socket.send(json(&hello())).await;
+            let mut got = Vec::new();
+            while got.len() < 2 {
+                match read_client(&mut socket).await {
+                    Some(event) => got.push(event),
+                    None => return,
+                }
+            }
+            let _ = socket
+                .send(json(&ServerEvent::Error {
+                    client_id: Some("someone-else".into()),
+                    code: "body_too_long".into(),
+                    message: "not yours".into(),
+                }))
+                .await;
+            for event in got.iter().rev() {
+                let _ = socket.send(json(&created(event))).await;
+            }
+            let _ = read_frame(&mut socket).await;
+        })
+        .await;
+        let session = start_session(&server, fast_tuning()).await;
+        let a = session.sender();
+        let b = a.clone();
+        let (ra, rb) = tokio::join!(
+            a.send("c-a", "from a", false, WAIT),
+            b.send("c-b", "from b", false, WAIT)
+        );
+        match ra {
+            SendOutcome::Confirmed { client_id, message } => {
+                assert_eq!(client_id, "c-a");
+                assert_eq!(message.body, "from a");
+            }
+            other => panic!("unexpected outcome for a: {other:?}"),
+        }
+        match rb {
+            SendOutcome::Confirmed { client_id, message } => {
+                assert_eq!(client_id, "c-b");
+                assert_eq!(message.body, "from b");
+            }
+            other => panic!("unexpected outcome for b: {other:?}"),
+        }
+        session.close().await;
+    }
+
+    #[tokio::test]
+    async fn session_refuses_duplicate_pending_id_and_times_out_unacked_sends() {
+        let seen = new_seen();
+        // Never acknowledges anything.
+        let server = serve_chat(seen.clone(), |_| vec![]).await;
+        let session = start_session(&server, fast_tuning()).await;
+        let sender = session.sender();
+        let first = {
+            let sender = sender.clone();
+            tokio::spawn(async move {
+                sender
+                    .send("c-1", "one", false, Duration::from_millis(300))
+                    .await
+            })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(matches!(
+            sender.send("c-1", "again", false, WAIT).await,
+            SendOutcome::NotSent { .. }
+        ));
+        assert!(matches!(
+            first.await.unwrap(),
+            SendOutcome::Unknown {
+                reason: UnknownReason::Timeout,
+                ..
+            }
+        ));
+        assert_eq!(sent_ids(&seen), vec!["c-1".to_owned()]);
+        // An ack timeout does not end the session: the next send is still written.
+        assert!(matches!(
+            sender
+                .send("c-2", "two", false, Duration::from_millis(100))
+                .await,
+            SendOutcome::Unknown {
+                reason: UnknownReason::Timeout,
+                ..
+            }
+        ));
+        assert_eq!(sent_ids(&seen).len(), 2);
+        session.close().await;
+    }
+
+    #[tokio::test]
+    async fn closing_the_session_settles_pending_sends_and_later_sends_are_not_sent() {
+        let server = serve_chat(new_seen(), |_| vec![]).await;
+        let session = start_session(&server, fast_tuning()).await;
+        let sender = session.sender();
+        let pending = {
+            let sender = sender.clone();
+            tokio::spawn(async move { sender.send("c-open", "open", false, WAIT).await })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        session.close().await;
+        assert!(matches!(
+            pending.await.unwrap(),
+            SendOutcome::Unknown {
+                reason: UnknownReason::Disconnected,
+                ..
+            }
+        ));
+        assert!(matches!(
+            sender.send("c-late", "late", false, WAIT).await,
+            SendOutcome::NotSent { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn dropping_the_session_settles_pending_sends_as_unknown() {
+        let server = serve_chat(new_seen(), |_| vec![]).await;
+        let session = start_session(&server, fast_tuning()).await;
+        let sender = session.sender();
+        let pending = {
+            let sender = sender.clone();
+            tokio::spawn(async move { sender.send("c-drop-owner", "x", false, WAIT).await })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        drop(session);
+        assert!(matches!(
+            pending.await.unwrap(),
+            SendOutcome::Unknown {
+                reason: UnknownReason::Disconnected,
+                ..
+            }
+        ));
+        assert!(matches!(
+            sender.send("c-after", "x", false, WAIT).await,
+            SendOutcome::NotSent { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn session_reports_terminal_failure_and_refuses_later_sends() {
+        let server = serve(|index, stream| async move {
+            if index == 0 {
+                let Ok(mut socket) = accept_async(stream).await else {
+                    return;
+                };
+                let _ = socket.send(json(&hello())).await;
+                let _ = socket.close(None).await;
+            } else {
+                let callback = |_: &Request, _: Response| -> Result<Response, ErrorResponse> {
+                    Err(http::Response::builder()
+                        .status(403)
+                        .body(Some("forbidden".to_owned()))
+                        .unwrap())
+                };
+                let _ = accept_hdr_async(stream, callback).await;
+            }
+        })
+        .await;
+        let mut session = start_session(&server, fast_tuning()).await;
+        let sender = session.sender();
+        assert!(matches!(
+            next_session(&mut session).await,
+            WatchItem::Connected { generation: 1, .. }
+        ));
+        assert!(matches!(
+            next_session(&mut session).await,
+            WatchItem::Gap { generation: 1, .. }
+        ));
+        for _ in 0..2 {
+            assert!(matches!(
+                next_session(&mut session).await,
+                WatchItem::Failed {
+                    http_status: Some(403),
+                    ..
+                }
+            ));
+        }
+        assert!(matches!(
+            sender.send("c-dead", "x", false, WAIT).await,
+            SendOutcome::NotSent { .. }
+        ));
+        session.close().await;
+    }
+
+    fn outgoing_request(event: &ClientEvent) -> Option<SendRequest> {
+        match event {
+            ClientEvent::MessageSend {
+                thread_id,
+                body,
+                attachment_ids,
+                start_thread,
+                reply_to,
+                silent,
+                ..
+            } => Some(SendRequest {
+                thread_id: thread_id.clone(),
+                body: body.clone(),
+                attachment_ids: attachment_ids.clone(),
+                start_thread: *start_thread,
+                reply_to: reply_to.clone(),
+                silent: *silent,
+            }),
+            _ => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn send_request_puts_every_option_on_the_wire() {
+        let seen = new_seen();
+        let server = serve_chat(seen.clone(), |event| vec![ack(event)]).await;
+        let session = start_session(&server, fast_tuning()).await;
+        let sender = session.sender();
+
+        let thread_reply = SendRequest {
+            thread_id: Some("thread-1".into()),
+            body: "in thread".into(),
+            reply_to: Some("m-parent".into()),
+            silent: true,
+            ..SendRequest::default()
+        };
+        assert!(matches!(
+            sender
+                .send_request("c-thread", thread_reply.clone(), WAIT)
+                .await,
+            SendOutcome::Confirmed { .. }
+        ));
+        // An attachment-only message is valid; the body may be empty.
+        let attachments = SendRequest {
+            attachment_ids: vec!["f-1".into(), "f-2".into()],
+            start_thread: true,
+            ..SendRequest::default()
+        };
+        assert!(matches!(
+            sender
+                .send_request("c-files", attachments.clone(), WAIT)
+                .await,
+            SendOutcome::Confirmed { .. }
+        ));
+
+        let sent: Vec<SendRequest> = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(outgoing_request)
+            .collect();
+        assert_eq!(sent, vec![thread_reply, attachments]);
+        session.close().await;
+    }
+
+    #[tokio::test]
+    async fn send_request_refuses_empty_content_and_empty_ids_without_writing() {
+        let seen = new_seen();
+        let server = serve_chat(seen.clone(), |event| vec![ack(event)]).await;
+        let session = start_session(&server, fast_tuning()).await;
+        let sender = session.sender();
+        let refused = [
+            SendRequest::default(),
+            SendRequest {
+                body: "  ".into(),
+                ..SendRequest::default()
+            },
+            SendRequest {
+                body: "x".into(),
+                thread_id: Some(String::new()),
+                ..SendRequest::default()
+            },
+            SendRequest {
+                body: "x".into(),
+                attachment_ids: vec!["f".into(), String::new()],
+                ..SendRequest::default()
+            },
+        ];
+        for request in refused {
+            assert!(matches!(
+                sender.send_request("c-bad", request, WAIT).await,
+                SendOutcome::NotSent { .. }
+            ));
+        }
+        assert!(seen.lock().unwrap().is_empty());
+        session.close().await;
+    }
+
+    #[tokio::test]
+    async fn each_allowlisted_code_is_rejected_and_other_codes_are_unknown() {
+        // The body names the error code the server answers with.
+        let server = serve_chat(new_seen(), |event| {
+            vec![error_for(Some(client_id_of(event)), &body_of(event))]
+        })
+        .await;
+        let session = start_session(&server, fast_tuning()).await;
+        let sender = session.sender();
+        for code in REJECTED_CODES {
+            match sender.send("c-code", code, false, WAIT).await {
+                SendOutcome::Rejected { code: got, .. } => assert_eq!(got, code),
+                other => panic!("{code} should be Rejected: {other:?}"),
+            }
+        }
+        match sender.send("c-other", "internal", false, WAIT).await {
+            SendOutcome::Unknown {
+                reason: UnknownReason::ServerError { code, .. },
+                ..
+            } => assert_eq!(code, "internal"),
+            other => panic!("unexpected outcome: {other:?}"),
+        }
+        session.close().await;
+    }
+
+    #[tokio::test]
+    async fn emit_writes_the_event_and_refuses_message_send() {
+        let seen = new_seen();
+        let server = serve_chat(seen.clone(), |_| vec![]).await;
+        let session = start_session(&server, fast_tuning()).await;
+        let sender = session.sender();
+        assert_eq!(
+            sender
+                .emit(ClientEvent::ReactionAdd {
+                    message_id: "m-1".into(),
+                    emoji: "+1".into(),
+                })
+                .await,
+            Ok(())
+        );
+        assert_eq!(
+            sender
+                .emit(ClientEvent::MessageSend {
+                    client_id: "c-x".into(),
+                    thread_id: None,
+                    body: "sneaky".into(),
+                    attachment_ids: Vec::new(),
+                    start_thread: false,
+                    reply_to: None,
+                    silent: false,
+                })
+                .await,
+            Err(EmitError::SendNotAllowed)
+        );
+        // Let the server read the frame before checking what it received.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let events = seen.lock().unwrap().clone();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            ClientEvent::ReactionAdd { message_id, .. } if message_id == "m-1"
+        ));
+        session.close().await;
+    }
+
+    #[tokio::test]
+    async fn emit_and_send_while_reconnecting_are_refused_without_writing() {
+        let seen = new_seen();
+        let server = {
+            let seen = seen.clone();
+            serve(move |index, stream| {
+                let seen = seen.clone();
+                async move {
+                    let Ok(mut socket) = accept_async(stream).await else {
+                        return;
+                    };
+                    let _ = socket.send(json(&hello())).await;
+                    if index == 0 {
+                        let _ = socket.close(None).await;
+                        return;
+                    }
+                    while let Some(event) = read_client(&mut socket).await {
+                        seen.lock().unwrap().push(event);
+                    }
+                }
+            })
+            .await
+        };
+        let tuning = Tuning {
+            backoff_min: Duration::from_millis(400),
+            backoff_max: Duration::from_millis(400),
+            ..Tuning::DEFAULT
+        };
+        let mut session = start_session(&server, tuning).await;
+        let sender = session.sender();
+        assert!(matches!(
+            next_session_raw(&mut session).await,
+            WatchItem::Connected { generation: 1, .. }
+        ));
+        assert!(matches!(
+            next_session_raw(&mut session).await,
+            WatchItem::Gap { generation: 1, .. }
+        ));
+        assert_eq!(
+            sender
+                .emit(ClientEvent::ReactionRemove {
+                    message_id: "m-1".into(),
+                    emoji: "+1".into(),
+                })
+                .await,
+            Err(EmitError::NotConnected)
+        );
+        assert!(matches!(
+            sender.send("c-off", "x", false, WAIT).await,
+            SendOutcome::NotSent { .. }
+        ));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(seen.lock().unwrap().is_empty());
+        session.close().await;
+    }
+
+    #[tokio::test]
+    async fn reconnect_now_is_ignored_while_connected_and_wakes_a_backoff() {
+        // Connection 0 drops at once, connection 1 drops after 200 ms, later ones stay open.
+        let server = serve(|index, stream| async move {
+            let Ok(mut socket) = accept_async(stream).await else {
+                return;
+            };
+            let _ = socket.send(json(&hello())).await;
+            match index {
+                0 => {
+                    let _ = socket.close(None).await;
+                }
+                1 => {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    let _ = socket.close(None).await;
+                }
+                _ => {
+                    let _ = read_frame(&mut socket).await;
+                }
+            }
+        })
+        .await;
+        // A 2 s backoff (jittered to 1-2 s) so the two checks below can tell the two cases apart.
+        let tuning = Tuning {
+            backoff_min: Duration::from_secs(2),
+            backoff_max: Duration::from_secs(2),
+            ..Tuning::DEFAULT
+        };
+        let mut session = start_session(&server, tuning).await;
+        // Called while connected, before the drop is seen: must not shorten the backoff.
+        session.reconnect_now();
+        assert!(matches!(
+            next_session_raw(&mut session).await,
+            WatchItem::Connected { generation: 1, .. }
+        ));
+        assert!(matches!(
+            next_session_raw(&mut session).await,
+            WatchItem::Gap { generation: 1, .. }
+        ));
+        let backoff_started = tokio::time::Instant::now();
+        assert!(matches!(
+            timeout(Duration::from_secs(5), session.next()).await,
+            Ok(WatchItem::Connecting { attempt: 1 })
+        ));
+        assert!(
+            backoff_started.elapsed() >= Duration::from_millis(900),
+            "the early reconnect_now must not have skipped the backoff"
+        );
+        assert!(matches!(
+            next_session_raw(&mut session).await,
+            WatchItem::Connected { generation: 2, .. }
+        ));
+        assert!(matches!(
+            next_session_raw(&mut session).await,
+            WatchItem::Gap { generation: 2, .. }
+        ));
+        // Now the backoff is running again. reconnect_now must end it at once.
+        let woken_at = tokio::time::Instant::now();
+        session.reconnect_now();
+        match timeout(Duration::from_millis(800), session.next()).await {
+            Ok(WatchItem::Connecting { attempt: 1 }) => {}
+            other => panic!("reconnect_now did not wake the backoff: {other:?}"),
+        }
+        assert!(matches!(
+            timeout(Duration::from_secs(1), session.next()).await,
+            Ok(WatchItem::Connected { generation: 3, .. })
+        ));
+        assert!(woken_at.elapsed() < Duration::from_secs(1));
+        session.close().await;
     }
 }
