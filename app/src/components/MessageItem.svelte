@@ -4,6 +4,7 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import X from '@lucide/svelte/icons/x';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import { SEND_TEXT } from '../lib/sendOutcome';
   import AuthorAvatar from './AuthorAvatar.svelte';
   import ReplyQuote from './ReplyQuote.svelte';
   import Markdown from './Markdown.svelte';
@@ -355,16 +356,25 @@
           {/if}
         {/if}
 
-        {#if pending?.failed}
+        {#if pending?.unknown}
           <div class="message-send-failed">
-            送信できませんでした
+            {SEND_TEXT.unknown}
+            <button
+              type="button"
+              class="message-link-button"
+              onclick={() => client.timeline(message.thread_id).discardPending(pending.client_id)}><X size={13} />{SEND_TEXT.dismissUnknown}</button
+            >
+          </div>
+        {:else if pending?.failed}
+          <div class="message-send-failed">
+            {SEND_TEXT.failed}
             <button type="button" class="message-link-button" onclick={() => client.retry(message.thread_id, pending.client_id)}
-              ><RefreshCw size={13} />再送</button
+              ><RefreshCw size={13} />{SEND_TEXT.retry}</button
             >
             <button
               type="button"
               class="message-link-button"
-              onclick={() => client.timeline(message.thread_id).discardPending(pending.client_id)}><X size={13} />取り消す</button
+              onclick={() => client.timeline(message.thread_id).discardPending(pending.client_id)}><X size={13} />{SEND_TEXT.discard}</button
             >
           </div>
         {/if}

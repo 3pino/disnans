@@ -30,7 +30,10 @@ export type PendingMessage = Message & {
   client_id: string;
   /** サーバーに送った（キューではない） */
   sent: boolean;
+  /** 投稿されなかったと分かっている失敗（再送できる） */
   failed: boolean;
+  /** 送ったが結果が分からない（再送しない。確認して消すだけ）。failed と同時には立たない */
+  unknown: boolean;
   /** 再送用（アップロードが済んだファイルの ID。送るときに決まる） */
   attachment_ids: string[];
   start_thread: boolean;
@@ -153,15 +156,26 @@ export class Timeline {
     this.pending.push(p);
   }
 
-  failPending(clientId: string): boolean {
+  /**
+   * 同じ client_id の error を反映する。投稿されないと保証されるコードなら failed（再送可）、
+   * それ以外は unknown（再送しない）。unknown のあとで保証されるコードが来たら failed にする。
+   * 戻り値は反映後の状態（仮表示がなければ null）
+   */
+  settleFromError(clientId: string, rejected: boolean): 'failed' | 'unknown' | null {
     const p = this.pending.find((x) => x.client_id === clientId);
-    if (p) p.failed = true;
-    return !!p;
+    if (!p) return null;
+    if (rejected) {
+      p.failed = true;
+      p.unknown = false;
+    } else if (!p.failed) {
+      p.unknown = true;
+    }
+    return p.failed ? 'failed' : 'unknown';
   }
 
-  /** 送信済みで確定していないものは、切断で結果が分からなくなるので失敗扱いにする */
-  failSentPending(): void {
-    for (const p of this.pending) if (p.sent) p.failed = true;
+  /** 送信済みで確定していないものは、切断のあと投稿されたか分からない。失敗扱いにせず unknown にする（再送しない） */
+  markSentUnknown(): void {
+    for (const p of this.pending) if (p.sent && !p.failed) p.unknown = true;
   }
 
   /** 取り消す。アップロード中のものは中止する */

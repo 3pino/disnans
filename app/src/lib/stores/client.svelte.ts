@@ -14,6 +14,7 @@ import { ui, type ToastAvatar } from './ui.svelte';
 import { notifications } from './notifications.svelte';
 import { page, unread } from './unread.svelte';
 import { errorText } from '../errors';
+import { SEND_TEXT, isRejectedSendCode } from '../sendOutcome';
 import { replyPreviewOf } from '../reply';
 import { reply } from './reply.svelte';
 
@@ -47,7 +48,7 @@ class Client {
       onEvent: (ev) => this.dispatch(ev),
       onStatus: (s) => {
         this.status = s;
-        if (s === 'closed') for (const t of this.timelines.values()) t.failSentPending();
+        if (s === 'closed') for (const t of this.timelines.values()) t.markSentUnknown();
       },
     });
     this.socket.start();
@@ -139,6 +140,7 @@ class Client {
       bot: null,
       sent: false,
       failed: false,
+      unknown: false,
       attachment_ids: [],
       start_thread: opts.startThread ?? false,
       silent: opts.silent ?? false,
@@ -159,6 +161,9 @@ class Client {
 
   /** 送信できなかったものを、もう一度送る（アップロード済みのファイルは上げ直さない） */
   retry(threadId: string | null, clientId: string): void {
+    const p = this.timeline(threadId).pending.find((x) => x.client_id === clientId);
+    // 結果が分からないもの（unknown）は、二重投稿になるので再送しない
+    if (!p || !p.failed || p.unknown) return;
     void this.deliver(threadId, clientId);
   }
 
@@ -338,12 +343,15 @@ class Client {
         break;
       }
       case 'error': {
-        let handled = false;
+        let settled: 'failed' | 'unknown' | null = null;
         if (ev.client_id) {
-          for (const t of this.timelines.values()) handled = t.failPending(ev.client_id) || handled;
+          const rejected = isRejectedSendCode(ev.code);
+          for (const t of this.timelines.values()) settled = t.settleFromError(ev.client_id, rejected) ?? settled;
         }
         const text = errorText(ev.code, ev.message);
-        ui.toast(handled ? `送信できませんでした: ${text}` : text, 'error');
+        if (settled === 'failed') ui.toast(`${SEND_TEXT.failed}: ${text}`, 'error');
+        else if (settled === 'unknown') ui.toast(`${SEND_TEXT.unknownToast}: ${text}`, 'error');
+        else ui.toast(text, 'error');
         break;
       }
       case 'plugin.updated':
