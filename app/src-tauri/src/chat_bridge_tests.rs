@@ -653,6 +653,10 @@ fn after_a_terminal_failure_the_hub_can_start_again() {
     wait_until("failed session released its sink", || {
         sink.held_by_pump() == 0
     });
+    assert!(
+        !hub.has_active(),
+        "the failed session is cleared from the hub"
+    );
     assert!(matches!(
         send(&hub, draft("c-dead", "x")),
         SendResult::NotSent { .. }
@@ -747,6 +751,10 @@ fn a_sink_that_refuses_items_ends_the_session() {
     sink.accept.store(false, Ordering::SeqCst);
     let _ = send(&hub, draft("c-trigger", "x"));
     wait_until("pump ended", || sink.held_by_pump() == 0);
+    assert!(
+        !hub.has_active(),
+        "the finished session is cleared from the hub"
+    );
     assert!(matches!(
         send(&hub, draft("c-dead", "x")),
         SendResult::NotSent { .. }
@@ -787,4 +795,112 @@ fn stop_without_a_session_is_harmless() {
 fn unknown_reasons_serialize_with_their_kind() {
     let v = serde_json::to_value(UnknownDto::Timeout).unwrap();
     assert_eq!(v["kind"], "timeout");
+}
+
+// ----- 停止・終了（接続の準備中を含む） -----------------------------------------------------
+
+/// TCP は受け付けるが WebSocket の応答を返さない相手。接続の準備が終わらない状態を作る。
+fn silent_server() -> (std::net::TcpListener, String) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    (listener, url)
+}
+
+/// 別スレッドで `start` を待つ（準備中の状態を作るため）。
+fn start_in_background(
+    hub: &Arc<ChatHub>,
+    url: &str,
+    sink: Collect,
+) -> std::thread::JoinHandle<Result<(), super::ReadFailure>> {
+    let hub = hub.clone();
+    let url = url.to_owned();
+    std::thread::spawn(move || async_runtime::block_on(hub.start(&url, Some("alice".into()), sink)))
+}
+
+#[test]
+fn shutdown_during_connect_returns_at_once_and_the_start_is_cancelled() {
+    let (_silent, url) = silent_server();
+    let hub = Arc::new(ChatHub::default());
+    let sink = Collect::new();
+    let worker = start_in_background(&hub, &url, sink.clone());
+    wait_until("connecting", || hub.is_connecting());
+
+    let began = Instant::now();
+    hub.shutdown_now();
+    assert!(
+        began.elapsed() < Duration::from_secs(1),
+        "shutdown must not wait for the connect"
+    );
+
+    wait_until("start returned", || worker.is_finished());
+    let err = worker.join().unwrap().unwrap_err();
+    assert_eq!(err.code, "cancelled");
+    assert_eq!(err.status, None);
+    assert!(!hub.is_connecting());
+    assert!(!hub.has_active());
+    assert_eq!(sink.len(), 0);
+
+    // 終了のあとの start は接続しない（閉じたポートでも、ネットワークエラーではなく cancelled）
+    let err = async_runtime::block_on(hub.start(
+        &closed_port_url(),
+        Some("alice".into()),
+        Collect::new(),
+    ))
+    .unwrap_err();
+    assert_eq!(err.code, "cancelled");
+}
+
+#[test]
+fn stop_during_connect_cancels_the_start_and_the_hub_still_works_afterwards() {
+    let (_silent, silent_url) = silent_server();
+    let hub = Arc::new(ChatHub::default());
+    let worker = start_in_background(&hub, &silent_url, Collect::new());
+    wait_until("connecting", || hub.is_connecting());
+
+    let began = Instant::now();
+    async_runtime::block_on(hub.stop());
+    assert!(
+        began.elapsed() < Duration::from_secs(2),
+        "stop must not wait for the connect timeout"
+    );
+    wait_until("start returned", || worker.is_finished());
+    assert_eq!(worker.join().unwrap().unwrap_err().code, "cancelled");
+
+    // 停止は終了ではないので、同じ hub でそのまま接続できる
+    let fake = Fake::start(echo_everything());
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+    assert!(matches!(
+        send(&hub, draft("c-after-stop", "ok")),
+        SendResult::Confirmed { .. }
+    ));
+
+    async_runtime::block_on(hub.stop());
+}
+
+#[test]
+fn shutdown_now_closes_a_live_session_and_refuses_later_starts() {
+    let fake = Fake::start(echo_everything());
+    let hub = ChatHub::default();
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+
+    hub.shutdown_now();
+    wait_until("pump dropped the sink", || sink.held_by_pump() == 0);
+    wait_until("server saw the close", || fake.ended() >= 1);
+    assert!(!hub.has_active());
+    assert!(matches!(
+        send(&hub, draft("c-x", "x")),
+        SendResult::NotSent { .. }
+    ));
+
+    let err = start(&hub, &fake.url, Some("alice"), Collect::new()).unwrap_err();
+    assert_eq!(err.code, "cancelled");
+    assert_eq!(
+        fake.dev_users().len(),
+        1,
+        "the refused start did not connect"
+    );
 }

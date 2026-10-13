@@ -263,11 +263,11 @@ pub fn run() {
             // async runtime と portal の接続が生きている間に、画面共有の資源を外す
             _app.state::<linux_capture::LinuxScreenState>().shutdown();
         }
-        // チャット接続を止める（保留中の送信は unknown になる。再送はしない）
+        // チャット接続を中止する。待たない（準備中の接続も止める）。保留中の送信は unknown になり、再送はしない
         #[cfg(all(desktop, any(target_os = "macos", windows, target_os = "linux")))]
         if matches!(_event, tauri::RunEvent::Exit) {
             use tauri::Manager;
-            tauri::async_runtime::block_on(_app.state::<chat_bridge::ChatHub>().stop());
+            _app.state::<chat_bridge::ChatHub>().shutdown_now();
         }
     });
 }

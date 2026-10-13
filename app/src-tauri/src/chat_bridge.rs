@@ -10,6 +10,7 @@
 
 use std::future::{poll_fn, Future};
 use std::pin::pin;
+use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::task::Poll;
 use std::time::Duration;
@@ -271,7 +272,14 @@ enum Step {
 }
 
 /// 受信を順に `sink` へ流す。停止・送り先の消滅・終端（`Failed`）で `close()` して終わる。
-async fn pump<S: ItemSink>(mut session: ChatSession, mut control: Receiver<()>, sink: S) {
+/// 終わるときは、自分が起動中のセッションなら `active` を片付ける（古い状態を残さない）。
+async fn pump<S: ItemSink>(
+    mut session: ChatSession,
+    mut control: Receiver<()>,
+    sink: S,
+    state: Arc<StdMutex<HubState>>,
+    id: u64,
+) {
     loop {
         let step = {
             // `next()` は取消安全なので、制御が先に来たら捨てて作り直す
@@ -296,14 +304,41 @@ async fn pump<S: ItemSink>(mut session: ChatSession, mut control: Receiver<()>, 
         }
     }
     session.close().await;
+    let mut guard = state.lock().unwrap();
+    if guard.active.as_ref().is_some_and(|a| a.id == id) {
+        guard.active = None;
+    }
 }
 
 /// 起動中のセッション（1 つだけ）。
 struct Active {
+    id: u64,
     sender: SessionSender,
     /// 送り手を閉じると pump が止まる。再接続の合図もここから送る。
     control: Sender<()>,
     pump: JoinHandle<()>,
+}
+
+/// `ChatHub` の共有状態。pump も終わるときに `active` を片付けるため参照する。
+#[derive(Default)]
+struct HubState {
+    /// 終了中（Exit）。以後の `start` は接続しない。
+    closing: bool,
+    /// 接続の準備中に、それを中止する手段（準備中だけ入る）。
+    connecting: Option<Box<dyn FnOnce() + Send>>,
+    /// 起動中のセッション。
+    active: Option<Active>,
+    /// `Active` に振る番号（pump が自分のセッションかを確かめる）。
+    next_id: u64,
+}
+
+/// 接続の途中で止められた（停止・終了）。接続は確立していない。
+fn cancelled() -> ReadFailure {
+    ReadFailure {
+        status: None,
+        code: "cancelled".into(),
+        message: "接続を中止しました".into(),
+    }
 }
 
 /// チャット接続の持ち主。Tauri の state として 1 つだけ置く。
@@ -311,13 +346,13 @@ struct Active {
 pub struct ChatHub {
     /// 開始と停止を直列にする（接続の待ち時間の間も保持する）。
     lifecycle: Mutex<()>,
-    /// 送信・再接続が参照する。短時間だけ保持し、await をまたがない。
-    active: StdMutex<Option<Active>>,
+    /// 送信・再接続・pump が参照する。短時間だけ保持し、await をまたがない。
+    state: Arc<StdMutex<HubState>>,
 }
 
 impl ChatHub {
     /// 接続を始める。最初の接続が成功するまで返らない。既存のセッションは先に止める。
-    /// 失敗したときはセッションが残らない（以後の送信は `notSent`）。
+    /// 失敗・中止したときはセッションが残らない（以後の送信は `notSent`）。
     pub async fn start<S: ItemSink>(
         &self,
         server: &str,
@@ -329,17 +364,37 @@ impl ChatHub {
             .map_err(|_| ReadFailure::invalid_request("サーバー URL が不正です"))?;
         check_dev_user(dev_user.as_deref())?;
         self.stop_locked().await;
+        if self.state.lock().unwrap().closing {
+            return Err(cancelled());
+        }
         let opts = ConnectOptions {
             dev_user,
             ..ConnectOptions::default()
         };
-        let session = ChatSession::start(&url, opts)
-            .await
-            .map_err(connect_failure)?;
+        // 接続は別タスクで行い、停止・終了のときは止められるようにする
+        let connect = async_runtime::spawn(async move { ChatSession::start(&url, opts).await });
+        let abort = connect.inner().abort_handle();
+        self.state.lock().unwrap().connecting = Some(Box::new(move || abort.abort()));
+        let joined = connect.await;
+        self.state.lock().unwrap().connecting = None;
+        let session = match joined {
+            Ok(Ok(session)) => session,
+            Ok(Err(err)) => return Err(connect_failure(err)),
+            Err(_) => return Err(cancelled()),
+        };
+
         let sender = session.sender();
         let (control, control_rx) = async_runtime::channel(8);
-        let pump = async_runtime::spawn(pump(session, control_rx, sink));
-        *self.active.lock().unwrap() = Some(Active {
+        let mut state = self.state.lock().unwrap();
+        if state.closing {
+            // 接続している間に終了が始まった。このセッションは使わない
+            return Err(cancelled());
+        }
+        state.next_id += 1;
+        let id = state.next_id;
+        let pump = async_runtime::spawn(pump(session, control_rx, sink, self.state.clone(), id));
+        state.active = Some(Active {
+            id,
             sender,
             control,
             pump,
@@ -352,9 +407,10 @@ impl ChatHub {
     pub async fn send(&self, draft: MessageDraft) -> Result<SendResult, ReadFailure> {
         let (client_id, request) = draft.into_request()?;
         let sender = self
-            .active
+            .state
             .lock()
             .unwrap()
+            .active
             .as_ref()
             .map(|a| a.sender.clone());
         let Some(sender) = sender else {
@@ -368,30 +424,62 @@ impl ChatHub {
 
     /// 切断中なら待機を終えて即再接続する。接続中・無いときは何もしない。
     pub fn reconnect(&self) {
-        if let Some(active) = self.active.lock().unwrap().as_ref() {
+        if let Some(active) = self.state.lock().unwrap().active.as_ref() {
             // 満杯なら既に再接続の要求が残っているので、捨ててよい
             let _ = active.control.try_send(());
         }
     }
 
     /// 接続を止め、背景タスクが終わるまで待つ。保留中の送信は `unknown` になる。
+    /// 接続の準備中なら、それを中止してから待つ（準備中の `start` は中止で失敗する）。
     pub async fn stop(&self) {
+        let connecting = self.state.lock().unwrap().connecting.take();
+        if let Some(abort) = connecting {
+            abort();
+        }
         let _guard = self.lifecycle.lock().await;
         self.stop_locked().await;
     }
 
+    /// 終了時に使う。待たずに、準備中の接続とセッションを中止する。
+    /// 以後の `start` は接続しない。プロセス終了で接続は閉じられる（終了の close フレームは送らない）。
+    pub fn shutdown_now(&self) {
+        let (connecting, active) = {
+            let mut state = self.state.lock().unwrap();
+            state.closing = true;
+            (state.connecting.take(), state.active.take())
+        };
+        if let Some(abort) = connecting {
+            abort();
+        }
+        if let Some(active) = active {
+            active.pump.abort();
+        }
+    }
+
     async fn stop_locked(&self) {
-        let taken = self.active.lock().unwrap().take();
+        let taken = self.state.lock().unwrap().active.take();
         if let Some(Active {
             sender,
             control,
             pump,
+            ..
         }) = taken
         {
             drop(sender);
             drop(control);
             let _ = pump.await;
         }
+    }
+
+    #[cfg(test)]
+    fn has_active(&self) -> bool {
+        self.state.lock().unwrap().active.is_some()
+    }
+
+    #[cfg(test)]
+    fn is_connecting(&self) -> bool {
+        self.state.lock().unwrap().connecting.is_some()
     }
 }
 
