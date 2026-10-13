@@ -91,10 +91,11 @@ describe('chat over Tauri', () => {
 });
 
 describe('chat mode selection', () => {
-  it('rust only with the flag "1" on the desktop', () => {
+  it('rust by default on the desktop; "0" turns it off; other platforms stay js', () => {
+    expect(selectChatMode({ flag: null, desktop: true })).toBe('rust');
     expect(selectChatMode({ flag: '1', desktop: true })).toBe('rust');
-    expect(selectChatMode({ flag: '1', desktop: false })).toBe('js');
     expect(selectChatMode({ flag: '0', desktop: true })).toBe('js');
-    expect(selectChatMode({ flag: null, desktop: true })).toBe('js');
+    expect(selectChatMode({ flag: null, desktop: false })).toBe('js');
+    expect(selectChatMode({ flag: '1', desktop: false })).toBe('js');
   });
 });

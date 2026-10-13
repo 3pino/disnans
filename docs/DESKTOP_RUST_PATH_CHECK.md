@@ -1,31 +1,42 @@
 # デスクトップ版 Rust 経路の実機確認（チェックリスト）
 
 対象: Windows / Linux のデスクトップ版。読取（REST）とチャット（WebSocket）を Rust 経由にしたときの確認。
-既定は従来経路（フラグ off）なので、確認は利用者が手動でフラグを入れて行う。
+Rust 経路は既定で有効。従来の経路に戻すには、下の「有効化・無効化」の手順を使う。
 
 ## 有効化・無効化
 
-有効化（どちらも入れる。読取とチャットは独立して切り替えられる）:
+Windows / Linux のデスクトップ版では、読取（REST）とチャット（WebSocket）の Rust 経路が**既定で有効**。
+ブラウザ・Android・macOS は従来の経路のまま。
 
-1. アプリで `Ctrl+Shift+I` を押し、開発者ツールを開く。
-2. Console で次を実行する:
+確認するだけなら手順はない。アプリを起動し、次の2行が Console に出ていれば Rust 経路で動いている:
+
+- `[disnans] api read transport: tauri`
+- `[disnans] chat transport: rust`
+
+（Console は `Ctrl+Shift+I` で開く。）
+
+従来の経路に戻す（逃げ道）:
+
+1. `Ctrl+Shift+I` で開発者ツールを開き、Console で次を実行する:
    ```js
-   localStorage.setItem('disnans.rustApi', '1');
-   localStorage.setItem('disnans.rustChat', '1');
+   localStorage.setItem('disnans.rustApi', '0');
+   localStorage.setItem('disnans.rustChat', '0');
    ```
-3. アプリを再起動する（フラグは起動時に1回だけ読む）。
-4. Console に次の2行が出ていれば、Rust 経路で起動している:
-   - `[disnans] api read transport: tauri`
-   - `[disnans] chat transport: rust`
+2. アプリを再起動する（フラグは起動時に1回だけ読む）。
+3. Console が `http` / `js` になっていれば従来の経路。
 
-無効化（従来経路に戻す）:
+Rust 経路に戻す:
 
 ```js
 localStorage.removeItem('disnans.rustApi');
 localStorage.removeItem('disnans.rustChat');
 ```
 
-再起動する。Console の行が `http` / `js` に変われば従来経路。
+再起動する。読取とチャットは独立しているので、片方だけ `'0'` にしてもよい。
+
+起動時に Rust 経路が使えなかった場合（コマンドがない、接続できないなど）は、**従来の経路へ自動で切り替えない**（二重送信を防ぐため）。
+- チャットが接続できないときは、toast「チャットに接続できませんでした: …」が出る。接続バナーの「今すぐ再接続」で、もう一度接続を試す。
+- 読取が失敗したときは、各画面の既存の表示になる（履歴は読めなかった旨、プラグイン一覧は「読めませんでした」、設定は読まれないまま）。
 
 ## 確認項目
 

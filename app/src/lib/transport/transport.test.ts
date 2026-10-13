@@ -26,10 +26,10 @@ describe('read transport selection', () => {
     expect(selectReadApi({ ...base, flag: '1' }).kind).toBe('tauri');
   });
 
-  it('keeps HTTP when the flag is off, unset, or another value', () => {
-    expect(selectReadApi({ ...base, flag: null }).kind).toBe('http');
+  it('uses Rust by default on desktop; "0" turns it off; other values are not "0", so still on', () => {
+    expect(selectReadApi({ ...base, flag: null }).kind).toBe('tauri');
+    expect(selectReadApi({ ...base, flag: '1' }).kind).toBe('tauri');
     expect(selectReadApi({ ...base, flag: '0' }).kind).toBe('http');
-    expect(selectReadApi({ ...base, flag: 'true' }).kind).toBe('http');
   });
 
   it('keeps HTTP outside Windows/Linux desktop even when the flag is on', () => {
@@ -39,7 +39,7 @@ describe('read transport selection', () => {
   it('logs the selected transport once per selection', () => {
     const lines: string[] = [];
     selectReadApi({ ...base, flag: '1', log: (m) => lines.push(m) });
-    selectReadApi({ ...base, flag: null, log: (m) => lines.push(m) });
+    selectReadApi({ ...base, flag: '0', log: (m) => lines.push(m) });
     expect(lines).toEqual(['[disnans] api read transport: tauri', '[disnans] api read transport: http']);
   });
 });

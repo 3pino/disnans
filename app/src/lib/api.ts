@@ -21,7 +21,7 @@ import { bootReadApi } from './transport/boot';
 
 export { HttpError } from './transport/http';
 
-/** 読取の経路（Windows/Linux の Tauri で localStorage "disnans.rustApi"="1" のときだけ Rust）。読み込み時に1回だけ決める */
+/** 読取の経路（Windows/Linux の Tauri では Rust。localStorage "disnans.rustApi"="0" で従来の HTTP）。読み込み時に1回だけ決める */
 const reads = bootReadApi().api;
 
 export const api = {

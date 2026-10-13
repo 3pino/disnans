@@ -48,8 +48,12 @@ function boot(env: Env) {
 }
 
 describe('boot-time read transport choice', () => {
-  it('flag off: HTTP, invoke is never called', () => {
-    const choice = boot({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
+  it('unset on Linux Tauri: Rust is the default', () => {
+    expect(boot({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('tauri');
+  });
+
+  it('flag "0": HTTP, invoke is never called', () => {
+    const choice = boot({ flag: '0', ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
     expect(choice.kind).toBe('http');
     expect(console.info).toHaveBeenCalledWith('[disnans] api read transport: http');
     expect(invoke).not.toHaveBeenCalled();
@@ -63,8 +67,20 @@ describe('boot-time read transport choice', () => {
     expect(console.info).toHaveBeenCalledWith('[disnans] api read transport: tauri');
   });
 
+  it('no flag on Windows Tauri: Rust is the default', () => {
+    expect(boot({ ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('tauri');
+  });
+
+  it('macOS: HTTP even without a flag', () => {
+    expect(boot({ ua: MAC, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
+  });
+
   it('flag on but macOS: HTTP', () => {
     expect(boot({ flag: '1', ua: MAC, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
+  });
+
+  it('no flag in a browser (no Tauri): HTTP', () => {
+    expect(boot({ ua: LINUX, tauri: false, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
   });
 
   it('flag on in a browser (no Tauri): HTTP', () => {
