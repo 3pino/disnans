@@ -138,6 +138,7 @@ jobs:
             Get-ChildItem -Force | Format-Table Name, Length | Out-String | Write-Host
             throw 'harness が結果を書きませんでした'
           }
-          if ($harnessExit -ne 0) { throw "harness が失敗しました（終了コード $harnessExit）" }
+          # .onInit で Quit すると NSIS は終了コード 2（中断）を返す。成否は結果ファイルの内容で判定する
+          Write-Host "harness の終了コード: $harnessExit"
           node check-cli-path-results.mjs cli-path-results.txt
           if ($LASTEXITCODE -ne 0) { throw '期待と違う結果があります' }
