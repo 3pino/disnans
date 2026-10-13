@@ -81,6 +81,71 @@ jobs:
           projectPath: app
           releaseId: ${{ needs.create-release.outputs.release_id }}
           updaterJsonPreferNsis: true
+      # 公開（publish）の前に、同梱した CLI を確かめる。失敗すると desktop が失敗し、公開に進まない。
+      - name: "Linux: .deb に CLI（/usr/bin/disnans）が入っているか確かめる"
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          VERSION=$(jq -r .version app/src-tauri/tauri.conf.json)
+          DEB=$(ls app/src-tauri/target/release/bundle/deb/disnans_"${VERSION}"_*.deb)
+          if [ "$(echo "$DEB" | wc -l)" -ne 1 ]; then
+            echo "::error::この版の .deb が 1 つではありません: $DEB"; exit 1
+          fi
+          # パイプで grep -q すると、途中で閉じた dpkg-deb が失敗扱いになる（pipefail）ので、一度ファイルに書く
+          dpkg-deb -c "$DEB" > "$RUNNER_TEMP/deb-list.txt"
+          if ! grep -q ' usr/bin/disnans$' "$RUNNER_TEMP/deb-list.txt"; then
+            echo "::error::.deb に usr/bin/disnans がありません"; exit 1
+          fi
+          rm -rf "$RUNNER_TEMP/deb-check"
+          dpkg-deb -x "$DEB" "$RUNNER_TEMP/deb-check"
+          CLI="$RUNNER_TEMP/deb-check/usr/bin/disnans"
+          SIZE=$(stat -c %s "$CLI")
+          if [ "$SIZE" -lt 100000 ]; then
+            echo "::error::CLI が stub のままです（$SIZE バイト）"; exit 1
+          fi
+          "$CLI" --version
+          "$CLI" --help > /dev/null
+          echo "CLI を確認しました（$SIZE バイト）"
+      - name: "Windows: NSIS で CLI の PATH を確かめる（入れる → PATH → 外す → 元に戻る）"
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $setups = @(Get-ChildItem "app/src-tauri/target/release/bundle/nsis/disnans_$($version)_*-setup.exe")
+          if ($setups.Count -ne 1) { throw "この版のインストーラが 1 つではありません: $($setups.Count)" }
+          $installDir = Join-Path $env:LOCALAPPDATA 'disnans'
+          $cli = Join-Path $installDir 'disnans.exe'
+          $uninstaller = Join-Path $installDir 'uninstall.exe'
+          $envKey = 'HKCU:\Environment'
+          $markKey = 'HKCU:\Software\disnans-cli-path'
+
+          function Get-UserPath { (Get-ItemProperty -Path $envKey -Name Path -ErrorAction SilentlyContinue).Path }
+          function Test-PathEntry([string]$path, [string]$dir) {
+            if (-not $path) { return $false }
+            return (($path -split ';') -contains $dir)
+          }
+
+          if (Test-Path $markKey) { throw "インストール前から印が残っています（$markKey）" }
+          $before = Get-UserPath
+
+          Start-Process -FilePath $setups[0].FullName -ArgumentList '/S' -Wait
+          if (-not (Test-Path $cli)) { throw "CLI が入っていません: $cli" }
+          $size = (Get-Item $cli).Length
+          if ($size -lt 100000) { throw "CLI が stub のままです（$size バイト）" }
+          & $cli --version
+          if ($LASTEXITCODE -ne 0) { throw 'disnans --version が失敗しました' }
+          if (-not (Test-PathEntry (Get-UserPath) $installDir)) { throw "ユーザー PATH に $installDir がありません" }
+          if (-not (Test-Path $markKey)) { throw "印（$markKey）がありません" }
+
+          Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
+          $deadline = (Get-Date).AddSeconds(120)
+          while ((Test-Path $cli) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Seconds 2 }
+          if (Test-Path $cli) { throw 'アンインストールが終わりません' }
+          $after = Get-UserPath
+          if ($after -ne $before) { throw "ユーザー PATH が元に戻りません。前: [$before] 後: [$after]" }
+          if (Test-Path $markKey) { throw '印が残っています' }
+          Write-Host 'CLI の PATH の追加と削除を確認しました'
 
   android:
     needs: create-release

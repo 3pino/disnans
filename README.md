@@ -26,6 +26,12 @@
 | Linux（Ubuntu / Debian） | `disnans_*_amd64.deb` | `sudo apt install ./disnans_*_amd64.deb` |
 | Linux（その他） | `disnans_*_amd64.AppImage` | `chmod +x` で実行権限を付けて起動する |
 
+Windows の `.exe` と Linux の `.deb` を入れると、CLI の `disnans` も使えるようになります。
+
+- **Windows**: インストール時にユーザーの PATH へ入れます。新しく開いたターミナルで `disnans` と打てます。アンインストールでは、インストーラが追加した分だけを PATH から外します（他の PATH は変えません）。
+- **Linux（`.deb`）**: `/usr/bin/disnans` に入ります。
+- **AppImage**: CLI の PATH 登録は行いません。CLI を使うなら `.deb` か Windows の `.exe` を入れてください。
+
 ### 3. サーバーに接続する
 
 アプリを起動し、管理者から教わったサーバーのアドレス（例: `100.x.x.x:8080`）を入力します。`http://` は省略できます。
@@ -132,7 +138,7 @@ cd app && npm install && npm run dev        # クライアント
 
 ### CLI（開発中）
 
-Rust の共通クライアント基盤と、読み取り用 CLI を追加しています。現時点では設定・自分の情報・メインチャットの履歴を扱い、投稿・新着の監視・TUI はまだ使えません。Windows/Linux のデスクトップ GUI は CLI と接続先・下書きファイルを共有します。旧設定・下書きは読戻し確認後に移行し、移行や保存の失敗は通知します。GUI の通信、Android・ブラウザー開発版の保存先は従来のままです。配布インストーラへの同梱と実機確認は後続の段階です。
+Rust の共通クライアント基盤と、読み取り用 CLI を追加しています。現時点では設定・自分の情報・メインチャットの履歴を扱い、投稿・新着の監視・TUI はまだ使えません。Windows/Linux のデスクトップ GUI は CLI と接続先・下書きファイルを共有します。旧設定・下書きは読戻し確認後に移行し、移行や保存の失敗は通知します。GUI の通信、Android・ブラウザー開発版の保存先は従来のままです。Windows の `.exe` と Linux の `.deb` には CLI を同梱しています（インストールの説明は上の「アプリを入れる」を参照）。
 
 別ターミナルで開発サーバーを起動したうえで、次を実行します。
 
@@ -140,6 +146,15 @@ Rust の共通クライアント基盤と、読み取り用 CLI を追加して�
 cargo run -p disnans-cli -- --server http://127.0.0.1:8080 --dev-user alice me --json
 cargo run -p disnans-cli -- --server http://127.0.0.1:8080 --dev-user alice messages --json
 ```
+
+`app/src-tauri` の `cargo test` / `clippy` を直接動かすには、先に CLI の配置物（`app/src-tauri/binaries/`、Git に入らない）が要ります。ビルドスクリプトがその存在を確かめるためです。
+
+```sh
+node scripts/prepare-cli.mjs --stub   # 空のプレースホルダ（テストと clippy 用。インストーラには使えない）
+node scripts/prepare-cli.mjs          # 本物の CLI を release で作って置く
+```
+
+`npm run tauri dev` と `tauri build` は、本物の CLI を自動で置きます。
 
 `--dev-user` は開発サーバー専用です。本番では省略し、GUI と同じ Tailscale のサーバーへ接続します。接続先は `config set-server <URL>` で保存でき、`--server` は一時指定です。GUI で接続先の外部変更を検出しても、確認なしに別サーバーへ接続しません。JSON 出力には個人データが含まれるため、共有時は内容を確認してください。
 
@@ -156,4 +171,4 @@ cargo run -p disnans-cli -- --server http://127.0.0.1:8080 --dev-user alice mess
 1. `app/src-tauri/tauri.conf.json` の `version` を上げてコミットする
 2. `git tag v<version> && git push origin master v<version>`
 
-GitHub Actions が Android / Windows / Linux 版をビルドし、Releases に公開します。署名の鍵は GitHub の Secrets と管理者の `~/.config/disnans-keys/` にあります（**鍵はなくさないこと**。Android の鍵をなくすと、全員がアンインストールして入れ直す必要があります）。
+GitHub Actions が Android / Windows / Linux 版をビルドし、Releases に公開します。Windows と Linux の成果物は、公開の前に同梱の CLI（PATH への追加と削除、`.deb` の `/usr/bin/disnans`）を確かめてから公開されます。署名の鍵は GitHub の Secrets と管理者の `~/.config/disnans-keys/` にあります（**鍵はなくさないこと**。Android の鍵をなくすと、全員がアンインストールして入れ直す必要があります）。

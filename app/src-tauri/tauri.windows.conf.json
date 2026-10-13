@@ -1,0 +1,16 @@
+{
+  "build": {
+    "beforeDevCommand": "node ../scripts/prepare-cli.mjs && npm run dev",
+    "beforeBuildCommand": "node ../scripts/prepare-cli.mjs && npm run build"
+  },
+  "bundle": {
+    "externalBin": [
+      "binaries/disnans"
+    ],
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/cli-path.nsh"
+      }
+    }
+  }
+}

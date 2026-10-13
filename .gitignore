@@ -3,6 +3,8 @@ node_modules/
 /app/dist
 /app/src-tauri/target
 /app/src-tauri/gen/schemas
+# scripts/prepare-cli.mjs が置く CLI（本物またはプレースホルダ）。commit しない
+/app/src-tauri/binaries/
 /data
 *.db
 *.db-*
@@ -14,3 +16,6 @@ node_modules/
 /.pi/
 scripts/deploy.sh
 CLAUDE.md
+# NSIS 単体テストの生成物（scripts/nsis）
+/scripts/nsis/*.exe
+/scripts/nsis/cli-path-results.txt

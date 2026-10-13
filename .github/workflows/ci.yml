@@ -47,6 +47,8 @@ jobs:
       - run: npx svelte-check
       - run: npx vitest run
       - run: npm run build
+      # CLI を配置するスクリプトの単体テスト（配置の名前・ビルドの呼び出し・失敗時の動き）
+      - run: node --test ../scripts/prepare-cli.test.mjs
 
   # Desktop IPC と共通ファイル移行の Rust 側を Windows のネイティブ環境でも検証する。
   app-windows:
@@ -68,6 +70,9 @@ jobs:
         working-directory: app
       - run: npm run build
         working-directory: app
+      # build.rs は externalBin（CLI の配置物）の存在を確かめるので、先に stub を置く（本物ではない。インストーラには使わない）
+      - name: CLI の stub を置く
+        run: node scripts/prepare-cli.mjs --stub
       - run: cargo clippy --lib --tests --locked -- -D warnings
         working-directory: app/src-tauri
       - run: cargo test --locked
@@ -99,6 +104,32 @@ jobs:
         working-directory: app
       - run: npm run build
         working-directory: app
+      - name: CLI の stub を置く（build.rs が配置物の存在を確かめるため。本物ではない）
+        run: node scripts/prepare-cli.mjs --stub
       - name: テスト（画面共有の計算を含む）
         working-directory: app/src-tauri
         run: cargo test --locked
+
+  # NSIS インストーラのフック（PATH の追加と削除）の文字列処理を、レジストリに触れずにテストする。
+  # 本物のインストーラのコンパイルと実際の PATH の確認は release.yml が行う。
+  nsis-hook:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: NSIS を入れる
+        run: choco install nsis -y --no-progress
+      - name: テストをコンパイルして実行し、結果を確かめる
+        working-directory: scripts/nsis
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          & $makensis /WX cli-path-harness.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'makensis が失敗しました' }
+          & .\cli-path-harness.exe
+          if ($LASTEXITCODE -ne 0) { throw 'harness が失敗しました' }
+          node check-cli-path-results.mjs cli-path-results.txt
+          if ($LASTEXITCODE -ne 0) { throw '期待と違う結果があります' }
