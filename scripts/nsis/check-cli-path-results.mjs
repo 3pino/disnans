@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const EXPECTED = [
+  'started|1',
   'find|A;B;C|B|1',
   'find|A;B;C|BC|0',
   'find|A;BC|B|0',

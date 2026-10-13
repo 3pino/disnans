@@ -1,15 +1,27 @@
 ; cli-path.nsh の文字列操作（DISNANS_FIND / DISNANS_REMOVE）の単体テスト。
 ; レジストリには触れない。結果を exe と同じフォルダの cli-path-results.txt に書き、
 ; scripts/nsis/check-cli-path-results.mjs がその内容を期待値と比べる。
+;
+; テストは .onInit で行い、最後に Quit する。セクションは使わない
+; （セクションに書いた場合、Windows の CI で実行されず結果ファイルができなかった）。
 Unicode true
 Name "cli-path harness"
 OutFile "cli-path-harness.exe"
 RequestExecutionLevel user
 SilentInstall silent
+InstallDir "$TEMP\disnans-cli-path-harness"
 !include "${__FILEDIR__}\..\..\app\src-tauri\windows\cli-path.nsh"
 
-Section
+Function .onInit
+  ClearErrors
   FileOpen $0 "$EXEDIR\cli-path-results.txt" w
+  IfErrors disnans_open_failed disnans_open_ok
+  disnans_open_failed:
+  ; 結果を書けなかったことを、終了コードで知らせる（CI は失敗になる）
+  SetErrorLevel 3
+  Quit
+  disnans_open_ok:
+  FileWrite $0 "started|1$\r$\n"
 
   !insertmacro DISNANS_FIND "A;B;C" "B" $2 f01
   FileWrite $0 "find|A;B;C|B|$2$\r$\n"
@@ -60,9 +72,11 @@ Section
 
   FileClose $0
 
-  ; フック本体はコンパイルの確認だけ行う（この Goto で飛ばすので、レジストリには触れない）
-  Goto disnans_harness_skip_hooks
+  ; フック本体はコンパイルの確認だけ行う（上の Quit より後なので、実行はされない）
+  Quit
   !insertmacro NSIS_HOOK_POSTINSTALL
   !insertmacro NSIS_HOOK_PREUNINSTALL
-  disnans_harness_skip_hooks:
+FunctionEnd
+
+Section
 SectionEnd
