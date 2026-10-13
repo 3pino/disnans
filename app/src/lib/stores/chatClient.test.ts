@@ -75,6 +75,8 @@ function msg(id: string, body: string, author = 'me'): Message {
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 let client: typeof import('./client.svelte').client;
+let ui: typeof import('./ui.svelte').ui;
+const toastTexts = () => ui.toasts.map((t) => t.text);
 let chat: FakeChat;
 let socket: () => FakeSocket;
 
@@ -88,6 +90,7 @@ beforeEach(async () => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.resetModules();
   ({ client } = await import('./client.svelte'));
+  ({ ui } = await import('./ui.svelte'));
   chat = new FakeChat();
   client.start(chat);
   socket = () => FakeSocket.instances[0];
@@ -205,6 +208,29 @@ describe('chat over Rust: sending', () => {
     client.retry(null, clientId);
     await flush();
     expect(chat.sends.map((d) => d.clientId)).toEqual([clientId, clientId]);
+  });
+
+  it('notSent shows the reason from Rust, and the default text only when there is none', async () => {
+    chat.respond = () => ({ outcome: 'notSent', reason: '本文が空です' });
+    sendText('hi');
+    await flush();
+    expect(toastTexts().some((t) => t.includes('本文が空です'))).toBe(true);
+    expect(toastTexts().some((t) => t.includes('サーバーに接続していない'))).toBe(false);
+
+    chat.respond = () => ({ outcome: 'notSent', reason: '' });
+    sendText('again');
+    await flush();
+    expect(toastTexts().some((t) => t.includes('サーバーに接続していないため送れませんでした'))).toBe(true);
+  });
+
+  it('a send that the bridge could not report is unknown and not retried', async () => {
+    chat.respond = (d) => ({ outcome: 'unknown', clientId: d.clientId, reason: { kind: 'serverError', code: 'bridge_error', message: '送信の結果を受け取れませんでした' } });
+    sendText('hi');
+    await flush();
+    const clientId = pendingOf()[0].client_id;
+    expect(pendingOf()[0]).toMatchObject({ unknown: true, failed: false });
+    client.retry(null, clientId);
+    expect(chat.sends).toHaveLength(1);
   });
 
   it('notSent is a failed placeholder that can be retried', async () => {

@@ -374,8 +374,8 @@ class Client {
         this.reflectSend(outcome.clientId, true, errorText(outcome.code, outcome.message));
         return;
       case 'notSent':
-        // 書込前に失敗（未接続など）。投稿されていないので再送できる
-        this.reflectSend(clientId, true, SEND_TEXT.notConnected);
+        // 書込前に失敗（未接続・引数不正など）。投稿されていないので再送できる。理由がなければ既定の文言
+        this.reflectSend(clientId, true, outcome.reason || SEND_TEXT.notConnected);
         return;
       case 'unknown':
         this.reflectSend(outcome.clientId, false, unknownReasonText(outcome.reason));
@@ -418,7 +418,7 @@ class Client {
     });
     if (outcome.outcome === 'confirmed') return; // 表示は echo で届く
     const code = outcome.outcome === 'rejected' ? outcome.code : outcome.outcome === 'notSent' ? SEND_TEXT.codeNotSent : SEND_TEXT.codeUnknown;
-    const message = outcome.outcome === 'rejected' ? outcome.message : outcome.outcome === 'notSent' ? outcome.reason : unknownReasonText(outcome.reason);
+    const message = outcome.outcome === 'rejected' ? outcome.message : outcome.outcome === 'notSent' ? outcome.reason || SEND_TEXT.notConnected : unknownReasonText(outcome.reason);
     this.dispatch({ type: 'error', client_id: null, code, message });
   }
 

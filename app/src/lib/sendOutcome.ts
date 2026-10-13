@@ -17,6 +17,8 @@ export const SEND_TEXT = {
   reasonDisconnected: '接続が切れました',
   reasonTimeout: 'サーバーからの応答がありませんでした',
   reasonWriteFailed: '送信の書き込みに失敗しました',
+  /** Rust 側の呼び出しが応答を受け取れなかった（書込んだかどうか分からない） */
+  reasonBridge: '送信の結果を受け取れませんでした',
   /** 書込前に送れなかった（Rust 経路。未接続など。再送できる） */
   notConnected: 'サーバーに接続していないため送れませんでした',
   /** plugin などの生の送信が失敗したときの error の code */

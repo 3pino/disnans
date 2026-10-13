@@ -44,11 +44,41 @@ describe('chat over Tauri', () => {
     expect(invoke).toHaveBeenCalledWith('chat_send', { draft });
   });
 
-  it('a rejected chat_send becomes notSent (never a thrown error, never a resend)', async () => {
-    const invoke = vi.fn().mockRejectedValue({ code: 'bridge_error', message: 'bad args' });
+  it('a Rust refusal before the write (ReadFailure shape) is notSent, and is never resent', async () => {
+    const invoke = vi.fn().mockRejectedValue({ code: 'invalid_request', message: 'bad args' });
     const t = createTauriChatTransport(invoke, ctx, fakeChannel().make);
     await expect(t.send(draft)).resolves.toEqual({ outcome: 'notSent', reason: 'bad args' });
     expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('a reject that is not a bridge error (IPC failure, missing command) is unknown, not notSent', async () => {
+    const cases: unknown[] = ['command chat_send not found', new Error('ipc broke'), null, { message: 'no code' }];
+    for (const e of cases) {
+      const invoke = vi.fn().mockRejectedValue(e);
+      const t = createTauriChatTransport(invoke, ctx, fakeChannel().make);
+      const out = await t.send(draft);
+      expect(out).toMatchObject({ outcome: 'unknown', clientId: 'c-1', reason: { kind: 'serverError', code: 'bridge_error' } });
+    }
+  });
+
+  it('items from a previous start are dropped after a new start (late IPC delivery)', async () => {
+    const invoke = vi.fn().mockResolvedValue(null);
+    const channels: { ch: ChannelLike<ChatItem> }[] = [];
+    const make = async () => {
+      const ch: ChannelLike<ChatItem> = { onmessage: () => {} };
+      channels.push({ ch });
+      return ch;
+    };
+    const t = createTauriChatTransport(invoke, ctx, make);
+    const first: ChatItem[] = [];
+    const second: ChatItem[] = [];
+    await t.start((i) => first.push(i));
+    await t.stop();
+    await t.start((i) => second.push(i));
+    channels[0].ch.onmessage({ kind: 'gap', generation: 5, reason: 'old' });
+    channels[1].ch.onmessage({ kind: 'connected', generation: 1, me: { id: 'me' } as never, users: [] });
+    expect(first).toEqual([]);
+    expect(second).toEqual([{ kind: 'connected', generation: 1, me: { id: 'me' }, users: [] }]);
   });
 
   it('reconnect and stop call their commands', async () => {
