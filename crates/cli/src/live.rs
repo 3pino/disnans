@@ -17,7 +17,7 @@ const ACK_TIMEOUT: Duration = Duration::from_secs(15);
 /// 試験用に確認待ちを短くする隠し環境変数（ミリ秒）。利用者向けの設定ではない。
 const ACK_TIMEOUT_ENV: &str = "DISNANS_CLI_ACK_TIMEOUT_MS";
 
-fn ack_timeout() -> Result<Duration, CliError> {
+pub(crate) fn ack_timeout() -> Result<Duration, CliError> {
     ack_timeout_from(std::env::var(ACK_TIMEOUT_ENV).ok().as_deref())
 }
 
@@ -111,7 +111,7 @@ pub fn send_result(outcome: SendOutcome, json: bool) -> Result<String, CliError>
     }
 }
 
-fn unknown_reason(reason: &UnknownReason) -> String {
+pub(crate) fn unknown_reason(reason: &UnknownReason) -> String {
     match reason {
         UnknownReason::Disconnected => "確認前に接続が切れました".into(),
         UnknownReason::Timeout => "確認応答がタイムアウトしました".into(),

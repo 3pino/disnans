@@ -31,6 +31,8 @@ pub enum Command {
     Send(SendArgs),
     /// メインチャットの新着・編集・削除を1行ずつ表示し続ける。
     Watch(JsonOption),
+    /// メインチャットを読み書きする端末画面（TUI）を開く。
+    Tui,
 }
 
 #[derive(Debug, Args)]
@@ -153,10 +155,12 @@ mod tests {
 
     #[test]
     fn advertises_only_implemented_commands() {
-        for unavailable in ["tui", "threads"] {
-            let error = Cli::try_parse_from(["disnans", unavailable]).unwrap_err();
-            assert_eq!(error.kind(), ErrorKind::InvalidSubcommand);
-        }
+        assert!(matches!(
+            Cli::try_parse_from(["disnans", "tui"]).unwrap().command,
+            Command::Tui
+        ));
+        let error = Cli::try_parse_from(["disnans", "threads"]).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidSubcommand);
     }
 
     #[test]

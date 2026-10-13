@@ -2,6 +2,7 @@ mod args;
 mod live;
 mod output;
 mod send;
+mod tui;
 mod watch;
 
 use std::io::{self, Write};
@@ -215,7 +216,7 @@ async fn run(cli: Cli) -> Result<String, CliError> {
             live::send(server, cli.dev_user, body, args.silent, args.json).await
         }
         // `watch` は出力を逐次書くため `main` が直接扱う。
-        Command::Watch(_) => Err(CliError::Usage("watch は直接実行します".into())),
+        Command::Watch(_) | Command::Tui => Err(CliError::Usage("直接実行するコマンドです".into())),
     }
 }
 
@@ -246,6 +247,16 @@ async fn main() -> ExitCode {
     if let Command::Watch(opts) = &cli.command {
         let result = match resolve_server(cli.server.as_deref(), saved_server) {
             Ok(server) => live::watch(server, cli.dev_user.clone(), opts.json).await,
+            Err(e) => Err(e),
+        };
+        return ExitCode::from(match result {
+            Ok(()) => 0,
+            Err(e) => report_error(e, &mut io::stderr().lock()),
+        });
+    }
+    if matches!(cli.command, Command::Tui) {
+        let result = match resolve_server(cli.server.as_deref(), saved_server) {
+            Ok(server) => tui::run(server, cli.dev_user.clone()).await,
             Err(e) => Err(e),
         };
         return ExitCode::from(match result {
