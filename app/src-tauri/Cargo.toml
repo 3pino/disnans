@@ -25,6 +25,7 @@ serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "net", "io-util"] }
 
 # 単一インスタンス（デスクトップだけ）。2つ目の起動は新しく立ち上げず、既存のウィンドウを出す
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

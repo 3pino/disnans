@@ -15,6 +15,10 @@ mod client_storage;
 #[cfg(all(test, desktop))]
 mod client_storage_tests;
 
+// 読取 REST の Rust 経路（段1）。契約は .pi/step4-ipc-contract.md
+#[cfg(desktop)]
+mod api_bridge;
+
 // 画面の静止画（プラグイン API v11 の screenCapture.snapshot。ダイアログを出さない）
 #[cfg(desktop)]
 mod snapshot;
@@ -149,7 +153,18 @@ pub fn run() {
                 snapshot::screen_snapshot,
                 client_storage::client_storage_read,
                 client_storage::client_storage_write,
-                client_storage::client_storage_import
+                client_storage::client_storage_import,
+                api_bridge::api_me,
+                api_bridge::api_users,
+                api_bridge::api_prefs,
+                api_bridge::api_messages,
+                api_bridge::api_search_messages,
+                api_bridge::api_threads,
+                api_bridge::api_thread,
+                api_bridge::api_thread_tags,
+                api_bridge::api_read_markers,
+                api_bridge::api_plugins,
+                api_bridge::api_session
             ]);
         }
         #[cfg(target_os = "linux")]
@@ -166,7 +181,18 @@ pub fn run() {
                     linux_capture::linux_screen_update,
                     client_storage::client_storage_read,
                     client_storage::client_storage_write,
-                    client_storage::client_storage_import
+                    client_storage::client_storage_import,
+                    api_bridge::api_me,
+                    api_bridge::api_users,
+                    api_bridge::api_prefs,
+                    api_bridge::api_messages,
+                    api_bridge::api_search_messages,
+                    api_bridge::api_threads,
+                    api_bridge::api_thread,
+                    api_bridge::api_thread_tags,
+                    api_bridge::api_read_markers,
+                    api_bridge::api_plugins,
+                    api_bridge::api_session
                 ]);
         }
     }
