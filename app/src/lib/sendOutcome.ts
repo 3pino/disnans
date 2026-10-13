@@ -1,6 +1,8 @@
 // 送信結果の表示文言と判定。文言の変更は見た目の変更なので、利用者の確認を取ってから変える。
 // 文言はこの1か所にまとめる。
 
+import type { UnknownReason } from './transport/chat';
+
 export const SEND_TEXT = {
   /** 投稿されなかったと分かっている失敗（再送できる） */
   failed: '送信できませんでした',
@@ -11,7 +13,26 @@ export const SEND_TEXT = {
   dismissUnknown: '確認したので消す',
   /** 結果不明のときの error の前置き */
   unknownToast: '送信結果を確認できません',
+  /** 結果不明の理由（toast の後ろに付く。Rust 経路の理由） */
+  reasonDisconnected: '接続が切れました',
+  reasonTimeout: 'サーバーからの応答がありませんでした',
+  reasonWriteFailed: '送信の書き込みに失敗しました',
+  /** 書込前に送れなかった（Rust 経路。未接続など。再送できる） */
+  notConnected: 'サーバーに接続していないため送れませんでした',
+  /** plugin などの生の送信が失敗したときの error の code */
+  codeUnknown: 'send_unknown',
+  codeNotSent: 'send_not_sent',
 } as const;
+
+/** 結果不明の理由を、toast に出す短い文にする */
+export function unknownReasonText(reason: UnknownReason): string {
+  switch (reason.kind) {
+    case 'disconnected': return SEND_TEXT.reasonDisconnected;
+    case 'timeout': return SEND_TEXT.reasonTimeout;
+    case 'writeFailed': return SEND_TEXT.reasonWriteFailed;
+    case 'serverError': return reason.message;
+  }
+}
 
 /**
  * サーバーが、同じ client_id の送信を「投稿されていない」と保証して返すコード。

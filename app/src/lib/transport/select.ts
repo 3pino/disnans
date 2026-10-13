@@ -5,6 +5,9 @@ import type { BridgeContext, Invoke, ReadApi } from './types';
 /** 読取の Rust 経路を有効にする localStorage キー（値は "1" のときだけ有効。既定 off） */
 export const RUST_API_FLAG = 'disnans.rustApi';
 
+/** チャットの Rust 経路を有効にする localStorage キー（値は "1" のときだけ有効。既定 off。読取とは独立） */
+export const CHAT_RUST_FLAG = 'disnans.rustChat';
+
 export type ReadApiChoice = { kind: 'http' | 'tauri'; api: ReadApi };
 
 export type ReadApiEnv = {
@@ -28,4 +31,9 @@ export function selectReadApi(env: ReadApiEnv): ReadApiChoice {
       : { kind: 'http', api: createHttpReadApi() };
   env.log?.(`[disnans] api read transport: ${choice.kind}`);
   return choice;
+}
+
+/** チャットの経路。rust は Windows/Linux の Tauri で "disnans.rustChat"="1" のときだけ */
+export function selectChatMode(env: { flag: string | null; desktop: boolean }): 'rust' | 'js' {
+  return env.flag === '1' && env.desktop ? 'rust' : 'js';
 }

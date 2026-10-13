@@ -19,6 +19,10 @@ mod client_storage_tests;
 #[cfg(desktop)]
 mod api_bridge;
 
+// チャット WebSocket の Rust 経路（段4）。契約は .pi/step4-ipc-contract.md §8。ws 依存と同じ OS だけ
+#[cfg(all(desktop, any(target_os = "macos", windows, target_os = "linux")))]
+mod chat_bridge;
+
 // 画面の静止画（プラグイン API v11 の screenCapture.snapshot。ダイアログを出さない）
 #[cfg(desktop)]
 mod snapshot;
@@ -129,6 +133,11 @@ pub fn run() {
         }));
     }
 
+    #[cfg(all(desktop, any(target_os = "macos", windows, target_os = "linux")))]
+    {
+        builder = builder.manage(chat_bridge::ChatHub::default());
+    }
+
     builder = builder.plugin(tauri_plugin_opener::init());
 
     // アップデート: デスクトップは公式の updater、Android は自前のプラグイン
@@ -164,7 +173,11 @@ pub fn run() {
                 api_bridge::api_thread_tags,
                 api_bridge::api_read_markers,
                 api_bridge::api_plugins,
-                api_bridge::api_session
+                api_bridge::api_session,
+                chat_bridge::chat_start,
+                chat_bridge::chat_send,
+                chat_bridge::chat_reconnect,
+                chat_bridge::chat_stop
             ]);
         }
         #[cfg(target_os = "linux")]
@@ -192,7 +205,11 @@ pub fn run() {
                     api_bridge::api_thread_tags,
                     api_bridge::api_read_markers,
                     api_bridge::api_plugins,
-                    api_bridge::api_session
+                    api_bridge::api_session,
+                    chat_bridge::chat_start,
+                    chat_bridge::chat_send,
+                    chat_bridge::chat_reconnect,
+                    chat_bridge::chat_stop
                 ]);
         }
     }
@@ -245,6 +262,12 @@ pub fn run() {
             use tauri::Manager;
             // async runtime と portal の接続が生きている間に、画面共有の資源を外す
             _app.state::<linux_capture::LinuxScreenState>().shutdown();
+        }
+        // チャット接続を止める（保留中の送信は unknown になる。再送はしない）
+        #[cfg(all(desktop, any(target_os = "macos", windows, target_os = "linux")))]
+        if matches!(_event, tauri::RunEvent::Exit) {
+            use tauri::Manager;
+            tauri::async_runtime::block_on(_app.state::<chat_bridge::ChatHub>().stop());
         }
     });
 }

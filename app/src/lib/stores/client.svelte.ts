@@ -8,13 +8,15 @@ import type { ServerEvent } from '../protocol/ServerEvent';
 import type { User } from '../protocol/User';
 import { Socket, type SocketStatus } from '../ws';
 import { wsUrl } from '../config';
-import { Timeline, type OutgoingFile } from './timeline.svelte';
+import { Timeline, type OutgoingFile, type PendingMessage } from './timeline.svelte';
 import { threads } from './threads.svelte';
 import { ui, type ToastAvatar } from './ui.svelte';
 import { notifications } from './notifications.svelte';
 import { page, unread } from './unread.svelte';
 import { errorText } from '../errors';
-import { SEND_TEXT, isRejectedSendCode } from '../sendOutcome';
+import { SEND_TEXT, isRejectedSendCode, unknownReasonText } from '../sendOutcome';
+import { bootChatTransport } from '../transport/boot';
+import { CHAT_EVENT_TYPES, type ChatItem, type ChatSendEvent, type ChatTransport, type SendOutcome } from '../transport/chat';
 import { replyPreviewOf } from '../reply';
 import { reply } from './reply.svelte';
 
@@ -35,27 +37,42 @@ class Client {
   private timelines = new Map<string, Timeline>();
   private listeners = new Set<Listener>();
   private seq = 0;
+  /** チャットの Rust 経路（null なら従来の JS 経路）。start() で1回だけ決める */
+  private chat: ChatTransport | null = null;
+  private chatState: 'idle' | 'starting' | 'started' | 'failed' = 'idle';
+  /** Rust 経路で、いま有効な接続の世代（古い項目は捨てる） */
+  private chatGeneration = 0;
 
   get userList(): User[] {
     return Object.values(this.users).sort((a, b) => a.display_name.localeCompare(b.display_name, 'ja'));
   }
 
-  start(): void {
+  /** 起動時に1回呼ぶ。chat を渡すと、チャットは Rust 経路（JS 接続はチャット以外に使う） */
+  start(chat: ChatTransport | null = bootChatTransport()): void {
     if (this.socket) return;
     page.init();
     this.socket = new Socket({
       url: wsUrl,
-      onEvent: (ev) => this.dispatch(ev),
+      onEvent: (ev) => this.onSocketEvent(ev),
       onStatus: (s) => {
+        // Rust 経路のときバナーの状態はチャット接続から決める（onChatItem）
+        if (this.chat) return;
         this.status = s;
         if (s === 'closed') for (const t of this.timelines.values()) t.markSentUnknown();
       },
     });
     this.socket.start();
+    if (chat) {
+      this.chat = chat;
+      void this.startChat();
+    }
   }
 
   reconnect(): void {
     this.socket?.reconnectNow();
+    if (!this.chat) return;
+    if (this.chatState === 'started') void this.chat.reconnect().catch((e) => this.chatFailed(e));
+    else if (this.chatState !== 'starting') void this.startChat();
   }
 
   /** 生のサーバーイベントを購読する（プラグインのホストが使う） */
@@ -65,6 +82,11 @@ class Client {
   }
 
   send(ev: ClientEvent): boolean {
+    // Rust 経路のメッセージ送信は ChatTransport からだけ出す（JS のキューに積まない）
+    if (this.chat && ev.type === 'message.send') {
+      void this.sendRawChat(ev);
+      return true;
+    }
     if (!this.socket) return false;
     return this.socket.send(ev);
   }
@@ -205,6 +227,10 @@ class Client {
       const ids = p.files.flatMap((x) => (x.attachment ? [x.attachment.id] : []));
       p.attachment_ids = ids;
       p.attachments = p.files.flatMap((x) => (x.attachment ? [x.attachment] : []));
+      if (this.chat) {
+        await this.submitChat(threadId, p);
+        return;
+      }
       p.sent = this.send({
         type: 'message.send',
         client_id: clientId,
@@ -267,23 +293,162 @@ class Client {
     this.users[u.id] = u;
   }
 
+  // ---- チャットの Rust 経路（ステップ4 段4a・4b） ----
+
+  private async startChat(): Promise<void> {
+    const chat = this.chat;
+    if (!chat) return;
+    this.chatState = 'starting';
+    this.status = 'connecting';
+    try {
+      await chat.start((item) => this.onChatItem(item));
+      if (this.chatState === 'starting') this.chatState = 'started';
+    } catch (e) {
+      this.chatFailed(e);
+    }
+  }
+
+  private chatFailed(e: unknown): void {
+    this.chatState = 'failed';
+    this.status = 'closed';
+    ui.toast(`チャットに接続できませんでした: ${e instanceof Error ? e.message : String(e)}`, 'error');
+  }
+
+  private onChatItem(item: ChatItem): void {
+    this.chatState = 'started';
+    switch (item.kind) {
+      case 'connecting':
+        this.status = 'connecting';
+        break;
+      case 'connected':
+        this.chatGeneration = item.generation;
+        this.status = 'open';
+        // 接続ごとの hello と同じ扱い（読み込み直し・購読者への通知）
+        this.dispatch({ type: 'hello', me: item.me, users: item.users });
+        break;
+      case 'event': {
+        if (item.generation < this.chatGeneration) return;
+        // Rust のストリームには通話・プラグインなども届くので、チャット系と error だけ使う
+        if (item.event.type !== 'error' && !CHAT_EVENT_TYPES.has(item.event.type)) return;
+        this.dispatch(item.event);
+        break;
+      }
+      case 'gap':
+        if (item.generation < this.chatGeneration) return;
+        this.status = 'closed';
+        break;
+      case 'failed':
+        this.chatState = 'failed';
+        this.status = 'closed';
+        ui.toast(`チャットの接続が止まりました: ${item.reason}`, 'error');
+        break;
+    }
+  }
+
+  /** Rust 経路の送信。結果（SendOutcome）で仮表示を進める。送信中は busy のまま待つ */
+  private async submitChat(threadId: string | null, p: PendingMessage): Promise<void> {
+    const chat = this.chat;
+    if (!chat) return;
+    p.sent = true;
+    const outcome = await chat.send({
+      clientId: p.client_id,
+      threadId,
+      body: p.body,
+      attachmentIds: p.attachment_ids,
+      startThread: p.start_thread,
+      replyTo: p.reply_to,
+      silent: p.silent,
+    });
+    if (outcome.outcome === 'notSent') p.sent = false;
+    this.applySendOutcome(threadId, p.client_id, outcome);
+  }
+
+  /** 送信結果を仮表示に反映する。notSent は client_id を持たないので、送った側の clientId を使う */
+  private applySendOutcome(threadId: string | null, clientId: string, outcome: SendOutcome): void {
+    switch (outcome.outcome) {
+      case 'confirmed':
+        // echo（message.created）と同じ処理。どちらが先でも結果は同じ（冪等）
+        this.timeline(threadId).upsert(outcome.message, outcome.clientId);
+        return;
+      case 'rejected':
+        this.reflectSend(outcome.clientId, true, errorText(outcome.code, outcome.message));
+        return;
+      case 'notSent':
+        // 書込前に失敗（未接続など）。投稿されていないので再送できる
+        this.reflectSend(clientId, true, SEND_TEXT.notConnected);
+        return;
+      case 'unknown':
+        this.reflectSend(outcome.clientId, false, unknownReasonText(outcome.reason));
+        return;
+    }
+  }
+
+  /** 同じ client_id の状態を全 timeline へ反映する。状態が変わったときだけ toast */
+  private reflectSend(clientId: string, rejected: boolean, text: string): void {
+    const { state, changed } = this.settleAll(clientId, rejected);
+    if (!state || !changed) return;
+    ui.toast(`${state === 'failed' ? SEND_TEXT.failed : SEND_TEXT.unknownToast}: ${text}`, 'error');
+  }
+
+  private settleAll(clientId: string, rejected: boolean): { state: 'failed' | 'unknown' | null; changed: boolean } {
+    let state: 'failed' | 'unknown' | null = null;
+    let changed = false;
+    for (const t of this.timelines.values()) {
+      const before = t.sendState(clientId);
+      const s = t.settleFromError(clientId, rejected);
+      if (!s) continue;
+      state = s;
+      if (before !== s) changed = true;
+    }
+    return { state, changed };
+  }
+
+  /** plugin などの生の message.send。仮表示は作らず、結果が失敗なら error として購読者へ流す */
+  private async sendRawChat(ev: ChatSendEvent): Promise<void> {
+    const chat = this.chat;
+    if (!chat) return;
+    const outcome = await chat.send({
+      clientId: ev.client_id,
+      threadId: ev.thread_id,
+      body: ev.body,
+      attachmentIds: ev.attachment_ids,
+      startThread: ev.start_thread,
+      replyTo: ev.reply_to,
+      silent: ev.silent,
+    });
+    if (outcome.outcome === 'confirmed') return; // 表示は echo で届く
+    const code = outcome.outcome === 'rejected' ? outcome.code : outcome.outcome === 'notSent' ? SEND_TEXT.codeNotSent : SEND_TEXT.codeUnknown;
+    const message = outcome.outcome === 'rejected' ? outcome.message : outcome.outcome === 'notSent' ? outcome.reason : unknownReasonText(outcome.reason);
+    this.dispatch({ type: 'error', client_id: null, code, message });
+  }
+
+  /** JS 接続の項目。Rust 経路のときはチャット系（と hello）を捨てる（二重反映の防止） */
+  private onSocketEvent(ev: ServerEvent): void {
+    if (this.chat && (ev.type === 'hello' || CHAT_EVENT_TYPES.has(ev.type))) return;
+    this.dispatch(ev);
+  }
+
   // ---- イベント処理 ----
+
+  private applyHello(me: User, list: User[]): void {
+    this.me = me;
+    const map: Record<string, User> = {};
+    for (const u of list) map[u.id] = u;
+    map[me.id] = me;
+    this.users = map;
+    this.ready = true;
+    this.generation++;
+    // 再接続時は、読み込み済みの履歴を取り直す
+    for (const t of this.timelines.values()) if (t.loaded || t.error) void t.load();
+    void threads.load();
+    unread.me = me.id;
+    void unread.load();
+  }
 
   private dispatch(ev: ServerEvent): void {
     switch (ev.type) {
       case 'hello': {
-        this.me = ev.me;
-        const map: Record<string, User> = {};
-        for (const u of ev.users) map[u.id] = u;
-        map[ev.me.id] = ev.me;
-        this.users = map;
-        this.ready = true;
-        this.generation++;
-        // 再接続時は、読み込み済みの履歴を取り直す
-        for (const t of this.timelines.values()) if (t.loaded || t.error) void t.load();
-        void threads.load();
-        unread.me = ev.me.id;
-        void unread.load();
+        this.applyHello(ev.me, ev.users);
         break;
       }
       case 'message.created': {
@@ -343,15 +508,16 @@ class Client {
         break;
       }
       case 'error': {
-        let settled: 'failed' | 'unknown' | null = null;
-        if (ev.client_id) {
-          const rejected = isRejectedSendCode(ev.code);
-          for (const t of this.timelines.values()) settled = t.settleFromError(ev.client_id, rejected) ?? settled;
-        }
         const text = errorText(ev.code, ev.message);
-        if (settled === 'failed') ui.toast(`${SEND_TEXT.failed}: ${text}`, 'error');
-        else if (settled === 'unknown') ui.toast(`${SEND_TEXT.unknownToast}: ${text}`, 'error');
-        else ui.toast(text, 'error');
+        if (ev.client_id) {
+          const { state, changed } = this.settleAll(ev.client_id, isRejectedSendCode(ev.code));
+          // 送信結果と同じ失敗が二重に届いても、状態が変わったときだけ知らせる
+          if (state) {
+            if (changed) ui.toast(`${state === 'failed' ? SEND_TEXT.failed : SEND_TEXT.unknownToast}: ${text}`, 'error');
+            break;
+          }
+        }
+        ui.toast(text, 'error');
         break;
       }
       case 'plugin.updated':

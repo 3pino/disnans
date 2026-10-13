@@ -173,6 +173,13 @@ export class Timeline {
     return p.failed ? 'failed' : 'unknown';
   }
 
+  /** 同じ client_id の仮表示の状態（仮表示がなければ null） */
+  sendState(clientId: string): 'sending' | 'failed' | 'unknown' | null {
+    const p = this.pending.find((x) => x.client_id === clientId);
+    if (!p) return null;
+    return p.failed ? 'failed' : p.unknown ? 'unknown' : 'sending';
+  }
+
   /** 送信済みで確定していないものは、切断のあと投稿されたか分からない。失敗扱いにせず unknown にする（再送しない） */
   markSentUnknown(): void {
     for (const p of this.pending) if (p.sent && !p.failed) p.unknown = true;
