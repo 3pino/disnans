@@ -8,7 +8,7 @@
 //! - 停止: 制御チャンネルを閉じると pump が `ChatSession::close()` を呼び、終わるまで待つ。
 //!   `start` の二重呼び出しは先のセッションを止めてから始める。終了時は [`ChatHub::stop`] を呼ぶ。
 
-use std::future::{poll_fn, Future};
+use std::future::{Future, poll_fn};
 use std::pin::pin;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -16,10 +16,11 @@ use std::task::Poll;
 use std::time::Duration;
 
 use disnans_client_core::{
-    ChatSession, ConnectOptions, Message, ReadFailure, SendOutcome, SendRequest, ServerEvent,
-    ServerUrl, SessionSender, UnknownReason, User, WatchItem, WsError,
+    ChatSession, ClientEvent, ConnectOptions, EmitError, Message, ReadFailure, SendOutcome,
+    SendRequest, ServerEvent, ServerUrl, SessionSender, UnknownReason, User, WatchItem, WsError,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::async_runtime::{self, JoinHandle, Mutex, Receiver, Sender};
 use tauri::ipc::{Channel, JavaScriptChannelId};
 use tauri::{State, Webview};
@@ -215,6 +216,56 @@ impl From<UnknownReason> for UnknownDto {
             UnknownReason::WriteFailed => Self::WriteFailed,
             UnknownReason::ServerError { code, message } => Self::ServerError { code, message },
         }
+    }
+}
+
+/// `chat_emit` の reject 値（契約 §8.6）。`status` は無い。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ChatCommandError {
+    pub code: &'static str,
+    pub message: String,
+}
+
+impl ChatCommandError {
+    fn new(code: &'static str, message: &str) -> Self {
+        Self {
+            code,
+            message: message.to_owned(),
+        }
+    }
+
+    fn invalid(message: &str) -> Self {
+        Self::new("invalid_request", message)
+    }
+}
+
+impl From<EmitError> for ChatCommandError {
+    fn from(err: EmitError) -> Self {
+        match err {
+            EmitError::NotConnected => {
+                Self::new("not_connected", "接続していないため送信しませんでした")
+            }
+            EmitError::WriteFailed => Self::new("write_failed", "送信に失敗したか、結果が不明です"),
+            EmitError::SendNotAllowed => Self::new(
+                "send_not_allowed",
+                "message.send は chat_send で送ってください",
+            ),
+        }
+    }
+}
+
+/// `chat_emit` で送ってよい（ack の無い）種類か。`message.send` は別（`send_not_allowed`）。
+fn check_emit_kind(event: &ClientEvent) -> Result<(), ChatCommandError> {
+    match event {
+        ClientEvent::MessageEdit { .. }
+        | ClientEvent::MessageDelete { .. }
+        | ClientEvent::ReactionAdd { .. }
+        | ClientEvent::ReactionRemove { .. }
+        | ClientEvent::ThreadCreate { .. } => Ok(()),
+        ClientEvent::MessageSend { .. } => Err(ChatCommandError::from(EmitError::SendNotAllowed)),
+        _ => Err(ChatCommandError::invalid(
+            "この種類は chat_emit では送れません",
+        )),
     }
 }
 
@@ -422,6 +473,30 @@ impl ChatHub {
         Ok(outcome.into())
     }
 
+    /// ack の無いイベントを送る（契約 §8.6）。種類を確かめてから、セッションの有無を見て書く。
+    /// 自動では再送しない。戻り値 `Ok` は書込んだ、の意味（結果はストリームで届く）。
+    pub async fn emit(&self, event: ClientEvent) -> Result<(), ChatCommandError> {
+        check_emit_kind(&event)?;
+        let sender = self
+            .state
+            .lock()
+            .unwrap()
+            .active
+            .as_ref()
+            .map(|a| a.sender.clone());
+        let Some(sender) = sender else {
+            return Err(ChatCommandError::from(EmitError::NotConnected));
+        };
+        sender.emit(event).await.map_err(ChatCommandError::from)
+    }
+
+    /// `chat_emit` の引数（JSON）を読んでから送る。読めなければ書込まない。
+    pub async fn emit_json(&self, event: Value) -> Result<(), ChatCommandError> {
+        let event: ClientEvent = serde_json::from_value(event)
+            .map_err(|_| ChatCommandError::invalid("イベントの形が正しくありません"))?;
+        self.emit(event).await
+    }
+
     /// 切断中なら待機を終えて即再接続する。接続中・無いときは何もしない。
     pub fn reconnect(&self) {
         if let Some(active) = self.state.lock().unwrap().active.as_ref() {
@@ -510,6 +585,12 @@ pub async fn chat_send(
     hub: State<'_, ChatHub>,
 ) -> Result<SendResult, ReadFailure> {
     hub.send(draft).await
+}
+
+/// `chat_emit`。`event` は wire の JSON。読めない形は `invalid_request`（書込まない）。
+#[tauri::command]
+pub async fn chat_emit(event: Value, hub: State<'_, ChatHub>) -> Result<(), ChatCommandError> {
+    hub.emit_json(event).await
 }
 
 #[tauri::command]

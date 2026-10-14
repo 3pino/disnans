@@ -192,6 +192,7 @@ pub fn run() {
                 api_bridge::api_upload_abort,
                 chat_bridge::chat_start,
                 chat_bridge::chat_send,
+                chat_bridge::chat_emit,
                 chat_bridge::chat_reconnect,
                 chat_bridge::chat_stop
             ]);
@@ -240,6 +241,7 @@ pub fn run() {
                     api_bridge::api_upload_abort,
                     chat_bridge::chat_start,
                     chat_bridge::chat_send,
+                    chat_bridge::chat_emit,
                     chat_bridge::chat_reconnect,
                     chat_bridge::chat_stop
                 ]);

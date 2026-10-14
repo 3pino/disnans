@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createTauriChatTransport, type ChannelLike } from './tauriChat';
+import { commandError, createTauriChatTransport, type ChannelLike } from './tauriChat';
 import type { ChatItem, MessageDraft } from './chat';
 import { selectChatMode } from './select';
 import { HttpError } from './http';
@@ -97,5 +97,28 @@ describe('chat mode selection', () => {
     expect(selectChatMode({ flag: '0', desktop: true })).toBe('js');
     expect(selectChatMode({ flag: null, desktop: false })).toBe('js');
     expect(selectChatMode({ flag: '1', desktop: false })).toBe('js');
+  });
+});
+
+describe('chat_emit (Tauri)', () => {
+  const event = { type: 'message.delete' as const, message_id: 'm1' };
+
+  it('sends the wire event as {event} and resolves on success', async () => {
+    const invoke = vi.fn().mockResolvedValue(null);
+    const t = createTauriChatTransport(invoke, ctx, fakeChannel().make);
+    await expect(t.emit(event)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('chat_emit', { event });
+  });
+
+  it('a Rust {code,message} rejection is passed through as ChatCommandError', async () => {
+    const invoke = vi.fn().mockRejectedValue({ code: 'not_connected', message: 'x' });
+    const t = createTauriChatTransport(invoke, ctx, fakeChannel().make);
+    await expect(t.emit(event)).rejects.toEqual({ code: 'not_connected', message: 'x' });
+  });
+
+  it('any other failure (IPC, missing command) is write_failed, never success', () => {
+    expect(commandError(new Error('command not found'))).toMatchObject({ code: 'write_failed' });
+    expect(commandError('x')).toMatchObject({ code: 'write_failed' });
+    expect(commandError(null)).toMatchObject({ code: 'write_failed' });
   });
 });

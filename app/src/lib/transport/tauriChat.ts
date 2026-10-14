@@ -1,6 +1,6 @@
 import { toBridgeError } from './tauri';
 import { SEND_TEXT } from '../sendOutcome';
-import type { ChatItem, ChatTransport, MessageDraft, SendOutcome } from './chat';
+import type { ChatCommandError, ChatEmitEvent, ChatItem, ChatTransport, MessageDraft, SendOutcome } from './chat';
 import type { ApiBridgeError, BridgeContext, Invoke } from './types';
 
 /** Tauri の Channel と同じ形（テストでは差し替える） */
@@ -20,6 +20,18 @@ export async function defaultChannel<T>(): Promise<ChannelLike<T>> {
 export function sendRejection(e: unknown, clientId: string): SendOutcome {
   if (isBridgeError(e)) return { outcome: 'notSent', reason: e.message };
   return { outcome: 'unknown', clientId, reason: { kind: 'serverError', code: 'bridge_error', message: SEND_TEXT.reasonBridge } };
+}
+
+/**
+ * chat_emit の reject を ChatCommandError にする。Rust の {code,message} はそのまま。
+ * それ以外（IPC の失敗、コマンド不在など）は書込んだかどうか分からないので write_failed（再送しない）。
+ */
+export function commandError(e: unknown): ChatCommandError {
+  if (e && typeof e === 'object' && !(e instanceof Error)) {
+    const c = e as Partial<ChatCommandError>;
+    if (typeof c.code === 'string' && typeof c.message === 'string') return { code: c.code as ChatCommandError['code'], message: c.message };
+  }
+  return { code: 'write_failed', message: SEND_TEXT.reasonBridge };
 }
 
 function isBridgeError(e: unknown): e is ApiBridgeError {
@@ -51,6 +63,13 @@ export function createTauriChatTransport(
         await invoke('chat_start', { args: { server: ctx.server(), devUser: ctx.devUser, onItem: onItemChannel } });
       } catch (e) {
         throw toBridgeError(e);
+      }
+    },
+    async emit(event: ChatEmitEvent): Promise<void> {
+      try {
+        await invoke<null>('chat_emit', { event });
+      } catch (e) {
+        throw commandError(e);
       }
     },
     async send(draft: MessageDraft): Promise<SendOutcome> {

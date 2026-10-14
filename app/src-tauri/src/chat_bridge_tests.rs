@@ -16,12 +16,12 @@ use serde_json::Value;
 use tauri::async_runtime::{self, JoinHandle};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{
-    accept_hdr_async,
+    WebSocketStream, accept_hdr_async,
     tungstenite::{
+        Message as WsMessage,
         handshake::server::{ErrorResponse, Request, Response},
-        http, Message as WsMessage,
+        http,
     },
-    WebSocketStream,
 };
 
 use super::{ChatHub, ChatItem, ItemSink, MessageDraft, SendResult, UnknownDto};
@@ -83,6 +83,8 @@ type Reply = Arc<dyn Fn(usize, &Value) -> Vec<Step> + Send + Sync>;
 struct Log {
     /// 受け取った `message.send` の client_id（受けた順）
     sends: Vec<String>,
+    /// 受け取った全フレーム（JSON として読めたもの。種類は問わない）
+    frames: Vec<Value>,
     /// 受けた WebSocket の接続要求ごとの `X-Dev-User`
     dev_users: Vec<Option<String>>,
     /// 終わった接続の数（拒否された要求も含む）
@@ -140,6 +142,10 @@ impl Fake {
 
     fn sends(&self) -> Vec<String> {
         self.log.lock().unwrap().sends.clone()
+    }
+
+    fn frames(&self) -> Vec<Value> {
+        self.log.lock().unwrap().frames.clone()
     }
 
     fn dev_users(&self) -> Vec<Option<String>> {
@@ -267,6 +273,7 @@ async fn run_connection(
                 let Ok(value) = serde_json::from_str::<Value>(text.as_str()) else {
                     continue;
                 };
+                log.lock().unwrap().frames.push(value.clone());
                 if value["type"] != "message.send" {
                     continue;
                 }
@@ -903,4 +910,158 @@ fn shutdown_now_closes_a_live_session_and_refuses_later_starts() {
         1,
         "the refused start did not connect"
     );
+}
+
+// ----- chat_emit（契約 §8.6） ------------------------------------------------------------------
+
+fn emit(hub: &ChatHub, event: Value) -> Result<(), super::ChatCommandError> {
+    let event = serde_json::from_value(event).expect("test event must be a valid ClientEvent");
+    async_runtime::block_on(hub.emit(event))
+}
+
+fn emit_error_code(hub: &ChatHub, event: Value) -> &'static str {
+    async_runtime::block_on(hub.emit_json(event))
+        .unwrap_err()
+        .code
+}
+
+#[test]
+fn each_chat_event_is_written_as_its_wire_json_in_order() {
+    let fake = Fake::start(echo_everything());
+    let hub = ChatHub::default();
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+
+    let events = vec![
+        serde_json::json!({"type": "message.edit", "message_id": "m1", "body": "直した"}),
+        serde_json::json!({"type": "message.delete", "message_id": "m2"}),
+        serde_json::json!({"type": "reaction.add", "message_id": "m3", "emoji": "👍"}),
+        serde_json::json!({"type": "reaction.remove", "message_id": "m3", "emoji": "👍"}),
+        serde_json::json!({"type": "thread.create", "root_message_id": "m4"}),
+    ];
+    for event in &events {
+        emit(&hub, event.clone()).unwrap();
+    }
+    wait_until("five frames", || fake.frames().len() == events.len());
+    assert_eq!(fake.frames(), events);
+    // 送るのは書込だけ。message.send としては扱われない
+    assert!(fake.sends().is_empty());
+
+    async_runtime::block_on(hub.stop());
+}
+
+#[test]
+fn message_send_is_refused_and_nothing_is_written() {
+    let fake = Fake::start(echo_everything());
+    let hub = ChatHub::default();
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+
+    let send = serde_json::json!({
+        "type": "message.send",
+        "client_id": "c-1",
+        "thread_id": null,
+        "body": "hi",
+        "attachment_ids": [],
+        "start_thread": false,
+        "reply_to": null,
+        "silent": false
+    });
+    assert_eq!(emit_error_code(&hub, send), "send_not_allowed");
+    // 反映されるまで待つ代わりに、ほかのイベントを後に送って順序を確かめる
+    emit(
+        &hub,
+        serde_json::json!({"type": "reaction.add", "message_id": "m1", "emoji": "x"}),
+    )
+    .unwrap();
+    wait_until("the later event", || fake.frames().len() == 1);
+    assert_eq!(fake.frames()[0]["type"], "reaction.add");
+    assert!(fake.sends().is_empty());
+
+    async_runtime::block_on(hub.stop());
+}
+
+#[test]
+fn other_kinds_and_malformed_events_are_refused_and_not_written() {
+    let fake = Fake::start(echo_everything());
+    let hub = ChatHub::default();
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+
+    // JS の Socket に残す種類（通話・セッション・プラグイン・ping）は chat_emit では送らない
+    for event in [
+        serde_json::json!({"type": "ping"}),
+        serde_json::json!({"type": "call.leave"}),
+        serde_json::json!({"type": "session.emit", "session_id": "s1", "name": "n", "payload": null}),
+        serde_json::json!({"type": "plugin.emit", "plugin": "p", "name": "n", "payload": null}),
+    ] {
+        assert_eq!(emit_error_code(&hub, event), "invalid_request");
+    }
+    // 形が違う（必須の ID が無い・種類が無い）
+    assert_eq!(
+        emit_error_code(
+            &hub,
+            serde_json::json!({"type": "message.edit", "body": "x"})
+        ),
+        "invalid_request"
+    );
+    assert_eq!(
+        emit_error_code(&hub, serde_json::json!({"message_id": "m1"})),
+        "invalid_request"
+    );
+    // 書込まれたものは 1 つも無い
+    emit(
+        &hub,
+        serde_json::json!({"type": "message.delete", "message_id": "m9"}),
+    )
+    .unwrap();
+    wait_until("the one valid event", || fake.frames().len() == 1);
+    assert_eq!(
+        fake.frames()[0],
+        serde_json::json!({"type": "message.delete", "message_id": "m9"})
+    );
+
+    async_runtime::block_on(hub.stop());
+}
+
+#[test]
+fn emit_without_a_session_is_not_connected_and_writes_nothing() {
+    let hub = ChatHub::default();
+    let event = serde_json::json!({"type": "thread.create", "root_message_id": "m1"});
+    assert_eq!(emit_error_code(&hub, event), "not_connected");
+}
+
+#[test]
+fn emit_after_stop_is_not_connected() {
+    let fake = Fake::start(echo_everything());
+    let hub = ChatHub::default();
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+    async_runtime::block_on(hub.stop());
+    let event = serde_json::json!({"type": "message.delete", "message_id": "m1"});
+    assert_eq!(emit_error_code(&hub, event), "not_connected");
+    assert!(fake.frames().is_empty());
+}
+
+#[test]
+fn chat_command_error_serializes_as_code_and_message_only() {
+    let json = serde_json::to_value(super::ChatCommandError::from(
+        disnans_client_core::EmitError::WriteFailed,
+    ))
+    .unwrap();
+    assert_eq!(json["code"], "write_failed");
+    assert!(json.get("status").is_none());
+    let codes: Vec<&str> = [
+        disnans_client_core::EmitError::NotConnected,
+        disnans_client_core::EmitError::WriteFailed,
+        disnans_client_core::EmitError::SendNotAllowed,
+    ]
+    .into_iter()
+    .map(|e| super::ChatCommandError::from(e).code)
+    .collect();
+    assert_eq!(codes, ["not_connected", "write_failed", "send_not_allowed"]);
 }

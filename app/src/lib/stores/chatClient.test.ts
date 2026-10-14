@@ -27,8 +27,15 @@ class FakeChat implements ChatTransport {
     this.reconnects++;
   }
   async stop(): Promise<void> {}
-  emit(item: ChatItem) {
+  push(item: ChatItem) {
     this.onItem?.(item);
+  }
+  /** chat_emit（送信のみ。成功は null、失敗は emitError を投げる） */
+  emits: unknown[] = [];
+  emitError: unknown = null;
+  async emit(event: unknown): Promise<void> {
+    this.emits.push(event);
+    if (this.emitError) throw this.emitError;
   }
 }
 
@@ -95,7 +102,7 @@ beforeEach(async () => {
   client.start(chat);
   socket = () => FakeSocket.instances[0];
   socket().open();
-  chat.emit({ kind: 'connected', generation: 1, me: ME, users: [ME, BOB] });
+  chat.push({ kind: 'connected', generation: 1, me: ME, users: [ME, BOB] });
 });
 
 afterEach(() => {
@@ -117,7 +124,7 @@ describe('chat over Rust: receiving', () => {
   it('gives the connected hello to subscribers once, and drops the JS socket hello', () => {
     const seen: string[] = [];
     client.subscribe((ev) => seen.push(ev.type));
-    chat.emit({ kind: 'connected', generation: 2, me: ME, users: [ME] });
+    chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME] });
     expect(seen.filter((t) => t === 'hello')).toHaveLength(1);
     socket().receive({ type: 'hello', me: { ...ME, display_name: 'JS' }, users: [] });
     expect(client.me?.display_name).toBe('Me');
@@ -133,24 +140,24 @@ describe('chat over Rust: receiving', () => {
   it('keeps only chat events and errors from the Rust stream', () => {
     const seen: string[] = [];
     client.subscribe((ev) => seen.push(ev.type));
-    chat.emit({ kind: 'event', generation: 1, event: { type: 'prefs.updated', prefs: {} } });
-    chat.emit({ kind: 'event', generation: 1, event: { type: 'call.state', members: [] } as unknown as ServerEvent });
-    chat.emit({ kind: 'event', generation: 1, event: { type: 'user.updated', user: BOB } });
+    chat.push({ kind: 'event', generation: 1, event: { type: 'prefs.updated', prefs: {} } });
+    chat.push({ kind: 'event', generation: 1, event: { type: 'call.state', members: [] } as unknown as ServerEvent });
+    chat.push({ kind: 'event', generation: 1, event: { type: 'user.updated', user: BOB } });
     expect(seen).toEqual(['user.updated']);
   });
 
   it('drops items from an older generation', () => {
-    chat.emit({ kind: 'connected', generation: 2, me: ME, users: [ME] });
+    chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME] });
     const seen: string[] = [];
     client.subscribe((ev) => seen.push(ev.type));
-    chat.emit({ kind: 'event', generation: 1, event: { type: 'user.updated', user: BOB } });
+    chat.push({ kind: 'event', generation: 1, event: { type: 'user.updated', user: BOB } });
     expect(seen).toHaveLength(0);
   });
 
   it('shows connecting and closed from the chat connection, not from the JS socket', () => {
-    chat.emit({ kind: 'gap', generation: 1, reason: 'disconnected' });
+    chat.push({ kind: 'gap', generation: 1, reason: 'disconnected' });
     expect(client.status).toBe('closed');
-    chat.emit({ kind: 'connecting', attempt: 1 });
+    chat.push({ kind: 'connecting', attempt: 1 });
     expect(client.status).toBe('connecting');
     socket().onclose?.();
     expect(client.status).toBe('connecting');
@@ -159,7 +166,7 @@ describe('chat over Rust: receiving', () => {
   it('does not mark a sent message unknown when the chat connection drops (its outcome decides)', () => {
     chat.respond = () => new Promise<SendOutcome>(() => {});
     sendText('hi');
-    chat.emit({ kind: 'gap', generation: 1, reason: 'disconnected' });
+    chat.push({ kind: 'gap', generation: 1, reason: 'disconnected' });
     expect(pendingOf()[0]).toMatchObject({ sent: true, unknown: false, failed: false });
   });
 });
@@ -190,7 +197,7 @@ describe('chat over Rust: sending', () => {
     chat.respond = () => new Promise<SendOutcome>((r) => (resolve = r));
     sendText('hi');
     const clientId = chat.sends[0].clientId;
-    chat.emit({ kind: 'event', generation: 1, event: { type: 'message.created', client_id: clientId, message: msg('m1', 'hi') } });
+    chat.push({ kind: 'event', generation: 1, event: { type: 'message.created', client_id: clientId, message: msg('m1', 'hi') } });
     expect(pendingOf()).toHaveLength(0);
     resolve({ outcome: 'confirmed', clientId, message: msg('m1', 'hi') });
     await flush();
@@ -261,7 +268,7 @@ describe('chat over Rust: sending', () => {
     sendText('hi');
     await flush();
     const clientId = pendingOf()[0].client_id;
-    chat.emit({ kind: 'event', generation: 1, event: { type: 'error', client_id: clientId, code: 'empty_message', message: 'x' } });
+    chat.push({ kind: 'event', generation: 1, event: { type: 'error', client_id: clientId, code: 'empty_message', message: 'x' } });
     expect(pendingOf()[0]).toMatchObject({ failed: true, unknown: false });
   });
 
@@ -270,7 +277,7 @@ describe('chat over Rust: sending', () => {
     sendText('hi');
     await flush();
     const clientId = pendingOf()[0].client_id;
-    chat.emit({ kind: 'event', generation: 1, event: { type: 'error', client_id: clientId, code: 'internal', message: 'x' } });
+    chat.push({ kind: 'event', generation: 1, event: { type: 'error', client_id: clientId, code: 'internal', message: 'x' } });
     expect(pendingOf()[0]).toMatchObject({ unknown: true, failed: false });
   });
 
@@ -279,7 +286,7 @@ describe('chat over Rust: sending', () => {
     client.sendMessage({ threadId: null, body: '', files: [] });
     await flush();
     const clientId = pendingOf()[0].client_id;
-    chat.emit({ kind: 'event', generation: 1, event: { type: 'error', client_id: clientId, code: 'empty_message', message: 'x' } });
+    chat.push({ kind: 'event', generation: 1, event: { type: 'error', client_id: clientId, code: 'empty_message', message: 'x' } });
     expect(pendingOf()[0]).toMatchObject({ failed: true, unknown: false });
   });
 });
@@ -326,5 +333,57 @@ describe('chat over Rust: start and reconnect', () => {
     client.reconnect();
     expect(chat.reconnects).toBe(1);
     expect(chat.starts).toBe(1);
+  });
+
+  describe('chat over Rust: edit / delete / reaction / thread create (chat_emit)', () => {
+    beforeEach(() => {
+      client.timeline(null).loaded = true;
+      client.timeline(null).messages = [msg('m1', 'old')];
+    });
+
+    it('goes through chat_emit with the wire JSON, never through the JS socket', async () => {
+      const m = client.timeline(null).messages[0];
+      client.editMessage(m, 'new');
+      client.deleteMessage(m);
+      client.toggleReaction(m, '👍');
+      client.openThreadFrom(m);
+      await flush();
+      expect(chat.emits).toEqual([
+        { type: 'message.edit', message_id: 'm1', body: 'new' },
+        { type: 'message.delete', message_id: 'm1' },
+        { type: 'reaction.add', message_id: 'm1', emoji: '👍' },
+        { type: 'thread.create', root_message_id: 'm1' },
+      ]);
+      const sentTypes = socket()?.sentTypes() ?? [];
+      for (const t of ['message.edit', 'message.delete', 'reaction.add', 'reaction.remove', 'thread.create']) {
+        expect(sentTypes).not.toContain(t);
+      }
+    });
+
+    it('a failed chat_emit shows a toast and is not resent', async () => {
+      chat.emitError = { code: 'not_connected', message: 'x' };
+      const m = client.timeline(null).messages[0];
+      client.deleteMessage(m);
+      await flush();
+      expect(chat.emits).toHaveLength(1);
+      expect(ui.toasts.at(-1)?.text).toContain('接続中ではないため送れませんでした');
+      expect(ui.toasts.at(-1)?.kind).toBe('error');
+    });
+
+    it('write_failed is shown as unknown (never retried automatically)', async () => {
+      chat.emitError = { code: 'write_failed', message: 'x' };
+      client.toggleReaction(client.timeline(null).messages[0], '👍');
+      await flush();
+      expect(chat.emits).toHaveLength(1);
+      expect(ui.toasts.at(-1)?.text).toContain('送信できたか確認できません');
+    });
+
+    it('an unknown error shape is treated as write_failed (not success, not retried)', async () => {
+      chat.emitError = new Error('ipc broke');
+      client.deleteMessage(client.timeline(null).messages[0]);
+      await flush();
+      expect(chat.emits).toHaveLength(1);
+      expect(ui.toasts.at(-1)?.text).toContain('送信できたか確認できません');
+    });
   });
 });

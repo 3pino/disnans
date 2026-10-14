@@ -11,6 +11,8 @@ mod url;
 #[cfg(feature = "ws")]
 mod ws;
 
+#[cfg(feature = "ws")]
+pub use disnans_shared::ClientEvent;
 pub use rest::{ClientError, MessagesQuery, RestClient};
 pub use rest_api::{
     MessageSearchQuery, ReadFailure, UploadAbortHandle, UploadAbortRegistration, messages_path,

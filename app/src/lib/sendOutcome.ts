@@ -1,7 +1,7 @@
 // 送信結果の表示文言と判定。文言の変更は見た目の変更なので、利用者の確認を取ってから変える。
 // 文言はこの1か所にまとめる。
 
-import type { UnknownReason } from './transport/chat';
+import type { ChatCommandError, UnknownReason } from './transport/chat';
 
 export const SEND_TEXT = {
   /** 投稿されなかったと分かっている失敗（再送できる） */
@@ -53,4 +53,27 @@ export const REJECTED_SEND_CODES: readonly string[] = [
 
 export function isRejectedSendCode(code: string): boolean {
   return REJECTED_SEND_CODES.includes(code);
+}
+
+/** 編集・削除・リアクション・スレッド作成が失敗したときの toast（provisional。文言の変更は利用者確認後） */
+export const EMIT_TEXT = {
+  notConnected: '接続中ではないため送れませんでした。接続が戻ってから、もう一度操作してください',
+  writeFailed: '送信できたか確認できません。自動では再送しません。必要なら操作をやり直してください',
+  notAllowed: 'この操作はここからは送れません',
+  invalid: '操作の内容が正しく送れませんでした',
+} as const;
+
+/** chat_emit の失敗を toast の文にする（未知の形・未知の code は書込んだかどうか分からない扱い） */
+export function emitFailureText(e: unknown): string {
+  const code = e && typeof e === 'object' ? (e as Partial<ChatCommandError>).code : undefined;
+  switch (code) {
+    case 'not_connected':
+      return EMIT_TEXT.notConnected;
+    case 'send_not_allowed':
+      return EMIT_TEXT.notAllowed;
+    case 'invalid_request':
+      return EMIT_TEXT.invalid;
+    default:
+      return EMIT_TEXT.writeFailed;
+  }
 }

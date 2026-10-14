@@ -14,9 +14,9 @@ import { ui, type ToastAvatar } from './ui.svelte';
 import { notifications } from './notifications.svelte';
 import { page, unread } from './unread.svelte';
 import { errorText } from '../errors';
-import { SEND_TEXT, isRejectedSendCode, unknownReasonText } from '../sendOutcome';
+import { SEND_TEXT, emitFailureText, isRejectedSendCode, unknownReasonText } from '../sendOutcome';
 import { bootChatTransport } from '../transport/boot';
-import { CHAT_EVENT_TYPES, type ChatItem, type ChatSendEvent, type ChatTransport, type SendOutcome } from '../transport/chat';
+import { CHAT_EVENT_TYPES, isChatEmit, type ChatEmitEvent, type ChatItem, type ChatSendEvent, type ChatTransport, type SendOutcome } from '../transport/chat';
 import { replyPreviewOf } from '../reply';
 import { reply } from './reply.svelte';
 
@@ -87,8 +87,22 @@ class Client {
       void this.sendRawChat(ev);
       return true;
     }
+    // Rust 経路の編集・削除・リアクション・スレッド作成も、ChatTransport（chat_emit）からだけ出す
+    if (this.chat && isChatEmit(ev)) {
+      void this.emitChat(this.chat, ev);
+      return true;
+    }
     if (!this.socket) return false;
     return this.socket.send(ev);
+  }
+
+  /** chat_emit で送る。失敗は toast（自動では再送しない。押し直しは利用者） */
+  private async emitChat(chat: ChatTransport, ev: ChatEmitEvent): Promise<void> {
+    try {
+      await chat.emit(ev);
+    } catch (e) {
+      ui.toast(emitFailureText(e), 'error');
+    }
   }
 
   /** WebSocket でまだ送り出せていないバイト数（通話の映像の間引きに使う） */
