@@ -88,7 +88,6 @@ let client: typeof import('./client.svelte').client;
 let ui: typeof import('./ui.svelte').ui;
 const toastTexts = () => ui.toasts.map((t) => t.text);
 let chat: FakeChat;
-let socket: () => FakeSocket;
 
 beforeEach(async () => {
   FakeSocket.instances = [];
@@ -103,8 +102,6 @@ beforeEach(async () => {
   ({ ui } = await import('./ui.svelte'));
   chat = new FakeChat();
   client.start(chat);
-  socket = () => FakeSocket.instances[0];
-  socket().open();
   chat.push({ kind: 'connected', generation: 1, me: ME, users: [ME, BOB] });
 });
 
@@ -124,27 +121,19 @@ describe('chat over Rust: receiving', () => {
     expect(client.status).toBe('open');
   });
 
-  it('gives the connected hello to subscribers once, and drops the JS socket hello', () => {
+  it('gives the connected hello to subscribers once; no JS socket is created in the Rust mode', () => {
     const seen: string[] = [];
     client.subscribe((ev) => seen.push(ev.type));
     chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME] });
     expect(seen.filter((t) => t === 'hello')).toHaveLength(1);
-    socket().receive({ type: 'hello', me: { ...ME, display_name: 'JS' }, users: [] });
-    expect(client.me?.display_name).toBe('Me');
+    expect(FakeSocket.instances).toHaveLength(0);
   });
 
-  it('drops chat events that arrive on the JS socket', () => {
-    const tl = client.timeline(null);
-    tl.loaded = true;
-    socket().receive({ type: 'message.created', client_id: null, message: msg('m1', 'from js') });
-    expect(tl.messages).toHaveLength(0);
-  });
-
-  it('keeps only chat events and errors from the Rust stream', () => {
+  it('keeps only chat, session, plugin, prefs and call events from the Rust stream (drops pong)', () => {
     const seen: string[] = [];
     client.subscribe((ev) => seen.push(ev.type));
     chat.push({ kind: 'event', generation: 1, event: { type: 'prefs.updated', prefs: {} } });
-    chat.push({ kind: 'event', generation: 1, event: { type: 'call.state', members: [] } as unknown as ServerEvent });
+    chat.push({ kind: 'event', generation: 1, event: { type: 'pong' } as unknown as ServerEvent });
     chat.push({ kind: 'event', generation: 1, event: { type: 'user.updated', user: BOB } });
     expect(seen).toEqual(['prefs.updated', 'user.updated']);
   });
@@ -157,12 +146,10 @@ describe('chat over Rust: receiving', () => {
     expect(seen).toHaveLength(0);
   });
 
-  it('shows connecting and closed from the chat connection, not from the JS socket', () => {
+  it('shows connecting and closed from the chat connection', () => {
     chat.push({ kind: 'gap', generation: 1, reason: 'disconnected' });
     expect(client.status).toBe('closed');
     chat.push({ kind: 'connecting', attempt: 1 });
-    expect(client.status).toBe('connecting');
-    socket().onclose?.();
     expect(client.status).toBe('connecting');
   });
 
@@ -180,7 +167,7 @@ describe('chat over Rust: sending', () => {
     sendText('hi');
     expect(chat.sends).toHaveLength(1);
     await flush();
-    expect(socket().sentTypes()).not.toContain('message.send');
+    expect(FakeSocket.instances).toHaveLength(0);
   });
 
   it('confirmed removes the placeholder and shows the message', async () => {
@@ -307,7 +294,7 @@ describe('chat over Rust: plugin raw message.send', () => {
     };
     client.send(raw);
     expect(chat.sends.map((d) => d.clientId)).toEqual(['p1']);
-    expect(socket().sentTypes()).not.toContain('message.send');
+    expect(FakeSocket.instances).toHaveLength(0);
     expect(pendingOf()).toHaveLength(0);
     await flush();
     expect(errors.map((e) => (e.type === 'error' ? e.code : ''))).toEqual(['send_not_sent']);
@@ -357,10 +344,7 @@ describe('chat over Rust: start and reconnect', () => {
         { type: 'reaction.add', message_id: 'm1', emoji: '👍' },
         { type: 'thread.create', root_message_id: 'm1' },
       ]);
-      const sentTypes = socket()?.sentTypes() ?? [];
-      for (const t of ['message.edit', 'message.delete', 'reaction.add', 'reaction.remove', 'thread.create']) {
-        expect(sentTypes).not.toContain(t);
-      }
+      expect(FakeSocket.instances).toHaveLength(0);
     });
 
     it('a failed chat_emit shows a toast and is not resent', async () => {
@@ -390,54 +374,74 @@ describe('chat over Rust: start and reconnect', () => {
     });
   });
 
-  describe('chat over Rust: routing, duplicate prevention, buffering, retry (S1/S2)', () => {
-    beforeEach(() => {
-      socket().open();
-    });
-
-    it('session.emit and plugin.emit go through chat_emit; call.* and ping stay on the JS socket', () => {
+  describe('chat over Rust: routing, duplicate prevention, buffering, retry (S1/S2/S3)', () => {
+    it('session, plugin and call events all go through chat_emit; ping never does', async () => {
       client.send({ type: 'session.emit', session_id: 's1', name: 'n', payload: null });
       client.send({ type: 'plugin.emit', plugin: 'p', name: 'n', payload: null });
       client.send({ type: 'call.join', peer: 'bob', status: null } as unknown as ClientEvent);
       client.send({ type: 'call.emit', name: 'audio', payload: null } as unknown as ClientEvent);
+      client.send({ type: 'call.update', status: null } as unknown as ClientEvent);
+      client.send({ type: 'call.kick', peer: 'bob' } as unknown as ClientEvent);
       client.send({ type: 'call.leave' } as unknown as ClientEvent);
-      client.send({ type: 'ping' } as ClientEvent);
-      expect(chat.emits.map((e) => (e as { type: string }).type)).toEqual(['session.emit', 'plugin.emit']);
-      const sent = socket().sentTypes();
-      for (const t of ['call.join', 'call.emit', 'call.leave', 'ping']) expect(sent).toContain(t);
-      expect(sent).not.toContain('session.emit');
-      expect(sent).not.toContain('plugin.emit');
+      await flush();
+      // 音声は並行、制御は直列（順序は次のテストで確かめる）。ここは種類だけ
+      expect(chat.emits.map((e) => (e as { type: string }).type).sort()).toEqual([
+        'call.emit',
+        'call.join',
+        'call.kick',
+        'call.leave',
+        'call.update',
+        'plugin.emit',
+        'session.emit',
+      ]);
+      expect(FakeSocket.instances).toHaveLength(0);
     });
 
-    it('a Rust-owned event that also arrives on the JS socket is handled once (from Rust)', () => {
+    it('a Rust-owned event is handled once (from Rust); the JS socket is never used', () => {
       const seen: string[] = [];
       client.subscribe((ev) => seen.push(ev.type));
-      const ev = { type: 'session.updated', session: {} } as unknown as ServerEvent;
-      chat.push({ kind: 'event', generation: 1, event: ev });
-      socket().receive(ev);
-      socket().receive({ type: 'plugin.event', plugin: 'p', from: 'bob', name: 'n', payload: null } as unknown as ServerEvent);
-      socket().receive({ type: 'prefs.updated', prefs: {} } as unknown as ServerEvent);
-      expect(seen).toEqual(['session.updated']);
+      chat.push({ kind: 'event', generation: 1, event: { type: 'session.updated', session: {} } as unknown as ServerEvent });
+      chat.push({ kind: 'event', generation: 1, event: { type: 'plugin.event', plugin: 'p', from: 'bob', name: 'n', payload: null } as unknown as ServerEvent });
+      expect(seen).toEqual(['session.updated', 'plugin.event']);
+      expect(FakeSocket.instances).toHaveLength(0);
     });
 
-    it('call events are received only from the JS socket (no double delivery)', () => {
+    it('call events (state, event, kicked) are received from the chat stream', () => {
       const seen: string[] = [];
       client.subscribe((ev) => seen.push(ev.type));
-      socket().receive({ type: 'call.event', peer: 'p', from: 'bob', name: 'audio', payload: null } as unknown as ServerEvent);
       chat.push({ kind: 'event', generation: 1, event: { type: 'call.event', peer: 'p', from: 'bob', name: 'audio', payload: null } as unknown as ServerEvent });
-      expect(seen).toEqual(['call.event']);
+      chat.push({ kind: 'event', generation: 1, event: { type: 'call.state', members: [] } as unknown as ServerEvent });
+      chat.push({ kind: 'event', generation: 1, event: { type: 'call.kicked', by: 'bob' } as unknown as ServerEvent });
+      expect(seen).toEqual(['call.event', 'call.state', 'call.kicked']);
     });
 
-    it('sendBuffered: the socket value plus the bytes of in-flight chat_emit (approximation)', async () => {
-      socket().bufferedAmount = 100;
-      expect(client.sendBuffered).toBe(100);
+    it('sendBuffered is the approximation: the bytes of in-flight chat_emit, nothing else', async () => {
+      expect(client.sendBuffered).toBe(0);
       let release!: () => void;
       chat.emitHold = new Promise<void>((r) => (release = r));
-      client.send({ type: 'session.emit', session_id: 's1', name: 'n', payload: { big: 'x'.repeat(50) } });
-      expect(client.sendBuffered).toBeGreaterThan(100 + 50);
+      client.send({ type: 'call.emit', name: 'audio', payload: { big: 'x'.repeat(50) } } as unknown as ClientEvent);
+      expect(client.sendBuffered).toBeGreaterThan(50);
       release();
       await flush();
-      expect(client.sendBuffered).toBe(100);
+      expect(client.sendBuffered).toBe(0);
+    });
+
+    it('a call.emit failure is silent (audio may be dropped), but a call.join failure is shown', async () => {
+      chat.emitError = { code: 'not_connected', message: 'x' };
+      const before = ui.toasts.length;
+      client.send({ type: 'call.emit', name: 'audio', payload: null } as unknown as ClientEvent);
+      await flush();
+      expect(ui.toasts.length).toBe(before);
+      client.send({ type: 'call.join', peer: 'bob', status: null } as unknown as ClientEvent);
+      await flush();
+      expect(ui.toasts.length).toBe(before + 1);
+    });
+
+    it('call.join is re-sent on reconnect through the hello from chat (the call store does it)', () => {
+      const seen: string[] = [];
+      client.subscribe((ev) => seen.push(ev.type));
+      chat.push({ kind: 'connected', generation: 3, me: ME, users: [ME] });
+      expect(seen).toContain('hello');
     });
 
     it('a terminal failure shows one toast, then retries every 30 seconds until it connects', async () => {
@@ -464,6 +468,67 @@ describe('chat over Rust: start and reconnect', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe('chat over Rust: busy, call control order, gap resync (S3 review)', () => {
+    const urls = (f: ReturnType<typeof vi.fn>) => f.mock.calls.map((c) => String(c[0]));
+
+    it('a busy call.emit (audio frame) is dropped silently', async () => {
+      chat.emitError = { code: 'busy', message: 'x' };
+      const before = ui.toasts.length;
+      client.send({ type: 'call.emit', name: 'audio', payload: null } as unknown as ClientEvent);
+      await flush();
+      expect(ui.toasts.length).toBe(before);
+    });
+
+    it('call control (join/leave/update/kick) is sent one after another, in order', async () => {
+      let release!: () => void;
+      chat.emitHold = new Promise<void>((r) => (release = r));
+      client.send({ type: 'call.join', peer: 'bob', status: null } as unknown as ClientEvent);
+      client.send({ type: 'call.update', status: null } as unknown as ClientEvent);
+      client.send({ type: 'call.leave' } as unknown as ClientEvent);
+      await flush();
+      expect(chat.emits.map((e) => (e as { type: string }).type)).toEqual(['call.join']);
+      chat.emitHold = null;
+      release();
+      await flush();
+      await flush();
+      expect(chat.emits.map((e) => (e as { type: string }).type)).toEqual(['call.join', 'call.update', 'call.leave']);
+    });
+
+    it('audio is not held behind call control (it may run in parallel)', async () => {
+      let release!: () => void;
+      chat.emitHold = new Promise<void>((r) => (release = r));
+      client.send({ type: 'call.join', peer: 'bob', status: null } as unknown as ClientEvent);
+      client.send({ type: 'call.emit', name: 'audio', payload: null } as unknown as ClientEvent);
+      await flush();
+      expect(chat.emits.map((e) => (e as { type: string }).type).sort()).toEqual(['call.emit', 'call.join']);
+      release();
+      await flush();
+    });
+
+    it('lagged: the connection stays up (no closed banner) and the history is read again over REST', async () => {
+      const f = vi.fn(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      vi.stubGlobal('fetch', f);
+      client.timeline(null).loaded = true;
+      chat.push({ kind: 'gap', generation: 1, reason: 'lagged' });
+      expect(client.status).toBe('open');
+      await flush();
+      expect(urls(f).some((u) => u.includes('/api/messages'))).toBe(true);
+    });
+
+    it('disconnected: closed until the chat reconnects, then the history is read again', async () => {
+      const f = vi.fn(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      vi.stubGlobal('fetch', f);
+      client.timeline(null).loaded = true;
+      chat.push({ kind: 'gap', generation: 1, reason: 'disconnected' });
+      expect(client.status).toBe('closed');
+      chat.push({ kind: 'connecting', attempt: 1 });
+      chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME] });
+      await flush();
+      expect(client.status).toBe('open');
+      expect(urls(f).some((u) => u.includes('/api/messages'))).toBe(true);
     });
   });
 });

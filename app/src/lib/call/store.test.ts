@@ -379,6 +379,27 @@ describe('参加と音声', () => {
     expect(plays(b)).toBeGreaterThan(0);
   });
 
+  it('チャットの接続が切れると通話の取りこぼしを知らせ、戻ると入り直して知らせる（参加中だけ）', async () => {
+    const a = makeClient('u1');
+    a.store.onLink(false);
+    expect(a.store.linkDown).toBe(false);
+    expect(a.toast).not.toHaveBeenCalled();
+
+    await a.store.join();
+    a.store.onLink(false);
+    expect(a.store.linkDown).toBe(true);
+    expect(a.toast).toHaveBeenCalledTimes(1);
+    a.store.onLink(false);
+    expect(a.toast).toHaveBeenCalledTimes(1);
+
+    a.store.onLink(true);
+    expect(a.store.linkDown).toBe(false);
+    expect(a.toast).toHaveBeenCalledTimes(2);
+
+    a.store.leave();
+    expect(a.store.linkDown).toBe(false);
+  });
+
   it('スピーカーミュートの通知のボタンの文言が変わり、通知のボタンから操作できる', async () => {
     const a = makeClient('u1');
     const b = makeClient('u2');

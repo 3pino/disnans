@@ -237,6 +237,37 @@ impl ChatCommandError {
     fn invalid(message: &str) -> Self {
         Self::new("invalid_request", message)
     }
+
+    /// 書込みが混んでいて捨てた（書いていない）。音声の取りこぼしとして扱う。
+    fn busy() -> Self {
+        Self::new(
+            "busy",
+            "通話の音声を書込み待ちが多いため捨てました（送っていません）",
+        )
+    }
+}
+
+/// 通話の音声（`call.emit`）の、書込み待ちの上限。1 話者 20 件/秒なので 16 件で約 0.8 秒分。
+/// 書込みが止まっても待ち行列を伸ばさない（超えた分は捨てる。遅れて一度に流すより良い）。
+pub const MAX_AUDIO_IN_FLIGHT: usize = 16;
+
+/// 音声の書込み枠。書き終える（戻る）まで持つ。Drop で枠を返す。
+struct AudioSlot(Arc<std::sync::atomic::AtomicUsize>);
+
+impl Drop for AudioSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// 枠を取る。上限に達していれば `None`（書かない）。
+fn take_audio_slot(in_flight: &Arc<std::sync::atomic::AtomicUsize>) -> Option<AudioSlot> {
+    use std::sync::atomic::Ordering::SeqCst;
+    if in_flight.fetch_add(1, SeqCst) >= MAX_AUDIO_IN_FLIGHT {
+        in_flight.fetch_sub(1, SeqCst);
+        return None;
+    }
+    Some(AudioSlot(in_flight.clone()))
 }
 
 impl From<EmitError> for ChatCommandError {
@@ -254,8 +285,12 @@ impl From<EmitError> for ChatCommandError {
     }
 }
 
+/// サーバーが `call.emit` の payload（JSON）に課す上限（crates/server/src/calls.rs の MAX_PAYLOAD_BYTES と同じ）。
+/// 超えたものはサーバーが拒否するので、書かずに `invalid_request` で返す。
+pub const MAX_CALL_PAYLOAD_BYTES: usize = 64 * 1024;
+
 /// `chat_emit` で送ってよい（ack の無い）種類か（契約 §8.6）。`message.send` は別（`send_not_allowed`）。
-/// `call.emit`（音声 PCM を含む）と `ping` は JS の Socket・core の役目なので、ここでは送らない。
+/// 通話の音声（`call.emit`）は同じ接続から送る（S3）。`ping` は core が扱うので送らない。
 fn check_emit_kind(event: &ClientEvent) -> Result<(), ChatCommandError> {
     match event {
         ClientEvent::MessageEdit { .. }
@@ -269,10 +304,18 @@ fn check_emit_kind(event: &ClientEvent) -> Result<(), ChatCommandError> {
         | ClientEvent::CallLeave
         | ClientEvent::CallUpdate { .. }
         | ClientEvent::CallKick { .. } => Ok(()),
+        ClientEvent::CallEmit { payload, .. } => {
+            let size = serde_json::to_string(payload)
+                .map(|s| s.len())
+                .unwrap_or(usize::MAX);
+            if size > MAX_CALL_PAYLOAD_BYTES {
+                return Err(ChatCommandError::invalid(
+                    "通話の payload が大きすぎます（64 KiB まで）",
+                ));
+            }
+            Ok(())
+        }
         ClientEvent::MessageSend { .. } => Err(ChatCommandError::from(EmitError::SendNotAllowed)),
-        ClientEvent::CallEmit { .. } => Err(ChatCommandError::invalid(
-            "通話の音声は chat_emit では送れません（JS 経路で送ります）",
-        )),
         _ => Err(ChatCommandError::invalid(
             "この種類は chat_emit では送れません",
         )),
@@ -409,6 +452,8 @@ pub struct ChatHub {
     lifecycle: Mutex<()>,
     /// 送信・再接続・pump が参照する。短時間だけ保持し、await をまたがない。
     state: Arc<StdMutex<HubState>>,
+    /// 書込み中の `call.emit` の数（上限 `MAX_AUDIO_IN_FLIGHT`）。
+    audio_in_flight: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl ChatHub {
@@ -496,6 +541,15 @@ impl ChatHub {
             .map(|a| a.sender.clone());
         let Some(sender) = sender else {
             return Err(ChatCommandError::from(EmitError::NotConnected));
+        };
+        // 音声だけ枠で絞る（制御のイベントは絞らない。落とすと通話の状態がずれる）
+        let _slot = if matches!(event, ClientEvent::CallEmit { .. }) {
+            match take_audio_slot(&self.audio_in_flight) {
+                Some(slot) => Some(slot),
+                None => return Err(ChatCommandError::busy()),
+            }
+        } else {
+            None
         };
         sender.emit(event).await.map_err(ChatCommandError::from)
     }

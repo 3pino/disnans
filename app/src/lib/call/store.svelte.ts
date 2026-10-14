@@ -118,6 +118,8 @@ export class CallStore {
   /** サーバーが知っている通話の参加者（自分を含む） */
   members = $state.raw<CallMember[]>([]);
   joined = $state(false);
+  /** 通話に参加しているあいだ、チャットの接続が切れているか（取りこぼし中） */
+  linkDown = $state(false);
   joining = $state(false);
   muted = $state(false);
   /** 相手の声を全部消している（スピーカーミュート） */
@@ -241,6 +243,24 @@ export class CallStore {
         }
         break;
     }
+  }
+
+  /**
+   * チャットの接続が切れた・戻った（client.subscribeLink）。切れているあいだは音声を取りこぼす（許容）。
+   * 戻ったら hello（onReconnect）で入り直す。ここでは利用者へ知らせるだけ。
+   */
+  onLink(up: boolean): void {
+    if (!this.joined) return;
+    if (up) {
+      if (this.linkDown) {
+        this.linkDown = false;
+        this.deps.toast('通話の接続が戻りました', 'info');
+      }
+      return;
+    }
+    if (this.linkDown) return;
+    this.linkDown = true;
+    this.deps.toast('通話の接続が切れました。つながると自動で入り直します', 'info');
   }
 
   /** つなぎ直したら、サーバーは自分を通話から外している。入り直す */
@@ -384,6 +404,7 @@ export class CallStore {
     if (!this.joined && !this.localStream) return;
     if (this.joined && sendLeave) this.deps.send({ type: 'call.leave' });
     this.joined = false;
+    this.linkDown = false;
     this.deafened = false;
     this.outputs = [];
     this.stopWorker();

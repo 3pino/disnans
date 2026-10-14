@@ -16,7 +16,7 @@ import { page, unread } from './unread.svelte';
 import { errorText } from '../errors';
 import { SEND_TEXT, emitFailureText, isRejectedSendCode, unknownReasonText } from '../sendOutcome';
 import { bootChatTransport } from '../transport/boot';
-import { CHAT_EVENT_TYPES, isChatEmit, type ChatEmitEvent, type ChatItem, type ChatSendEvent, type ChatTransport, type SendOutcome } from '../transport/chat';
+import { CALL_CONTROL_TYPES, CHAT_EVENT_TYPES, isChatEmit, type ChatEmitEvent, type ChatItem, type ChatSendEvent, type ChatTransport, type SendOutcome } from '../transport/chat';
 import { replyPreviewOf } from '../reply';
 import { reply } from './reply.svelte';
 
@@ -58,23 +58,35 @@ class Client {
 
   /** 起動時に1回呼ぶ。chat を渡すと、チャットは Rust 経路（JS 接続はチャット以外に使う） */
   start(chat: ChatTransport | null = bootChatTransport()): void {
-    if (this.socket) return;
+    if (this.socket || this.chat) return;
     page.init();
+    // Rust 経路（デスクトップ）では JS Socket を作らない。接続・ping・再接続・通話の送受信はすべて chat 側
+    if (chat) {
+      this.chat = chat;
+      void this.startChat();
+      return;
+    }
     this.socket = new Socket({
       url: wsUrl,
-      onEvent: (ev) => this.onSocketEvent(ev),
+      onEvent: (ev) => this.dispatch(ev),
       onStatus: (s) => {
-        // Rust 経路のときバナーの状態はチャット接続から決める（onChatItem）
-        if (this.chat) return;
-        this.status = s;
+        this.setLink(s);
         if (s === 'closed') for (const t of this.timelines.values()) t.markSentUnknown();
       },
     });
     this.socket.start();
-    if (chat) {
-      this.chat = chat;
-      void this.startChat();
-    }
+  }
+
+  /** 接続の状態（バナーなど）。open / 切れた の変化を購読者（通話など）へ知らせる */
+  subscribeLink(fn: (up: boolean) => void): () => void {
+    this.linkListeners.add(fn);
+    return () => this.linkListeners.delete(fn);
+  }
+
+  private setLink(s: SocketStatus): void {
+    if (this.status === s) return;
+    this.status = s;
+    for (const fn of this.linkListeners) fn(s === 'open');
   }
 
   reconnect(): void {
@@ -86,6 +98,8 @@ class Client {
       void this.startChat();
     }
   }
+
+  private linkListeners = new Set<(up: boolean) => void>();
 
   /** 生のサーバーイベントを購読する（プラグインのホストが使う） */
   subscribe(fn: Listener): () => void {
@@ -101,21 +115,34 @@ class Client {
     }
     // Rust 経路の編集・削除・リアクション・スレッド作成も、ChatTransport（chat_emit）からだけ出す
     if (this.chat && isChatEmit(ev)) {
-      void this.emitChat(this.chat, ev);
+      if (CALL_CONTROL_TYPES.has(ev.type)) {
+        // 通話の制御は前の結果を待ってから次を送る（並行だと順序が保証されない）。失敗は emitChat 内で処理済み
+        const chat = this.chat;
+        this.callControl = this.callControl.then(() => this.emitChat(chat, ev));
+      } else {
+        void this.emitChat(this.chat, ev);
+      }
       return true;
     }
     if (!this.socket) return false;
     return this.socket.send(ev);
   }
 
-  /** chat_emit で送る。失敗は toast（自動では再送しない。押し直しは利用者） */
+  /**
+   * chat_emit で送る。失敗は toast（自動では再送しない。押し直しは利用者）。
+   * 音声（call.emit）と通話の状態（call.update）は、切れているあいだ黙って捨てる（毎回 toast すると邪魔になる）。
+   * 取りこぼしは許容（通話の音声は遅れて届くより捨てる）。
+   */
+  /** 通話の制御の直列化用（直前の送信の完了を待つ鎖。emitChat は reject しない） */
+  private callControl: Promise<void> = Promise.resolve();
+
   private async emitChat(chat: ChatTransport, ev: ChatEmitEvent): Promise<void> {
     const size = JSON.stringify(ev).length;
     this.chatEmitBytes += size;
     try {
       await chat.emit(ev);
     } catch (e) {
-      ui.toast(emitFailureText(e), 'error');
+      if (ev.type !== 'call.emit' && ev.type !== 'call.update') ui.toast(emitFailureText(e), 'error');
     } finally {
       this.chatEmitBytes -= size;
     }
@@ -332,7 +359,7 @@ class Client {
     const chat = this.chat;
     if (!chat) return;
     this.chatState = 'starting';
-    this.status = 'connecting';
+    this.setLink('connecting');
     try {
       await chat.start((item) => this.onChatItem(item));
       if (this.chatState === 'starting') this.chatState = 'started';
@@ -347,7 +374,7 @@ class Client {
   private chatFailed(e: unknown, prefix = 'チャットに接続できませんでした'): void {
     this.chatState = 'failed';
     this.chatDown = true;
-    this.status = 'closed';
+    this.setLink('closed');
     if (!this.chatToasted) {
       this.chatToasted = true;
       ui.toast(`${prefix}: ${e instanceof Error ? e.message : String(e)}`, 'error');
@@ -375,11 +402,11 @@ class Client {
     this.clearChatRetry();
     switch (item.kind) {
       case 'connecting':
-        this.status = 'connecting';
+        this.setLink('connecting');
         break;
       case 'connected':
         this.chatGeneration = item.generation;
-        this.status = 'open';
+        this.setLink('open');
         // 接続ごとの hello と同じ扱い（読み込み直し・購読者への通知）
         this.dispatch({ type: 'hello', me: item.me, users: item.users });
         break;
@@ -392,7 +419,14 @@ class Client {
       }
       case 'gap':
         if (item.generation < this.chatGeneration) return;
-        this.status = 'closed';
+        if (item.reason === 'lagged') {
+          // 接続は続いている（受信の取りこぼしだけ）。つながっているのでバナーは出さず、読み直して埋める
+          this.setLink('open');
+          this.refreshAfterGap();
+        } else {
+          // 切れた。つなぎ直したら hello（applyHello）で読み直す
+          this.setLink('closed');
+        }
         break;
       case 'failed':
         this.chatFailed(item.reason, 'チャットの接続が止まりました');
@@ -477,13 +511,14 @@ class Client {
     this.dispatch({ type: 'error', client_id: null, code, message });
   }
 
-  /** JS 接続の項目。Rust 経路のときはチャット系（と hello）を捨てる（二重反映の防止） */
-  private onSocketEvent(ev: ServerEvent): void {
-    if (this.chat && (ev.type === 'hello' || CHAT_EVENT_TYPES.has(ev.type))) return;
-    this.dispatch(ev);
-  }
-
   // ---- イベント処理 ----
+
+  /** 取りこぼしのあとで、読み込み済みの履歴・スレッド・未読を REST で読み直す（applyHello と同じ範囲） */
+  private refreshAfterGap(): void {
+    for (const t of this.timelines.values()) if (t.loaded || t.error) void t.load();
+    void threads.load();
+    void unread.load();
+  }
 
   private applyHello(me: User, list: User[]): void {
     this.me = me;

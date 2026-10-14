@@ -60,6 +60,8 @@ export const EMIT_TEXT = {
   notConnected: '接続中ではないため送れませんでした。接続が戻ってから、もう一度操作してください',
   writeFailed: '送信できたか確認できません。自動では再送しません。必要なら操作をやり直してください',
   notAllowed: 'この操作はここからは送れません',
+  /** 音声の書込み枠が一杯（取りこぼし。通話では表示しない） */
+  busy: '混み合っているため送れませんでした',
   invalid: '操作の内容が正しく送れませんでした',
 } as const;
 
@@ -73,6 +75,8 @@ export function emitFailureText(e: unknown): string {
       return EMIT_TEXT.notAllowed;
     case 'invalid_request':
       return EMIT_TEXT.invalid;
+    case 'busy':
+      return EMIT_TEXT.busy;
     default:
       return EMIT_TEXT.writeFailed;
   }

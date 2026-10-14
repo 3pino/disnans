@@ -37,5 +37,6 @@ export function startCall(): void {
   if (started) return;
   started = true;
   client.subscribe((ev) => call.onServerEvent(ev));
+  client.subscribeLink((up) => call.onLink(up));
   // すでに接続していて参加者の一覧を取りこぼしていることはない（接続のたびにサーバーが送る）
 }

@@ -24,7 +24,10 @@ use tokio_tungstenite::{
     },
 };
 
-use super::{ChatHub, ChatItem, ItemSink, MessageDraft, SendResult, UnknownDto};
+use super::{
+    ChatHub, ChatItem, ItemSink, MAX_AUDIO_IN_FLIGHT, MAX_CALL_PAYLOAD_BYTES, MessageDraft,
+    SendResult, UnknownDto, take_audio_slot,
+};
 
 // ----- 送り先 ---------------------------------------------------------------------------------
 
@@ -74,6 +77,8 @@ enum Step {
     Event(ServerEvent),
     /// 接続を閉じる（クライアントから見ると切断）。
     Close,
+    /// 次の動作まで待つ（音声の流れを模す）。
+    Wait(Duration),
 }
 
 /// (接続の番号, クライアントの送ったフレーム) → 返す動作。番号は接続ごとに 0 から。
@@ -292,6 +297,7 @@ async fn run_connection(
                             let _ = socket.close(None).await;
                             return;
                         }
+                        Step::Wait(d) => tokio::time::sleep(d).await,
                     }
                 }
             }
@@ -991,13 +997,11 @@ fn other_kinds_and_malformed_events_are_refused_and_not_written() {
     start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
     wait_until("connected", || sink.len() >= 1);
 
-    // JS の Socket に残す種類（call.emit = 音声）と ping は chat_emit では送らない
-    for event in [
-        serde_json::json!({"type": "ping"}),
-        serde_json::json!({"type": "call.emit", "name": "audio", "payload": {"pcm": "AAAA"}}),
-    ] {
-        assert_eq!(emit_error_code(&hub, event), "invalid_request");
-    }
+    // ping は core が扱う（送らない）。call.emit の上限超えも書かない（下のテスト）
+    assert_eq!(
+        emit_error_code(&hub, serde_json::json!({"type": "ping"})),
+        "invalid_request"
+    );
     // 形が違う（必須の ID が無い・種類が無い）
     assert_eq!(
         emit_error_code(
@@ -1091,24 +1095,64 @@ fn signaling_session_and_plugin_events_are_written_as_their_wire_json() {
 }
 
 #[test]
-fn call_emit_is_refused_and_nothing_is_written_even_when_connected() {
+fn call_audio_is_written_in_order_with_its_seq_and_pcm() {
     let fake = Fake::start(echo_everything());
     let hub = ChatHub::default();
     let sink = Collect::new();
     start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
     wait_until("connected", || sink.len() >= 1);
 
+    // 音声フレーム（800 サンプル = 1600 バイトの PCM を base64 にしたもの）を順に 200 件
+    let pcm = "A".repeat(2136);
+    let mut expected = Vec::new();
+    emit(&hub, serde_json::json!({"type": "call.join", "peer": "p1", "status": {"muted": false, "deafened": false}})).unwrap();
+    expected.push(serde_json::json!({"type": "call.join", "peer": "p1", "status": {"muted": false, "deafened": false, "device": null}}));
+    for seq in 0..200u64 {
+        let event = serde_json::json!({"type": "call.emit", "name": "audio", "payload": {"seq": seq, "pcm": pcm}});
+        emit(&hub, event.clone()).unwrap();
+        expected.push(event);
+    }
+    emit(&hub, serde_json::json!({"type": "call.leave"})).unwrap();
+    expected.push(serde_json::json!({"type": "call.leave"}));
+
+    wait_until("all frames", || fake.frames().len() == expected.len());
+    assert_eq!(fake.frames(), expected);
+    assert!(fake.sends().is_empty());
+
+    async_runtime::block_on(hub.stop());
+}
+
+#[test]
+fn call_payload_at_the_server_limit_is_written_and_one_byte_more_is_refused() {
+    let fake = Fake::start(echo_everything());
+    let hub = ChatHub::default();
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+
+    // payload の JSON（{"pcm":"…"}）がちょうど上限になる長さ
+    let overhead = serde_json::to_string(&serde_json::json!({"pcm": ""}))
+        .unwrap()
+        .len();
+    let exact = "A".repeat(MAX_CALL_PAYLOAD_BYTES - overhead);
+    let at_limit =
+        serde_json::json!({"type": "call.emit", "name": "blob", "payload": {"pcm": exact}});
+    emit(&hub, at_limit.clone()).unwrap();
+    wait_until("the limit frame", || fake.frames().len() == 1);
+    assert_eq!(fake.frames()[0], at_limit);
+
+    let over = "A".repeat(MAX_CALL_PAYLOAD_BYTES - overhead + 1);
     assert_eq!(
         emit_error_code(
             &hub,
-            serde_json::json!({"type": "call.emit", "name": "audio", "payload": {"seq": 1, "pcm": "AAAA"}})
+            serde_json::json!({"type": "call.emit", "name": "blob", "payload": {"pcm": over}})
         ),
         "invalid_request"
     );
-    // 直後に送るイベントが最初の書込になる（音声は書かれていない）
+    // 上限超えは書かれていない（次の書込が最初の後続フレーム）
     emit(&hub, serde_json::json!({"type": "call.leave"})).unwrap();
-    wait_until("the leave", || fake.frames().len() == 1);
-    assert_eq!(fake.frames()[0], serde_json::json!({"type": "call.leave"}));
+    wait_until("the leave", || fake.frames().len() == 2);
+    assert_eq!(fake.frames()[1], serde_json::json!({"type": "call.leave"}));
 
     async_runtime::block_on(hub.stop());
 }
@@ -1130,4 +1174,111 @@ fn signaling_without_a_session_is_not_connected() {
         ),
         "not_connected"
     );
+}
+
+/// 通話の音声の受信（相手 5 人 × 25 件/秒 = 125 件/秒）を 2 秒流しても、取りこぼし（lagged）が出ないこと。
+/// 受け手は速い（Collect に入れるだけ）。webview の遅さは含まない（実機で別途確認する）。
+#[test]
+fn inbound_call_audio_at_the_expected_rate_is_delivered_without_a_lagged_gap() {
+    let frames = 250u64; // 125 件/秒 × 2 秒
+    let reply: Reply = Arc::new(move |_: usize, value: &Value| {
+        let pcm = "A".repeat(2136);
+        let mut steps = Vec::new();
+        for seq in 0..frames {
+            steps.push(Step::Event(ServerEvent::CallEvent {
+                peer: "p1".into(),
+                from: "u-speaker".into(),
+                name: "audio".into(),
+                payload: serde_json::json!({"seq": seq, "pcm": pcm}),
+            }));
+            steps.push(Step::Wait(Duration::from_millis(8)));
+        }
+        // 最後に ack を返して、送った側（trigger）を終わらせる
+        steps.push(ack(value));
+        steps
+    });
+    let fake = Fake::start(reply);
+    let hub = ChatHub::default();
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+
+    // 受け取りのきっかけ（この送信にだけ、上の動作が返る）
+    async_runtime::block_on(hub.send(draft("trigger", "x"))).unwrap();
+    wait_until("all audio", || {
+        sink.items()
+            .iter()
+            .filter(|i| {
+                matches!(
+                    i,
+                    ChatItem::Event {
+                        event: ServerEvent::CallEvent { .. },
+                        ..
+                    }
+                )
+            })
+            .count()
+            == frames as usize
+    });
+    let items = sink.items();
+    assert!(
+        !items
+            .iter()
+            .any(|i| matches!(i, ChatItem::Gap { reason, .. } if reason == "lagged")),
+        "a lagged gap means audio was dropped"
+    );
+
+    async_runtime::block_on(hub.stop());
+}
+
+#[test]
+fn audio_slots_are_capped_and_returned_when_dropped() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let counter = Arc::new(AtomicUsize::new(0));
+    let held: Vec<_> = (0..MAX_AUDIO_IN_FLIGHT)
+        .map(|_| take_audio_slot(&counter).expect("under the cap"))
+        .collect();
+    assert_eq!(counter.load(Ordering::SeqCst), MAX_AUDIO_IN_FLIGHT);
+    assert!(take_audio_slot(&counter).is_none(), "over the cap");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        MAX_AUDIO_IN_FLIGHT,
+        "a refused slot is not kept"
+    );
+    drop(held);
+    assert_eq!(counter.load(Ordering::SeqCst), 0);
+    assert!(take_audio_slot(&counter).is_some());
+}
+
+#[test]
+fn audio_over_the_in_flight_cap_is_busy_and_not_written_but_control_is_not_capped() {
+    use std::sync::atomic::Ordering;
+    let fake = Fake::start(echo_everything());
+    let hub = ChatHub::default();
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+
+    // 書込み待ちが上限に達している状況（書込みが止まったと同じ）を作る
+    hub.audio_in_flight
+        .store(MAX_AUDIO_IN_FLIGHT, Ordering::SeqCst);
+    let audio = serde_json::json!({"type": "call.emit", "name": "audio", "payload": {"seq": 1, "pcm": "AAAA"}});
+    assert_eq!(emit_error_code(&hub, audio), "busy");
+    // 制御（leave）は枠に関係なく書く
+    emit(&hub, serde_json::json!({"type": "call.leave"})).unwrap();
+    wait_until("the leave", || fake.frames().len() == 1);
+    assert_eq!(fake.frames()[0], serde_json::json!({"type": "call.leave"}));
+
+    // 枠が空けば音声は書ける
+    hub.audio_in_flight.store(0, Ordering::SeqCst);
+    emit(&hub, serde_json::json!({"type": "call.emit", "name": "audio", "payload": {"seq": 2, "pcm": "AAAA"}})).unwrap();
+    wait_until("the audio", || fake.frames().len() == 2);
+    assert_eq!(fake.frames()[1]["payload"]["seq"], 2);
+    assert_eq!(
+        hub.audio_in_flight.load(Ordering::SeqCst),
+        0,
+        "the slot is returned after the write"
+    );
+
+    async_runtime::block_on(hub.stop());
 }
