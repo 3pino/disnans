@@ -29,6 +29,7 @@
 Windows の `.exe` と Linux の `.deb` を入れると、CLI の `disnans` も使えるようになります。
 
 - **Windows**: インストール時にユーザーの PATH へ入れます。新しく開いたターミナルで `disnans` と打てます。アンインストールでは、インストーラが追加した分だけを PATH から外します（他の PATH は変えません）。
+  - PATH が長すぎるときは、インストーラは PATH を一切変えません（安全のため。CLI のフォルダは入ります）。目安はおおむね 800 文字からで、インストーラのビルドによって異なります。その場合は `%LOCALAPPDATA%\disnans` を手で PATH に追加してください。
 - **Linux（`.deb`）**: `/usr/bin/disnans` に入ります。
 - **AppImage**: CLI の PATH 登録は行いません。CLI を使うなら `.deb` か Windows の `.exe` を入れてください。
 

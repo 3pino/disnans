@@ -12,6 +12,9 @@ SilentInstall silent
 InstallDir "$TEMP\disnans-cli-path-harness"
 !include "${__FILEDIR__}\..\..\app\src-tauri\windows\cli-path.nsh"
 
+!define /math HARNESS_PATHMAX_PLUS1 ${DISNANS_PATH_MAX} + 1
+!define /math HARNESS_LIMIT_M1 ${NSIS_MAX_STRLEN} - 1
+
 Function .onInit
   ClearErrors
   FileOpen $0 "$EXEDIR\cli-path-results.txt" w
@@ -59,7 +62,9 @@ Function .onInit
   !insertmacro DISNANS_REMOVE "E;A;E" "E" $3 r10
   FileWrite $0 "remove|E;A;E|E|[$3]$\r$\n"
 
-  ; 文字列の上限の確認: 2560 文字がそのまま入るか（切り詰めの有無）
+  ; 文字列の上限: ビルドの NSIS_MAX_STRLEN と、連結が上限で切れること（切り詰めの確認）
+  FileWrite $0 "limit|${NSIS_MAX_STRLEN}$\r$\n"
+  FileWrite $0 "pathmax|${DISNANS_PATH_MAX}$\r$\n"
   StrCpy $1 "0123456789012345678901234567890123456789"
   StrCpy $1 "$1$1"
   StrCpy $1 "$1$1"
@@ -67,8 +72,28 @@ Function .onInit
   StrCpy $1 "$1$1"
   StrCpy $1 "$1$1"
   StrCpy $1 "$1$1"
+  StrCpy $1 "$1$1"
+  StrCpy $1 "$1$1"
   StrLen $4 $1
-  FileWrite $0 "maxlen|$4$\r$\n"
+  FileWrite $0 "concat|$4$\r$\n"
+
+  ; 長さの判定（DISNANS_LEN_OK）: 上限の内側は 1、外側は 0。$1 は上限の手前まで（切り詰め後の長さ）ある
+  StrCpy $5 $1 100
+  !insertmacro DISNANS_LEN_OK $5 $6 g01
+  StrLen $7 $5
+  FileWrite $0 "guard|$7|$6$\r$\n"
+  StrCpy $5 $1 ${DISNANS_PATH_MAX}
+  !insertmacro DISNANS_LEN_OK $5 $6 g02
+  StrLen $7 $5
+  FileWrite $0 "guard|$7|$6$\r$\n"
+  StrCpy $5 $1 ${HARNESS_PATHMAX_PLUS1}
+  !insertmacro DISNANS_LEN_OK $5 $6 g03
+  StrLen $7 $5
+  FileWrite $0 "guard|$7|$6$\r$\n"
+  StrCpy $5 $1 ${HARNESS_LIMIT_M1}
+  !insertmacro DISNANS_LEN_OK $5 $6 g04
+  StrLen $7 $5
+  FileWrite $0 "guard|$7|$6$\r$\n"
 
   FileClose $0
 

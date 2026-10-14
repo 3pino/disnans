@@ -106,7 +106,7 @@ jobs:
           "$CLI" --version
           "$CLI" --help > /dev/null
           echo "CLI を確認しました（$SIZE バイト）"
-      - name: "Windows: NSIS で CLI の PATH を確かめる（入れる → PATH → 外す → 元に戻る）"
+      - name: "Windows: NSIS で CLI の PATH を確かめる（入れる → PATH → 外す → 元に戻る。長い PATH は変えない）"
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -114,6 +114,7 @@ jobs:
           $version = (Get-Content app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           $setups = @(Get-ChildItem "app/src-tauri/target/release/bundle/nsis/disnans_$($version)_*-setup.exe")
           if ($setups.Count -ne 1) { throw "この版のインストーラが 1 つではありません: $($setups.Count)" }
+          $setup = $setups[0].FullName
           $installDir = Join-Path $env:LOCALAPPDATA 'disnans'
           $cli = Join-Path $installDir 'disnans.exe'
           $uninstaller = Join-Path $installDir 'uninstall.exe'
@@ -121,31 +122,73 @@ jobs:
           $markKey = 'HKCU:\Software\disnans-cli-path'
 
           function Get-UserPath { (Get-ItemProperty -Path $envKey -Name Path -ErrorAction SilentlyContinue).Path }
+          function Test-SameValue($a, $b) {
+            if ($null -eq $a -or $null -eq $b) { return ($null -eq $a) -and ($null -eq $b) }
+            return ([string]$a) -ceq ([string]$b)
+          }
           function Test-PathEntry([string]$path, [string]$dir) {
             if (-not $path) { return $false }
             return (($path -split ';') -contains $dir)
           }
 
-          if (Test-Path $markKey) { throw "インストール前から印が残っています（$markKey）" }
-          $before = Get-UserPath
+          # 1 回の入れる → 確かめる → 外す → 確かめる。$expectAdded は「PATH に入るはず」か「入らないはず（長すぎる）」か
+          function Invoke-RoundTrip([bool]$expectAdded, [string]$label) {
+            if (Test-Path $markKey) { throw "$label: インストール前から印が残っています" }
+            $before = Get-UserPath
+            Start-Process -FilePath $setup -ArgumentList '/S' -Wait
+            if (-not (Test-Path $cli)) { throw "$label: CLI が入っていません: $cli" }
+            $size = (Get-Item $cli).Length
+            if ($size -lt 100000) { throw "$label: CLI が stub のままです（$size バイト）" }
+            & $cli --version
+            if ($LASTEXITCODE -ne 0) { throw "$label: disnans --version が失敗しました" }
+            $afterInstall = Get-UserPath
+            if ($expectAdded) {
+              if (-not (Test-PathEntry $afterInstall $installDir)) { throw "$label: ユーザー PATH に $installDir がありません" }
+              if (-not (Test-Path $markKey)) { throw "$label: 印（$markKey）がありません" }
+            } else {
+              if (-not (Test-SameValue $afterInstall $before)) {
+                throw "$label: 長い PATH が変わりました（前 $(([string]$before).Length) 文字、後 $(([string]$afterInstall).Length) 文字）"
+              }
+              if (Test-Path $markKey) { throw "$label: 長い PATH なのに印が付きました" }
+            }
+            Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
+            $deadline = (Get-Date).AddSeconds(120)
+            while ((Test-Path $cli) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Seconds 2 }
+            if (Test-Path $cli) { throw "$label: アンインストールが終わりません" }
+            $after = Get-UserPath
+            if (-not (Test-SameValue $after $before)) {
+              throw "$label: ユーザー PATH が元に戻りません。前: [$before] 後: [$after]"
+            }
+            if (Test-Path $markKey) { throw "$label: 印が残っています" }
+            Write-Host "$label: OK"
+          }
 
-          Start-Process -FilePath $setups[0].FullName -ArgumentList '/S' -Wait
-          if (-not (Test-Path $cli)) { throw "CLI が入っていません: $cli" }
-          $size = (Get-Item $cli).Length
-          if ($size -lt 100000) { throw "CLI が stub のままです（$size バイト）" }
-          & $cli --version
-          if ($LASTEXITCODE -ne 0) { throw 'disnans --version が失敗しました' }
-          if (-not (Test-PathEntry (Get-UserPath) $installDir)) { throw "ユーザー PATH に $installDir がありません" }
-          if (-not (Test-Path $markKey)) { throw "印（$markKey）がありません" }
+          # 1. 通常の PATH: 追加され、外すと元に戻る
+          Invoke-RoundTrip -expectAdded $true -label '通常の PATH'
 
-          Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
-          $deadline = (Get-Date).AddSeconds(120)
-          while ((Test-Path $cli) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Seconds 2 }
-          if (Test-Path $cli) { throw 'アンインストールが終わりません' }
-          $after = Get-UserPath
-          if ($after -ne $before) { throw "ユーザー PATH が元に戻りません。前: [$before] 後: [$after]" }
-          if (Test-Path $markKey) { throw '印が残っています' }
-          Write-Host 'CLI の PATH の追加と削除を確認しました'
+          # 2. 長い PATH（NSIS の上限 1024 でも 8192 でも超える 9100 文字）: 1 バイトも変えない
+          #    NSIS は上限を超えた値を黙って切り詰めるので、切り詰めた PATH に追記すると壊れる。そのための確認
+          $original = Get-UserPath
+          $originalKind = $null
+          try {
+            $segment = 'C:\disnans-length-test\padding-entry;'
+            $base = if ($original) { ([string]$original).TrimEnd(';') + ';' } else { '' }
+            $pad = $segment * [int][math]::Ceiling(9100 / $segment.Length)
+            $long = ($base + $pad).TrimEnd(';')
+            if ($long.Length -lt 9100) { throw "テスト用の PATH が短すぎます: $($long.Length)" }
+            Set-ItemProperty -Path $envKey -Name Path -Value $long -Type ExpandString
+            if (-not (Test-SameValue (Get-UserPath) $long)) { throw '長い PATH の設定に失敗しました' }
+            Invoke-RoundTrip -expectAdded $false -label '長い PATH（9100 文字）'
+          } finally {
+            # 元の PATH に戻す（無かったものは無いまま）
+            if ($null -eq $original) {
+              Remove-ItemProperty -Path $envKey -Name Path -ErrorAction SilentlyContinue
+            } else {
+              Set-ItemProperty -Path $envKey -Name Path -Value ([string]$original) -Type ExpandString
+            }
+          }
+          if (-not (Test-SameValue (Get-UserPath) $original)) { throw 'テストの後に PATH を元に戻せませんでした' }
+          Write-Host 'CLI の PATH の追加・削除と、長い PATH を変えないことを確認しました'
 
   android:
     needs: create-release
