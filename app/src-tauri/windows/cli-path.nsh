@@ -7,15 +7,16 @@
 ;  - 印の "Created" は、PATH の値そのものが無かったときに 1。外したあと空になり、Created が 1 なら値ごと消す。
 ;    値があって空だった場合は、外したあと空の値に戻す（インストール前と同じ）。
 ;
-; 長さの扱い（重要）:
-;  NSIS の文字列は NSIS_MAX_STRLEN 文字まで（ビルドにより 1024 や 8192）。ReadRegStr・StrCpy・連結は、
-;  上限を超えると黙って切り詰める。切り詰めた PATH に追記して書き戻すと PATH が壊れる。
-;  そこで、NSIS_MAX_STRLEN から 200 文字を引いた DISNANS_PATH_MAX より長い文字列は、読んでも書いても
-;  連結しても使わない（DISNANS_LEN_OK で確かめる）。切り詰められた値は必ず上限近くなので、必ず弾かれる。
+;  Path の状態は、ReadRegStr の戻り値ではなく RegQueryValueExW（データを読まない問い合わせ）で決める。
+;  理由: ReadRegStr は、値が上限より長いと失敗して空を返す。失敗を「値が無い」と見ると、
+;  既存の PATH を捨てて $INSTDIR だけを書いてしまう（実機 CI で再現）。
+;  そこで、次の 4 つを区別する: 値が無い（ERROR_FILE_NOT_FOUND）／読めない（その他のエラー）／
+;  長すぎる（DISNANS_PATH_MAX より長い）／読める（0 以上 DISNANS_PATH_MAX 以下）。
+;  読めるのは「読める」ときだけで、読んだ長さが問い合わせた長さと一致しなければ触らない。
 ;
-; 文字列の操作（DISNANS_FIND / DISNANS_REMOVE）は、レジストリに触れないので
-; scripts/nsis/cli-path-harness.nsi で単体テストする。
-; 作業用レジスタ: DISNANS_LEN_OK は $R3、DISNANS_FIND / DISNANS_REMOVE は $R3-$R9 を使う。
+; 長さの上限: NSIS の文字列は NSIS_MAX_STRLEN 文字まで。連結や StrCpy も、上限を超えると切り詰める。
+;  DISNANS_PATH_MAX = NSIS_MAX_STRLEN - 200 より長い文字列は、読んでも連結しても書いてもいけない。
+;  追加後の長さは、連結の前に計算する。
 
 !define DISNANS_CLI_MARK "Software\disnans-cli-path"
 
@@ -39,6 +40,37 @@
   Goto ${Id}_end
   ${Id}_ok:
   StrCpy ${Result} 1
+  ${Id}_end:
+!macroend
+
+; HKCU\Environment\Path の状態を Out に入れる（データは読まない）。作業: $0-$4。
+;   -1: 値が無い（ERROR_FILE_NOT_FOUND）
+;   -2: 読めない（キーを開けない、問い合わせに失敗した）
+;   0 以上: 文字数（終端の NUL を除く）。読み取り時の ReadRegStr と同じ数え方。
+!macro DISNANS_PATH_LEN Out Id
+  System::Call 'advapi32::RegOpenKeyExW(i 0x80000001, t "Environment", i 0, i 0x20019, *i .r0) i .r1'
+  IntCmp $1 0 ${Id}_open_ok ${Id}_error ${Id}_error
+  ${Id}_open_ok:
+  System::Call 'advapi32::RegQueryValueExW(i $0, t "Path", i 0, *i .r2, i 0, *i .r3) i .r4'
+  System::Call 'advapi32::RegCloseKey(i $0)'
+  IntCmp $4 0 ${Id}_have ${Id}_not_ok ${Id}_error
+  ${Id}_not_ok:
+  IntCmp $4 2 ${Id}_missing ${Id}_error ${Id}_error
+  ${Id}_have:
+  ; $3 はバイト数（終端の NUL を含む）。文字数 = バイト数 / 2 - 1。空（1 以下）は 0
+  IntCmp $3 1 ${Id}_zero ${Id}_zero ${Id}_chars
+  ${Id}_chars:
+  IntOp $3 $3 / 2
+  IntOp ${Out} $3 - 1
+  Goto ${Id}_end
+  ${Id}_zero:
+  StrCpy ${Out} 0
+  Goto ${Id}_end
+  ${Id}_missing:
+  StrCpy ${Out} -1
+  Goto ${Id}_end
+  ${Id}_error:
+  StrCpy ${Out} -2
   ${Id}_end:
 !macroend
 
@@ -111,17 +143,27 @@
   ${Id}_end:
 !macroend
 
-; インストール後: PATH に $INSTDIR を足す（足したときだけ印を残す）。長すぎれば何もしない。
+; インストール後: PATH に $INSTDIR を足す（足したときだけ印を残す）。読めない・長すぎるときは何もしない。
 !macro NSIS_HOOK_POSTINSTALL
+  StrCpy $R1 0
+  !insertmacro DISNANS_PATH_LEN $R2 disnans_pi_len
+  IntCmp $R2 -1 disnans_pi_missing disnans_pi_not_missing disnans_pi_not_missing
+  disnans_pi_not_missing:
+  IntCmp $R2 -2 disnans_pi_too_long disnans_pi_size_ok disnans_pi_size_ok
+  disnans_pi_size_ok:
+  IntCmp $R2 ${DISNANS_PATH_MAX} disnans_pi_read disnans_pi_read disnans_pi_too_long
+  disnans_pi_read:
   ClearErrors
   ReadRegStr $R0 HKCU "Environment" "Path"
-  StrCpy $R1 0
-  IfErrors disnans_pi_missing disnans_pi_check
+  IfErrors disnans_pi_too_long disnans_pi_read_ok
+  disnans_pi_read_ok:
+  StrLen $R3 $R0
+  IntCmp $R3 $R2 disnans_pi_have disnans_pi_too_long disnans_pi_too_long
   disnans_pi_missing:
-  ; 値が無かった（空の値は無かったことにしない）。外すときに値ごと消す印にする
+  ; 値が無かった。空の値（長さ 0）は値があるので、ここには来ない
   StrCpy $R0 ""
   StrCpy $R1 1
-  disnans_pi_check:
+  disnans_pi_have:
   !insertmacro DISNANS_LEN_OK $R0 $R2 disnans_pi_l1
   StrCmp $R2 1 disnans_pi_l1_pass disnans_pi_too_long
   disnans_pi_l1_pass:
@@ -155,32 +197,37 @@
   DetailPrint "CLI の PATH に追加しました: $INSTDIR"
   Goto disnans_pi_end
   disnans_pi_too_long:
-  DetailPrint "CLI の PATH は変更しませんでした（PATH が長すぎます。上限 ${DISNANS_PATH_MAX} 文字）。CLI は $INSTDIR にあります。必要なら PATH に手で追加してください"
+  DetailPrint "CLI の PATH は変更しませんでした（PATH を読めない、または長すぎます。上限 ${DISNANS_PATH_MAX} 文字）。CLI は $INSTDIR にあります。必要なら PATH に手で追加してください"
   Goto disnans_pi_end
   disnans_pi_fail:
   DetailPrint "CLI の PATH を書き込めませんでした（変更していません）"
   disnans_pi_end:
 !macroend
 
-; アンインストール前: 印に書いた文字列だけを PATH から外す。長すぎれば何もしない（印も残す）。
+; アンインストール前: 印に書いた文字列だけを PATH から外す。読めない・長すぎるときは何もせず印を残す。
 !macro NSIS_HOOK_PREUNINSTALL
   ClearErrors
   ReadRegStr $R0 HKCU "${DISNANS_CLI_MARK}" "Entry"
   IfErrors disnans_pu_end disnans_pu_have_mark
   disnans_pu_have_mark:
-  ClearErrors
-  ReadRegStr $R2 HKCU "Environment" "Path"
-  IfErrors disnans_pu_drop disnans_pu_have_path
-  disnans_pu_drop:
-  DeleteRegKey HKCU "${DISNANS_CLI_MARK}"
-  Goto disnans_pu_end
-  disnans_pu_have_path:
-  !insertmacro DISNANS_LEN_OK $R2 $R1 disnans_pu_l1
-  StrCmp $R1 1 disnans_pu_l1_pass disnans_pu_too_long
-  disnans_pu_l1_pass:
   !insertmacro DISNANS_LEN_OK $R0 $R1 disnans_pu_l2
-  StrCmp $R1 1 disnans_pu_l2_pass disnans_pu_too_long
-  disnans_pu_l2_pass:
+  StrCmp $R1 1 disnans_pu_entry_pass disnans_pu_too_long
+  disnans_pu_entry_pass:
+  !insertmacro DISNANS_PATH_LEN $R2 disnans_pu_len
+  IntCmp $R2 -1 disnans_pu_drop disnans_pu_not_missing disnans_pu_not_missing
+  disnans_pu_not_missing:
+  IntCmp $R2 -2 disnans_pu_too_long disnans_pu_size_ok disnans_pu_size_ok
+  disnans_pu_size_ok:
+  IntCmp $R2 ${DISNANS_PATH_MAX} disnans_pu_read disnans_pu_read disnans_pu_too_long
+  disnans_pu_read:
+  ClearErrors
+  ReadRegStr $R5 HKCU "Environment" "Path"
+  IfErrors disnans_pu_too_long disnans_pu_read_ok
+  disnans_pu_read_ok:
+  StrLen $R3 $R5
+  IntCmp $R3 $R2 disnans_pu_have_path disnans_pu_too_long disnans_pu_too_long
+  disnans_pu_have_path:
+  StrCpy $R2 $R5
   !insertmacro DISNANS_FIND $R2 $R0 $R1 disnans_pu_f
   StrCmp $R1 1 disnans_pu_remove disnans_pu_drop
   disnans_pu_remove:
@@ -202,7 +249,11 @@
   System::Call 'user32::SendMessageTimeout(i 0xFFFF, i 0x001A, i 0, t "Environment", i 0x0002, i 5000, *i .r9)'
   DetailPrint "CLI の PATH から外しました: $R0"
   Goto disnans_pu_end
+  disnans_pu_drop:
+  ; 外すものが無い（PATH に無い、または値が無い）。印だけ消す
+  DeleteRegKey HKCU "${DISNANS_CLI_MARK}"
+  Goto disnans_pu_end
   disnans_pu_too_long:
-  DetailPrint "CLI の PATH は外しませんでした（PATH が長すぎます）。印は残しています"
+  DetailPrint "CLI の PATH は外しませんでした（PATH を読めない、または長すぎます）。印は残しています"
   disnans_pu_end:
 !macroend

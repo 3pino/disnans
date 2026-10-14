@@ -166,19 +166,19 @@ jobs:
           # 1. 通常の PATH: 追加され、外すと元に戻る
           Invoke-RoundTrip -expectAdded $true -label '通常の PATH'
 
-          # 2. 長い PATH（NSIS の上限 1024 でも 8192 でも超える 9100 文字）: 1 バイトも変えない
+          # 2. 長い PATH（NSIS の上限 1024 でも 8192 でも超える 9225 文字）: 1 バイトも変えない
           #    NSIS は上限を超えた値を黙って切り詰めるので、切り詰めた PATH に追記すると壊れる。そのための確認
           $original = Get-UserPath
           $originalKind = $null
           try {
             $segment = 'C:\disnans-length-test\padding-entry;'
             $base = if ($original) { ([string]$original).TrimEnd(';') + ';' } else { '' }
-            $pad = $segment * [int][math]::Ceiling(9100 / $segment.Length)
+            $pad = $segment * [int][math]::Ceiling(9225 / $segment.Length)
             $long = ($base + $pad).TrimEnd(';')
-            if ($long.Length -lt 9100) { throw "テスト用の PATH が短すぎます: $($long.Length)" }
+            if ($long.Length -lt 9225) { throw "テスト用の PATH が短すぎます: $($long.Length)" }
             Set-ItemProperty -Path $envKey -Name Path -Value $long -Type ExpandString
             if (-not (Test-SameValue (Get-UserPath) $long)) { throw '長い PATH の設定に失敗しました' }
-            Invoke-RoundTrip -expectAdded $false -label '長い PATH（9100 文字）'
+            Invoke-RoundTrip -expectAdded $false -label '長い PATH（9225 文字）'
           } finally {
             # 元の PATH に戻す（無かったものは無いまま）
             if ($null -eq $original) {
