@@ -403,6 +403,7 @@ declare global {
        * `notify: true` なら、メンションされた人・スレッドの参加者に加えて、投稿した本人にも通知する（API v6）。
        * 通知の文言はボットの名前で作る。省略（`false`）すると通知は送らない
        */
+      /** 失敗が code 'unknown_outcome' のときは送信済みかどうか分からない。再送は plugin が判断する（二重投稿に注意） */
       postMessage(opts: { body: string; threadId?: string | null; name?: string; notify?: boolean }): Promise<void>;
 
       /**

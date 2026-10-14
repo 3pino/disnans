@@ -1,7 +1,7 @@
 use std::{fmt, time::Duration};
 
 use disnans_shared::{Message, User};
-use reqwest::{Client, StatusCode, header::HeaderValue};
+use reqwest::{Client, Method, StatusCode, header::HeaderValue};
 use serde::Deserialize;
 use url::form_urlencoded;
 
@@ -63,7 +63,13 @@ pub(crate) fn is_valid_dev_user(value: &str) -> bool {
 
 pub struct RestClient {
     server: ServerUrl,
+    /// 読取（GET）用。接続を再利用する。
     client: Client,
+    /// 書込用。接続を再利用しない（`pool_max_idle_per_host(0)`）。再利用した接続が切れていたときに
+    /// hyper が同じ要求を送り直す経路に入らないため、非冪等の書込が二重に届かない。
+    write_client: Client,
+    /// 添付のアップロード用。全体の時間制限は付けない（大きいファイルを待つため。中止は呼び出し側）。
+    upload_client: Client,
     dev_user: Option<HeaderValue>,
 }
 
@@ -82,9 +88,24 @@ impl RestClient {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(ClientError::Request)?;
+        let write_client = Client::builder()
+            .timeout(Duration::from_secs(15))
+            .redirect(reqwest::redirect::Policy::none())
+            .pool_max_idle_per_host(0)
+            .build()
+            .map_err(ClientError::Request)?;
+        let upload_client = Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .tcp_keepalive(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
+            .pool_max_idle_per_host(0)
+            .build()
+            .map_err(ClientError::Request)?;
         Ok(Self {
             server,
             client,
+            write_client,
+            upload_client,
             dev_user,
         })
     }
@@ -119,6 +140,29 @@ impl RestClient {
             request = request.header("X-Dev-User", user);
         }
         request
+    }
+
+    /// 書込の準備（開発用ヘッダーを付ける）。自動リトライしない専用クライアントを使う。
+    pub(crate) fn write_request(&self, method: Method, path: &str) -> reqwest::RequestBuilder {
+        self.with_dev_user(
+            self.write_client
+                .request(method, self.server.http_url(path)),
+        )
+    }
+
+    /// 添付のアップロード用の準備（全体の時間制限なし）。
+    pub(crate) fn upload_request(&self, method: Method, path: &str) -> reqwest::RequestBuilder {
+        self.with_dev_user(
+            self.upload_client
+                .request(method, self.server.http_url(path)),
+        )
+    }
+
+    fn with_dev_user(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match &self.dev_user {
+            Some(user) => request.header("X-Dev-User", user),
+            None => request,
+        }
     }
 
     async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, ClientError> {

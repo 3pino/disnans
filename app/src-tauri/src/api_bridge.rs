@@ -1,15 +1,22 @@
-//! GUI の読取 REST を Rust 側で行う IPC（段1）。契約は `.pi/step4-ipc-contract.md`。
+//! GUI の REST を Rust 側で行う IPC（段1: 読取、段2: 書込、段3: アップロード）。契約は `.pi/step4-ipc-contract.md`。
 //!
-//! 任意のパスは受け取らない。コマンドごとに決まった GET だけを行い、書き込みはない。
+//! 任意のパスは受け取らない。コマンドごとに決まったパスだけを行う。
 //! 成功は JSON の値をそのまま返し（再シリアライズしない）、失敗は `{ status?, code, message }`。
-//! 本体は Tauri に依存しない関数（`read_*`）にあり、テストはそちらを呼ぶ。
+//! 書込は自動リトライしない（`RestClient` の書込用クライアントは接続を再利用しない）。
+//! 本体は Tauri に依存しない関数（`read_*` / `write_*` など）にあり、テストはそちらを呼ぶ。
+
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use disnans_client_core::{
-    messages_path, search_path, session_path, thread_path, MessageSearchQuery, MessagesQuery,
-    ReadFailure, RestClient, ServerUrl,
+    MessageSearchQuery, MessagesQuery, ReadFailure, RestClient, ServerUrl, UploadAbortHandle,
+    UploadAbortRegistration, messages_path, search_path, session_path, thread_path,
 };
-use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tauri::ipc::{Channel, InvokeBody, JavaScriptChannelId, Request};
 
 /// 全コマンドに共通の接続先。`server` は GUI の正規化済み URL、`dev_user` は開発用ユーザー（省略可）。
 #[derive(Debug, Clone, Deserialize)]
@@ -55,6 +62,230 @@ pub struct IdArgs {
     #[serde(default)]
     pub dev_user: Option<String>,
     pub id: String,
+}
+
+// ---- 書込（段2）の引数 ----
+
+/// `body` だけを持つ書込（PATCH /api/me など）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BodyArgs {
+    pub server: String,
+    #[serde(default)]
+    pub dev_user: Option<String>,
+    pub body: Value,
+}
+
+/// `id` と `body` を持つ書込（PATCH /api/threads/{id} など）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IdBodyArgs {
+    pub server: String,
+    #[serde(default)]
+    pub dev_user: Option<String>,
+    pub id: String,
+    pub body: Value,
+}
+
+/// タグの置き換え（PUT /api/threads/{id}/tags）。`tags` は配列。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TagsArgs {
+    pub server: String,
+    #[serde(default)]
+    pub dev_user: Option<String>,
+    pub id: String,
+    pub tags: Value,
+}
+
+/// 添付のアバター（PUT /api/me/avatar）。バイト列は raw body、このフィールドは `x-disnans-args` ヘッダー。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AvatarArgs {
+    pub server: String,
+    #[serde(default)]
+    pub dev_user: Option<String>,
+    pub file_name: String,
+    #[serde(default)]
+    pub mime: Option<String>,
+}
+
+/// プラグインの配布（POST /api/plugins）。raw body は `parts` の順に連結したもの。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreatePluginArgs {
+    pub server: String,
+    #[serde(default)]
+    pub dev_user: Option<String>,
+    pub visibility: String,
+    pub parts: Vec<PluginPartArgs>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginPartArgs {
+    pub name: String,
+    pub size: usize,
+}
+
+/// raw body の書込で使うヘッダー（値は `encodeURIComponent(JSON.stringify(args))`）。
+pub const ARGS_HEADER: &str = "x-disnans-args";
+
+/// `x-disnans-args` を読む。無い・壊れている・未知のフィールドがある → `invalid_request`（通信はしない）。
+pub fn decode_header_args<T: DeserializeOwned>(
+    headers: &tauri::http::HeaderMap,
+) -> Result<T, ReadFailure> {
+    let raw = headers
+        .get(ARGS_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| ReadFailure::invalid_request("引数のヘッダーがありません"))?;
+    let json = percent_decode(raw)
+        .ok_or_else(|| ReadFailure::invalid_request("引数のヘッダーが読めません"))?;
+    serde_json::from_str(&json)
+        .map_err(|_| ReadFailure::invalid_request("引数のヘッダーが読めません"))
+}
+
+/// `%XX` だけを戻す（`+` は空白にしない。`encodeURIComponent` は `+` を `%2B` にする）。
+pub fn percent_decode(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = bytes.get(i + 1..i + 3)?;
+            let hex = std::str::from_utf8(hex).ok()?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+// ---- アップロード（段3） ----
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UploadArgs {
+    pub server: String,
+    #[serde(default)]
+    pub dev_user: Option<String>,
+    pub upload_id: String,
+    pub file_name: String,
+    #[serde(default)]
+    pub mime: Option<String>,
+    /// `Channel` の `toJSON()` の値（`__CHANNEL__:N`）。進捗の送り先。
+    pub on_progress: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UploadAbortArgs {
+    pub upload_id: String,
+}
+
+/// 進捗の 1 項目（契約 §10.1）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct UploadItem {
+    pub kind: &'static str,
+    pub loaded: u64,
+    pub total: u64,
+}
+
+/// 進行中のアップロードの中止口。`start` の前に `abort` が届いたら、その ID は開始せず中止にする。
+#[derive(Default)]
+pub struct UploadRegistry {
+    state: Mutex<UploadState>,
+}
+
+#[derive(Default)]
+struct UploadState {
+    active: HashMap<String, UploadAbortHandle>,
+    /// 開始より先に届いた中止（次に同じ ID で始めるものを中止する）。
+    cancelled: HashSet<String>,
+}
+
+/// 開始より先の中止を覚えておく上限（超えたら古いものは忘れる）。
+const MAX_EARLY_ABORTS: usize = 1024;
+
+impl UploadRegistry {
+    fn lock(&self) -> std::sync::MutexGuard<'_, UploadState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 中止口を作って登録する。使用中の ID なら `invalid_request`。先に中止されていれば `aborted`。
+    pub fn start(&self, id: &str) -> Result<UploadAbortRegistration, ReadFailure> {
+        let mut state = self.lock();
+        if state.cancelled.remove(id) {
+            return Err(ReadFailure::aborted());
+        }
+        if state.active.contains_key(id) {
+            return Err(ReadFailure::invalid_request("uploadId が使われています"));
+        }
+        let (handle, registration) = UploadAbortHandle::new_pair();
+        state.active.insert(id.to_owned(), handle);
+        Ok(registration)
+    }
+
+    pub fn finish(&self, id: &str) {
+        self.lock().active.remove(id);
+    }
+
+    pub fn abort(&self, id: &str) {
+        let mut state = self.lock();
+        if let Some(handle) = state.active.get(id) {
+            handle.abort();
+            return;
+        }
+        if state.cancelled.len() >= MAX_EARLY_ABORTS {
+            state.cancelled.clear();
+        }
+        state.cancelled.insert(id.to_owned());
+    }
+}
+
+/// アプリ全体のアップロード（Tauri コマンドはこれを使う）。
+static UPLOADS: LazyLock<UploadRegistry> = LazyLock::new(UploadRegistry::default);
+
+/// 登録を必ず外す（future が途中で捨てられた場合も）。
+struct ActiveUpload<'a> {
+    registry: &'a UploadRegistry,
+    id: &'a str,
+}
+
+impl Drop for ActiveUpload<'_> {
+    fn drop(&mut self) {
+        self.registry.finish(self.id);
+    }
+}
+
+/// アップロード本体。`progress(loaded, total)` を送信のたびに呼ぶ。
+pub async fn upload_file_raw(
+    args: &UploadArgs,
+    data: Arc<Vec<u8>>,
+    progress: Arc<dyn Fn(u64, u64) + Send + Sync>,
+    registry: &UploadRegistry,
+) -> Result<Value, ReadFailure> {
+    let client = client(&args.server, args.dev_user.as_deref())?;
+    let abort = registry.start(&args.upload_id)?;
+    let _active = ActiveUpload {
+        registry,
+        id: &args.upload_id,
+    };
+    let mime = args.mime.as_deref().unwrap_or("application/octet-stream");
+    client
+        .upload_file(data, &args.file_name, mime, progress, abort)
+        .await
+}
+
+/// raw body のバイト列を借りる。JSON で来たら不正。
+pub fn raw_body<'a>(request: &'a Request<'_>) -> Result<&'a [u8], ReadFailure> {
+    match request.body() {
+        InvokeBody::Raw(bytes) => Ok(bytes.as_slice()),
+        InvokeBody::Json(_) => Err(ReadFailure::invalid_request("バイト列の本体が必要です")),
+    }
 }
 
 /// `server` と `devUser` から読取クライアントを作る。通信はまだしない。
@@ -132,6 +363,119 @@ pub async fn read_session(args: &IdArgs) -> Result<Value, ReadFailure> {
     .await
 }
 
+// ---- 書込（段2）の本体 ----
+
+pub async fn update_me(args: &BodyArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .update_me(&args.body)
+        .await
+}
+
+pub async fn clear_avatar(args: &Base) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .clear_avatar()
+        .await
+}
+
+pub async fn set_prefs(args: &BodyArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .set_prefs(&args.body)
+        .await
+}
+
+pub async fn update_thread(args: &IdBodyArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .update_thread(&args.id, &args.body)
+        .await
+}
+
+pub async fn set_thread_tags(args: &TagsArgs) -> Result<Value, ReadFailure> {
+    if !args.tags.is_array() {
+        return Err(ReadFailure::invalid_request("tags は配列にしてください"));
+    }
+    client(&args.server, args.dev_user.as_deref())?
+        .set_thread_tags(&args.id, &args.tags)
+        .await
+}
+
+pub async fn mark_read(args: &BodyArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .mark_read(&args.body)
+        .await
+}
+
+pub async fn update_session(args: &IdBodyArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .update_session(&args.id, &args.body)
+        .await
+}
+
+pub async fn delete_plugin(args: &IdArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .delete_plugin(&args.id)
+        .await
+}
+
+pub async fn sample_notification(args: &Base) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .sample_notification()
+        .await
+}
+
+pub async fn plugin_post_message(args: &IdBodyArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .plugin_post_message(&args.id, &args.body)
+        .await
+}
+
+pub async fn plugin_notify(args: &IdBodyArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .plugin_notify(&args.id, &args.body)
+        .await
+}
+
+pub async fn create_session(args: &BodyArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .create_session(&args.body)
+        .await
+}
+
+pub async fn set_avatar(args: &AvatarArgs, data: &[u8]) -> Result<Value, ReadFailure> {
+    let mime = args.mime.as_deref().unwrap_or("application/octet-stream");
+    client(&args.server, args.dev_user.as_deref())?
+        .set_avatar(data, &args.file_name, mime)
+        .await
+}
+
+/// 配布する。`parts` の `size` の合計が本体の長さと一致しなければ `invalid_request`。
+pub async fn create_plugin(args: &CreatePluginArgs, data: &[u8]) -> Result<Value, ReadFailure> {
+    if args.visibility != "public" && args.visibility != "private" {
+        return Err(ReadFailure::invalid_request(
+            "visibility は public か private です",
+        ));
+    }
+    let mut files = Vec::with_capacity(args.parts.len());
+    let mut offset = 0usize;
+    for part in &args.parts {
+        let end = offset
+            .checked_add(part.size)
+            .ok_or_else(|| ReadFailure::invalid_request("parts の大きさが合いません"))?;
+        if part.name.is_empty() || part.name.contains(['/', '\\']) {
+            return Err(ReadFailure::invalid_request("ファイル名が不正です"));
+        }
+        files.push((part.name.clone(), offset..end));
+        offset = end;
+    }
+    if offset != data.len() {
+        return Err(ReadFailure::invalid_request(
+            "parts の大きさが本体と合いません",
+        ));
+    }
+    client(&args.server, args.dev_user.as_deref())?
+        .create_plugin(&args.visibility, data, &files)
+        .await
+}
+
 // ---- Tauri コマンド（引数は 1 つの `args` オブジェクト。薄いラッパー） ----
 
 #[tauri::command]
@@ -187,6 +531,110 @@ pub async fn api_plugins(args: Base) -> Result<Value, ReadFailure> {
 #[tauri::command]
 pub async fn api_session(args: IdArgs) -> Result<Value, ReadFailure> {
     read_session(&args).await
+}
+
+/// 添付（raw body）。メタは `x-disnans-args`。進捗は `onProgress` の Channel に送る。
+#[tauri::command]
+pub async fn api_upload_file(
+    webview: tauri::Webview,
+    request: Request<'_>,
+) -> Result<Value, ReadFailure> {
+    let args: UploadArgs = decode_header_args(request.headers())?;
+    let channel: Channel<UploadItem> = JavaScriptChannelId::from_str(&args.on_progress)
+        .map_err(|_| ReadFailure::invalid_request("進捗の送り先が不正です"))?
+        .channel_on(webview);
+    let data = Arc::new(raw_body(&request)?.to_vec());
+    let progress: Arc<dyn Fn(u64, u64) + Send + Sync> = Arc::new(move |loaded, total| {
+        let _ = channel.send(UploadItem {
+            kind: "progress",
+            loaded,
+            total,
+        });
+    });
+    upload_file_raw(&args, data, progress, &UPLOADS).await
+}
+
+/// 中止（通信はしない）。使われていない ID への中止は、後から始まるその ID を中止する。
+#[tauri::command]
+pub fn api_upload_abort(args: UploadAbortArgs) -> Result<Value, ReadFailure> {
+    UPLOADS.abort(&args.upload_id);
+    Ok(Value::Null)
+}
+
+#[tauri::command]
+pub async fn api_update_me(args: BodyArgs) -> Result<Value, ReadFailure> {
+    update_me(&args).await
+}
+
+#[tauri::command]
+pub async fn api_clear_avatar(args: Base) -> Result<Value, ReadFailure> {
+    clear_avatar(&args).await
+}
+
+#[tauri::command]
+pub async fn api_set_prefs(args: BodyArgs) -> Result<Value, ReadFailure> {
+    set_prefs(&args).await
+}
+
+#[tauri::command]
+pub async fn api_update_thread(args: IdBodyArgs) -> Result<Value, ReadFailure> {
+    update_thread(&args).await
+}
+
+#[tauri::command]
+pub async fn api_set_thread_tags(args: TagsArgs) -> Result<Value, ReadFailure> {
+    set_thread_tags(&args).await
+}
+
+#[tauri::command]
+pub async fn api_mark_read(args: BodyArgs) -> Result<Value, ReadFailure> {
+    mark_read(&args).await
+}
+
+#[tauri::command]
+pub async fn api_update_session(args: IdBodyArgs) -> Result<Value, ReadFailure> {
+    update_session(&args).await
+}
+
+#[tauri::command]
+pub async fn api_delete_plugin(args: IdArgs) -> Result<Value, ReadFailure> {
+    delete_plugin(&args).await
+}
+
+#[tauri::command]
+pub async fn api_sample_notification(args: Base) -> Result<Value, ReadFailure> {
+    sample_notification(&args).await
+}
+
+#[tauri::command]
+pub async fn api_plugin_post_message(args: IdBodyArgs) -> Result<Value, ReadFailure> {
+    plugin_post_message(&args).await
+}
+
+#[tauri::command]
+pub async fn api_plugin_notify(args: IdBodyArgs) -> Result<Value, ReadFailure> {
+    plugin_notify(&args).await
+}
+
+#[tauri::command]
+pub async fn api_create_session(args: BodyArgs) -> Result<Value, ReadFailure> {
+    create_session(&args).await
+}
+
+/// raw body（バイト列）。メタは `x-disnans-args` ヘッダー。
+#[tauri::command]
+pub async fn api_set_avatar(request: Request<'_>) -> Result<Value, ReadFailure> {
+    let args: AvatarArgs = decode_header_args(request.headers())?;
+    let data = raw_body(&request)?;
+    set_avatar(&args, data).await
+}
+
+/// raw body（`parts` の順に連結したバイト列）。メタは `x-disnans-args` ヘッダー。
+#[tauri::command]
+pub async fn api_create_plugin(request: Request<'_>) -> Result<Value, ReadFailure> {
+    let args: CreatePluginArgs = decode_header_args(request.headers())?;
+    let data = raw_body(&request)?;
+    create_plugin(&args, data).await
 }
 
 #[cfg(test)]
@@ -302,5 +750,248 @@ mod tests {
         );
         assert!(serde_json::from_str::<SearchArgs>(r#"{"server":"http://a","x":1}"#).is_err());
         assert!(serde_json::from_str::<IdArgs>(r#"{"server":"http://a"}"#).is_err());
+    }
+
+    fn encoded_args(json: &str) -> tauri::http::HeaderMap {
+        let mut headers = tauri::http::HeaderMap::new();
+        let value: String = json
+            .bytes()
+            .map(|b| {
+                if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+                    (b as char).to_string()
+                } else {
+                    format!("%{b:02X}")
+                }
+            })
+            .collect();
+        headers.insert(ARGS_HEADER, value.parse().unwrap());
+        headers
+    }
+
+    #[test]
+    fn percent_decode_restores_utf8_and_keeps_plus() {
+        assert_eq!(percent_decode("%E6%97%A5+x%20y").as_deref(), Some("日+x y"));
+        assert_eq!(percent_decode("%ZZ"), None);
+        assert_eq!(percent_decode("%4"), None);
+    }
+
+    #[test]
+    fn header_args_accept_encoded_japanese_and_reject_unknown_fields() {
+        let headers = encoded_args(
+            r#"{"server":"http://a","devUser":null,"fileName":"写真 1.png","mime":null}"#,
+        );
+        let args: AvatarArgs = decode_header_args(&headers).unwrap();
+        assert_eq!(args.file_name, "写真 1.png");
+        assert!(args.mime.is_none());
+
+        let headers = encoded_args(r#"{"server":"http://a","fileName":"x","extra":1}"#);
+        let failure = decode_header_args::<AvatarArgs>(&headers).unwrap_err();
+        assert_eq!(failure.code, "invalid_request");
+
+        let failure = decode_header_args::<AvatarArgs>(&tauri::http::HeaderMap::new()).unwrap_err();
+        assert_eq!(failure.code, "invalid_request");
+    }
+
+    #[tokio::test]
+    async fn json_write_uses_patch_and_encodes_the_plugin_id() {
+        let (server, task) = one_shot("200 OK", r#"{"id":"u1"}"#).await;
+        let value = update_me(&BodyArgs {
+            server,
+            dev_user: Some("alice".into()),
+            body: serde_json::json!({"display_name": "A"}),
+        })
+        .await
+        .unwrap();
+        assert_eq!(value["id"], "u1");
+        assert_eq!(task.await.unwrap(), "PATCH /api/me HTTP/1.1");
+
+        let (server, task) = one_shot("204 No Content", "").await;
+        let value = delete_plugin(&IdArgs {
+            server,
+            dev_user: None,
+            id: "a/b".into(),
+        })
+        .await
+        .unwrap();
+        assert_eq!(value, Value::Null);
+        assert_eq!(task.await.unwrap(), "DELETE /api/plugins/a%2Fb HTTP/1.1");
+    }
+
+    #[tokio::test]
+    async fn tags_must_be_an_array_before_any_request() {
+        let failure = set_thread_tags(&TagsArgs {
+            server: "http://127.0.0.1:9".into(),
+            dev_user: None,
+            id: "t1".into(),
+            tags: serde_json::json!("not-an-array"),
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(failure.code, "invalid_request");
+        assert_eq!(failure.status, None);
+    }
+
+    #[tokio::test]
+    async fn plugin_parts_must_add_up_to_the_body_before_any_request() {
+        let args = CreatePluginArgs {
+            server: "http://127.0.0.1:9".into(),
+            dev_user: None,
+            visibility: "public".into(),
+            parts: vec![PluginPartArgs {
+                name: "manifest.json".into(),
+                size: 3,
+            }],
+        };
+        let failure = create_plugin(&args, b"abcd").await.unwrap_err();
+        assert_eq!(failure.code, "invalid_request");
+
+        let args = CreatePluginArgs {
+            visibility: "everyone".into(),
+            ..args
+        };
+        let failure = create_plugin(&args, b"abc").await.unwrap_err();
+        assert_eq!(failure.code, "invalid_request");
+
+        let args = CreatePluginArgs {
+            visibility: "public".into(),
+            parts: vec![PluginPartArgs {
+                name: "../x".into(),
+                size: 3,
+            }],
+            ..args
+        };
+        let failure = create_plugin(&args, b"abc").await.unwrap_err();
+        assert_eq!(failure.code, "invalid_request");
+    }
+
+    #[tokio::test]
+    async fn avatar_is_sent_as_one_multipart_file_part() {
+        let (server, task) = one_shot("200 OK", r#"{"id":"u1"}"#).await;
+        let args = AvatarArgs {
+            server,
+            dev_user: None,
+            file_name: "avatar.webp".into(),
+            mime: Some("image/webp".into()),
+        };
+        set_avatar(&args, b"WEBP").await.unwrap();
+        assert_eq!(task.await.unwrap(), "PUT /api/me/avatar HTTP/1.1");
+    }
+
+    fn upload_args(server: &str, upload_id: &str) -> UploadArgs {
+        UploadArgs {
+            server: server.to_owned(),
+            dev_user: None,
+            upload_id: upload_id.to_owned(),
+            file_name: "a.txt".into(),
+            mime: None,
+            on_progress: "__CHANNEL__:1".into(),
+        }
+    }
+
+    fn no_progress() -> Arc<dyn Fn(u64, u64) + Send + Sync> {
+        Arc::new(|_, _| {})
+    }
+
+    #[test]
+    fn upload_registry_rejects_duplicates_and_releases_on_finish() {
+        let registry = UploadRegistry::default();
+        let _first = registry.start("u1").unwrap();
+        assert_eq!(registry.start("u1").unwrap_err().code, "invalid_request");
+        registry.finish("u1");
+        assert!(registry.start("u1").is_ok());
+    }
+
+    #[test]
+    fn abort_before_start_cancels_the_next_start_of_that_id() {
+        let registry = UploadRegistry::default();
+        registry.abort("early");
+        assert_eq!(registry.start("early").unwrap_err().code, "aborted");
+        // 一度だけ効く。次は普通に始まる
+        assert!(registry.start("early").is_ok());
+    }
+
+    #[tokio::test]
+    async fn upload_sends_the_bytes_and_returns_the_attachment() {
+        let (server, task) = one_shot("200 OK", r#"{"id":"f1","file_name":"a.txt"}"#).await;
+        let registry = UploadRegistry::default();
+        let value = upload_file_raw(
+            &upload_args(&server, "u-ok"),
+            Arc::new(b"hello".to_vec()),
+            no_progress(),
+            &registry,
+        )
+        .await
+        .unwrap();
+        assert_eq!(value["id"], "f1");
+        assert_eq!(task.await.unwrap(), "POST /api/files HTTP/1.1");
+        // 終わったので同じ ID を再び使える
+        assert!(registry.start("u-ok").is_ok());
+    }
+
+    #[tokio::test]
+    async fn abort_before_start_fails_without_any_request() {
+        // 接続先に誰もいない。中止されていれば接続しに行かない（network にならない）
+        let registry = UploadRegistry::default();
+        registry.abort("u-early");
+        let failure = upload_file_raw(
+            &upload_args("http://127.0.0.1:9", "u-early"),
+            Arc::new(vec![1, 2, 3]),
+            no_progress(),
+            &registry,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(failure.code, "aborted");
+    }
+
+    #[tokio::test]
+    async fn invalid_server_releases_nothing_and_registers_nothing() {
+        let registry = UploadRegistry::default();
+        let failure = upload_file_raw(
+            &upload_args("ftp://example.invalid", "u-bad"),
+            Arc::new(vec![1]),
+            no_progress(),
+            &registry,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(failure.code, "invalid_request");
+        assert!(registry.start("u-bad").is_ok());
+    }
+
+    #[tokio::test]
+    async fn abort_during_upload_ends_it_and_frees_the_id() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        // 本体を読んで、応答せずに待つ
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0; 65536];
+            loop {
+                if socket.read(&mut buf).await.unwrap_or(0) == 0 {
+                    break;
+                }
+            }
+        });
+        let registry = std::sync::Arc::new(UploadRegistry::default());
+        let task_registry = registry.clone();
+        let task = tokio::spawn(async move {
+            upload_file_raw(
+                &upload_args(&format!("http://{address}"), "u-live"),
+                Arc::new(vec![5u8; 4096]),
+                no_progress(),
+                &task_registry,
+            )
+            .await
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        registry.abort("u-live");
+        let failure = tokio::time::timeout(std::time::Duration::from_secs(5), task)
+            .await
+            .expect("abort should end the upload")
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(failure.code, "aborted");
+        assert!(registry.start("u-live").is_ok());
     }
 }

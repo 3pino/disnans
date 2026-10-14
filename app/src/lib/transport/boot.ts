@@ -4,6 +4,7 @@ import { getItem } from '../storage';
 import { CHAT_RUST_FLAG, RUST_API_FLAG, selectChatMode, selectReadApi, type ReadApiChoice, type ReadApiEnv } from './select';
 import type { ChatTransport } from './chat';
 import { createTauriChatTransport } from './tauriChat';
+import { selectWriteApi, type WriteApiChoice } from './select';
 import { tauriInvoke } from './tauri';
 import type { BridgeContext } from './types';
 
@@ -23,6 +24,11 @@ export function currentBootEnv(): ReadApiEnv {
 /** api.ts の読み込み時に1回だけ呼ぶ */
 export function bootReadApi(env: ReadApiEnv = currentBootEnv()): ReadApiChoice {
   return selectReadApi(env);
+}
+
+/** api.ts の読み込み時に1回だけ呼ぶ（書込と添付） */
+export function bootWriteApi(env: ReadApiEnv = currentBootEnv()): WriteApiChoice {
+  return selectWriteApi(env);
 }
 
 /** チャットの経路を決める（rust のとき Tauri 実装、js のとき null）。client.start() で1回だけ呼ぶ */

@@ -4,12 +4,12 @@ import type { ChatItem, ChatTransport, MessageDraft, SendOutcome } from './chat'
 import type { ApiBridgeError, BridgeContext, Invoke } from './types';
 
 /** Tauri の Channel と同じ形（テストでは差し替える） */
-export type ChannelLike<T> = { onmessage: (item: T) => void };
+export type ChannelLike<T> = { onmessage: (item: T) => void; toJSON?: () => string };
 
 /** `@tauri-apps/api/core` の Channel（遅延 import。Tauri 以外では呼ばれない） */
-async function defaultChannel(): Promise<ChannelLike<ChatItem>> {
+export async function defaultChannel<T>(): Promise<ChannelLike<T>> {
   const { Channel } = await import('@tauri-apps/api/core');
-  return new Channel<ChatItem>();
+  return new Channel<T>();
 }
 
 /**

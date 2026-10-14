@@ -4,12 +4,12 @@ import { createTauriReadApi, toBridgeError } from './tauri';
 import { selectReadApi } from './select';
 import type { Invoke } from './types';
 
-type Call = { command: string; args?: Record<string, unknown> };
+type Call = { command: string; args?: Record<string, unknown> | Uint8Array; options?: unknown };
 
 function recorder(reply: (command: string) => unknown = () => null) {
   const calls: Call[] = [];
-  const invoke: Invoke = async <T>(command: string, args?: Record<string, unknown>) => {
-    calls.push({ command, args });
+  const invoke: Invoke = async <T>(command: string, args?: Record<string, unknown> | Uint8Array, options?: unknown) => {
+    calls.push({ command, args, options });
     const r = reply(command);
     if (r instanceof Error) throw r;
     return r as T;
@@ -98,7 +98,7 @@ describe('Tauri read transport', () => {
     await api.me();
     server = 'http://b';
     await api.me();
-    expect(r.calls.map((c) => (c.args?.args as { server: string }).server)).toEqual(['http://a', 'http://b']);
+    expect(r.calls.map((c) => ((c.args as Record<string, unknown>)?.args as { server: string }).server)).toEqual(['http://a', 'http://b']);
   });
 
   it('turns a bridge rejection into an HttpError (status, code, message)', async () => {

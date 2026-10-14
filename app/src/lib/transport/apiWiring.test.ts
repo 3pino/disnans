@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bootReadApi, currentBootEnv } from './boot';
+import { bootReadApi, bootWriteApi, currentBootEnv } from './boot';
 import { createHttpReadApi } from './http';
 
 // 起動時の経路の決め方（api.ts は bootReadApi() の結果を読み込み時に1回だけ使う）。
@@ -91,5 +91,34 @@ describe('boot-time read transport choice', () => {
     stubBrowser({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
     await createHttpReadApi().me();
     expect(fetchCalls).toEqual(['http://127.0.0.1:8080/api/me']);
+  });
+});
+
+describe('boot-time write transport choice (follows the same rule as reads)', () => {
+  function bootWrite(env: Env) {
+    stubBrowser(env);
+    return bootWriteApi({ ...currentBootEnv(), invoke: invoke as never });
+  }
+
+  it('Windows/Linux Tauri: Rust by default, and "0" gives HTTP', () => {
+    expect(bootWrite({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('tauri');
+    expect(bootWrite({ ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', tauri: true }).kind).toBe('tauri');
+    expect(bootWrite({ flag: '0', ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
+  });
+
+  it('macOS and the browser keep HTTP, even with a flag of "1"', () => {
+    expect(bootWrite({ ua: MAC, tauri: true }).kind).toBe('http');
+    expect(bootWrite({ flag: '1', ua: LINUX, tauri: false }).kind).toBe('http');
+  });
+
+  it('the Rust write goes through invoke, and the HTTP write does not', async () => {
+    const rust = bootWrite({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
+    await rust.write.clearAvatar();
+    expect(invoke).toHaveBeenCalledWith('api_clear_avatar', expect.anything());
+    const http = bootWrite({ flag: '0', ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
+    invoke.mockClear();
+    await http.write.clearAvatar();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(fetchCalls[0]).toContain('/api/me/avatar');
   });
 });

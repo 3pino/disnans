@@ -1,5 +1,7 @@
 import { createHttpReadApi } from './http';
 import { createTauriReadApi } from './tauri';
+import { createHttpWriteApi, createTauriWriteApi, type WriteApi } from './write';
+import { createHttpUploadApi, createTauriUploadApi, type UploadApi } from './upload';
 import type { BridgeContext, Invoke, ReadApi } from './types';
 
 /**
@@ -38,6 +40,20 @@ export function selectReadApi(env: ReadApiEnv): ReadApiChoice {
       ? { kind: 'tauri', api: createTauriReadApi(env.invoke, env.context) }
       : { kind: 'http', api: createHttpReadApi() };
   env.log?.(`[disnans] api read transport: ${choice.kind}`);
+  return choice;
+}
+
+export type WriteApiChoice = { kind: 'http' | 'tauri'; write: WriteApi; upload: UploadApi };
+
+/**
+ * 書込（と添付のアップロード）の経路。読取と同じ判定（rustEnabled）。boot 時に1回だけ決める。
+ * 読取と書込は別々に決めるが、同じ localStorage の値と同じ実行環境から決まるので常に揃う。
+ */
+export function selectWriteApi(env: ReadApiEnv): WriteApiChoice {
+  const choice: WriteApiChoice = rustEnabled(env.flag, env.desktop)
+    ? { kind: 'tauri', write: createTauriWriteApi(env.invoke, env.context), upload: createTauriUploadApi(env.invoke, env.context) }
+    : { kind: 'http', write: createHttpWriteApi(), upload: createHttpUploadApi() };
+  env.log?.(`[disnans] api write transport: ${choice.kind}`);
   return choice;
 }
 

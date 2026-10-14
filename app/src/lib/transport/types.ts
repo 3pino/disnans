@@ -27,8 +27,14 @@ export interface ReadApi {
 /** Tauri コマンドが reject する値（契約: .pi/step4-ipc-contract.md §5） */
 export type ApiBridgeError = { status?: number; code: string; message: string };
 
-/** Tauri の `invoke` と同じ形（テストで差し替える） */
-export type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+/** IPC のヘッダー（raw body の付随情報。値は encodeURIComponent 済みの文字列にする） */
+export type InvokeOptions = { headers?: Record<string, string> };
+
+/**
+ * Tauri の `invoke` と同じ形（テストで差し替える）。
+ * args が Uint8Array のときは raw body として送る（添付・アバターのバイト列）。その場合の付随情報は options.headers。
+ */
+export type Invoke = <T>(command: string, args?: Record<string, unknown> | Uint8Array, options?: InvokeOptions) => Promise<T>;
 
 /** 呼び出しごとに評価する接続情報（server は applyServerUrl 後の値、devUser は起動時に決まる値） */
 export type BridgeContext = { server: () => string; devUser: string | null };

@@ -1,10 +1,12 @@
 import { HttpError } from './http';
-import type { ApiBridgeError, BridgeContext, Invoke, ReadApi } from './types';
+import type { InvokeArgs, InvokeOptions as TauriInvokeOptions } from '@tauri-apps/api/core';
+import type { ApiBridgeError, BridgeContext, Invoke, InvokeOptions, ReadApi } from './types';
 
 /** `@tauri-apps/api/core` を使う invoke（遅延 import。Tauri 以外では呼ばれない） */
-export const tauriInvoke: Invoke = async <T>(command: string, args?: Record<string, unknown>) => {
+export const tauriInvoke: Invoke = async <T>(command: string, args?: Record<string, unknown> | Uint8Array, options?: InvokeOptions) => {
   const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<T>(command, args);
+  // Tauri の型は headers を HeadersInit で受ける。ここでは Record<string, string> だけを渡す
+  return invoke<T>(command, args as InvokeArgs | undefined, options as TauriInvokeOptions | undefined);
 };
 
 /** Tauri コマンドの reject 値を、従来の HttpError と同じ形にする */

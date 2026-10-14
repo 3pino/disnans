@@ -235,7 +235,7 @@ app/node_modules/.bin/tsc -p examples/dice
 | `session.update(state, { card })` / `session.onChange(cb)` | 楽観ロック付きの保存、変更の購読 |
 | `session.emit(name, payload)` / `session.on(name, cb)` | 保存しない一時的なイベント |
 | `this.notify(userIds, text, { session })` | 通知 |
-| `this.postMessage({ body, threadId?, name?, notify? })` | ボットとしてメッセージを投稿する（v5）。投稿者は自分のままで、名前は `name`（省略するとプラグインの名前）。`notify: true`（v6）なら、通常の宛先に加えて投稿した本人にも通知が届く（文言はボットの名前）。省略すると通知は送らない。例: `examples/bot` |
+| `this.postMessage({ body, threadId?, name?, notify? })` | ボットとしてメッセージを投稿する（v5）。投稿者は自分のままで、名前は `name`（省略するとプラグインの名前）。`notify: true`（v6）なら、通常の宛先に加えて投稿した本人にも通知が届く（文言はボットの名前）。省略すると通知は送らない。例: `examples/bot`。失敗が `unknown_outcome` のときは送信済みかどうか分からない。再送は plugin が判断する（二重投稿に注意） |
 | `this.openSettings()` | このプラグインの設定画面を開く（v6）。設定タブに切り替える |
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント（v3）。いまつながっている人に届く |
 | `this.addStatusBarItem()` | 常時表示のステータス欄（画面上部の枠。通話のバーと同じ）に出す要素（v3） |

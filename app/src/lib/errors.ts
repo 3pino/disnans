@@ -19,6 +19,7 @@ const MESSAGES: Record<string, string> = {
   invalid_display_name: '表示名は1〜32文字にしてください',
   invalid_upload: 'アップロードに失敗しました',
   missing_file: 'ファイルがありません',
+  unknown_outcome: '結果を確認できませんでした。二重投稿を防ぐため自動では再送していません',
 };
 
 export function errorText(code: string, fallback: string): string {
