@@ -17,7 +17,13 @@
 {#if show}
   <div class="connection-banner" role="status">
     <WifiOff size={15} />
-    <span class="connection-banner-text">{client.ready ? 'サーバーとの接続が切れました。再接続しています…' : 'サーバーに接続しています…'}</span>
+    <span class="connection-banner-text"
+      >{client.chatDown
+        ? 'チャットに接続できません。30秒ごとに再試行しています'
+        : client.ready
+          ? 'サーバーとの接続が切れました。再接続しています…'
+          : 'サーバーに接続しています…'}</span
+    >
     <button type="button" class="connection-banner-reconnect" onclick={() => client.reconnect()}>今すぐ再接続</button>
   </div>
 {/if}

@@ -23,6 +23,8 @@ import { reply } from './reply.svelte';
 type Listener = (ev: ServerEvent) => void;
 
 const MAIN = '__main__';
+/** 接続できないとき、チャットを再試行する間隔（JS Socket の再接続の上限と同じ） */
+const CHAT_RETRY_MS = 30_000;
 
 class Client {
   me = $state<User | null>(null);
@@ -42,6 +44,13 @@ class Client {
   private chatState: 'idle' | 'starting' | 'started' | 'failed' = 'idle';
   /** Rust 経路で、いま有効な接続の世代（古い項目は捨てる） */
   private chatGeneration = 0;
+  /** Rust 経路で、チャットに接続できていない（終端の失敗のあと、一定間隔で再試行する） */
+  chatDown = $state(false);
+  private chatRetry: ReturnType<typeof setTimeout> | null = null;
+  /** この不通の間に toast 済みか（再試行のたびに toast しないため） */
+  private chatToasted = false;
+  /** 送信中の chat_emit の概算バイト数（bufferedAmount の近似に使う） */
+  private chatEmitBytes = 0;
 
   get userList(): User[] {
     return Object.values(this.users).sort((a, b) => a.display_name.localeCompare(b.display_name, 'ja'));
@@ -72,7 +81,10 @@ class Client {
     this.socket?.reconnectNow();
     if (!this.chat) return;
     if (this.chatState === 'started') void this.chat.reconnect().catch((e) => this.chatFailed(e));
-    else if (this.chatState !== 'starting') void this.startChat();
+    else if (this.chatState !== 'starting') {
+      this.clearChatRetry();
+      void this.startChat();
+    }
   }
 
   /** 生のサーバーイベントを購読する（プラグインのホストが使う） */
@@ -98,16 +110,23 @@ class Client {
 
   /** chat_emit で送る。失敗は toast（自動では再送しない。押し直しは利用者） */
   private async emitChat(chat: ChatTransport, ev: ChatEmitEvent): Promise<void> {
+    const size = JSON.stringify(ev).length;
+    this.chatEmitBytes += size;
     try {
       await chat.emit(ev);
     } catch (e) {
       ui.toast(emitFailureText(e), 'error');
+    } finally {
+      this.chatEmitBytes -= size;
     }
   }
 
-  /** WebSocket でまだ送り出せていないバイト数（通話の映像の間引きに使う） */
+  /**
+   * まだ送り出せていないバイト数（通話の映像の間引きに使う）。
+   * 通話の音声は JS Socket から出るので、その bufferedAmount。Rust 経路の chat_emit は送信中のぶんを足す（概算）
+   */
   get sendBuffered(): number {
-    return this.socket?.bufferedAmount ?? 0;
+    return (this.socket?.bufferedAmount ?? 0) + this.chatEmitBytes;
   }
 
   timeline(threadId: string | null): Timeline {
@@ -317,19 +336,43 @@ class Client {
     try {
       await chat.start((item) => this.onChatItem(item));
       if (this.chatState === 'starting') this.chatState = 'started';
+      this.chatDown = false;
+      this.chatToasted = false;
     } catch (e) {
       this.chatFailed(e);
     }
   }
 
-  private chatFailed(e: unknown): void {
+  /** 接続できない（終端の失敗を含む）。最初の1回だけ toast し、以後は CHAT_RETRY_MS ごとに再試行する */
+  private chatFailed(e: unknown, prefix = 'チャットに接続できませんでした'): void {
     this.chatState = 'failed';
+    this.chatDown = true;
     this.status = 'closed';
-    ui.toast(`チャットに接続できませんでした: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    if (!this.chatToasted) {
+      this.chatToasted = true;
+      ui.toast(`${prefix}: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+    this.scheduleChatRetry();
+  }
+
+  private scheduleChatRetry(): void {
+    this.clearChatRetry();
+    this.chatRetry = setTimeout(() => {
+      this.chatRetry = null;
+      if (this.chatState === 'failed') void this.startChat();
+    }, CHAT_RETRY_MS);
+  }
+
+  private clearChatRetry(): void {
+    if (this.chatRetry) clearTimeout(this.chatRetry);
+    this.chatRetry = null;
   }
 
   private onChatItem(item: ChatItem): void {
     this.chatState = 'started';
+    this.chatDown = false;
+    this.chatToasted = false;
+    this.clearChatRetry();
     switch (item.kind) {
       case 'connecting':
         this.status = 'connecting';
@@ -352,9 +395,7 @@ class Client {
         this.status = 'closed';
         break;
       case 'failed':
-        this.chatState = 'failed';
-        this.status = 'closed';
-        ui.toast(`チャットの接続が止まりました: ${item.reason}`, 'error');
+        this.chatFailed(item.reason, 'チャットの接続が止まりました');
         break;
     }
   }

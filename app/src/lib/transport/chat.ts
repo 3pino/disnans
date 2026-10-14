@@ -39,13 +39,34 @@ export type MessageDraft = {
   silent: boolean;
 };
 
-/** 書込のうち ack のない5種（契約 §8.6）。Rust の chat_emit で送る */
+/**
+ * Rust の chat_emit で送る書込（契約 §8.6）。サーバーは ack を返さない。
+ * 通話の join / leave / update / kick は含めない: サーバーは通話の参加者を「送った接続」で覚えていて、
+ * 音声（call.emit）はその接続から出す必要がある。音声は JS Socket のままなので、参加も JS Socket に残す。
+ */
 export type ChatEmitEvent = Extract<
   ClientEvent,
-  { type: 'message.edit' | 'message.delete' | 'reaction.add' | 'reaction.remove' | 'thread.create' }
+  {
+    type:
+      | 'message.edit'
+      | 'message.delete'
+      | 'reaction.add'
+      | 'reaction.remove'
+      | 'thread.create'
+      | 'session.emit'
+      | 'plugin.emit';
+  }
 >;
 
-const CHAT_EMIT_TYPES: ReadonlySet<string> = new Set(['message.edit', 'message.delete', 'reaction.add', 'reaction.remove', 'thread.create']);
+const CHAT_EMIT_TYPES: ReadonlySet<string> = new Set([
+  'message.edit',
+  'message.delete',
+  'reaction.add',
+  'reaction.remove',
+  'thread.create',
+  'session.emit',
+  'plugin.emit',
+]);
 
 /** この書込がチャット（Rust）経路で送るものか */
 export function isChatEmit(ev: ClientEvent): ev is ChatEmitEvent {
@@ -56,7 +77,7 @@ export function isChatEmit(ev: ClientEvent): ev is ChatEmitEvent {
 export type ChatCommandError = { code: 'not_connected' | 'write_failed' | 'send_not_allowed' | 'invalid_request'; message: string };
 
 export interface ChatTransport {
-  /** 1回だけ。最初の接続が成功するまで返らない（失敗は reject。その場合セッションは作られていない） */
+  /** 最初の接続が成功するまで返らない（失敗は reject。その場合セッションは作られていない）。失敗のあとに呼び直してよい */
   start(onItem: (item: ChatItem) => void): Promise<void>;
   /** 結果は必ず SendOutcome で返る（reject しない。書込前の失敗は notSent） */
   send(draft: MessageDraft): Promise<SendOutcome>;
@@ -77,7 +98,15 @@ export const CHAT_EVENT_TYPES: ReadonlySet<string> = new Set([
   'user.updated',
   'notify',
   'read.updated',
+  // セッション・プラグイン・設定（送信は chat_emit。受信は Rust の stream が正）
+  'session.updated',
+  'session.event',
+  'plugin.updated',
+  'plugin.removed',
+  'plugin.event',
+  'prefs.updated',
 ]);
+// 通話（call.*）は JS Socket だけで受け取る（参加者の登録がその接続にあるため。上の ChatEmitEvent の注釈を参照）
 
 /** plugin 送信 / 通話などの生の ClientEvent から、チャット系の送信だけを取り出す */
 export type ChatSendEvent = Extract<ClientEvent, { type: 'message.send' }>;

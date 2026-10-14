@@ -30,16 +30,19 @@ class FakeChat implements ChatTransport {
   push(item: ChatItem) {
     this.onItem?.(item);
   }
-  /** chat_emit（送信のみ。成功は null、失敗は emitError を投げる） */
+  /** chat_emit（送信のみ。成功は null、失敗は emitError を投げる。emitHold があれば、それが解決するまで待つ） */
   emits: unknown[] = [];
   emitError: unknown = null;
+  emitHold: Promise<void> | null = null;
   async emit(event: unknown): Promise<void> {
     this.emits.push(event);
+    if (this.emitHold) await this.emitHold;
     if (this.emitError) throw this.emitError;
   }
 }
 
 class FakeSocket {
+  static OPEN = 1;
   static instances: FakeSocket[] = [];
   readyState = 0;
   bufferedAmount = 0;
@@ -143,7 +146,7 @@ describe('chat over Rust: receiving', () => {
     chat.push({ kind: 'event', generation: 1, event: { type: 'prefs.updated', prefs: {} } });
     chat.push({ kind: 'event', generation: 1, event: { type: 'call.state', members: [] } as unknown as ServerEvent });
     chat.push({ kind: 'event', generation: 1, event: { type: 'user.updated', user: BOB } });
-    expect(seen).toEqual(['user.updated']);
+    expect(seen).toEqual(['prefs.updated', 'user.updated']);
   });
 
   it('drops items from an older generation', () => {
@@ -384,6 +387,83 @@ describe('chat over Rust: start and reconnect', () => {
       await flush();
       expect(chat.emits).toHaveLength(1);
       expect(ui.toasts.at(-1)?.text).toContain('送信できたか確認できません');
+    });
+  });
+
+  describe('chat over Rust: routing, duplicate prevention, buffering, retry (S1/S2)', () => {
+    beforeEach(() => {
+      socket().open();
+    });
+
+    it('session.emit and plugin.emit go through chat_emit; call.* and ping stay on the JS socket', () => {
+      client.send({ type: 'session.emit', session_id: 's1', name: 'n', payload: null });
+      client.send({ type: 'plugin.emit', plugin: 'p', name: 'n', payload: null });
+      client.send({ type: 'call.join', peer: 'bob', status: null } as unknown as ClientEvent);
+      client.send({ type: 'call.emit', name: 'audio', payload: null } as unknown as ClientEvent);
+      client.send({ type: 'call.leave' } as unknown as ClientEvent);
+      client.send({ type: 'ping' } as ClientEvent);
+      expect(chat.emits.map((e) => (e as { type: string }).type)).toEqual(['session.emit', 'plugin.emit']);
+      const sent = socket().sentTypes();
+      for (const t of ['call.join', 'call.emit', 'call.leave', 'ping']) expect(sent).toContain(t);
+      expect(sent).not.toContain('session.emit');
+      expect(sent).not.toContain('plugin.emit');
+    });
+
+    it('a Rust-owned event that also arrives on the JS socket is handled once (from Rust)', () => {
+      const seen: string[] = [];
+      client.subscribe((ev) => seen.push(ev.type));
+      const ev = { type: 'session.updated', session: {} } as unknown as ServerEvent;
+      chat.push({ kind: 'event', generation: 1, event: ev });
+      socket().receive(ev);
+      socket().receive({ type: 'plugin.event', plugin: 'p', from: 'bob', name: 'n', payload: null } as unknown as ServerEvent);
+      socket().receive({ type: 'prefs.updated', prefs: {} } as unknown as ServerEvent);
+      expect(seen).toEqual(['session.updated']);
+    });
+
+    it('call events are received only from the JS socket (no double delivery)', () => {
+      const seen: string[] = [];
+      client.subscribe((ev) => seen.push(ev.type));
+      socket().receive({ type: 'call.event', peer: 'p', from: 'bob', name: 'audio', payload: null } as unknown as ServerEvent);
+      chat.push({ kind: 'event', generation: 1, event: { type: 'call.event', peer: 'p', from: 'bob', name: 'audio', payload: null } as unknown as ServerEvent });
+      expect(seen).toEqual(['call.event']);
+    });
+
+    it('sendBuffered: the socket value plus the bytes of in-flight chat_emit (approximation)', async () => {
+      socket().bufferedAmount = 100;
+      expect(client.sendBuffered).toBe(100);
+      let release!: () => void;
+      chat.emitHold = new Promise<void>((r) => (release = r));
+      client.send({ type: 'session.emit', session_id: 's1', name: 'n', payload: { big: 'x'.repeat(50) } });
+      expect(client.sendBuffered).toBeGreaterThan(100 + 50);
+      release();
+      await flush();
+      expect(client.sendBuffered).toBe(100);
+    });
+
+    it('a terminal failure shows one toast, then retries every 30 seconds until it connects', async () => {
+      vi.useFakeTimers();
+      try {
+        chat.push({ kind: 'failed', reason: '401 unauthorized', httpStatus: 401 });
+        expect(client.chatDown).toBe(true);
+        expect(ui.toasts.filter((t) => t.text.includes('チャットの接続が止まりました'))).toHaveLength(1);
+
+        chat.startError = new Error('401 again');
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(chat.starts).toBe(2);
+        expect(client.chatDown).toBe(true);
+        expect(ui.toasts.filter((t) => t.text.includes('チャットに接続できませんでした'))).toHaveLength(0);
+
+        chat.startError = null;
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(chat.starts).toBe(3);
+        chat.push({ kind: 'connecting', attempt: 1 });
+        chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME] });
+        expect(client.chatDown).toBe(false);
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(chat.starts).toBe(3);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

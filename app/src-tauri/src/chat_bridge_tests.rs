@@ -991,12 +991,10 @@ fn other_kinds_and_malformed_events_are_refused_and_not_written() {
     start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
     wait_until("connected", || sink.len() >= 1);
 
-    // JS の Socket に残す種類（通話・セッション・プラグイン・ping）は chat_emit では送らない
+    // JS の Socket に残す種類（call.emit = 音声）と ping は chat_emit では送らない
     for event in [
         serde_json::json!({"type": "ping"}),
-        serde_json::json!({"type": "call.leave"}),
-        serde_json::json!({"type": "session.emit", "session_id": "s1", "name": "n", "payload": null}),
-        serde_json::json!({"type": "plugin.emit", "plugin": "p", "name": "n", "payload": null}),
+        serde_json::json!({"type": "call.emit", "name": "audio", "payload": {"pcm": "AAAA"}}),
     ] {
         assert_eq!(emit_error_code(&hub, event), "invalid_request");
     }
@@ -1064,4 +1062,72 @@ fn chat_command_error_serializes_as_code_and_message_only() {
     .map(|e| super::ChatCommandError::from(e).code)
     .collect();
     assert_eq!(codes, ["not_connected", "write_failed", "send_not_allowed"]);
+}
+
+#[test]
+fn signaling_session_and_plugin_events_are_written_as_their_wire_json() {
+    let fake = Fake::start(echo_everything());
+    let hub = ChatHub::default();
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+
+    let events = vec![
+        serde_json::json!({"type": "call.join", "peer": "p1", "status": {"muted": false, "deafened": false, "device": "laptop"}}),
+        serde_json::json!({"type": "call.update", "status": {"muted": true, "deafened": false, "device": null}}),
+        serde_json::json!({"type": "call.kick", "peer": "p2"}),
+        serde_json::json!({"type": "call.leave"}),
+        serde_json::json!({"type": "session.emit", "session_id": "s1", "name": "roll", "payload": {"n": 3}}),
+        serde_json::json!({"type": "plugin.emit", "plugin": "dice", "name": "tick", "payload": null}),
+    ];
+    for event in &events {
+        emit(&hub, event.clone()).unwrap();
+    }
+    wait_until("six frames", || fake.frames().len() == events.len());
+    assert_eq!(fake.frames(), events);
+    assert!(fake.sends().is_empty());
+
+    async_runtime::block_on(hub.stop());
+}
+
+#[test]
+fn call_emit_is_refused_and_nothing_is_written_even_when_connected() {
+    let fake = Fake::start(echo_everything());
+    let hub = ChatHub::default();
+    let sink = Collect::new();
+    start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
+    wait_until("connected", || sink.len() >= 1);
+
+    assert_eq!(
+        emit_error_code(
+            &hub,
+            serde_json::json!({"type": "call.emit", "name": "audio", "payload": {"seq": 1, "pcm": "AAAA"}})
+        ),
+        "invalid_request"
+    );
+    // 直後に送るイベントが最初の書込になる（音声は書かれていない）
+    emit(&hub, serde_json::json!({"type": "call.leave"})).unwrap();
+    wait_until("the leave", || fake.frames().len() == 1);
+    assert_eq!(fake.frames()[0], serde_json::json!({"type": "call.leave"}));
+
+    async_runtime::block_on(hub.stop());
+}
+
+#[test]
+fn signaling_without_a_session_is_not_connected() {
+    let hub = ChatHub::default();
+    assert_eq!(
+        emit_error_code(
+            &hub,
+            serde_json::json!({"type": "call.join", "peer": "p", "status": {"muted": false, "deafened": false}})
+        ),
+        "not_connected"
+    );
+    assert_eq!(
+        emit_error_code(
+            &hub,
+            serde_json::json!({"type": "plugin.emit", "plugin": "p", "name": "n", "payload": null})
+        ),
+        "not_connected"
+    );
 }

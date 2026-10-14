@@ -254,15 +254,25 @@ impl From<EmitError> for ChatCommandError {
     }
 }
 
-/// `chat_emit` で送ってよい（ack の無い）種類か。`message.send` は別（`send_not_allowed`）。
+/// `chat_emit` で送ってよい（ack の無い）種類か（契約 §8.6）。`message.send` は別（`send_not_allowed`）。
+/// `call.emit`（音声 PCM を含む）と `ping` は JS の Socket・core の役目なので、ここでは送らない。
 fn check_emit_kind(event: &ClientEvent) -> Result<(), ChatCommandError> {
     match event {
         ClientEvent::MessageEdit { .. }
         | ClientEvent::MessageDelete { .. }
         | ClientEvent::ReactionAdd { .. }
         | ClientEvent::ReactionRemove { .. }
-        | ClientEvent::ThreadCreate { .. } => Ok(()),
+        | ClientEvent::ThreadCreate { .. }
+        | ClientEvent::SessionEmit { .. }
+        | ClientEvent::PluginEmit { .. }
+        | ClientEvent::CallJoin { .. }
+        | ClientEvent::CallLeave
+        | ClientEvent::CallUpdate { .. }
+        | ClientEvent::CallKick { .. } => Ok(()),
         ClientEvent::MessageSend { .. } => Err(ChatCommandError::from(EmitError::SendNotAllowed)),
+        ClientEvent::CallEmit { .. } => Err(ChatCommandError::invalid(
+            "通話の音声は chat_emit では送れません（JS 経路で送ります）",
+        )),
         _ => Err(ChatCommandError::invalid(
             "この種類は chat_emit では送れません",
         )),
