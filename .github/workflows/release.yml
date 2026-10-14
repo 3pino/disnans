@@ -133,34 +133,34 @@ jobs:
 
           # 1 回の入れる → 確かめる → 外す → 確かめる。$expectAdded は「PATH に入るはず」か「入らないはず（長すぎる）」か
           function Invoke-RoundTrip([bool]$expectAdded, [string]$label) {
-            if (Test-Path $markKey) { throw "$label: インストール前から印が残っています" }
+            if (Test-Path $markKey) { throw "${label}: インストール前から印が残っています" }
             $before = Get-UserPath
             Start-Process -FilePath $setup -ArgumentList '/S' -Wait
-            if (-not (Test-Path $cli)) { throw "$label: CLI が入っていません: $cli" }
+            if (-not (Test-Path $cli)) { throw "${label}: CLI が入っていません: $cli" }
             $size = (Get-Item $cli).Length
-            if ($size -lt 100000) { throw "$label: CLI が stub のままです（$size バイト）" }
+            if ($size -lt 100000) { throw "${label}: CLI が stub のままです（$size バイト）" }
             & $cli --version
-            if ($LASTEXITCODE -ne 0) { throw "$label: disnans --version が失敗しました" }
+            if ($LASTEXITCODE -ne 0) { throw "${label}: disnans --version が失敗しました" }
             $afterInstall = Get-UserPath
             if ($expectAdded) {
-              if (-not (Test-PathEntry $afterInstall $installDir)) { throw "$label: ユーザー PATH に $installDir がありません" }
-              if (-not (Test-Path $markKey)) { throw "$label: 印（$markKey）がありません" }
+              if (-not (Test-PathEntry $afterInstall $installDir)) { throw "${label}: ユーザー PATH に $installDir がありません" }
+              if (-not (Test-Path $markKey)) { throw "${label}: 印（$markKey）がありません" }
             } else {
               if (-not (Test-SameValue $afterInstall $before)) {
-                throw "$label: 長い PATH が変わりました（前 $(([string]$before).Length) 文字、後 $(([string]$afterInstall).Length) 文字）"
+                throw "${label}: 長い PATH が変わりました（前 $(([string]$before).Length) 文字、後 $(([string]$afterInstall).Length) 文字）"
               }
-              if (Test-Path $markKey) { throw "$label: 長い PATH なのに印が付きました" }
+              if (Test-Path $markKey) { throw "${label}: 長い PATH なのに印が付きました" }
             }
             Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
             $deadline = (Get-Date).AddSeconds(120)
             while ((Test-Path $cli) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Seconds 2 }
-            if (Test-Path $cli) { throw "$label: アンインストールが終わりません" }
+            if (Test-Path $cli) { throw "${label}: アンインストールが終わりません" }
             $after = Get-UserPath
             if (-not (Test-SameValue $after $before)) {
-              throw "$label: ユーザー PATH が元に戻りません。前: [$before] 後: [$after]"
+              throw "${label}: ユーザー PATH が元に戻りません。前: [$before] 後: [$after]"
             }
-            if (Test-Path $markKey) { throw "$label: 印が残っています" }
-            Write-Host "$label: OK"
+            if (Test-Path $markKey) { throw "${label}: 印が残っています" }
+            Write-Host "${label}: OK"
           }
 
           # 1. 通常の PATH: 追加され、外すと元に戻る
