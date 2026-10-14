@@ -5,7 +5,7 @@ import type { Invoke } from './types';
 
 type Call = { command: string; args?: unknown; options?: { headers?: Record<string, string> } };
 
-function setup(reply: (command: string) => unknown = () => ({ id: 'a1' })) {
+function setup(reply: (command: string) => unknown = () => ({ id: 'a1' }), bodyMode?: 'raw' | 'base64') {
   const calls: Call[] = [];
   const invoke: Invoke = async <T>(command: string, args?: unknown, options?: { headers?: Record<string, string> }) => {
     calls.push({ command, args, options });
@@ -18,7 +18,7 @@ function setup(reply: (command: string) => unknown = () => ({ id: 'a1' })) {
     channel = { onmessage: () => {}, toJSON: () => '__CHANNEL__:7' };
     return channel;
   };
-  const api = createTauriUploadApi(invoke, { server: () => 'http://h:1', devUser: 'bob' }, make);
+  const api = createTauriUploadApi(invoke, { server: () => 'http://h:1', devUser: 'bob' }, make, bodyMode);
   return { calls, api, ch: () => channel! };
 }
 
@@ -71,5 +71,16 @@ describe('Tauri upload', () => {
     const abort = calls.find((c) => c.command === 'api_upload_abort');
     const uploadId = JSON.parse(decodeURIComponent(calls[0].options!.headers!['x-disnans-args'])).uploadId;
     expect(abort?.args).toEqual({ uploadId });
+  });
+});
+
+describe('Tauri upload on Android (base64 body)', () => {
+  it('sends the body as a base64 JSON string; the args header is the same', async () => {
+    const { calls, api } = setup(undefined, 'base64');
+    const file = new File([new Uint8Array([1, 2])], 'a.png', { type: 'image/png' });
+    await api.upload(file).promise;
+    expect(calls[0].command).toBe('api_upload_file');
+    expect(calls[0].args).toBe('AQI=');
+    expect(JSON.parse(decodeURIComponent(calls[0].options!.headers!['x-disnans-args']))).toMatchObject({ fileName: 'a.png', uploadId: expect.any(String) });
   });
 });

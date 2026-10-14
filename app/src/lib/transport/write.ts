@@ -17,6 +17,7 @@ import { apiUrl, authHeaders } from '../config';
 import { HttpError, request, toError } from './http';
 import { toBridgeError } from './tauri';
 import type { BridgeContext, Invoke } from './types';
+import { encodeBody, type BodyMode } from './body';
 
 /**
  * 書込 REST の経路（契約 .pi/step4-ipc-contract.md §9）。`api` の書込メソッドと同じ引数・戻り値。
@@ -100,7 +101,7 @@ export function writeError(e: unknown, nonIdempotent: boolean): HttpError {
 }
 
 /** 書込 REST の Tauri 実装。コマンド名は契約 §9.2（添付・アバター・公開は §9.3 の raw body） */
-export function createTauriWriteApi(invoke: Invoke, ctx: BridgeContext): WriteApi {
+export function createTauriWriteApi(invoke: Invoke, ctx: BridgeContext, bodyMode: BodyMode = 'raw'): WriteApi {
   const call = async <T>(command: string, extra: Record<string, unknown>, nonIdempotent: boolean): Promise<T> => {
     try {
       return await invoke<T>(command, { args: { server: ctx.server(), devUser: ctx.devUser, ...extra } });
@@ -111,7 +112,7 @@ export function createTauriWriteApi(invoke: Invoke, ctx: BridgeContext): WriteAp
   // raw body（§9.3）: バイト列は raw body、メタは x-disnans-args ヘッダー
   const raw = async <T>(command: string, body: Uint8Array, extra: Record<string, unknown>, nonIdempotent: boolean): Promise<T> => {
     try {
-      return await invoke<T>(command, body, { headers: argsHeader({ server: ctx.server(), devUser: ctx.devUser, ...extra }) });
+      return await invoke<T>(command, encodeBody(body, bodyMode), { headers: argsHeader({ server: ctx.server(), devUser: ctx.devUser, ...extra }) });
     } catch (e) {
       throw writeError(e, nonIdempotent);
     }

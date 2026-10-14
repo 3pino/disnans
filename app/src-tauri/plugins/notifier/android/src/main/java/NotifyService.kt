@@ -56,6 +56,35 @@ class NotifyService : Service() {
       context.stopService(Intent(context, NotifyService::class.java))
     }
 
+    private const val ASK_OPEN_ID = 3
+
+    /**
+     * 起動時に常駐を始められなかったとき、アプリを開いてもらうよう一度だけ知らせる。
+     * アプリを開くと TS 側の初期化が常駐を始め直す（通知を受け取れるようになる）。
+     */
+    fun askToOpen(context: Context) {
+      createChannels(context)
+      val open = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
+      val pi = PendingIntent.getActivity(
+        context,
+        ASK_OPEN_ID,
+        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+      )
+      val n = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
+        .setSmallIcon(R.drawable.disnans_notification)
+        .setContentTitle("通知を受け取れていません")
+        .setContentText("disnans を開くと、通知の受け取りを再開します")
+        .setAutoCancel(true)
+        .setContentIntent(pi)
+        .build()
+      try {
+        context.getSystemService(NotificationManager::class.java).notify(ASK_OPEN_ID, n)
+      } catch (ex: SecurityException) {
+        Log.w(TAG, "通知を出せませんでした", ex)
+      }
+    }
+
     fun createChannels(context: Context) {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
       val nm = context.getSystemService(NotificationManager::class.java)
@@ -85,6 +114,8 @@ class NotifyService : Service() {
   private var stopped = false
   private val reconnect = Runnable { connect() }
   private var networkCallback: ConnectivityManager.NetworkCallback? = null
+  /** つないでいる回線。切り替わったら、古い回線の socket は使えないので張り直す */
+  private var currentNetwork: Network? = null
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -144,16 +175,32 @@ class NotifyService : Service() {
     if (running) getSystemService(NotificationManager::class.java).notify(ONGOING_ID, ongoingNotification())
   }
 
-  /** ネットワークが戻ったら、待たずにつなぎ直す */
+  /**
+   * ネットワークが戻ったら、待たずにつなぎ直す。回線が切り替わった（Wi-Fi から携帯回線など）ときも、
+   * 古い回線に残った socket は届かなくなるので、すぐ張り直す（気づくまで ping の時間ぶん通知が止まるのを防ぐ）。
+   */
   private fun watchNetwork() {
     val cb = object : ConnectivityManager.NetworkCallback() {
       override fun onAvailable(network: Network) {
         handler.post {
-          if (!stopped && !connected) {
-            handler.removeCallbacks(reconnect)
-            attempt = 0
-            connect()
-          }
+          if (stopped) return@post
+          if (connected && network == currentNetwork) return@post
+          currentNetwork = network
+          handler.removeCallbacks(reconnect)
+          attempt = 0
+          connect()
+        }
+      }
+
+      override fun onLost(network: Network) {
+        handler.post {
+          if (stopped || network != currentNetwork) return@post
+          // この回線はもう使えない。つながっていないことを示し、次の回線が来たら（または backoff で）つなぎ直す
+          currentNetwork = null
+          socket?.cancel()
+          socket = null
+          setConnected(false)
+          scheduleReconnect()
         }
       }
     }
@@ -234,6 +281,13 @@ class NotifyService : Service() {
     val body = ev.optString("body")
     val messageId = ev.optNullableString("message_id")
     val threadId = ev.optNullableString("thread_id")
+    // 接続が切れていた間の再送や、二重に届いたものは、表示済みなら出さない
+    if (messageId != null) {
+      val prefs = Prefs(this)
+      val shown = prefs.shownMessages
+      if (messageId in shown) return
+      prefs.shownMessages = shown + messageId
+    }
     val id = (messageId ?: "sample-${System.currentTimeMillis()}").hashCode()
 
     val n = NotificationCompat.Builder(this, CHANNEL_MESSAGES)

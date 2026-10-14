@@ -19,9 +19,10 @@ use crate::chat::{self, Actor, SendMessage};
 use crate::db;
 use crate::error::AppError;
 use crate::hub::ConnId;
+use crate::notify::{self, Notification};
 use crate::sessions;
 use crate::state::SharedState;
-use crate::store::users;
+use crate::store::{reads, users};
 
 /// サーバーから WebSocket の ping を送る間隔。
 const PING_INTERVAL: Duration = Duration::from_secs(30);
@@ -35,6 +36,35 @@ pub async fn handler(
     ws: WebSocketUpgrade,
 ) -> Response {
     ws.on_upgrade(move |socket| run(state, user, addr.ip(), socket))
+}
+
+/// 接続が切れていた間の通知を、この接続にだけ送り直す（古い順）。既読の分は送らない。
+async fn replay_recent(state: &SharedState, user: &User, conn: ConnId) {
+    for n in state.notifier.recent(&user.id) {
+        if is_read(state, user, &n).await {
+            continue;
+        }
+        state.hub.send_to_conn(conn, &notify::replay_event(&n));
+    }
+}
+
+/// 通知の元のメッセージを、もう既読かどうか（既読の位置がそれ以降なら既読）。確かめられなければ既読扱いにして送らない。
+async fn is_read(state: &SharedState, user: &User, n: &Notification) -> bool {
+    let Some(message_id) = &n.message_id else {
+        return false;
+    };
+    match reads::get(&state.pool, user, n.thread_id.as_deref()).await {
+        Ok(marker) => {
+            let position = marker
+                .map(|m| m.last_read_id)
+                .unwrap_or_else(|| reads::baseline(user));
+            message_id.as_str() <= position.as_str()
+        }
+        Err(err) => {
+            tracing::warn!("既読の位置を読めないので再送しません: {err}");
+            true
+        }
+    }
 }
 
 async fn run(state: SharedState, user: User, ip: IpAddr, socket: WebSocket) {
@@ -54,6 +84,8 @@ async fn run(state: SharedState, user: User, ip: IpAddr, socket: WebSocket) {
     if let Some(call) = state.calls.state_for_new_conn() {
         state.hub.send_to_conn(conn, &call);
     }
+    // 切れていた間の通知（既読のものは除く）
+    replay_recent(&state, &user, conn).await;
     tracing::info!(conn, user = %user.login_name, "WebSocket 接続");
 
     let (mut sink, mut stream) = socket.split();

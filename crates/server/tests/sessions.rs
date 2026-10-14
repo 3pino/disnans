@@ -462,6 +462,7 @@ async fn plugin_notify() {
         message_id,
         thread_id,
         sample,
+        ..
     } = bob.recv().await
     else {
         panic!()

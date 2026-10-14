@@ -146,6 +146,10 @@ export class CallStore {
   private outputsBusy = false;
   private outputsTick = 0;
   private ctx: AudioContext | null = null;
+  /** 通話中、画面が戻ったときに AudioContext を動かし直す（別のアプリを開いたあとに止まっていることがある） */
+  private readonly onVisible = (): void => {
+    if (document.visibilityState === 'visible') this.keepContextRunning();
+  };
   private ctxDetach: (() => void) | null = null;
   private localMeter: Meter | null = null;
   /** 受け取った音の合計を上限で抑える最後の段（無ければ出力先に直接） と、その設定の控え */
@@ -373,6 +377,10 @@ export class CallStore {
       try {
         this.ctx = new AudioContext();
         void this.ctx.resume().catch(() => {});
+        // 別のアプリを開いたとき、WebView が裏に回って AudioContext が止められることがある。止まったら動かし直す
+        this.ctx.onstatechange = () => this.keepContextRunning();
+        document.addEventListener('visibilitychange', this.onVisible);
+        this.watchMicTracks(stream);
         this.ctxDetach = this.deps.audio.attach(this.ctx);
         this.localMeter = makeMeter(this.ctx.createAnalyser());
         await this.setupSend(stream, this.ctx, this.localMeter);
@@ -414,12 +422,14 @@ export class CallStore {
     this.peerId = '';
     this.localStream?.getTracks().forEach((t) => t.stop());
     this.localStream = null;
+    document.removeEventListener('visibilitychange', this.onVisible);
     this.micGain = null;
     this.captureSrc = null;
     this.stopCapture();
     this.localMeter = null;
     this.ctxDetach?.();
     this.ctxDetach = null;
+    if (this.ctx) this.ctx.onstatechange = null;
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
     this.limitBus = null;
@@ -427,6 +437,21 @@ export class CallStore {
     this.background?.();
     this.background = null;
     this.refresh();
+  }
+
+  /** 通話中に AudioContext が止まっていたら動かし直す */
+  private keepContextRunning(): void {
+    if (this.joined && this.ctx?.state === 'suspended') void this.ctx.resume().catch(() => {});
+  }
+
+  /** マイクが途中で止まった（OS やほかのアプリに取られた）ことを知らせる。stop() では発火しない */
+  private watchMicTracks(stream: MediaStream): void {
+    for (const track of stream.getAudioTracks()) {
+      track.onended = () => {
+        console.warn('[call] マイクが止まりました');
+        if (this.joined) this.deps.toast('マイクが止まりました。通話し直してください', 'error');
+      };
+    }
   }
 
   /** マイクを開く。選んだ機器が使えなければ既定の機器で開き直す */

@@ -593,6 +593,9 @@ class Client {
         break;
       }
       case 'notify': {
+        // 接続が切れていた間の再送。アプリ内では、通常の経路で届いた分と重ねて出さない
+        // （背景の通知は常駐サービスが受け持ち、表示済みかどうかを message_id で確かめている）
+        if (ev.replayed) break;
         const body = mentionsToText(ev.body, (id) => this.nameOf(id));
         notifications.show({ title: ev.title, body, threadId: ev.thread_id, sample: ev.sample, from: this.senderOf(ev.message_id) });
         break;

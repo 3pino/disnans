@@ -3,7 +3,7 @@ import type { InvokeArgs, InvokeOptions as TauriInvokeOptions } from '@tauri-app
 import type { ApiBridgeError, BridgeContext, Invoke, InvokeOptions, ReadApi } from './types';
 
 /** `@tauri-apps/api/core` を使う invoke（遅延 import。Tauri 以外では呼ばれない） */
-export const tauriInvoke: Invoke = async <T>(command: string, args?: Record<string, unknown> | Uint8Array, options?: InvokeOptions) => {
+export const tauriInvoke: Invoke = async <T>(command: string, args?: Record<string, unknown> | Uint8Array | string, options?: InvokeOptions) => {
   const { invoke } = await import('@tauri-apps/api/core');
   // Tauri の型は headers を HeadersInit で受ける。ここでは Record<string, string> だけを渡す
   return invoke<T>(command, args as InvokeArgs | undefined, options as TauriInvokeOptions | undefined);

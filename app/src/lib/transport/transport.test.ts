@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createHttpReadApi, HttpError } from './http';
 import { createTauriReadApi, toBridgeError } from './tauri';
-import { selectReadApi } from './select';
+import { selectChatMode, selectReadApi, selectWriteApi } from './select';
 import type { Invoke } from './types';
 
-type Call = { command: string; args?: Record<string, unknown> | Uint8Array; options?: unknown };
+type Call = { command: string; args?: Record<string, unknown> | Uint8Array | string; options?: unknown };
 
 function recorder(reply: (command: string) => unknown = () => null) {
   const calls: Call[] = [];
-  const invoke: Invoke = async <T>(command: string, args?: Record<string, unknown> | Uint8Array, options?: unknown) => {
+  const invoke: Invoke = async <T>(command: string, args?: Record<string, unknown> | Uint8Array | string, options?: unknown) => {
     calls.push({ command, args, options });
     const r = reply(command);
     if (r instanceof Error) throw r;
@@ -34,6 +34,35 @@ describe('read transport selection', () => {
 
   it('keeps HTTP outside Windows/Linux desktop even when the flag is on', () => {
     expect(selectReadApi({ ...base, flag: '1', desktop: false }).kind).toBe('http');
+  });
+
+  it('uses Rust for reads, writes and uploads on Android too (flag "0" still turns it off)', () => {
+    const android = { ...base, desktop: false, android: true };
+    expect(selectReadApi({ ...android, flag: null }).kind).toBe('tauri');
+    expect(selectReadApi({ ...android, flag: '0' }).kind).toBe('http');
+    expect(selectWriteApi({ ...android, flag: null }).kind).toBe('tauri');
+    expect(selectWriteApi({ ...android, flag: '0' }).kind).toBe('http');
+  });
+
+  it('Android sends base64 bodies; desktop keeps raw bytes', async () => {
+    const r = recorder();
+    const a = selectWriteApi({ ...base, flag: null, desktop: false, android: true, invoke: r.invoke });
+    if (a.kind !== 'tauri') throw new Error('expected tauri');
+    await a.write.setAvatar(new Blob([new Uint8Array([1, 2, 3])]), 'a.png');
+    expect(r.calls[0].args).toBe('AQID');
+    const d = selectWriteApi({ ...base, flag: null, invoke: r.invoke });
+    if (d.kind !== 'tauri') throw new Error('expected tauri');
+    await d.write.setAvatar(new Blob([new Uint8Array([1, 2, 3])]), 'a.png');
+    expect(r.calls[1].args).toBeInstanceOf(Uint8Array);
+  });
+
+  it('a plain browser on Android (not Tauri) and macOS stay HTTP', () => {
+    expect(selectReadApi({ ...base, desktop: false, android: false, flag: null }).kind).toBe('http');
+    expect(selectWriteApi({ ...base, desktop: false, android: false, flag: null }).kind).toBe('http');
+  });
+
+  it('chat stays JS on Android (the chat mode uses desktop only)', () => {
+    expect(selectChatMode({ flag: null, desktop: false })).toBe('js');
   });
 
   it('logs the selected transport once per selection', () => {

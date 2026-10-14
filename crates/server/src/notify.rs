@@ -3,9 +3,10 @@
 //! 送り方は `Notifier` で抽象化しておき、後から FCM などを足せるようにする（SPEC 4.3）。
 //! 今は WebSocket の接続に `ServerEvent::Notify` を流すだけ。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::IpAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use disnans_shared::{Id, Message, ServerEvent, User};
 
@@ -34,6 +35,11 @@ impl Notification {
     }
 }
 
+/// 接続が切れていた間の通知を、接続し直したときに再送するための保持期間（ユーザーごと）。
+pub const REPLAY_WINDOW: Duration = Duration::from_secs(10 * 60);
+/// 再送のために保持する件数（ユーザーごと。古いものから捨てる）。
+pub const REPLAY_LIMIT: usize = 50;
+
 /// 通知の送り方。
 pub trait Notifier: Send + Sync {
     /// 1人のユーザーに通知を送る。時間のかかる送り方をする実装は、中でタスクを起こすこと。
@@ -41,26 +47,82 @@ pub trait Notifier: Send + Sync {
 
     /// 1人のユーザーの、1つの端末（IP アドレス）だけに通知を送る（サンプル通知用）。
     fn notify_device(&self, user_id: &str, ip: IpAddr, notification: &Notification);
+
+    /// 接続し直したユーザーに再送する、直近の通知（古い順）。既読かどうかは呼び出し側で確かめる。
+    fn recent(&self, user_id: &str) -> Vec<Notification>;
 }
 
 /// そのユーザーの WebSocket のすべての接続に `notify` を流す。
+/// 送った通知は [`REPLAY_WINDOW`] の間、ユーザーごとに [`REPLAY_LIMIT`] 件まで覚えておく（サンプルは覚えない）。
 pub struct WsNotifier {
     hub: Arc<Hub>,
+    recent: Mutex<HashMap<String, VecDeque<(Instant, Notification)>>>,
 }
 
 impl WsNotifier {
     pub fn new(hub: Arc<Hub>) -> Self {
-        Self { hub }
+        Self {
+            hub,
+            recent: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn record(&self, user_id: &str, n: &Notification, now: Instant) {
+        if n.sample {
+            return;
+        }
+        let mut map = self.lock();
+        let queue = map.entry(user_id.to_owned()).or_default();
+        prune(queue, now);
+        queue.push_back((now, n.clone()));
+        while queue.len() > REPLAY_LIMIT {
+            queue.pop_front();
+        }
+    }
+
+    fn recent_at(&self, user_id: &str, now: Instant) -> Vec<Notification> {
+        let mut map = self.lock();
+        let Some(queue) = map.get_mut(user_id) else {
+            return Vec::new();
+        };
+        prune(queue, now);
+        let out = queue.iter().map(|(_, n)| n.clone()).collect();
+        if queue.is_empty() {
+            map.remove(user_id);
+        }
+        out
+    }
+
+    fn lock(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<String, VecDeque<(Instant, Notification)>>> {
+        self.recent.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// 保持期間を過ぎたものを前から捨てる（古い順に入っている）
+fn prune(queue: &mut VecDeque<(Instant, Notification)>, now: Instant) {
+    while let Some((at, _)) = queue.front() {
+        if now.saturating_duration_since(*at) > REPLAY_WINDOW {
+            queue.pop_front();
+        } else {
+            break;
+        }
     }
 }
 
 impl Notifier for WsNotifier {
     fn notify(&self, user_id: &str, n: &Notification) {
+        self.record(user_id, n, Instant::now());
         self.hub.send_to_user(user_id, &event(n));
     }
 
     fn notify_device(&self, user_id: &str, ip: IpAddr, n: &Notification) {
         self.hub.send_to_device(user_id, ip, &event(n));
+    }
+
+    fn recent(&self, user_id: &str) -> Vec<Notification> {
+        self.recent_at(user_id, Instant::now())
     }
 }
 
@@ -71,6 +133,29 @@ fn event(n: &Notification) -> ServerEvent {
         message_id: n.message_id.clone(),
         thread_id: n.thread_id.clone(),
         sample: n.sample,
+        replayed: false,
+    }
+}
+
+/// 接続し直したときに、1件を再送するイベント。
+pub fn replay_event(n: &Notification) -> ServerEvent {
+    match event(n) {
+        ServerEvent::Notify {
+            title,
+            body,
+            message_id,
+            thread_id,
+            sample,
+            ..
+        } => ServerEvent::Notify {
+            title,
+            body,
+            message_id,
+            thread_id,
+            sample,
+            replayed: true,
+        },
+        other => other,
     }
 }
 
@@ -334,5 +419,94 @@ mod tests {
         let users = [user("A", "alice"), user("B", "bob")];
         let msg = message("A", None, "hello");
         assert!(plan(&msg, &users, &["B".into()], None, Sender::User).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod replay_tests {
+    use super::*;
+
+    fn note(id: &str) -> Notification {
+        Notification {
+            title: "t".into(),
+            body: id.into(),
+            message_id: Some(id.into()),
+            thread_id: None,
+            sample: false,
+        }
+    }
+
+    fn notifier() -> WsNotifier {
+        WsNotifier::new(Arc::new(Hub::new()))
+    }
+
+    fn bodies(list: &[Notification]) -> Vec<&str> {
+        list.iter().map(|n| n.body.as_str()).collect()
+    }
+
+    #[test]
+    fn keeps_notifications_in_order_per_user() {
+        let n = notifier();
+        let now = Instant::now();
+        n.record("alice", &note("a1"), now);
+        n.record("bob", &note("b1"), now);
+        n.record("alice", &note("a2"), now);
+        assert_eq!(bodies(&n.recent_at("alice", now)), ["a1", "a2"]);
+        assert_eq!(bodies(&n.recent_at("bob", now)), ["b1"]);
+        assert!(n.recent_at("carol", now).is_empty());
+    }
+
+    #[test]
+    fn drops_notifications_older_than_the_window() {
+        let n = notifier();
+        let base = Instant::now();
+        n.record("alice", &note("old"), base);
+        n.record("alice", &note("new"), base + Duration::from_secs(60));
+        // ちょうど保持期間の端は残し、それを過ぎたものから消える
+        let edge = base + REPLAY_WINDOW;
+        assert_eq!(bodies(&n.recent_at("alice", edge)), ["old", "new"]);
+        let later = base + REPLAY_WINDOW + Duration::from_millis(1);
+        assert_eq!(bodies(&n.recent_at("alice", later)), ["new"]);
+        let much_later = base + REPLAY_WINDOW + Duration::from_secs(61);
+        assert!(n.recent_at("alice", much_later).is_empty());
+    }
+
+    #[test]
+    fn keeps_only_the_newest_up_to_the_limit() {
+        let n = notifier();
+        let now = Instant::now();
+        for i in 0..REPLAY_LIMIT + 5 {
+            n.record("alice", &note(&format!("m{i:03}")), now);
+        }
+        let kept = n.recent_at("alice", now);
+        assert_eq!(kept.len(), REPLAY_LIMIT);
+        assert_eq!(kept.first().unwrap().body, "m005");
+        assert_eq!(
+            kept.last().unwrap().body,
+            format!("m{:03}", REPLAY_LIMIT + 4)
+        );
+    }
+
+    #[test]
+    fn samples_are_not_kept() {
+        let n = notifier();
+        let now = Instant::now();
+        let mut sample = Notification::sample();
+        sample.message_id = None;
+        n.record("alice", &sample, now);
+        assert!(n.recent_at("alice", now).is_empty());
+    }
+
+    #[test]
+    fn replay_event_is_marked_and_live_event_is_not() {
+        let n = note("x");
+        match replay_event(&n) {
+            ServerEvent::Notify { replayed, .. } => assert!(replayed),
+            other => panic!("{other:?}"),
+        }
+        match event(&n) {
+            ServerEvent::Notify { replayed, .. } => assert!(!replayed),
+            other => panic!("{other:?}"),
+        }
     }
 }

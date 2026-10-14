@@ -19,7 +19,12 @@ client_id: string | null, message: Message, } | { "type": "message.updated", mes
 /**
  * 「サンプル通知を送信」で送ったもの。アプリを表示中でもシステム通知を出す。
  */
-sample: boolean, } | { "type": "plugin.updated", plugin: PluginInfo, } | { "type": "plugin.removed", plugin_id: string, } | { "type": "session.updated", session: Session, } | { "type": "session.event", session_id: string, from: string, name: string, payload: unknown, } | { "type": "plugin.event", plugin: string, from: string, name: string, payload: unknown, } | { "type": "call.state", members: Array<CallMember>, } | { "type": "call.event", 
+sample: boolean, 
+/**
+ * 接続が切れていた間の通知を、接続し直したときに再送したもの（直近の分だけ）。
+ * 受け取るクライアントは、表示済みかどうかを message_id で確かめてから出すこと。
+ */
+replayed: boolean, } | { "type": "plugin.updated", plugin: PluginInfo, } | { "type": "plugin.removed", plugin_id: string, } | { "type": "session.updated", session: Session, } | { "type": "session.event", session_id: string, from: string, name: string, payload: unknown, } | { "type": "plugin.event", plugin: string, from: string, name: string, payload: unknown, } | { "type": "call.state", members: Array<CallMember>, } | { "type": "call.event", 
 /**
  * 送った接続の ID（サーバーが付ける）。
  */

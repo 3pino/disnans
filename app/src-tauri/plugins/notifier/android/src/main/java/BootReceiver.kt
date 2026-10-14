@@ -14,7 +14,10 @@ class BootReceiver : BroadcastReceiver() {
     try {
       NotifyService.start(context)
     } catch (ex: Exception) {
+      // Android 12 以降は、起動時（バックグラウンド）から FGS を始められないことがある（機種や OS の版による）。
+      // 黙って通知が来なくなるのを避けるため、アプリを開いてもらうよう知らせる
       Log.w("disnans", "起動時に常駐サービスを始められませんでした", ex)
+      NotifyService.askToOpen(context)
     }
   }
 }

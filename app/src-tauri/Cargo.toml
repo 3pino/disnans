@@ -22,6 +22,8 @@ tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# raw body（デスクトップ）と base64 の本体（Android）の復号。全 OS で使う
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"
@@ -60,7 +62,6 @@ gstreamer-app = "0.24"
 gstreamer-video = "0.24"
 # JPEG の符号化（純 Rust・依存なし）。縮小と減色の結果を JPEG にする
 jpeg-encoder = "0.6"
-base64 = "0.22"
 tokio = { version = "1", features = ["time"] }
 tokio-util = "0.7"
 futures-util = "0.3"
@@ -70,6 +71,8 @@ futures-util = "0.3"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
+# REST（読取・書込み・アップロード）。チャット（ws）は段4 まで載せない
+disnans-client-core = { path = "../../crates/client-core" }
 tauri-plugin-apk-updater = { path = "plugins/apk-updater" }
 tauri-plugin-notifier = { path = "plugins/notifier" }
 tauri-plugin-system-bars = { path = "plugins/system-bars" }

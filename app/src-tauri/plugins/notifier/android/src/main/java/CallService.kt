@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.net.Uri
 import android.os.IBinder
+import android.os.PowerManager
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -49,6 +50,9 @@ class CallService : Service() {
     /** 届けられなかったボタン。JS が準備できたら受け取る */
     val pendingActions = ConcurrentLinkedQueue<String>()
 
+    /** 通話中の CPU の保持（PARTIAL_WAKE_LOCK）の上限。長い通話は切れる前に止め直す必要はない（再 start で更新される） */
+    private const val WAKE_LOCK_MAX_MS = 8L * 60 * 60 * 1000
+
     /** 直近の start で渡されたボタン（dismiss の判定に使う） */
     @Volatile private var buttons: List<CallButton> = emptyList()
 
@@ -76,6 +80,25 @@ class CallService : Service() {
 
   override fun onBind(intent: Intent?): IBinder? = null
 
+  /**
+   * 通話中だけ CPU を起こしたままにする。画面を消すと CPU が眠り、音声の送受信が止まることがあるため。
+   * 通話が終わったら（onDestroy）必ず解放する。
+   */
+  private var wakeLock: PowerManager.WakeLock? = null
+
+  private fun holdWakeLock() {
+    if (wakeLock != null) return
+    val lock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "disnans:call")
+    lock.setReferenceCounted(false)
+    lock.acquire(WAKE_LOCK_MAX_MS)
+    wakeLock = lock
+  }
+
+  private fun releaseWakeLock() {
+    wakeLock?.let { if (it.isHeld) it.release() }
+    wakeLock = null
+  }
+
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     if (intent?.action == ACTION_BUTTON) {
       onCallButton(intent.getStringExtra(EXTRA_ACTION_ID).orEmpty())
@@ -95,6 +118,7 @@ class CallService : Service() {
       startForeground(ONGOING_ID, n)
     }
     if (!running && microphone) CallAudio.begin(this)
+    holdWakeLock()
     running = true
     // 強制終了されたあとに勝手に再開しない（マイクの許可や前面の条件を満たせないため）
     return START_NOT_STICKY
@@ -135,6 +159,7 @@ class CallService : Service() {
 
   override fun onDestroy() {
     if (running) CallAudio.end(this)
+    releaseWakeLock()
     running = false
     super.onDestroy()
   }

@@ -455,6 +455,10 @@ pub enum ServerEvent {
         thread_id: Option<Id>,
         /// 「サンプル通知を送信」で送ったもの。アプリを表示中でもシステム通知を出す。
         sample: bool,
+        /// 接続が切れていた間の通知を、接続し直したときに再送したもの（直近の分だけ）。
+        /// 受け取るクライアントは、表示済みかどうかを message_id で確かめてから出すこと。
+        #[serde(default)]
+        replayed: bool,
     },
     /// プラグイン・テーマが配布・更新された。自分だけのものは持ち主にだけ届く。
     #[serde(rename = "plugin.updated")]

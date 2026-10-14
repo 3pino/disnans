@@ -5,6 +5,7 @@
 //! 書込は自動リトライしない（`RestClient` の書込用クライアントは接続を再利用しない）。
 //! 本体は Tauri に依存しない関数（`read_*` / `write_*` など）にあり、テストはそちらを呼ぶ。
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -13,6 +14,7 @@ use disnans_client_core::{
     MessageSearchQuery, MessagesQuery, ReadFailure, RestClient, ServerUrl, UploadAbortHandle,
     UploadAbortRegistration, messages_path, search_path, session_path, thread_path,
 };
+use base64::Engine;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -280,10 +282,15 @@ pub async fn upload_file_raw(
         .await
 }
 
-/// raw body のバイト列を借りる。JSON で来たら不正。
-pub fn raw_body<'a>(request: &'a Request<'_>) -> Result<&'a [u8], ReadFailure> {
-    match request.body() {
-        InvokeBody::Raw(bytes) => Ok(bytes.as_slice()),
+/// バイト列の本体。デスクトップは raw body（借りる）。Android は Tauri の IPC が raw body を渡せない
+/// （`InvokeBody::Raw` は無く、常に JSON）ので、base64 の文字列（JSON の値）を受ける。それ以外は `invalid_request`。
+pub fn raw_body(body: &InvokeBody) -> Result<Cow<'_, [u8]>, ReadFailure> {
+    match body {
+        InvokeBody::Raw(bytes) => Ok(Cow::Borrowed(bytes.as_slice())),
+        InvokeBody::Json(Value::String(text)) => base64::engine::general_purpose::STANDARD
+            .decode(text)
+            .map(Cow::Owned)
+            .map_err(|_| ReadFailure::invalid_request("バイト列（base64）が不正です")),
         InvokeBody::Json(_) => Err(ReadFailure::invalid_request("バイト列の本体が必要です")),
     }
 }
@@ -543,7 +550,7 @@ pub async fn api_upload_file(
     let channel: Channel<UploadItem> = JavaScriptChannelId::from_str(&args.on_progress)
         .map_err(|_| ReadFailure::invalid_request("進捗の送り先が不正です"))?
         .channel_on(webview);
-    let data = Arc::new(raw_body(&request)?.to_vec());
+    let data = Arc::new(raw_body(request.body())?.into_owned());
     let progress: Arc<dyn Fn(u64, u64) + Send + Sync> = Arc::new(move |loaded, total| {
         let _ = channel.send(UploadItem {
             kind: "progress",
@@ -625,16 +632,16 @@ pub async fn api_create_session(args: BodyArgs) -> Result<Value, ReadFailure> {
 #[tauri::command]
 pub async fn api_set_avatar(request: Request<'_>) -> Result<Value, ReadFailure> {
     let args: AvatarArgs = decode_header_args(request.headers())?;
-    let data = raw_body(&request)?;
-    set_avatar(&args, data).await
+    let data = raw_body(request.body())?;
+    set_avatar(&args, &data).await
 }
 
 /// raw body（`parts` の順に連結したバイト列）。メタは `x-disnans-args` ヘッダー。
 #[tauri::command]
 pub async fn api_create_plugin(request: Request<'_>) -> Result<Value, ReadFailure> {
     let args: CreatePluginArgs = decode_header_args(request.headers())?;
-    let data = raw_body(&request)?;
-    create_plugin(&args, data).await
+    let data = raw_body(request.body())?;
+    create_plugin(&args, &data).await
 }
 
 #[cfg(test)]
@@ -993,5 +1000,30 @@ mod tests {
             .unwrap_err();
         assert_eq!(failure.code, "aborted");
         assert!(registry.start("u-live").is_ok());
+    }
+
+    #[test]
+    fn raw_body_takes_raw_bytes_as_they_are() {
+        let body = InvokeBody::Raw(vec![0, 1, 255]);
+        assert_eq!(&*raw_body(&body).unwrap(), &[0u8, 1, 255]);
+    }
+
+    #[test]
+    fn raw_body_takes_base64_json_on_android() {
+        // Android の IPC は raw body を渡せず、base64 の文字列（JSON の値）で来る
+        let body = InvokeBody::Json(Value::String("AAH/".into()));
+        assert_eq!(&*raw_body(&body).unwrap(), &[0u8, 1, 255]);
+        let empty = InvokeBody::Json(Value::String(String::new()));
+        assert!(raw_body(&empty).unwrap().is_empty());
+    }
+
+    #[test]
+    fn raw_body_refuses_bad_base64_and_other_json() {
+        let bad = InvokeBody::Json(Value::String("not base64!".into()));
+        assert_eq!(raw_body(&bad).unwrap_err().code, "invalid_request");
+        let array = InvokeBody::Json(serde_json::json!([1, 2, 3]));
+        assert_eq!(raw_body(&array).unwrap_err().code, "invalid_request");
+        let none = InvokeBody::Json(Value::Null);
+        assert_eq!(raw_body(&none).unwrap_err().code, "invalid_request");
     }
 }

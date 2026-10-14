@@ -3,11 +3,11 @@ import { createHttpWriteApi, createTauriWriteApi, NON_IDEMPOTENT, UNKNOWN_OUTCOM
 import { HttpError } from './http';
 import type { Invoke } from './types';
 
-type Call = { command: string; args?: Record<string, unknown> | Uint8Array; options?: { headers?: Record<string, string> } };
+type Call = { command: string; args?: Record<string, unknown> | Uint8Array | string; options?: { headers?: Record<string, string> } };
 
 function recorder(reply: (command: string) => unknown = () => null) {
   const calls: Call[] = [];
-  const invoke: Invoke = async <T>(command: string, args?: Record<string, unknown> | Uint8Array, options?: { headers?: Record<string, string> }) => {
+  const invoke: Invoke = async <T>(command: string, args?: Record<string, unknown> | Uint8Array | string, options?: { headers?: Record<string, string> }) => {
     calls.push({ command, args, options });
     const r = reply(command);
     if (r instanceof Error || (r && typeof r === 'object' && 'reject' in r)) throw (r as { reject: unknown }).reject ?? r;
@@ -147,5 +147,19 @@ describe('HTTP write API (existing behaviour)', () => {
     await api.updateSession('s/1', {} as never);
     expect(methods).toEqual(['DELETE', 'POST', 'PUT']);
     expect(urls[2]).toMatch(/\/api\/sessions\/s%2F1$/);
+  });
+});
+
+describe('Tauri write API on Android (base64 body)', () => {
+  it('avatar and plugin bodies are base64 strings; JSON writes are unchanged', async () => {
+    const r = recorder();
+    const api = createTauriWriteApi(r.invoke, ctx, 'base64');
+    await api.setAvatar(new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'a.png');
+    expect(r.calls[0].command).toBe('api_set_avatar');
+    expect(r.calls[0].args).toBe('AQID');
+    await api.publishPlugin([{ name: 'a.js', data: new Blob([new Uint8Array([9])]) } as never], 'public');
+    expect(r.calls[1].args).toBe('CQ==');
+    await api.clearAvatar();
+    expect(r.calls[2].args).toEqual({ args: expect.objectContaining({ server: ctx.server() }) });
   });
 });

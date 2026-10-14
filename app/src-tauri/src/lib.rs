@@ -15,8 +15,9 @@ mod client_storage;
 #[cfg(all(test, desktop))]
 mod client_storage_tests;
 
-// 読取 REST の Rust 経路（段1）。契約は .pi/step4-ipc-contract.md
-#[cfg(desktop)]
+// 読取・書込み・アップロード REST の Rust 経路（段1・段3）。契約は .pi/step4-ipc-contract.md。
+// Android は REST（読取・書込み・アップロード）まで。チャット（chat_bridge）は段4 まで載せない
+#[cfg(any(desktop, target_os = "android"))]
 mod api_bridge;
 
 // チャット WebSocket の Rust 経路（段4）。契約は .pi/step4-ipc-contract.md §8。ws 依存と同じ OS だけ
@@ -119,8 +120,28 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Android の証明書: rustls-native-certs は openssl-probe の既定の場所（/etc/ssl）しか見ないので、
+/// Android では空になる（webpki は残るので接続は通るが、端末の CA は使えない）。
+/// Android のシステム CA は OpenSSL と同じ形（<hash>.0 の PEM）の dir なので、SSL_CERT_DIR で指す。
+/// 利用者が入れた CA（/data の cacerts-added）は含まれない。
+///
+/// 環境変数の書き換えは unsafe（他のスレッドが getenv すると競合する）。だから run() の最初に、
+/// アプリのスレッドを作る前に呼ぶ。既に指定されていれば何もしない。
+#[cfg(target_os = "android")]
+fn use_android_system_certs() {
+    const SYSTEM_CA_DIR: &str = "/system/etc/security/cacerts";
+    if std::env::var_os("SSL_CERT_DIR").is_some() || !std::path::Path::new(SYSTEM_CA_DIR).is_dir() {
+        return;
+    }
+    // SAFETY: run() の先頭で、このプロセスがまだ自前のスレッドを作っていない時点で呼ぶ（上のコメント）
+    unsafe { std::env::set_var("SSL_CERT_DIR", SYSTEM_CA_DIR) };
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "android")]
+    use_android_system_certs();
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
@@ -251,7 +272,36 @@ pub fn run() {
     #[cfg(target_os = "android")]
     {
         builder = builder
-            .invoke_handler(tauri::generate_handler![read_shared_file])
+            .invoke_handler(tauri::generate_handler![
+                read_shared_file,
+                api_bridge::api_me,
+                api_bridge::api_users,
+                api_bridge::api_prefs,
+                api_bridge::api_messages,
+                api_bridge::api_search_messages,
+                api_bridge::api_threads,
+                api_bridge::api_thread,
+                api_bridge::api_thread_tags,
+                api_bridge::api_read_markers,
+                api_bridge::api_plugins,
+                api_bridge::api_session,
+                api_bridge::api_update_me,
+                api_bridge::api_clear_avatar,
+                api_bridge::api_set_avatar,
+                api_bridge::api_set_prefs,
+                api_bridge::api_update_thread,
+                api_bridge::api_set_thread_tags,
+                api_bridge::api_mark_read,
+                api_bridge::api_update_session,
+                api_bridge::api_delete_plugin,
+                api_bridge::api_sample_notification,
+                api_bridge::api_plugin_post_message,
+                api_bridge::api_plugin_notify,
+                api_bridge::api_create_session,
+                api_bridge::api_create_plugin,
+                api_bridge::api_upload_file,
+                api_bridge::api_upload_abort
+            ])
             .plugin(tauri_plugin_apk_updater::init())
             .plugin(tauri_plugin_system_bars::init())
             .plugin(tauri_plugin_screen::init())

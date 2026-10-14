@@ -256,8 +256,10 @@ async fn threads_cannot_nest() {
             message_id,
             thread_id,
             sample,
+            replayed,
         } => {
             assert!(!sample);
+            assert!(!replayed);
             assert_eq!(title, "bob さんがスレッドに返信");
             assert_eq!(body, "返信");
             assert_eq!(message_id.as_deref(), Some(reply.id.as_str()));

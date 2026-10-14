@@ -6,6 +6,7 @@ import { defaultChannel, type ChannelLike } from './tauriChat';
 import { argsHeader } from './write';
 import { toBridgeError } from './tauri';
 import type { BridgeContext, Invoke } from './types';
+import { encodeBody, type BodyMode } from './body';
 
 /**
  * 添付のアップロード（契約 .pi/step4-ipc-contract.md §10）。
@@ -71,6 +72,7 @@ export function createTauriUploadApi(
   invoke: Invoke,
   ctx: BridgeContext,
   makeChannel: () => Promise<ChannelLike<UploadItem>> = defaultChannel,
+  bodyMode: BodyMode = 'raw',
 ): UploadApi {
   return {
     upload(file, onProgress) {
@@ -91,7 +93,7 @@ export function createTauriUploadApi(
           mime: file.type || null,
           onProgress: ch.toJSON ? ch.toJSON() : '',
         };
-        return await invoke<Attachment>('api_upload_file', body, { headers: argsHeader(args) });
+        return await invoke<Attachment>('api_upload_file', encodeBody(body, bodyMode), { headers: argsHeader(args) });
       })().catch((e: unknown) => {
         throw toBridgeError(e);
       });
