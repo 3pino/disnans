@@ -6,9 +6,13 @@ use std::collections::HashSet;
 use crossterm::event::KeyEvent;
 use disnans_shared::{Message, Reaction, User};
 
+use std::collections::HashMap;
+
 use jiff::tz::TimeZone;
 
+use super::graphics::Placement;
 use super::input::{Action, EnterKeys, Keymap};
+use super::picture::Prepared;
 use super::textbuf::TextBuf;
 use super::transcript::{self, Row};
 
@@ -52,6 +56,11 @@ pub enum SendResult {
 
 #[derive(Debug, Clone)]
 pub enum NetEvent {
+    /// 画像の取得・変換の結果。
+    Image {
+        key: String,
+        result: Result<Box<Prepared>, String>,
+    },
     Connecting,
     Connected {
         generation: u64,
@@ -135,7 +144,30 @@ pub enum SendState {
 
 type IdSource = Box<dyn FnMut() -> String + Send>;
 
+/// 画像の取得状態。
+pub enum ImageState {
+    Loading,
+    Ready(Box<Prepared>),
+    Failed,
+}
+
+/// キー入力の宛先。Tab で送信ボタン、Shift+Tab で入力欄に戻る。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    Input,
+    SendButton,
+}
+
 pub struct App {
+    pub focus: Focus,
+    /// 画像を出せる端末のときのセルの大きさ（ピクセル）。`None` なら画像は使わない。
+    pub gfx: Option<(u16, u16)>,
+    /// 画像（キーは取得先のパス）。
+    pub images: HashMap<String, ImageState>,
+    /// 取得を始めるべき画像（描画が見つけたもの）。
+    pending_images: Vec<String>,
+    /// 直近の描画で画像を出す場所。
+    pub placements: Vec<Placement>,
     pub messages: Vec<Message>,
     pub users: Vec<User>,
     pub me: Option<User>,
@@ -170,6 +202,11 @@ impl App {
         new_client_id: IdSource,
     ) -> Self {
         Self {
+            focus: Focus::Input,
+            gfx: None,
+            images: HashMap::new(),
+            pending_images: Vec::new(),
+            placements: Vec::new(),
             messages: Vec::new(),
             users: Vec::new(),
             me: None,
@@ -215,6 +252,41 @@ impl App {
         self.scroll = self.scroll.min(self.max_scroll());
     }
 
+    /// 画像を使う（端末が対応している）。`cell` は 1 セルのピクセル数。
+    pub fn enable_images(&mut self, cell: (u16, u16)) {
+        self.gfx = Some((cell.0.max(1), cell.1.max(1)));
+    }
+
+    /// 画像が必要になったことを知らせる。未取得なら取得を依頼する。
+    pub fn want_image(&mut self, key: &str) {
+        if !self.images.contains_key(key) {
+            self.images.insert(key.to_owned(), ImageState::Loading);
+            self.pending_images.push(key.to_owned());
+        }
+    }
+
+    pub fn take_image_requests(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.pending_images)
+    }
+
+    pub fn ready_image(&self, key: &str) -> Option<&Prepared> {
+        match self.images.get(key) {
+            Some(ImageState::Ready(p)) => Some(p),
+            _ => None,
+        }
+    }
+
+    /// 投稿者の表示色（アバターの平均色）。アバターが無い・まだなら `None`。
+    pub fn author_color(&self, author_id: &str) -> Option<(u8, u8, u8)> {
+        let url = self
+            .users
+            .iter()
+            .find(|u| u.id == author_id)?
+            .avatar_url
+            .as_deref()?;
+        self.ready_image(url).map(|p| p.color)
+    }
+
     pub fn rows(&self) -> Vec<Row> {
         let width = self.viewport.0;
         let mut rows = Vec::new();
@@ -230,13 +302,21 @@ impl App {
                 &self.users,
                 width,
                 self.zone.as_ref(),
+                self.gfx,
             ));
         }
         rows
     }
 
     fn message_height(&self, message: &Message) -> usize {
-        transcript::message_rows(message, &self.users, self.viewport.0, self.zone.as_ref()).len()
+        transcript::message_rows(
+            message,
+            &self.users,
+            self.viewport.0,
+            self.zone.as_ref(),
+            self.gfx,
+        )
+        .len()
     }
 
     fn total_rows(&self) -> usize {
@@ -251,8 +331,49 @@ impl App {
         let mut effects = Vec::new();
         match event {
             Event::Key(key) => {
-                let action = self.keymap.map(key);
-                self.on_action(action, &mut effects);
+                let mut action = self.keymap.map(key);
+                if self.focus == Focus::SendButton {
+                    let plain = key.modifiers.is_empty()
+                        && key.kind != crossterm::event::KeyEventKind::Release;
+                    match (&action, key.code) {
+                        // ボタン上では Enter / Space で送る（Enter の設定に関わらない）。
+                        _ if plain
+                            && matches!(
+                                key.code,
+                                crossterm::event::KeyCode::Enter
+                                    | crossterm::event::KeyCode::Char(' ')
+                            ) =>
+                        {
+                            action = Action::Send;
+                        }
+                        (Action::FocusButton, _) => action = Action::FocusInput,
+                        (
+                            Action::Insert(_)
+                            | Action::Backspace
+                            | Action::Delete
+                            | Action::Newline
+                            | Action::Left
+                            | Action::Right
+                            | Action::Up
+                            | Action::Down
+                            | Action::Home
+                            | Action::End,
+                            _,
+                        ) => self.focus = Focus::Input,
+                        _ => {}
+                    }
+                }
+                match action {
+                    Action::FocusButton => self.focus = Focus::SendButton,
+                    Action::FocusInput => self.focus = Focus::Input,
+                    _ => {}
+                }
+                self.on_action(action.clone(), &mut effects);
+                if matches!(action, Action::Send)
+                    && effects.iter().any(|e| matches!(e, Effect::Send { .. }))
+                {
+                    self.focus = Focus::Input;
+                }
             }
             Event::Paste(text) => {
                 if self.input_locked() {
@@ -267,7 +388,7 @@ impl App {
         effects
     }
 
-    fn input_locked(&self) -> bool {
+    pub fn input_locked(&self) -> bool {
         matches!(self.send, SendState::Sending { .. })
     }
 
@@ -303,7 +424,7 @@ impl App {
             Action::ScrollDown => self.scroll_down(1),
             Action::ScrollTop => self.scroll_up(usize::MAX, effects),
             Action::ScrollBottom => self.scroll = 0,
-            Action::Ignore => {}
+            Action::Ignore | Action::FocusButton | Action::FocusInput => {}
             edit => {
                 if self.input_locked() {
                     return;
@@ -400,6 +521,13 @@ impl App {
 
     fn on_net(&mut self, event: NetEvent, effects: &mut Vec<Effect>) {
         match event {
+            NetEvent::Image { key, result } => {
+                let state = match result {
+                    Ok(image) => ImageState::Ready(image),
+                    Err(_) => ImageState::Failed,
+                };
+                self.images.insert(key, state);
+            }
             NetEvent::Connecting => {
                 if !matches!(self.conn, ConnState::Failed { .. }) && self.me.is_none() {
                     self.conn = ConnState::Connecting;
@@ -1125,5 +1253,61 @@ mod tests {
         type_text(&mut app, "x");
         send_key(&mut app);
         assert!(app.exit_note().unwrap().contains("cid1"));
+    }
+
+    #[test]
+    fn tab_moves_focus_to_the_send_button_and_enter_sends_from_there() {
+        let mut app = make();
+        connect(&mut app, 1);
+        type_text(&mut app, "hi");
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.focus, Focus::SendButton);
+        // 既定の Enter は改行だが、ボタン上では送信。
+        let effects = press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(&effects[..], [Effect::Send { body, .. }] if body == "hi"));
+        assert_eq!(app.focus, Focus::Input);
+    }
+
+    #[test]
+    fn shift_tab_and_typing_return_to_the_input() {
+        let mut app = make();
+        type_text(&mut app, "a");
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        press(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
+        assert_eq!(app.focus, Focus::Input);
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        type_text(&mut app, "b");
+        assert_eq!((app.focus, app.input.as_str()), (Focus::Input, "ab"));
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.focus, Focus::Input);
+    }
+
+    #[test]
+    fn avatar_color_comes_from_the_loaded_avatar_image() {
+        let mut app = make();
+        let mut u = user("u1", "A");
+        u.avatar_url = Some("/api/avatars/x".into());
+        app.users.push(u);
+        assert_eq!(app.author_color("u1"), None);
+        app.want_image("/api/avatars/x");
+        assert_eq!(app.take_image_requests(), ["/api/avatars/x"]);
+        app.want_image("/api/avatars/x");
+        assert!(app.take_image_requests().is_empty());
+        let mut png = Vec::new();
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 90, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let prepared =
+            crate::tui::picture::prepare(&png, crate::tui::picture::Kind::Avatar).unwrap();
+        net(
+            &mut app,
+            NetEvent::Image {
+                key: "/api/avatars/x".into(),
+                result: Ok(Box::new(prepared)),
+            },
+        );
+        let (r, g, b) = app.author_color("u1").unwrap();
+        assert!(b > r && b > g && b > 140);
     }
 }

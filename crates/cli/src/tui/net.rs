@@ -1,6 +1,6 @@
 //! 通信・端末・下書き保存をつなぐイベントループ。画面の状態は `app` が持つ。
 
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -13,13 +13,16 @@ use disnans_client_core::{
 use disnans_shared::ServerEvent;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Rect;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio::time::Instant;
 
 use super::app::{
     App, Effect, Event, HistoryPurpose, NetEvent, PAGE_SIZE, REFETCH_SIZE, SendResult,
 };
+use super::graphics::{self, Graphics, Protocol};
 use super::input::{EnterKeys, Keymap};
+use super::picture;
 use super::terminal::TerminalGuard;
 use super::view;
 use crate::{CliError, live};
@@ -59,6 +62,11 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
     app.keymap.enhanced = guard.enhanced_keys;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout())).map_err(CliError::Io)?;
     let _ = terminal.clear();
+    let mut graphics = Graphics::new(graphics::detect());
+    if graphics.protocol != Protocol::None {
+        app.enable_images(cell_pixels());
+    }
+    let mut force_images = false;
 
     let (tx, mut rx) = unbounded_channel::<NetEvent>();
     let (term_tx, mut term_rx) = unbounded_channel::<event::Event>();
@@ -72,8 +80,28 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
     let mut session_ended = false;
 
     let result = loop {
+        // 画像: 配置が変わるなら、文字の描画の前に古い画像を消し、後に新しい画像を重ねる。
+        let mut image_out = Vec::new();
+        let images_changed = match terminal.size() {
+            Ok(size) if graphics.protocol != Protocol::None => {
+                view::plan(Rect::new(0, 0, size.width, size.height), &mut app);
+                graphics.begin(&app.placements, force_images, &mut image_out)
+            }
+            _ => false,
+        };
+        force_images = false;
+        write_raw(&image_out);
         if let Err(e) = terminal.draw(|frame| view::draw(frame, &mut app)) {
             break Err(CliError::Io(e));
+        }
+        if images_changed {
+            let mut out = Vec::new();
+            let placements = app.placements.clone();
+            graphics.finish(&placements, |key| app.ready_image(key), &mut out);
+            write_raw(&out);
+        }
+        for key in app.take_image_requests() {
+            spawn_image(&rest, &tx, key);
         }
         let draft_due = pending_draft.as_ref().map(|(_, at)| *at);
         let effects = tokio::select! {
@@ -83,6 +111,14 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
                     app.update(Event::Key(key))
                 }
                 Some(event::Event::Paste(text)) => app.update(Event::Paste(text)),
+                Some(event::Event::Resize(..)) => {
+                    // 画面を作り直すので、画像も描き直す。
+                    force_images = true;
+                    if graphics.protocol != Protocol::None {
+                        app.enable_images(cell_pixels());
+                    }
+                    Vec::new()
+                }
                 Some(_) => Vec::new(),
             },
             item = session.next(), if !session_ended => {
@@ -140,6 +176,9 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
     if let Some((value, _)) = pending_draft.take() {
         save_draft(&store, &key, value, &tx).await;
     }
+    let mut out = Vec::new();
+    graphics.cleanup(&mut out);
+    write_raw(&out);
     drop(terminal);
     drop(guard);
     if let Some(note) = app.exit_note() {
@@ -222,6 +261,54 @@ fn spawn_terminal_reader(tx: UnboundedSender<event::Event>, stop: Arc<AtomicBool
             }
         }
     });
+}
+
+/// 1セルのピクセル数。取れない端末（Windows など）では一般的な 8x16 とみなす。
+fn cell_pixels() -> (u16, u16) {
+    match crossterm::terminal::window_size() {
+        Ok(s) if s.columns > 0 && s.rows > 0 && s.width > 0 && s.height > 0 => {
+            ((s.width / s.columns).max(1), (s.height / s.rows).max(1))
+        }
+        _ => (8, 16),
+    }
+}
+
+fn write_raw(bytes: &[u8]) {
+    if bytes.is_empty() {
+        return;
+    }
+    let mut stdout = io::stdout().lock();
+    let _ = stdout.write_all(bytes);
+    let _ = stdout.flush();
+}
+
+/// 画像を取得して縮小する（アバターは `/api/avatars/…`、サムネイルは `/api/files/…/thumb`）。
+fn spawn_image(rest: &Arc<RestClient>, tx: &UnboundedSender<NetEvent>, key: String) {
+    let (rest, tx) = (rest.clone(), tx.clone());
+    tokio::spawn(async move {
+        let kind = if key.starts_with("/api/avatars/") {
+            picture::Kind::Avatar
+        } else {
+            picture::Kind::Thumb
+        };
+        let result = match fetch_bytes(&rest, &key).await {
+            Ok(bytes) => tokio::task::spawn_blocking(move || picture::prepare(&bytes, kind))
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r)
+                .map(Box::new),
+            Err(e) => Err(e),
+        };
+        let _ = tx.send(NetEvent::Image { key, result });
+    });
+}
+
+const MAX_IMAGE_BYTES: usize = 10 << 20;
+
+async fn fetch_bytes(rest: &RestClient, path: &str) -> Result<Vec<u8>, String> {
+    rest.get_bytes(path, MAX_IMAGE_BYTES)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 fn spawn_prefs(rest: &Arc<RestClient>, tx: &UnboundedSender<NetEvent>) {

@@ -77,6 +77,10 @@ pub enum Action {
     ScrollTop,
     ScrollBottom,
     Refetch,
+    /// Tab: 送信ボタンへ。
+    FocusButton,
+    /// Shift+Tab: 入力欄へ戻る。
+    FocusInput,
     Ignore,
 }
 
@@ -120,6 +124,8 @@ impl Keymap {
             KeyCode::Char(c) if ctrl && alt => Action::Insert(c),
             KeyCode::Char(_) if alt || ctrl => Action::Ignore,
             KeyCode::Char(c) => Action::Insert(c),
+            KeyCode::Tab if !ctrl && !alt => Action::FocusButton,
+            KeyCode::BackTab => Action::FocusInput,
             KeyCode::Backspace => Action::Backspace,
             KeyCode::Delete => Action::Delete,
             KeyCode::Left => Action::Left,
@@ -173,7 +179,7 @@ impl Keymap {
             names.join("/")
         };
         format!(
-            "送信: {} | 改行: {} | PgUp/PgDn: 履歴 | Ctrl+Q: 終了",
+            "送信: {} | 改行: {} | Tab: 送信ボタン | PgUp/PgDn: 履歴 | Ctrl+Q: 終了",
             pick(EnterAction::Send, "Ctrl+S"),
             pick(EnterAction::Newline, "Ctrl+J"),
         )

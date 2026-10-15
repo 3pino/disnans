@@ -6,13 +6,16 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Padding, Paragraph};
 
-use super::app::{App, ConnState, SendState};
+use super::app::{App, ConnState, Focus, ImageState, SendState};
+use super::graphics::Placement;
 use super::sanitize;
 use super::transcript::{self, Row, RowKind};
 
 pub const MIN_WIDTH: u16 = 20;
 pub const MIN_HEIGHT: u16 = 8;
 const MAX_INPUT_ROWS: usize = 5;
+const BLUE: Color = Color::Rgb(90, 150, 255);
+const BUTTON_W: u16 = 8;
 const PLACEHOLDER: &str = "ここにテキストを入力";
 
 pub fn status_text(app: &App) -> String {
@@ -99,7 +102,9 @@ fn status_visible(app: &App) -> bool {
 
 /// 入力欄の中の幅（枠と左右の余白を除く）。
 fn input_inner_width(width: u16) -> usize {
-    usize::from(width).saturating_sub(4).max(1)
+    usize::from(width)
+        .saturating_sub(usize::from(BUTTON_W) + 4)
+        .max(1)
 }
 
 fn regions(area: Rect, app: &App) -> Regions {
@@ -147,7 +152,24 @@ const ACCENT_COLORS: [Color; transcript::ACCENTS] = [
     Color::LightRed,
 ];
 
-fn row_line(row: &Row) -> Line<'static> {
+/// 先頭の `cells` 桁ぶんの文字を空白にする（その上にアバター画像を重ねるとき）。
+fn blank_first_cells(text: &str, cells: usize) -> String {
+    let mut used = 0;
+    let mut out = String::new();
+    let mut chars = text.chars();
+    for c in chars.by_ref() {
+        used += sanitize::char_width(c);
+        out.push(' ');
+        if used >= cells {
+            break;
+        }
+    }
+    // 幅の足りない分（全角1文字で2桁を超えた場合など）はそのまま。
+    out.extend(chars);
+    out
+}
+
+fn row_line(row: &Row, color: Color, hide_icon: bool, note: Option<&str>) -> Line<'static> {
     match row.kind {
         RowKind::Separator => Line::from(Span::styled(
             row.text.clone(),
@@ -155,19 +177,104 @@ fn row_line(row: &Row) -> Line<'static> {
         )),
         kind => {
             let (lead, rest) = row.text.split_at(row.prefix.min(row.text.len()));
+            let lead = if hide_icon {
+                blank_first_cells(lead, 2)
+            } else {
+                lead.to_owned()
+            };
             let rest_style = match kind {
                 RowKind::Meta => Style::new().fg(Color::DarkGray),
                 _ => Style::new(),
             };
-            let lead_style = Style::new()
-                .fg(ACCENT_COLORS[usize::from(row.accent) % ACCENT_COLORS.len()])
-                .add_modifier(Modifier::BOLD);
-            Line::from(vec![
-                Span::styled(lead.to_owned(), lead_style),
+            let lead_style = Style::new().fg(color).add_modifier(Modifier::BOLD);
+            let mut spans = vec![
+                Span::styled(lead, lead_style),
                 Span::styled(rest.to_owned(), rest_style),
-            ])
+            ];
+            if let Some(note) = note {
+                spans.push(Span::styled(
+                    note.to_owned(),
+                    Style::new().fg(Color::DarkGray),
+                ));
+            }
+            Line::from(spans)
         }
     }
+}
+
+/// 投稿者の色。アバターがあればその平均色、なければ ID から決めた色。
+fn author_color(app: &App, row: &Row) -> Color {
+    match app.author_color(&row.author_id) {
+        Some((r, g, b)) => Color::Rgb(r, g, b),
+        None => ACCENT_COLORS[usize::from(row.accent) % ACCENT_COLORS.len()],
+    }
+}
+
+/// 履歴の見えている範囲（`rows` の添字の範囲と、先頭の空き行数）。
+fn visible(app: &App, rows: &[Row], height: u16) -> (usize, usize, usize) {
+    let end = rows.len().saturating_sub(app.scroll);
+    let start = end.saturating_sub(usize::from(height));
+    let pad = usize::from(height).saturating_sub(end - start);
+    (start, end, pad)
+}
+
+/// 画像を出す場所を決める。必要な画像の取得もここで依頼する。
+pub fn plan(area: Rect, app: &mut App) {
+    app.placements.clear();
+    if app.gfx.is_none() || area.width < MIN_WIDTH || area.height < MIN_HEIGHT {
+        return;
+    }
+    let (w, h) = history_size(area, app);
+    app.set_viewport(w, h);
+    let r = regions(area, app);
+    let rows = app.rows();
+    let (start, end, pad) = visible(app, &rows, r.history.height);
+    let mut placements: Vec<Placement> = Vec::new();
+    for (i, row) in rows[start..end].iter().enumerate() {
+        let y = r.history.y + (pad + i) as u16;
+        if let Some(key) = &row.avatar {
+            app.want_image(key);
+            if app.ready_image(key).is_some() {
+                placements.push(Placement {
+                    key: key.clone(),
+                    col: r.history.x,
+                    row: y,
+                    cols: 2,
+                    rows: 1,
+                    src_start: 0,
+                    src_end: 1,
+                    src_total: 1,
+                });
+            }
+        }
+        if let Some(slot) = &row.image {
+            app.want_image(&slot.key);
+            if app.ready_image(&slot.key).is_none() {
+                continue;
+            }
+            match placements.last_mut() {
+                Some(last)
+                    if last.key == slot.key
+                        && last.row + last.rows == y
+                        && last.src_end == slot.row =>
+                {
+                    last.rows += 1;
+                    last.src_end += 1;
+                }
+                _ => placements.push(Placement {
+                    key: slot.key.clone(),
+                    col: r.history.x + slot.offset,
+                    row: y,
+                    cols: slot.cols,
+                    rows: 1,
+                    src_start: slot.row,
+                    src_end: slot.row + 1,
+                    src_total: slot.rows,
+                }),
+            }
+        }
+    }
+    app.placements = placements;
 }
 
 /// 下部のナビゲーション。Chat だけが使え、未実装の Threads / Settings は選べない（無効表示）。
@@ -213,12 +320,27 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         );
     }
 
+    plan(area, app);
     let rows = app.rows();
-    let end = rows.len().saturating_sub(app.scroll);
-    let start = end.saturating_sub(usize::from(r.history.height));
-    let mut lines: Vec<Line> = rows[start..end].iter().map(row_line).collect();
+    let (start, end, pad) = visible(app, &rows, r.history.height);
+    let mut lines: Vec<Line> = rows[start..end]
+        .iter()
+        .map(|row| {
+            let hide_icon = row
+                .avatar
+                .as_deref()
+                .is_some_and(|k| app.ready_image(k).is_some());
+            let note = row.image.as_ref().filter(|s| s.row == 0).and_then(|s| {
+                match app.images.get(&s.key) {
+                    Some(ImageState::Failed) => Some("(画像を表示できません)"),
+                    Some(ImageState::Ready(_)) => None,
+                    _ => Some("(画像を読み込み中…)"),
+                }
+            });
+            row_line(row, author_color(app, row), hide_icon, note)
+        })
+        .collect();
     // 少ないときは下に寄せる（最新が入力欄の近くにある）。
-    let pad = usize::from(r.history.height).saturating_sub(lines.len());
     let mut padded = vec![Line::from(""); pad];
     padded.append(&mut lines);
     frame.render_widget(Paragraph::new(padded), r.history);
@@ -235,8 +357,46 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(Color::DarkGray))
         .padding(Padding::horizontal(1));
-    let inner = block.inner(r.input);
-    frame.render_widget(block, r.input);
+    let box_area = Rect {
+        width: r.input.width.saturating_sub(BUTTON_W),
+        ..r.input
+    };
+    let inner = block.inner(box_area);
+    frame.render_widget(block, box_area);
+    // 送信ボタンは入力欄の右、下端にそろえる。
+    let button_area = Rect {
+        x: box_area.right(),
+        y: r.input.bottom().saturating_sub(3),
+        width: BUTTON_W.min(r.input.width),
+        height: 3,
+    };
+    let focused = app.focus == Focus::SendButton;
+    let can_send = matches!(app.conn, ConnState::Connected { .. })
+        && !app.input.as_str().trim().is_empty()
+        && !app.input_locked();
+    let (border, label) = if focused {
+        (
+            Style::new().fg(BLUE).add_modifier(Modifier::BOLD),
+            Style::new()
+                .fg(BLUE)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+        )
+    } else if can_send {
+        (Style::new().fg(BLUE), Style::new().fg(BLUE))
+    } else {
+        (
+            Style::new().fg(Color::DarkGray),
+            Style::new().fg(Color::DarkGray),
+        )
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(" 送信 ", label))).block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .border_style(border),
+        ),
+        button_area,
+    );
     let (input_rows, (cursor_row, cursor_col)) = app.input.layout(usize::from(inner.width).max(1));
     let height = usize::from(inner.height);
     let first = (cursor_row + 1).saturating_sub(height);
@@ -256,11 +416,17 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Paragraph::new(lines), inner);
     let x = inner.x + cursor_col as u16;
     let y = inner.y + (cursor_row - first) as u16;
-    frame.set_cursor_position((x.min(inner.right().saturating_sub(1)), y));
+    if !focused {
+        frame.set_cursor_position((x.min(inner.right().saturating_sub(1)), y));
+    }
 
     frame.render_widget(
         Paragraph::new(sanitize::truncate(
-            &app.keymap.hint(),
+            &if focused {
+                "送信ボタン: Enter / Space で送信 | Shift+Tab: 入力欄へ戻る".to_owned()
+            } else {
+                app.keymap.hint()
+            },
             usize::from(r.hint.width),
         ))
         .style(Style::new().fg(Color::DarkGray)),
@@ -402,5 +568,46 @@ mod tests {
         assert!(all.contains("╭") && all.contains("╰"), "{all}");
         assert!(all.contains("ここにテキストを入力"), "{all}");
         assert!(screen.last().unwrap().contains("Chat"));
+    }
+
+    #[test]
+    fn send_button_is_drawn_and_focus_changes_the_hint() {
+        let mut app = app();
+        connect(&mut app);
+        let screen = render(&mut app, 40, 14).join("\n");
+        assert!(
+            screen.contains("送信") && screen.matches('╭').count() >= 2,
+            "{screen}"
+        );
+        app.focus = Focus::SendButton;
+        let screen = render(&mut app, 80, 14).join("\n");
+        assert!(screen.contains("Shift+Tab"), "{screen}");
+    }
+
+    #[test]
+    fn plan_places_loaded_images_and_requests_missing_ones() {
+        use crate::tui::picture::{Kind, prepare};
+        let mut app = app();
+        connect(&mut app);
+        app.enable_images((8, 16));
+        app.users[1].avatar_url = Some("/api/avatars/b".into());
+        app.messages.push(message("m1", "u2", "やあ"));
+        let area = Rect::new(0, 0, 40, 14);
+        plan(area, &mut app);
+        assert!(app.placements.is_empty());
+        assert_eq!(app.take_image_requests(), ["/api/avatars/b"]);
+        let mut png = Vec::new();
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([9, 9, 9, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let ready = prepare(&png, Kind::Avatar).unwrap();
+        app.update(Event::Net(NetEvent::Image {
+            key: "/api/avatars/b".into(),
+            result: Ok(Box::new(ready)),
+        }));
+        plan(area, &mut app);
+        assert_eq!(app.placements.len(), 1);
+        let p = &app.placements[0];
+        assert_eq!((p.col, p.cols, p.rows), (0, 2, 1));
     }
 }

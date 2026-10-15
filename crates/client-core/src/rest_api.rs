@@ -214,6 +214,47 @@ impl RestClient {
             )
         })
     }
+
+    /// 任意の GET の本文をバイト列で返す（アバター `/api/avatars/{id}`、サムネイル `/api/files/{id}/thumb` など）。
+    /// `max_bytes` を超えたら、読み切らずに `too_large` で失敗する。パスは `encode_path_segment` 済みのものを渡す。
+    pub async fn get_bytes(&self, path: &str, max_bytes: usize) -> Result<Vec<u8>, ReadFailure> {
+        let mut response = self
+            .get_request(path)
+            .send()
+            .await
+            .map_err(|err| transport_failure(&err, None))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.bytes().await.unwrap_or_default();
+            return Err(http_failure(status, &body));
+        }
+        let too_large = || {
+            ReadFailure::new(
+                Some(status.as_u16()),
+                "too_large",
+                "応答が大きすぎるため読み込みません",
+            )
+        };
+        if response
+            .content_length()
+            .is_some_and(|length| length > max_bytes as u64)
+        {
+            return Err(too_large());
+        }
+        let mut out = Vec::new();
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => {
+                    if out.len() + chunk.len() > max_bytes {
+                        return Err(too_large());
+                    }
+                    out.extend_from_slice(&chunk);
+                }
+                Ok(None) => return Ok(out),
+                Err(err) => return Err(transport_failure(&err, Some(status.as_u16()))),
+            }
+        }
+    }
 }
 
 // ---- 書込（段2） ----
@@ -644,6 +685,31 @@ mod tests {
         )
         .unwrap();
         (client, task)
+    }
+
+    #[tokio::test]
+    async fn get_bytes_returns_the_body_and_enforces_the_limit() {
+        let (client, task) = one_shot("200 OK", "abc").await;
+        assert_eq!(
+            client.get_bytes("/api/avatars/x", 10).await.unwrap(),
+            b"abc"
+        );
+        assert_eq!(task.await.unwrap(), "GET /api/avatars/x HTTP/1.1");
+
+        let (client, _task) = one_shot("200 OK", "abcdef").await;
+        let error = client.get_bytes("/api/avatars/x", 5).await.unwrap_err();
+        assert_eq!(error.code, "too_large");
+
+        let (client, _task) =
+            one_shot("404 Not Found", r#"{"code":"not_found","message":"no"}"#).await;
+        let error = client
+            .get_bytes("/api/files/x/thumb", 10)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            (error.status, error.code.as_str()),
+            (Some(404), "not_found")
+        );
     }
 
     #[test]

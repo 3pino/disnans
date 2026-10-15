@@ -624,12 +624,14 @@ name = "disnans-cli"
 version = "0.2.6"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "clap",
  "crossterm",
  "disnans-client-core",
  "disnans-server",
  "disnans-shared",
  "futures-util",
+ "image",
  "jiff",
  "ratatui",
  "serde",
