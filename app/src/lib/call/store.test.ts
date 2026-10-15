@@ -409,6 +409,77 @@ describe('参加と音声', () => {
     expect(b.store.participants.map((p) => p.userId)).toContain('u1');
   });
 
+  it('一覧に載るまで音声を送らない（join より先に call.emit が着くと not_in_call になるため）', async () => {
+    vi.useFakeTimers();
+    try {
+      const b = makeClient('u2');
+      await b.store.join();
+      await vi.advanceTimersByTimeAsync(0);
+      const a = makeClient('u1');
+      const realHandle = server.handle.bind(server);
+      let swallow = true;
+      server.handle = (c, ev) => (swallow && ev.type === 'call.join' ? undefined : realHandle(c, ev));
+      await a.store.join();
+      // 相手が居るので、音声の送信の条件（相手の接続）は満たしている。でも一覧に載る前なので送らない
+      expect(speak(a)).toEqual([]);
+      swallow = false;
+      a.store.onServerEvent({ type: 'call.state', members: [{ peer: a.store.myPeer, user_id: 'u1', status: { muted: false, deafened: false, device: null } }, ...b.store.members] } as never);
+      expect(speak(a).length).toBeGreaterThan(0);
+      server.handle = realHandle;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('一覧に載る前の not_in_call では抜けない（音声・状態への応答の可能性。3 秒の待ちで判定する）', async () => {
+    vi.useFakeTimers();
+    try {
+      const a = makeClient('u1');
+      const realHandle = server.handle.bind(server);
+      server.handle = (c, ev) => (ev.type === 'call.join' ? undefined : realHandle(c, ev));
+      await a.store.join();
+      a.store.onServerEvent({ type: 'error', code: 'not_in_call', message: '通話に参加していません' } as never);
+      expect(a.store.joined).toBe(true);
+      expect(a.toast).not.toHaveBeenCalledWith(expect.stringContaining('通話に入れませんでした'), 'error');
+      server.handle = realHandle;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('再入り直し（rejoin）の直後も、一覧に載るまで音声を送らない', async () => {
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await connect(a, b);
+    expect(speak(a).length).toBeGreaterThan(0);
+    a.store.onServerEvent({ type: 'hello', me: { id: 'u1' } as never, users: [] });
+    // 入り直しの送信のあと、まだ一覧に載っていない
+    expect(a.store.listed).toBe(false);
+    expect(speak(a)).toEqual([]);
+    await flush();
+    expect(a.store.listed).toBe(true);
+    expect(speak(a).length).toBeGreaterThan(0);
+  });
+
+  it('参加中に変えた状態（ミュート）は、一覧に載った時点で一度送る', async () => {
+    vi.useFakeTimers();
+    try {
+      const a = makeClient('u1');
+      const realHandle = server.handle.bind(server);
+      let swallow = true;
+      server.handle = (c, ev) => (swallow && ev.type === 'call.join' ? undefined : realHandle(c, ev));
+      await a.store.join();
+      a.store.toggleMute();
+      expect(a.sent.some((e) => e.type === 'call.update')).toBe(false);
+      swallow = false;
+      a.store.onServerEvent({ type: 'call.state', members: [{ peer: a.store.myPeer, user_id: 'u1', status: { muted: false, deafened: false, device: null } }] } as never);
+      expect(a.sent.filter((e) => e.type === 'call.update').at(-1)).toMatchObject({ status: { muted: true } });
+      server.handle = realHandle;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('参加を送ったあいだは「参加中」（自分は出さない）。一覧に載ると参加済み', async () => {
     vi.useFakeTimers();
     try {

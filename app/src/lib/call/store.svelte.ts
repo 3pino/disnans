@@ -280,9 +280,9 @@ export class CallStore {
       this.rejoin();
       return;
     }
-    // 参加が一覧に載る前の失敗（参加そのものが通らなかった）
+    // 一覧に載る前の not_in_call は、参加の失敗ではない（音声・状態の送信が先に着いた応答）。3 秒の待ちで判定する
     if (!this.listed) {
-      this.failJoin(message);
+      if (code !== 'not_in_call') this.failJoin(message);
       return;
     }
     // 載ってからの not_in_call: サーバーは自分を参加者と見ていない。状態を合わせて外れる
@@ -354,7 +354,11 @@ export class CallStore {
     if (this.joined && this.peerId) {
       const here = members.some((m) => m.peer === this.peerId);
       if (here) {
-        this.listed = true;
+        if (!this.listed) {
+          this.listed = true;
+          // 参加中に変えた状態（ミュートなど）を、載った時点で一度知らせる
+          this.sendStatus();
+        }
       } else if (this.listed) {
         // 載っていたのに、いなくなった（サーバーが外した・接続が替わった）。通話から外れる
         this.leave(false, 'not-listed');
@@ -409,7 +413,8 @@ export class CallStore {
   }
 
   private sendStatus(): void {
-    if (this.joined) this.deps.send({ type: 'call.update', status: this.status() });
+    // 参加が一覧に載るまでは送らない（載ったときに、その時点の状態を一度送る）
+    if (this.listed) this.deps.send({ type: 'call.update', status: this.status() });
   }
 
   // ---- 参加・退出 ----
@@ -810,7 +815,8 @@ export class CallStore {
 
   /** マイクの音（AudioContext の周波数）を 16kHz に直して送る */
   private onCapture(chunk: Float32Array): void {
-    if (!this.joined || !this.resampler || this.entries.size === 0) return;
+    // サーバーの一覧に自分が載るまで送らない（call.emit は制御のチェーンの外。先に着くと not_in_call になる）
+    if (!this.listed || !this.resampler || this.entries.size === 0) return;
     const volume = this.micGain ? 1 : this.settings.micVolume;
     const out = this.resampler.push(chunk);
     for (const frame of this.framer.push(out)) {
