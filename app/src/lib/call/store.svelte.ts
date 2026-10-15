@@ -113,6 +113,10 @@ function errName(e: unknown): string {
   return e instanceof Error ? e.name : '';
 }
 
+/** 無音を防ぐ信号（聞こえない大きさ・低さ） */
+const KEEPALIVE_HZ = 20;
+const KEEPALIVE_GAIN = 0.0001;
+
 export class CallStore {
   // ---- 画面が読む状態（リアクティブ） ----
   /** サーバーが知っている通話の参加者（自分を含む） */
@@ -148,6 +152,7 @@ export class CallStore {
   private ctx: AudioContext | null = null;
   /** 通話中、画面が戻ったときに AudioContext を動かし直す（別のアプリを開いたあとに止まっていることがある） */
   private readonly onVisible = (): void => {
+    this.logAudio('visibility');
     if (document.visibilityState === 'visible') this.keepContextRunning();
   };
   private ctxDetach: (() => void) | null = null;
@@ -378,7 +383,8 @@ export class CallStore {
         this.ctx = new AudioContext();
         void this.ctx.resume().catch(() => {});
         // 別のアプリを開いたとき、WebView が裏に回って AudioContext が止められることがある。止まったら動かし直す
-        this.ctx.onstatechange = () => this.keepContextRunning();
+        this.ctx.onstatechange = () => this.onContextState();
+        this.startKeepAlive(this.ctx);
         document.addEventListener('visibilitychange', this.onVisible);
         this.watchMicTracks(stream);
         this.ctxDetach = this.deps.audio.attach(this.ctx);
@@ -442,6 +448,35 @@ export class CallStore {
   /** 通話中に AudioContext が止まっていたら動かし直す */
   private keepContextRunning(): void {
     if (this.joined && this.ctx?.state === 'suspended') void this.ctx.resume().catch(() => {});
+  }
+
+  /** 診断（console.info。Android では WebView のログとして出る）。状態と、時計が進んでいるかを残す */
+  private logAudio(reason: string): void {
+    const ctx = this.ctx;
+    if (!this.joined || !ctx) return;
+    console.info(`[call] audio ${reason}: state=${ctx.state} t=${ctx.currentTime.toFixed(2)} visibility=${document.visibilityState}`);
+  }
+
+  /**
+   * 無音が続くと、WebView は出力の経路を閉じる（音が来ると開き直すが、そのあいだ数秒は無音になる）。
+   * 聞こえない程度の信号を流し続けて、無音にしない。
+   */
+  private startKeepAlive(ctx: AudioContext): void {
+    if (typeof ctx.createOscillator !== 'function') return;
+    this.keepAlive?.stop();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = KEEPALIVE_HZ;
+    gain.gain.value = KEEPALIVE_GAIN;
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    this.keepAlive = osc;
+  }
+  private keepAlive: OscillatorNode | null = null;
+
+  private onContextState(): void {
+    this.logAudio('statechange');
+    this.keepContextRunning();
   }
 
   /** マイクが途中で止まった（OS やほかのアプリに取られた）ことを知らせる。stop() では発火しない */
