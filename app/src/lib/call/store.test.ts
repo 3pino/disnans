@@ -96,10 +96,17 @@ class FakeServer {
   handle(c: Client, ev: ClientEvent) {
     c.sent.push(ev);
     switch (ev.type) {
-      case 'call.join':
+      case 'call.join': {
+        // サーバーと同じ: 別の接続（半開きの前の接続を含む）が同じ peer を持っていれば入れない
+        const taken = [...this.members.entries()].some(([conn, m]) => conn !== c.conn && m.peer === ev.peer);
+        if (taken) {
+          this.deliver(c, { type: 'error', code: 'peer_in_use', message: 'その接続 ID はすでに使われています' });
+          break;
+        }
         this.members.set(c.conn, { peer: ev.peer, user_id: c.userId, status: ev.status });
         this.broadcastState();
         break;
+      }
       case 'call.leave':
         this.drop(c);
         break;
@@ -361,7 +368,7 @@ describe('参加と音声', () => {
     expect(a.sent.find((e) => e.type === 'call.join')).toMatchObject({ status: { muted: true } });
   });
 
-  it('つなぎ直す（hello）と同じ peer ID で入り直し、また声が届く', async () => {
+  it('つなぎ直す（hello）で新しい peer ID で入り直し、また声が届く', async () => {
     const a = makeClient('u1');
     const b = makeClient('u2');
     await connect(a, b);
@@ -372,11 +379,73 @@ describe('参加と音声', () => {
     expect(b.store.participants.map((p) => p.userId)).toEqual(['u2']);
     a.store.onServerEvent({ type: 'hello', me: { id: 'u1' } as never, users: [] });
     await flush();
-    expect(a.store.myPeer).toBe(peerA);
+    expect(a.store.myPeer).not.toBe(peerA);
     expect(b.store.participants.map((p) => p.userId).sort()).toEqual(['u1', 'u2']);
     speak(a);
     await flush();
     expect(plays(b)).toBeGreaterThan(0);
+  });
+
+  it('サーバーがまだ前の参加（同じ peer）を持っていても、つなぎ直しは通る（peer を変えて入る）', async () => {
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await connect(a, b);
+    const before = a.store.myPeer;
+    // 前の接続は外れていない（半開き）。hello で入り直す
+    a.store.onServerEvent({ type: 'hello', me: { id: 'u1' } as never, users: [] });
+    await flush();
+    expect(a.store.myPeer).not.toBe(before);
+    expect(a.sent.filter((e) => e.type === 'call.join').at(-1)).toMatchObject({ peer: a.store.myPeer });
+    expect(a.store.joined).toBe(true);
+    // 入れなかった（peer_in_use）ことを示す error は届いていない（toast が出ていない）
+    expect(a.toast).not.toHaveBeenCalledWith(expect.stringContaining('すでに使われて'), 'error');
+    expect(b.store.participants.map((p) => p.userId)).toContain('u1');
+  });
+
+  it('入る（join）を送って、サーバーの一覧に自分が無いままだと、console.warn に残す（診断）', async () => {
+    vi.useFakeTimers();
+    try {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const a = makeClient('u1');
+      // 一覧に自分を入れないサーバー（join を黙って落とす）
+      const realHandle = server.handle.bind(server);
+      server.handle = (c, ev) => (ev.type === 'call.join' ? undefined : realHandle(c, ev));
+      await a.store.join();
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('サーバーの参加者一覧に自分がいません'));
+      server.handle = realHandle;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('入れたときは、一覧に自分があるので警告しない', async () => {
+    vi.useFakeTimers();
+    try {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const a = makeClient('u1');
+      await a.store.join();
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('サーバーの参加者一覧に自分がいません'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('peer_in_use で一度だけ新しい peer ID で入り直す（入れないまま操作を重ねない）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await connect(a, b);
+    a.store.onServerEvent({ type: 'error', code: 'peer_in_use', message: 'その接続 ID はすでに使われています' } as never);
+    await flush();
+    const joins = a.sent.filter((e) => e.type === 'call.join');
+    expect(joins.length).toBe(2);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('code=peer_in_use'));
+    // 2 回目も同じ error なら、それ以上は入り直さない
+    a.store.onServerEvent({ type: 'error', code: 'peer_in_use', message: 'x' } as never);
+    await flush();
+    expect(a.sent.filter((e) => e.type === 'call.join').length).toBe(2);
   });
 
   it('チャットの接続が切れると通話の取りこぼしを知らせ、戻ると入り直して知らせる（参加中だけ）', async () => {

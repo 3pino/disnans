@@ -114,6 +114,8 @@ function errName(e: unknown): string {
 }
 
 /** 無音を防ぐ信号（聞こえない大きさ・低さ） */
+/** 参加を送ったあと、サーバーの参加者一覧に自分が居るかを確かめるまでの時間（診断用） */
+const LISTED_CHECK_MS = 3000;
 const KEEPALIVE_HZ = 20;
 const KEEPALIVE_GAIN = 0.0001;
 
@@ -247,11 +249,48 @@ export class CallStore {
         break;
       case 'call.kicked':
         if (this.joined) {
-          this.leave(false);
+          this.leave(false, 'kicked');
           this.deps.toast(`${this.deps.nameOf(ev.by)}さんに通話から外されました`, 'info');
         }
         break;
+      case 'error':
+        this.onServerError(ev.code, ev.message);
+        break;
     }
+  }
+
+  /**
+   * サーバーのエラー（通話の操作が通らなかったとき）。診断のため種別と code を出す。
+   * peer_in_use: つなぎ直しの入り直しで、前の接続（まだサーバーが切断に気づいていない）が同じ接続 ID を持っている。
+   * 新しい接続 ID で一度だけ入り直す（前の接続は、サーバーが切断に気づいた時点で外れる）。
+   */
+  private onServerError(code: string, message: string): void {
+    console.warn(`[call] サーバーが通話の操作を受け付けませんでした: code=${code} message=${message}`);
+    if (code === 'peer_in_use' && this.joined && !this.rejoinRetried) {
+      this.rejoinRetried = true;
+      this.rejoin();
+    }
+  }
+
+  /** 新しい接続 ID で入り直す（サーバーの通話の一覧に自分を入れ直す） */
+  private rejoin(): void {
+    this.peerId = randomId();
+    this.deps.send({ type: 'call.join', peer: this.peerId, status: this.status() });
+    this.checkListed();
+  }
+
+  /**
+   * 診断: 入る（call.join）を送って少し後に、サーバーの参加者一覧に自分が居るか確かめる。
+   * 居なければ、入れなかった（拒否・未達・外された）ので、console.warn に残す。
+   */
+  private checkListed(): void {
+    const peer = this.peerId;
+    setTimeout(() => {
+      if (!this.joined || this.peerId !== peer) return;
+      if (!this.members.some((m) => m.peer === peer)) {
+        console.warn(`[call] 参加の送信後も、サーバーの参加者一覧に自分がいません: peer=${peer} members=${this.members.length}`);
+      }
+    }, LISTED_CHECK_MS);
   }
 
   /**
@@ -275,8 +314,13 @@ export class CallStore {
   /** つなぎ直したら、サーバーは自分を通話から外している。入り直す */
   private onReconnect(): void {
     if (!this.joined) return;
-    this.deps.send({ type: 'call.join', peer: this.peerId, status: this.status() });
+    // 前の接続 ID は、前の接続がサーバーに残っているあいだは使えない（peer_in_use）。新しい ID で入る
+    this.rejoinRetried = false;
+    this.rejoin();
   }
+
+  /** peer_in_use の再入りを、1 回の入り直しにつき 1 度だけにする */
+  private rejoinRetried = false;
 
   private onState(members: CallMember[]): void {
     this.members = members;
@@ -369,7 +413,7 @@ export class CallStore {
           onAction: (id) => {
             if (id === 'mute') this.toggleMute();
             else if (id === 'deafen') this.toggleDeafen();
-            else if (id === 'hangup') this.leave();
+            else if (id === 'hangup') this.leave(true, 'notification-hangup');
           },
         });
         this.notifyKey = JSON.stringify(this.notification());
@@ -392,11 +436,14 @@ export class CallStore {
         await this.setupSend(stream, this.ctx, this.localMeter);
 
         this.peerId = randomId();
+        this.rejoinRetried = false;
         this.muted = this.settings.joinMuted;
         this.deafened = false;
         this.applyMute();
         this.joined = true;
+        console.info(`[call] join を送ります: peer=${this.peerId}`);
         this.deps.send({ type: 'call.join', peer: this.peerId, status: this.status() });
+        this.checkListed();
         void this.restoreOutput();
         this.startWorker();
         this.reconcile();
@@ -404,7 +451,7 @@ export class CallStore {
         // マイクを開いたあとの失敗（AudioContext など）。握りつぶさず原因を出し、開いたマイクも閉じる
         console.error('[call] 通話に参加できませんでした', e);
         this.deps.toast(`通話に参加できませんでした: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`, 'error');
-        this.leave(this.joined);
+        this.leave(this.joined, 'join-error');
         stream.getTracks().forEach((t) => t.stop());
       }
     } finally {
@@ -414,8 +461,9 @@ export class CallStore {
   }
 
   /** 抜ける。sendLeave が false なのは、サーバーに外されたとき */
-  leave(sendLeave = true): void {
+  leave(sendLeave = true, reason = 'user'): void {
     if (!this.joined && !this.localStream) return;
+    console.info(`[call] 通話から抜けます: reason=${reason} sendLeave=${sendLeave}`);
     if (this.joined && sendLeave) this.deps.send({ type: 'call.leave' });
     this.joined = false;
     this.linkDown = false;

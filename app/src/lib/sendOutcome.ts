@@ -65,6 +65,15 @@ export const EMIT_TEXT = {
   invalid: '操作の内容が正しく送れませんでした',
 } as const;
 
+/** 診断用: chat_emit の失敗の種別と code（console に出す。利用者には出さない） */
+export function describeEmitError(e: unknown): string {
+  if (e && typeof e === 'object') {
+    const b = e as Partial<ChatCommandError>;
+    return `kind=${b.code ?? 'unknown'} message=${String(b.message ?? '')}`;
+  }
+  return `kind=unknown message=${String(e)}`;
+}
+
 /** chat_emit の失敗を toast の文にする（未知の形・未知の code は書込んだかどうか分からない扱い） */
 export function emitFailureText(e: unknown): string {
   const code = e && typeof e === 'object' ? (e as Partial<ChatCommandError>).code : undefined;

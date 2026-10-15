@@ -112,11 +112,24 @@ impl Calls {
         validate_peer(&peer)?;
         let status = validate_status(status)?;
         let mut members = self.lock();
-        if members.iter().any(|(c, m)| *c != conn && m.peer == peer) {
+        // 同じ人の同じ peer は、古い接続（半開き・スリープ復帰・回線切替で残っているもの）を置き換える。
+        // 古い接続へは kick を送らない（クライアントは新しい接続で入り直しているだけ）
+        let stale: Vec<ConnId> = members
+            .iter()
+            .filter(|(c, m)| **c != conn && m.peer == peer)
+            .map(|(c, _)| *c)
+            .collect();
+        if stale
+            .iter()
+            .any(|c| members.get(c).is_some_and(|m| m.user_id != actor.user.id))
+        {
             return Err(AppError::bad_request(
                 "peer_in_use",
                 "その接続 ID はすでに使われています",
             ));
+        }
+        for c in stale {
+            members.remove(&c);
         }
         members.insert(
             conn,

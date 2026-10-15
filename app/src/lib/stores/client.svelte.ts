@@ -14,7 +14,7 @@ import { ui, type ToastAvatar } from './ui.svelte';
 import { notifications } from './notifications.svelte';
 import { page, unread } from './unread.svelte';
 import { errorText } from '../errors';
-import { SEND_TEXT, emitFailureText, isRejectedSendCode, unknownReasonText } from '../sendOutcome';
+import { SEND_TEXT, describeEmitError, emitFailureText, isRejectedSendCode, unknownReasonText } from '../sendOutcome';
 import { bootChatTransport } from '../transport/boot';
 import { CALL_CONTROL_TYPES, CHAT_EVENT_TYPES, isChatEmit, type ChatEmitEvent, type ChatItem, type ChatSendEvent, type ChatTransport, type SendOutcome } from '../transport/chat';
 import { replyPreviewOf } from '../reply';
@@ -150,6 +150,8 @@ class Client {
     try {
       await chat.emit(ev);
     } catch (e) {
+      // 診断: どの操作が、どの種別・code で失敗したか（通話の不具合の切り分け用）
+      console.warn(`[chat] chat_emit 失敗: type=${ev.type} ${describeEmitError(e)}`);
       if (ev.type !== 'call.emit' && ev.type !== 'call.update') ui.toast(emitFailureText(e), 'error');
     } finally {
       this.chatEmitBytes -= size;

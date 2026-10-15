@@ -211,3 +211,80 @@ async fn join_validates_the_peer_id() {
     alice.send(join("aab")).await;
     assert_eq!(members(&mut alice).await[0].0, "aab");
 }
+
+#[tokio::test]
+async fn rejoin_with_the_same_peer_replaces_the_stale_connection() {
+    let server = TestServer::start().await;
+    let mut old = server.ws(ALICE).await;
+    let mut bob = server.ws(BOB).await;
+    old.send(join("aaa")).await;
+    members(&mut bob).await;
+    members(&mut old).await;
+
+    // 同じ人が別の接続（再接続）から同じ peer で入る
+    let mut new = server.ws(ALICE).await;
+    new.send(join("aaa")).await;
+    // 一覧は1人のまま、1回だけ届く
+    let m = members(&mut bob).await;
+    assert_eq!(m.len(), 1);
+    assert_eq!(m[0].0, "aaa");
+    assert_eq!(members(&mut new).await.len(), 1);
+    // 旧接続へは kick を送らない。一覧は全員へ1回だけ（旧接続も通常の接続として受け取る）
+    let mut states = 0;
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(300);
+    while let Ok(e) = tokio::time::timeout_at(deadline, old.recv()).await {
+        match e {
+            ServerEvent::CallState { .. } => states += 1,
+            ServerEvent::CallKicked { .. } => panic!("旧接続へ kick を送ってはいけない"),
+            _ => {}
+        }
+    }
+    assert_eq!(states, 1);
+    bob.assert_silent(Duration::from_millis(100)).await;
+
+    // 旧接続からの操作は通話外扱い、新接続は通る
+    old.send(ClientEvent::CallUpdate {
+        status: status(true),
+    })
+    .await;
+    assert_eq!(old.expect_error().await.1, "not_in_call");
+    old.send(ClientEvent::CallEmit {
+        name: "data".into(),
+        payload: json!(null),
+    })
+    .await;
+    assert_eq!(old.expect_error().await.1, "not_in_call");
+    new.send(ClientEvent::CallUpdate {
+        status: status(true),
+    })
+    .await;
+    assert!(members(&mut bob).await[0].2);
+}
+
+#[tokio::test]
+async fn another_user_cannot_take_over_a_peer() {
+    let server = TestServer::start().await;
+    let mut alice = server.ws(ALICE).await;
+    let mut bob = server.ws(BOB).await;
+    alice.send(join("aaa")).await;
+    alice.recv_until(is_state).await;
+    bob.send(join("aaa")).await;
+    assert_eq!(bob.expect_error().await.1, "peer_in_use");
+    // 元の参加者はそのまま（一覧は届かない・kick もない）
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
+    while let Ok(e) = tokio::time::timeout_at(deadline, alice.recv()).await {
+        assert!(
+            !matches!(
+                e,
+                ServerEvent::CallState { .. } | ServerEvent::CallKicked { .. }
+            ),
+            "{e:?}"
+        );
+    }
+    alice
+        .send(ClientEvent::CallUpdate {
+            status: status(true),
+        })
+        .await;
+    assert!(members(&mut alice).await[0].2);
+}
