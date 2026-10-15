@@ -69,7 +69,14 @@ export function selectWriteApi(env: ReadApiEnv): WriteApiChoice {
   return choice;
 }
 
-/** チャットの経路。rust は Windows/Linux の Tauri で、"disnans.rustChat" が "0" でないとき */
-export function selectChatMode(env: { flag: string | null; desktop: boolean }): 'rust' | 'js' {
-  return rustEnabled(env.flag, env.desktop) ? 'rust' : 'js';
+/**
+ * チャットの経路（契約 §8.1）。
+ * - デスクトップ（Windows/Linux の Tauri）: "disnans.rustChat" が "0" でなければ rust（既定 on）。
+ * - Android の Tauri: opt-in のみ。"disnans.rustChat" が "1" のときだけ rust（既定 off。背景中の切断を実機で切り分けるまで）。
+ * - それ以外（ブラウザ・macOS など）は js。
+ */
+export function selectChatMode(env: { flag: string | null; desktop: boolean; android?: boolean }): 'rust' | 'js' {
+  if (env.desktop) return rustEnabled(env.flag, true) ? 'rust' : 'js';
+  if (env.android) return env.flag === '1' ? 'rust' : 'js';
+  return 'js';
 }

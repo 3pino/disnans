@@ -71,8 +71,8 @@ futures-util = "0.3"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-# REST（読取・書込み・アップロード）。チャット（ws）は段4 まで載せない
-disnans-client-core = { path = "../../crates/client-core" }
+# REST（読取・書込み・アップロード）とチャット（ws）の Rust 経路（段4）
+disnans-client-core = { path = "../../crates/client-core", features = ["ws"] }
 tauri-plugin-apk-updater = { path = "plugins/apk-updater" }
 tauri-plugin-notifier = { path = "plugins/notifier" }
 tauri-plugin-system-bars = { path = "plugins/system-bars" }

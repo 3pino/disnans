@@ -34,9 +34,10 @@ export function bootWriteApi(env: ReadApiEnv = currentBootEnv()): WriteApiChoice
 
 /** チャットの経路を決める（rust のとき Tauri 実装、js のとき null）。client.start() で1回だけ呼ぶ */
 export function bootChatTransport(
-  env: { flag: string | null; desktop: boolean; invoke: typeof tauriInvoke; context: BridgeContext; log?: (m: string) => void } = {
+  env: { flag: string | null; desktop: boolean; android?: boolean; invoke: typeof tauriInvoke; context: BridgeContext; log?: (m: string) => void } = {
     flag: getItem(CHAT_RUST_FLAG),
     desktop: isDesktopStorageSupported(),
+    android: isTauri() && isAndroid(),
     invoke: tauriInvoke,
     context: bridgeContext(),
     log: (message) => console.info(message),

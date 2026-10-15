@@ -16,12 +16,13 @@ mod client_storage;
 mod client_storage_tests;
 
 // 読取・書込み・アップロード REST の Rust 経路（段1・段3）。契約は .pi/step4-ipc-contract.md。
-// Android は REST（読取・書込み・アップロード）まで。チャット（chat_bridge）は段4 まで載せない
+// REST（読取・書込み・アップロード）の Rust 経路（段1・段3）。Android も同じ
 #[cfg(any(desktop, target_os = "android"))]
 mod api_bridge;
 
-// チャット WebSocket の Rust 経路（段4）。契約は .pi/step4-ipc-contract.md §8。ws 依存と同じ OS だけ
-#[cfg(all(desktop, any(target_os = "macos", windows, target_os = "linux")))]
+// チャット WebSocket の Rust 経路（段4）。契約は .pi/step4-ipc-contract.md §8。
+// デスクトップは ws 依存と同じ OS だけ。Android も使う（段4）
+#[cfg(any(all(desktop, any(target_os = "macos", windows, target_os = "linux")), target_os = "android"))]
 mod chat_bridge;
 
 // 画面の静止画（プラグイン API v11 の screenCapture.snapshot。ダイアログを出さない）
@@ -154,7 +155,7 @@ pub fn run() {
         }));
     }
 
-    #[cfg(all(desktop, any(target_os = "macos", windows, target_os = "linux")))]
+    #[cfg(any(all(desktop, any(target_os = "macos", windows, target_os = "linux")), target_os = "android"))]
     {
         builder = builder.manage(chat_bridge::ChatHub::default());
     }
@@ -300,7 +301,12 @@ pub fn run() {
                 api_bridge::api_create_session,
                 api_bridge::api_create_plugin,
                 api_bridge::api_upload_file,
-                api_bridge::api_upload_abort
+                api_bridge::api_upload_abort,
+                chat_bridge::chat_start,
+                chat_bridge::chat_send,
+                chat_bridge::chat_emit,
+                chat_bridge::chat_reconnect,
+                chat_bridge::chat_stop
             ])
             .plugin(tauri_plugin_apk_updater::init())
             .plugin(tauri_plugin_system_bars::init())
@@ -348,7 +354,7 @@ pub fn run() {
             _app.state::<linux_capture::LinuxScreenState>().shutdown();
         }
         // チャット接続を中止する。待たない（準備中の接続も止める）。保留中の送信は unknown になり、再送はしない
-        #[cfg(all(desktop, any(target_os = "macos", windows, target_os = "linux")))]
+        #[cfg(any(all(desktop, any(target_os = "macos", windows, target_os = "linux")), target_os = "android"))]
         if matches!(_event, tauri::RunEvent::Exit) {
             use tauri::Manager;
             _app.state::<chat_bridge::ChatHub>().shutdown_now();

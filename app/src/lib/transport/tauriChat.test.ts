@@ -98,6 +98,30 @@ describe('chat mode selection', () => {
     expect(selectChatMode({ flag: null, desktop: false })).toBe('js');
     expect(selectChatMode({ flag: '1', desktop: false })).toBe('js');
   });
+
+  it('Android: opt-in only ("1"); null and "0" stay js (the background disconnect is not yet explained)', () => {
+    expect(selectChatMode({ flag: null, desktop: false, android: true })).toBe('js');
+    expect(selectChatMode({ flag: '0', desktop: false, android: true })).toBe('js');
+    expect(selectChatMode({ flag: '1', desktop: false, android: true })).toBe('rust');
+    expect(selectChatMode({ flag: 'yes', desktop: false, android: true })).toBe('js');
+  });
+
+  it('the full matrix: desktop default on, Android opt-in, browser and macOS always js', () => {
+    const rows: [string | null, boolean, boolean, 'rust' | 'js'][] = [
+      // flag, desktop, android, expected
+      [null, true, false, 'rust'],
+      ['1', true, false, 'rust'],
+      ['0', true, false, 'js'],
+      [null, false, true, 'js'],
+      ['1', false, true, 'rust'],
+      ['0', false, true, 'js'],
+      ['1', false, false, 'js'],
+      [null, false, false, 'js'],
+    ];
+    for (const [flag, desktop, android, want] of rows) {
+      expect(selectChatMode({ flag, desktop, android })).toBe(want);
+    }
+  });
 });
 
 describe('chat_emit (Tauri)', () => {

@@ -7,7 +7,7 @@ import type { Message } from '../protocol/Message';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import type { User } from '../protocol/User';
 import { Socket, type SocketStatus } from '../ws';
-import { wsUrl } from '../config';
+import { isAndroid, isTauri, wsUrl } from '../config';
 import { Timeline, type OutgoingFile, type PendingMessage } from './timeline.svelte';
 import { threads } from './threads.svelte';
 import { ui, type ToastAvatar } from './ui.svelte';
@@ -64,6 +64,14 @@ class Client {
     if (chat) {
       this.chat = chat;
       void this.startChat();
+      // Android（opt-in の rust チャットのみ）: 背景から戻った・ネットワークが変わったら、接続を作り直す。
+      // chat_reconnect は接続中に何もしないので、chat_start（強制の作り直し）を使う。新しい接続の hello で履歴も読み直す
+      if (isTauri() && isAndroid() && typeof window !== 'undefined') {
+        window.addEventListener('online', () => this.restartChat());
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') this.restartChat();
+        });
+      }
       return;
     }
     this.socket = new Socket({
@@ -380,6 +388,13 @@ class Client {
       ui.toast(`${prefix}: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }
     this.scheduleChatRetry();
+  }
+
+  /** 接続を作り直す（Android の復帰・ネットワーク変化）。starting のあいだは何もしない */
+  private restartChat(): void {
+    if (!this.chat || this.chatState === 'starting') return;
+    this.clearChatRetry();
+    void this.startChat();
   }
 
   private scheduleChatRetry(): void {
