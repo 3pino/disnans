@@ -91,6 +91,13 @@ class FakeServer {
   }
   /** 接続が切れた */
   drop(c: Client) {
+    if (!this.members.delete(c.conn)) return;
+    // 切れた接続には届かない（実際のサーバーと同じ）
+    const members = [...this.members.values()].sort((x, y) => x.peer.localeCompare(y.peer));
+    for (const x of this.clients) if (x !== c) this.deliver(x, { type: 'call.state', members });
+  }
+  /** 自分から抜ける（接続は生きているので、自分にも一覧が届く） */
+  leave(c: Client) {
     if (this.members.delete(c.conn)) this.broadcastState();
   }
   handle(c: Client, ev: ClientEvent) {
@@ -108,7 +115,7 @@ class FakeServer {
         break;
       }
       case 'call.leave':
-        this.drop(c);
+        this.leave(c);
         break;
       case 'call.update': {
         const m = this.members.get(c.conn);
@@ -400,6 +407,84 @@ describe('参加と音声', () => {
     // 入れなかった（peer_in_use）ことを示す error は届いていない（toast が出ていない）
     expect(a.toast).not.toHaveBeenCalledWith(expect.stringContaining('すでに使われて'), 'error');
     expect(b.store.participants.map((p) => p.userId)).toContain('u1');
+  });
+
+  it('参加を送ったあいだは「参加中」（自分は出さない）。一覧に載ると参加済み', async () => {
+    vi.useFakeTimers();
+    try {
+      const a = makeClient('u1');
+      const realHandle = server.handle.bind(server);
+      let swallow = true;
+      server.handle = (c, ev) => (swallow && ev.type === 'call.join' ? undefined : realHandle(c, ev));
+      await a.store.join();
+      expect(a.store.joined).toBe(true);
+      expect(a.store.listed).toBe(false);
+      expect(a.store.pending).toBe(true);
+      expect(a.store.participants.some((p) => p.self)).toBe(false);
+      // 届いて一覧に載った
+      swallow = false;
+      a.store.onServerEvent({ type: 'call.state', members: [{ peer: a.store.myPeer, user_id: 'u1', status: { muted: false, deafened: false, device: null } }] } as never);
+      expect(a.store.pending).toBe(false);
+      expect(a.store.participants[0]).toMatchObject({ self: true, userId: 'u1' });
+      server.handle = realHandle;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('一覧に載らないまま 3 秒たつと、通話を閉じて理由を toast する（「通話に参加していません」は出さない）', async () => {
+    vi.useFakeTimers();
+    try {
+      const a = makeClient('u1');
+      const realHandle = server.handle.bind(server);
+      server.handle = (c, ev) => (ev.type === 'call.join' ? undefined : realHandle(c, ev));
+      await a.store.join();
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(a.store.joined).toBe(false);
+      expect(a.store.pending).toBe(false);
+      expect(a.toast).toHaveBeenCalledWith(expect.stringContaining('通話に入れませんでした（サーバーから返事がありませんでした）'), 'error');
+      expect(a.toast).not.toHaveBeenCalledWith(expect.stringContaining('通話に参加していません'), 'error');
+      server.handle = realHandle;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('一覧に載ったあとで、サーバーが「通話に参加していません」を返したら、通話から外れる', async () => {
+    const a = makeClient('u1');
+    await a.store.join();
+    await flush();
+    expect(a.store.listed).toBe(true);
+    a.store.onServerEvent({ type: 'error', code: 'not_in_call', message: '通話に参加していません' } as never);
+    await flush();
+    expect(a.store.joined).toBe(false);
+    expect(a.toast).toHaveBeenCalledWith('通話から外れました', 'info');
+    expect(a.toast).not.toHaveBeenCalledWith(expect.stringContaining('通話に参加していません'), 'error');
+  });
+
+  it('一覧から自分が消えたら（サーバーが外した）、通話から外れて知らせる', async () => {
+    const a = makeClient('u1');
+    await a.store.join();
+    await flush();
+    a.store.onServerEvent({ type: 'call.state', members: [] } as never);
+    expect(a.store.joined).toBe(false);
+    expect(a.toast).toHaveBeenCalledWith('通話から外れました', 'info');
+  });
+
+  it('参加の前に join が拒否された（error）と、通話を閉じて理由を toast する', async () => {
+    const a = makeClient('u1');
+    const realHandle = server.handle.bind(server);
+    // サーバーが join を拒否する（error を返す）
+    server.handle = (c, ev) => {
+      if (ev.type !== 'call.join') return realHandle(c, ev);
+      c.sent.push(ev);
+      c.store.onServerEvent({ type: 'error', code: 'invalid_status', message: '端末の種類が長すぎます' } as never);
+    };
+    await a.store.join();
+    await flush();
+    expect(a.store.joined).toBe(false);
+    expect(a.toast).toHaveBeenCalledWith('通話に入れませんでした（端末の種類が長すぎます）', 'error');
+    server.handle = realHandle;
   });
 
   it('入る（join）を送って、サーバーの一覧に自分が無いままだと、console.warn に残す（診断）', async () => {

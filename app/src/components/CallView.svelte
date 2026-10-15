@@ -86,7 +86,7 @@
 <section class="call-view" aria-label="通話">
   <header class="top-bar call-view-head">
     <h1 class="call-view-title" class:call-view-title-live={call.joined}>
-      <AudioLines size={18} />{call.joined ? '通話中' : '通話'}
+      <AudioLines size={18} />{call.pending ? '参加中…' : call.joined ? '通話中' : '通話'}
     </h1>
   </header>
 

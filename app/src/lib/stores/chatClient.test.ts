@@ -531,4 +531,16 @@ describe('chat over Rust: start and reconnect', () => {
       expect(urls(f).some((u) => u.includes('/api/messages'))).toBe(true);
     });
   });
+
+  it('a call operation error (not_in_call, peer_in_use) is not toasted here; the call state tells the user', () => {
+    chat.push({ kind: 'event', generation: 1, event: { type: 'error', client_id: null, code: 'not_in_call', message: '通話に参加していません' } });
+    chat.push({ kind: 'event', generation: 1, event: { type: 'error', client_id: null, code: 'peer_in_use', message: 'その接続 ID はすでに使われています' } });
+    expect(toastTexts().some((t) => t.includes('通話に参加していません'))).toBe(false);
+    expect(toastTexts().some((t) => t.includes('すでに使われて'))).toBe(false);
+  });
+
+  it('a non-call error is still toasted (the message is shown)', () => {
+    chat.push({ kind: 'event', generation: 1, event: { type: 'error', client_id: null, code: 'something_else', message: '別の失敗' } });
+    expect(toastTexts()).toContain('別の失敗');
+  });
 });

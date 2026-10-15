@@ -26,6 +26,9 @@ const MAIN = '__main__';
 /** 接続できないとき、チャットを再試行する間隔（JS Socket の再接続の上限と同じ） */
 const CHAT_RETRY_MS = 30_000;
 
+/** 通話の操作のエラー。画面の toast は通話の状態が出す（ここでは出さない） */
+const CALL_ERROR_CODES: ReadonlySet<string> = new Set(['not_in_call', 'peer_in_use', 'invalid_peer', 'invalid_status', 'ws_only']);
+
 class Client {
   me = $state<User | null>(null);
   users = $state<Record<string, User>>({});
@@ -627,6 +630,8 @@ class Client {
             break;
           }
         }
+        // 通話の操作の失敗は、通話の状態（call.store）が利用者へ知らせる（「通話に参加していません」を出さない）
+        if (CALL_ERROR_CODES.has(ev.code)) break;
         ui.toast(text, 'error');
         break;
       }

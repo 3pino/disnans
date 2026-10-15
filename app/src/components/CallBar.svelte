@@ -50,7 +50,7 @@
 
 <div class="call-bar" class:call-bar-live={call.joined} role="group" aria-label="通話">
   <span class="call-label" class:call-label-live={call.joined}>
-    <AudioLines size={16} />{call.joined ? '通話中' : '通話'}
+    <AudioLines size={16} />{call.pending ? '参加中…' : call.joined ? '通話中' : '通話'}
   </span>
 
   <div class="call-people">

@@ -124,6 +124,8 @@ export class CallStore {
   /** サーバーが知っている通話の参加者（自分を含む） */
   members = $state.raw<CallMember[]>([]);
   joined = $state(false);
+  /** 参加を送ったあと、サーバーの参加者一覧に自分が載ったか（載るまでは「参加中…」。自分のアイコンは出さない） */
+  listed = $state(false);
   /** 通話に参加しているあいだ、チャットの接続が切れているか（取りこぼし中） */
   linkDown = $state(false);
   joining = $state(false);
@@ -201,9 +203,15 @@ export class CallStore {
   }
 
   /** 参加者。参加中なら自分が先頭 */
+  /** 参加を送ったが、まだサーバーの一覧に載っていない */
+  get pending(): boolean {
+    return this.joined && !this.listed;
+  }
+
   get participants(): CallParticipant[] {
     const out: CallParticipant[] = [];
-    if (this.joined || this.joining) {
+    // 自分は、サーバーの一覧に載ってから（入れていないのに自分を出さない）。接続中（joining）は出さない
+    if (this.listed && this.joined) {
       out.push({
         peer: this.peerId,
         userId: this.deps.meId(),
@@ -266,15 +274,35 @@ export class CallStore {
    */
   private onServerError(code: string, message: string): void {
     console.warn(`[call] サーバーが通話の操作を受け付けませんでした: code=${code} message=${message}`);
-    if (code === 'peer_in_use' && this.joined && !this.rejoinRetried) {
+    if (!this.joined) return;
+    if (code === 'peer_in_use' && !this.rejoinRetried) {
       this.rejoinRetried = true;
       this.rejoin();
+      return;
     }
+    // 参加が一覧に載る前の失敗（参加そのものが通らなかった）
+    if (!this.listed) {
+      this.failJoin(message);
+      return;
+    }
+    // 載ってからの not_in_call: サーバーは自分を参加者と見ていない。状態を合わせて外れる
+    if (code === 'not_in_call') {
+      this.leave(false, 'not-listed');
+      this.deps.toast('通話から外れました', 'info');
+    }
+  }
+
+  /** 参加が通らなかった（一覧に載らない・拒否された）。通話の表示を閉じて、理由を知らせる */
+  private failJoin(reason: string): void {
+    console.warn(`[call] 参加できませんでした: ${reason}`);
+    this.leave(true, 'join-failed');
+    this.deps.toast(`通話に入れませんでした（${reason}）`, 'error');
   }
 
   /** 新しい接続 ID で入り直す（サーバーの通話の一覧に自分を入れ直す） */
   private rejoin(): void {
     this.peerId = randomId();
+    this.listed = false;
     this.deps.send({ type: 'call.join', peer: this.peerId, status: this.status() });
     this.checkListed();
   }
@@ -286,10 +314,9 @@ export class CallStore {
   private checkListed(): void {
     const peer = this.peerId;
     setTimeout(() => {
-      if (!this.joined || this.peerId !== peer) return;
-      if (!this.members.some((m) => m.peer === peer)) {
-        console.warn(`[call] 参加の送信後も、サーバーの参加者一覧に自分がいません: peer=${peer} members=${this.members.length}`);
-      }
+      if (!this.joined || this.peerId !== peer || this.listed) return;
+      console.warn(`[call] 参加の送信後も、サーバーの参加者一覧に自分がいません: peer=${peer} members=${this.members.length}`);
+      this.failJoin('サーバーから返事がありませんでした');
     }, LISTED_CHECK_MS);
   }
 
@@ -324,6 +351,17 @@ export class CallStore {
 
   private onState(members: CallMember[]): void {
     this.members = members;
+    if (this.joined && this.peerId) {
+      const here = members.some((m) => m.peer === this.peerId);
+      if (here) {
+        this.listed = true;
+      } else if (this.listed) {
+        // 載っていたのに、いなくなった（サーバーが外した・接続が替わった）。通話から外れる
+        this.leave(false, 'not-listed');
+        this.deps.toast('通話から外れました', 'info');
+        return;
+      }
+    }
     if (this.joined) this.reconcile();
     this.refresh();
   }
@@ -441,6 +479,7 @@ export class CallStore {
         this.deafened = false;
         this.applyMute();
         this.joined = true;
+        this.listed = false;
         console.info(`[call] join を送ります: peer=${this.peerId}`);
         this.deps.send({ type: 'call.join', peer: this.peerId, status: this.status() });
         this.checkListed();
@@ -466,6 +505,7 @@ export class CallStore {
     console.info(`[call] 通話から抜けます: reason=${reason} sendLeave=${sendLeave}`);
     if (this.joined && sendLeave) this.deps.send({ type: 'call.leave' });
     this.joined = false;
+    this.listed = false;
     this.linkDown = false;
     this.deafened = false;
     this.outputs = [];
