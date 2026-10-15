@@ -217,10 +217,22 @@ impl App {
 
     pub fn rows(&self) -> Vec<Row> {
         let width = self.viewport.0;
-        self.messages
-            .iter()
-            .flat_map(|m| transcript::message_rows(m, &self.users, width, self.zone.as_ref()))
-            .collect()
+        let mut rows = Vec::new();
+        let mut day = None;
+        for m in &self.messages {
+            let (key, label) = crate::timefmt::day_label(m.created_at, self.zone.as_ref());
+            if day != Some(key) {
+                rows.push(transcript::separator_row(&label, width));
+                day = Some(key);
+            }
+            rows.extend(transcript::message_rows(
+                m,
+                &self.users,
+                width,
+                self.zone.as_ref(),
+            ));
+        }
+        rows
     }
 
     fn message_height(&self, message: &Message) -> usize {
@@ -228,7 +240,7 @@ impl App {
     }
 
     fn total_rows(&self) -> usize {
-        self.messages.iter().map(|m| self.message_height(m)).sum()
+        self.rows().len()
     }
 
     fn max_scroll(&self) -> usize {
@@ -1043,7 +1055,7 @@ mod tests {
                 client_id: None,
             },
         );
-        assert_eq!(app.scroll, 4 + 2);
+        assert_eq!(app.scroll, 4 + 1);
         let effects = press(&mut app, KeyCode::Home, KeyModifiers::CONTROL);
         assert_eq!(
             effects,

@@ -4,16 +4,16 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, BorderType, Padding, Paragraph};
 
 use super::app::{App, ConnState, SendState};
 use super::sanitize;
-use super::transcript::RowKind;
+use super::transcript::{self, Row, RowKind};
 
 pub const MIN_WIDTH: u16 = 20;
 pub const MIN_HEIGHT: u16 = 8;
 const MAX_INPUT_ROWS: usize = 5;
-const PROMPT: &str = "> ";
+const PLACEHOLDER: &str = "ここにテキストを入力";
 
 pub fn status_text(app: &App) -> String {
     let name = app
@@ -82,24 +82,43 @@ struct Regions {
     status: Rect,
     history: Rect,
     message: Rect,
+    /// 角丸の枠（罫線を含む）。
     input: Rect,
     hint: Rect,
+    navbar: Rect,
+}
+
+/// 状態バーは、接続が正常で何も待っていないときは出さない（狭い画面を履歴に使う）。
+fn status_visible(app: &App) -> bool {
+    !matches!(app.conn, ConnState::Connected { .. })
+        || app.loading_initial
+        || app.loading_older
+        || app.refetching
+        || app.scroll > 0
+}
+
+/// 入力欄の中の幅（枠と左右の余白を除く）。
+fn input_inner_width(width: u16) -> usize {
+    usize::from(width).saturating_sub(4).max(1)
 }
 
 fn regions(area: Rect, app: &App) -> Regions {
-    let input_width = usize::from(area.width).saturating_sub(PROMPT.len()).max(1);
+    let status_h = u16::from(status_visible(app));
     let wanted = app
         .input
-        .layout(input_width)
+        .layout(input_inner_width(area.width))
         .0
         .len()
         .clamp(1, MAX_INPUT_ROWS);
-    let input_height = wanted.min(usize::from(area.height.saturating_sub(5)).max(1)) as u16;
-    let [status, history, message, input, hint] = Layout::vertical([
-        Constraint::Length(1),
+    // 状態・履歴1・メッセージ行・枠2・案内・navbar を除いた残りまで。
+    let room = usize::from(area.height.saturating_sub(status_h + 1 + 1 + 2 + 1 + 1)).max(1);
+    let input_height = wanted.min(room) as u16 + 2;
+    let [status, history, message, input, hint, navbar] = Layout::vertical([
+        Constraint::Length(status_h),
         Constraint::Min(1),
         Constraint::Length(1),
         Constraint::Length(input_height),
+        Constraint::Length(1),
         Constraint::Length(1),
     ])
     .areas(area);
@@ -109,6 +128,7 @@ fn regions(area: Rect, app: &App) -> Regions {
         message,
         input,
         hint,
+        navbar,
     }
 }
 
@@ -116,6 +136,60 @@ fn regions(area: Rect, app: &App) -> Regions {
 pub fn history_size(area: Rect, app: &App) -> (usize, usize) {
     let r = regions(area, app);
     (usize::from(r.history.width), usize::from(r.history.height))
+}
+
+const ACCENT_COLORS: [Color; transcript::ACCENTS] = [
+    Color::Cyan,
+    Color::Green,
+    Color::Magenta,
+    Color::Yellow,
+    Color::LightBlue,
+    Color::LightRed,
+];
+
+fn row_line(row: &Row) -> Line<'static> {
+    match row.kind {
+        RowKind::Separator => Line::from(Span::styled(
+            row.text.clone(),
+            Style::new().fg(Color::DarkGray),
+        )),
+        kind => {
+            let (lead, rest) = row.text.split_at(row.prefix.min(row.text.len()));
+            let rest_style = match kind {
+                RowKind::Meta => Style::new().fg(Color::DarkGray),
+                _ => Style::new(),
+            };
+            let lead_style = Style::new()
+                .fg(ACCENT_COLORS[usize::from(row.accent) % ACCENT_COLORS.len()])
+                .add_modifier(Modifier::BOLD);
+            Line::from(vec![
+                Span::styled(lead.to_owned(), lead_style),
+                Span::styled(rest.to_owned(), rest_style),
+            ])
+        }
+    }
+}
+
+/// 下部のナビゲーション。Chat だけが使え、未実装の Threads / Settings は選べない（無効表示）。
+fn navbar_line(width: u16) -> Line<'static> {
+    let cell = usize::from(width) / 3;
+    let item = |label: &str, style: Style| {
+        let pad = cell.saturating_sub(sanitize::display_width(label));
+        let left = pad / 2;
+        Span::styled(
+            format!("{}{label}{}", " ".repeat(left), " ".repeat(pad - left)),
+            style,
+        )
+    };
+    let disabled = Style::new().fg(Color::DarkGray).add_modifier(Modifier::DIM);
+    Line::from(vec![
+        item(
+            "Chat",
+            Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED),
+        ),
+        item("Threads", disabled),
+        item("Settings", disabled),
+    ])
 }
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -128,29 +202,21 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     app.set_viewport(w, h);
     let r = regions(area, app);
 
-    frame.render_widget(
-        Paragraph::new(sanitize::truncate(
-            &status_text(app),
-            usize::from(r.status.width),
-        ))
-        .style(Style::new().add_modifier(Modifier::REVERSED)),
-        r.status,
-    );
+    if r.status.height > 0 {
+        frame.render_widget(
+            Paragraph::new(sanitize::truncate(
+                &status_text(app),
+                usize::from(r.status.width),
+            ))
+            .style(Style::new().add_modifier(Modifier::REVERSED)),
+            r.status,
+        );
+    }
 
     let rows = app.rows();
     let end = rows.len().saturating_sub(app.scroll);
     let start = end.saturating_sub(usize::from(r.history.height));
-    let mut lines: Vec<Line> = rows[start..end]
-        .iter()
-        .map(|row| {
-            let style = match row.kind {
-                RowKind::Header => Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                RowKind::Body => Style::new(),
-                RowKind::Meta => Style::new().fg(Color::DarkGray),
-            };
-            Line::from(Span::styled(row.text.clone(), style))
-        })
-        .collect();
+    let mut lines: Vec<Line> = rows[start..end].iter().map(row_line).collect();
     // 少ないときは下に寄せる（最新が入力欄の近くにある）。
     let pad = usize::from(r.history.height).saturating_sub(lines.len());
     let mut padded = vec![Line::from(""); pad];
@@ -165,26 +231,32 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         );
     }
 
-    let input_width = usize::from(r.input.width)
-        .saturating_sub(PROMPT.len())
-        .max(1);
-    let (input_rows, (cursor_row, cursor_col)) = app.input.layout(input_width);
-    let height = usize::from(r.input.height);
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(Color::DarkGray))
+        .padding(Padding::horizontal(1));
+    let inner = block.inner(r.input);
+    frame.render_widget(block, r.input);
+    let (input_rows, (cursor_row, cursor_col)) = app.input.layout(usize::from(inner.width).max(1));
+    let height = usize::from(inner.height);
     let first = (cursor_row + 1).saturating_sub(height);
-    let lines: Vec<Line> = input_rows
-        .iter()
-        .skip(first)
-        .take(height)
-        .enumerate()
-        .map(|(i, text)| {
-            let lead = if first + i == 0 { PROMPT } else { "  " };
-            Line::from(format!("{lead}{text}"))
-        })
-        .collect();
-    frame.render_widget(Paragraph::new(lines), r.input);
-    let x = r.input.x + (PROMPT.len() + cursor_col) as u16;
-    let y = r.input.y + (cursor_row - first) as u16;
-    frame.set_cursor_position((x.min(r.input.right().saturating_sub(1)), y));
+    let lines: Vec<Line> = if app.input.is_empty() {
+        vec![Line::from(Span::styled(
+            PLACEHOLDER,
+            Style::new().fg(Color::DarkGray),
+        ))]
+    } else {
+        input_rows
+            .iter()
+            .skip(first)
+            .take(height)
+            .map(|text| Line::from(text.clone()))
+            .collect()
+    };
+    frame.render_widget(Paragraph::new(lines), inner);
+    let x = inner.x + cursor_col as u16;
+    let y = inner.y + (cursor_row - first) as u16;
+    frame.set_cursor_position((x.min(inner.right().saturating_sub(1)), y));
 
     frame.render_widget(
         Paragraph::new(sanitize::truncate(
@@ -194,6 +266,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         .style(Style::new().fg(Color::DarkGray)),
         r.hint,
     );
+    frame.render_widget(Paragraph::new(navbar_line(r.navbar.width)), r.navbar);
 }
 
 #[cfg(test)]
@@ -247,7 +320,10 @@ mod tests {
         connect(&mut app);
         app.messages.push(message("m1", "u2", "こんにちは"));
         let screen = render(&mut app, 60, 12).join("\n");
-        assert!(screen.contains("接続済み"), "{screen}");
+        assert!(
+            screen.contains("Chat") && screen.contains("Threads"),
+            "{screen}"
+        );
         assert!(screen.contains("Bob"), "{screen}");
         assert!(screen.contains("こんにちは"), "{screen}");
         assert!(screen.contains("Ctrl+S"), "{screen}");
@@ -260,12 +336,12 @@ mod tests {
             generation: 2,
             reason: "closed".into(),
         };
-        assert!(render(&mut app, 80, 10)[0].contains("切断・再接続中"));
+        assert!(render(&mut app, 80, 12)[0].contains("切断・再接続中"));
         app.conn = ConnState::Failed {
             reason: "forbidden".into(),
             http_status: Some(403),
         };
-        let top = render(&mut app, 80, 10)[0].clone();
+        let top = render(&mut app, 80, 12)[0].clone();
         assert!(top.contains("接続できませんHTTP403"), "{top}");
     }
 
@@ -303,7 +379,28 @@ mod tests {
         let mut app = app();
         app.input = crate::tui::textbuf::TextBuf::from_text(&"あ".repeat(200));
         let screen = render(&mut app, 40, 20);
-        assert!(screen.iter().any(|l| l.starts_with("あ")));
-        assert!(screen.last().unwrap().contains("送信"));
+        assert!(screen.iter().any(|l| l.contains("│あ")));
+        assert!(screen.last().unwrap().contains("Settings"));
+        assert!(screen[screen.len() - 2].contains("送信"));
+    }
+
+    #[test]
+    fn narrow_layout_has_icon_rows_date_separator_box_and_navbar() {
+        let mut app = app();
+        connect(&mut app);
+        app.messages.push(message("m1", "u2", "晴れだよ"));
+        let screen = render(&mut app, 40, 14);
+        let all = screen.join("\n");
+        assert!(
+            all.contains("B Bob晴れだよ") || all.contains("BBob晴れだよ"),
+            "{all}"
+        );
+        assert!(
+            all.contains("月") || all.contains("火") || all.contains("日"),
+            "{all}"
+        );
+        assert!(all.contains("╭") && all.contains("╰"), "{all}");
+        assert!(all.contains("ここにテキストを入力"), "{all}");
+        assert!(screen.last().unwrap().contains("Chat"));
     }
 }

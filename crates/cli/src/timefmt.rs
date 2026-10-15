@@ -27,6 +27,20 @@ pub fn format_full(timestamp_ms: i64) -> String {
     }
 }
 
+/// 日付の区切り用。同じ日なら同じ `key`、`label` は `10月12日 (月)`。ゾーン不明は UTC。
+pub fn day_label(timestamp_ms: i64, zone: Option<&TimeZone>) -> (i64, String) {
+    let utc = TimeZone::UTC;
+    let zone = zone.unwrap_or(&utc);
+    let Ok(ts) = Timestamp::from_millisecond(timestamp_ms) else {
+        return (i64::MIN, timestamp_ms.to_string());
+    };
+    let z = ts.to_zoned(zone.clone());
+    let weekday = ["月", "火", "水", "木", "金", "土", "日"]
+        [usize::from(z.weekday().to_monday_zero_offset() as u8)];
+    let key = i64::from(z.year()) * 10_000 + i64::from(z.month()) * 100 + i64::from(z.day());
+    (key, format!("{}月{}日 ({weekday})", z.month(), z.day()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
