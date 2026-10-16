@@ -431,6 +431,82 @@ describe('参加と音声', () => {
     }
   });
 
+  it('プラグインの emit は、一覧に載るまで積んで、載ったら順に送る', async () => {
+    vi.useFakeTimers();
+    try {
+      const a = makeClient('u1');
+      const realHandle = server.handle.bind(server);
+      let swallow = true;
+      server.handle = (c, ev) => (swallow && ev.type === 'call.join' ? undefined : realHandle(c, ev));
+      await a.store.join();
+      a.store.emit('frame', { n: 1 });
+      a.store.emit('frame', { n: 2 });
+      expect(a.sent.some((e) => e.type === 'call.emit')).toBe(false);
+      swallow = false;
+      a.store.onServerEvent({ type: 'call.state', members: [{ peer: a.store.myPeer, user_id: 'u1', status: { muted: false, deafened: false, device: null } }] } as never);
+      const emits = a.sent.filter((e) => e.type === 'call.emit');
+      expect(emits.map((e) => (e as { payload: unknown }).payload)).toEqual([{ n: 1 }, { n: 2 }]);
+      server.handle = realHandle;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('一覧に載らないまま待つと、積んだ emit は捨てる（例外にはしない）。上限を超えたものも捨てる', async () => {
+    vi.useFakeTimers();
+    try {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const a = makeClient('u1');
+      const realHandle = server.handle.bind(server);
+      server.handle = (c, ev) => (ev.type === 'call.join' ? undefined : realHandle(c, ev));
+      await a.store.join();
+      expect(() => {
+        for (let i = 0; i < 60; i++) a.store.emit('frame', { n: i });
+      }).not.toThrow();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('一覧に載るまでの送信が多いので捨てました'));
+      // 3 秒の一覧待ちで参加は失敗し、通話から抜けるときに積んだ emit も捨てる（5 秒の上限は後ろ盾）
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(a.store.joined).toBe(false);
+      expect(a.sent.some((e) => e.type === 'call.emit')).toBe(false);
+      server.handle = realHandle;
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('not_in_call の警告に、直近に送った call.* を添える（種別と経過ms。音声は連続をまとめる）', async () => {
+    vi.useFakeTimers();
+    try {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const a = makeClient('u1');
+      const realHandle = server.handle.bind(server);
+      server.handle = (c, ev) => (ev.type === 'call.join' ? undefined : realHandle(c, ev));
+      await a.store.join();
+      a.store.emit('frame', { n: 1 });
+      a.store.onServerEvent({ type: 'error', client_id: null, code: 'not_in_call', message: '通話に参加していません' } as never);
+      const line = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('code=not_in_call'))!;
+      expect(line).toContain('直近の送信=call.join@0ms');
+      server.handle = realHandle;
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('一覧に載る前は、相手の kick を送らない', async () => {
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await connect(a, b);
+    const bPeer = b.store.myPeer;
+    a.store.onServerEvent({ type: 'call.state', members: [{ peer: a.store.myPeer, user_id: 'u1', status: { muted: false, deafened: false, device: null } }, { peer: bPeer, user_id: 'u2', status: { muted: false, deafened: false, device: null } }] } as never);
+    a.store.onServerEvent({ type: 'hello', me: { id: 'u1' } as never, users: [] });
+    expect(a.store.listed).toBe(false);
+    a.sent.length = 0;
+    await a.store.kick(bPeer);
+    expect(a.sent.some((e) => e.type === 'call.kick')).toBe(false);
+  });
+
   it('一覧に載る前の not_in_call では抜けない（音声・状態への応答の可能性。3 秒の待ちで判定する）', async () => {
     vi.useFakeTimers();
     try {

@@ -116,6 +116,11 @@ function errName(e: unknown): string {
 /** 無音を防ぐ信号（聞こえない大きさ・低さ） */
 /** 参加を送ったあと、サーバーの参加者一覧に自分が居るかを確かめるまでの時間（診断用） */
 const LISTED_CHECK_MS = 3000;
+/** 一覧に載る前の plugin の emit を待たせる上限（件数と時間。超えたら捨てる） */
+const EMIT_QUEUE_MAX = 50;
+const EMIT_QUEUE_MS = 5000;
+/** 診断用に、直近に送った call.* を覚えておく件数 */
+const TRAIL_MAX = 8;
 const KEEPALIVE_HZ = 20;
 const KEEPALIVE_GAIN = 0.0001;
 
@@ -126,6 +131,12 @@ export class CallStore {
   joined = $state(false);
   /** 参加を送ったあと、サーバーの参加者一覧に自分が載ったか（載るまでは「参加中…」。自分のアイコンは出さない） */
   listed = $state(false);
+  /** 一覧に載る前に plugin が emit したもの（載ったら順に送る） */
+  private emitQueue: { name: string; payload: unknown }[] = [];
+  private emitQueueTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 診断: 直近に送った call.*（音声は連続をまとめる）。not_in_call の警告に添える */
+  private trail: { label: string; at: number; count: number }[] = [];
+  private trailStart = 0;
   /** 通話に参加しているあいだ、チャットの接続が切れているか（取りこぼし中） */
   linkDown = $state(false);
   joining = $state(false);
@@ -273,7 +284,7 @@ export class CallStore {
    * 新しい接続 ID で一度だけ入り直す（前の接続は、サーバーが切断に気づいた時点で外れる）。
    */
   private onServerError(code: string, message: string): void {
-    console.warn(`[call] サーバーが通話の操作を受け付けませんでした: code=${code} message=${message}`);
+    console.warn(`[call] サーバーが通話の操作を受け付けませんでした: code=${code} message=${message} 直近の送信=${this.trailText()}`);
     if (!this.joined) return;
     if (code === 'peer_in_use' && !this.rejoinRetried) {
       this.rejoinRetried = true;
@@ -294,7 +305,7 @@ export class CallStore {
 
   /** 参加が通らなかった（一覧に載らない・拒否された）。通話の表示を閉じて、理由を知らせる */
   private failJoin(reason: string): void {
-    console.warn(`[call] 参加できませんでした: ${reason}`);
+    console.warn(`[call] 参加できませんでした: ${reason} 直近の送信=${this.trailText()}`);
     this.leave(true, 'join-failed');
     this.deps.toast(`通話に入れませんでした（${reason}）`, 'error');
   }
@@ -303,7 +314,7 @@ export class CallStore {
   private rejoin(): void {
     this.peerId = randomId();
     this.listed = false;
-    this.deps.send({ type: 'call.join', peer: this.peerId, status: this.status() });
+    this.sendCall({ type: 'call.join', peer: this.peerId, status: this.status() });
     this.checkListed();
   }
 
@@ -315,7 +326,7 @@ export class CallStore {
     const peer = this.peerId;
     setTimeout(() => {
       if (!this.joined || this.peerId !== peer || this.listed) return;
-      console.warn(`[call] 参加の送信後も、サーバーの参加者一覧に自分がいません: peer=${peer} members=${this.members.length}`);
+      console.warn(`[call] 参加の送信後も、サーバーの参加者一覧に自分がいません: peer=${peer} members=${this.members.length} 直近の送信=${this.trailText()}`);
       this.failJoin('サーバーから返事がありませんでした');
     }, LISTED_CHECK_MS);
   }
@@ -356,8 +367,9 @@ export class CallStore {
       if (here) {
         if (!this.listed) {
           this.listed = true;
-          // 参加中に変えた状態（ミュートなど）を、載った時点で一度知らせる
+          // 参加中に変えた状態（ミュートなど）を、載った時点で一度知らせる。そのあと積んだ emit を送る
           this.sendStatus();
+          this.flushEmits();
         }
       } else if (this.listed) {
         // 載っていたのに、いなくなった（サーバーが外した・接続が替わった）。通話から外れる
@@ -412,9 +424,59 @@ export class CallStore {
     return { muted: this.muted, deafened: this.deafened, device: this.deps.deviceKind() };
   }
 
+  /** call.* の送信は必ずここを通る（直近の送信を診断用に覚える） */
+  private sendCall(ev: ClientEvent): void {
+    const label = ev.type === 'call.emit' ? (ev.name === EV_AUDIO ? 'call.emit(audio)' : `call.emit(${ev.name})`) : ev.type;
+    const at = this.deps.now() - this.trailStart;
+    const last = this.trail.at(-1);
+    if (last && last.label === label && label === 'call.emit(audio)') {
+      last.count += 1;
+      last.at = at;
+    } else {
+      this.trail.push({ label, at, count: 1 });
+      if (this.trail.length > TRAIL_MAX) this.trail.shift();
+    }
+    this.deps.send(ev);
+  }
+
+  /** 診断用: 直近に送った call.* を「種別@経過ms」で並べる */
+  private trailText(): string {
+    return this.trail.map((t) => `${t.label}${t.count > 1 ? `×${t.count}` : ''}@${t.at}ms`).join(' > ') || '(なし)';
+  }
+
+  /** 一覧に載る前の emit を積む。上限を超えたものは捨てる（例外にはしない） */
+  private queueEmit(name: string, payload: unknown): void {
+    if (this.emitQueue.length >= EMIT_QUEUE_MAX) {
+      console.warn(`[call] 一覧に載るまでの送信が多いので捨てました: name=${name}`);
+      return;
+    }
+    this.emitQueue.push({ name, payload });
+    this.emitQueueTimer ??= setTimeout(() => {
+      this.emitQueueTimer = null;
+      if (this.emitQueue.length === 0) return;
+      console.warn(`[call] 一覧に載らないまま ${this.emitQueue.length} 件の送信を捨てました`);
+      this.emitQueue = [];
+    }, EMIT_QUEUE_MS);
+  }
+
+  /** 一覧に載ったら、積んだ emit を順に送る */
+  private flushEmits(): void {
+    if (this.emitQueueTimer) clearTimeout(this.emitQueueTimer);
+    this.emitQueueTimer = null;
+    const q = this.emitQueue;
+    this.emitQueue = [];
+    for (const e of q) this.sendCall({ type: 'call.emit', name: e.name, payload: e.payload });
+  }
+
+  private dropEmits(): void {
+    if (this.emitQueueTimer) clearTimeout(this.emitQueueTimer);
+    this.emitQueueTimer = null;
+    this.emitQueue = [];
+  }
+
   private sendStatus(): void {
     // 参加が一覧に載るまでは送らない（載ったときに、その時点の状態を一度送る）
-    if (this.listed) this.deps.send({ type: 'call.update', status: this.status() });
+    if (this.listed) this.sendCall({ type: 'call.update', status: this.status() });
   }
 
   // ---- 参加・退出 ----
@@ -486,7 +548,9 @@ export class CallStore {
         this.joined = true;
         this.listed = false;
         console.info(`[call] join を送ります: peer=${this.peerId}`);
-        this.deps.send({ type: 'call.join', peer: this.peerId, status: this.status() });
+        this.trail = [];
+        this.trailStart = this.deps.now();
+        this.sendCall({ type: 'call.join', peer: this.peerId, status: this.status() });
         this.checkListed();
         void this.restoreOutput();
         this.startWorker();
@@ -508,7 +572,8 @@ export class CallStore {
   leave(sendLeave = true, reason = 'user'): void {
     if (!this.joined && !this.localStream) return;
     console.info(`[call] 通話から抜けます: reason=${reason} sendLeave=${sendLeave}`);
-    if (this.joined && sendLeave) this.deps.send({ type: 'call.leave' });
+    this.dropEmits();
+    if (this.joined && sendLeave) this.sendCall({ type: 'call.leave' });
     this.joined = false;
     this.listed = false;
     this.linkDown = false;
@@ -672,7 +737,8 @@ export class CallStore {
   /** 参加者を通話から外す（確認のあと、サーバーに頼む。外された人には call.kicked が届く） */
   async kick(peer: string): Promise<void> {
     const m = this.others.find((x) => x.peer === peer);
-    if (!this.joined || !m) return;
+    // 一覧に載る前は、サーバーは自分を参加者と見ていない（not_in_call になる）
+    if (!this.joined || !this.listed || !m) return;
     const name = this.deps.nameOf(m.user_id);
     const ok = await this.deps.confirm({
       title: `${name}さんを通話から外しますか？`,
@@ -681,7 +747,7 @@ export class CallStore {
       danger: true,
     });
     if (!ok || !this.joined) return;
-    this.deps.send({ type: 'call.kick', peer });
+    this.sendCall({ type: 'call.kick', peer });
   }
 
   // ---- 音の出力先 ----
@@ -825,7 +891,7 @@ export class CallStore {
       const now = this.deps.now();
       if (rms(frame) > RELAY_SILENCE) this.relayLoudAt = now;
       else if (now - this.relayLoudAt > RELAY_HOLD_MS) continue;
-      this.deps.send({ type: 'call.emit', name: EV_AUDIO, payload: { seq: this.relaySeq++, pcm: pcmToBase64(floatToInt16(frame)) } });
+      this.sendCall({ type: 'call.emit', name: EV_AUDIO, payload: { seq: this.relaySeq++, pcm: pcmToBase64(floatToInt16(frame)) } });
     }
   }
 
@@ -898,7 +964,12 @@ export class CallStore {
     if (!this.joined) throw new Error('通話に参加していません');
     if (typeof name !== 'string' || name.length === 0 || name.length > 64) throw new Error('イベント名は 1〜64 文字にしてください');
     if (RESERVED_EVENTS.has(name)) throw new Error(`イベント名 ${name} は本体が使います`);
-    this.deps.send({ type: 'call.emit', name, payload });
+    // 一覧に載るまでは積んでおく（載ったら順に送る）
+    if (!this.listed) {
+      this.queueEmit(name, payload);
+      return;
+    }
+    this.sendCall({ type: 'call.emit', name, payload });
   }
 
   /** 参加者が emit したデータを受け取る。戻り値の関数で外す */
