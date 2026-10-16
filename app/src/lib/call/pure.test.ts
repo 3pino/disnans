@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_CALL_SETTINGS,
+  micConstraints,
+  micRawFlag,
   LIMIT_LOOKAHEAD_MS,
   PeakLimiter,
   RELAY_RATE,
@@ -350,5 +352,19 @@ describe('受け取った音の上限（リミッター）', () => {
     expect(peak(big)).toBeLessThanOrEqual(dbToLinear(-6) + 1e-7);
     expect(big[big.length - 1]).toBeCloseTo(dbToLinear(-6), 6);
     expect(big[big.length >> 1]).toBeCloseTo(0, 3);
+  });
+});
+
+describe('マイクの実験用の切り替え', () => {
+  it("localStorage 'disnans.micRaw' が '1' のときだけ raw（処理を切る）", () => {
+    expect(micRawFlag('1')).toBe(true);
+    expect(micRawFlag(null)).toBe(false);
+    expect(micRawFlag('0')).toBe(false);
+    expect(micRawFlag('yes')).toBe(false);
+  });
+
+  it('既定はエコー消去・雑音抑制・自動音量を通す。raw は三つとも切る', () => {
+    expect(micConstraints(false)).toEqual({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+    expect(micConstraints(true)).toEqual({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
   });
 });

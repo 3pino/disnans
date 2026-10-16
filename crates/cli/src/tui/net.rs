@@ -306,9 +306,34 @@ fn spawn_image(rest: &Arc<RestClient>, tx: &UnboundedSender<NetEvent>, key: Stri
 const MAX_IMAGE_BYTES: usize = 10 << 20;
 
 async fn fetch_bytes(rest: &RestClient, path: &str) -> Result<Vec<u8>, String> {
+    if super::transcript::is_external_avatar(path) {
+        return fetch_external(path).await;
+    }
     rest.get_bytes(path, MAX_IMAGE_BYTES)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// サーバー外の https 画像（Tailscale のアイコン等）。認証情報は送らない。
+async fn fetch_external(url: &str) -> Result<Vec<u8>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        if out.len() + chunk.len() > MAX_IMAGE_BYTES {
+            return Err("画像が大きすぎます".to_owned());
+        }
+        out.extend_from_slice(&chunk);
+    }
+    Ok(out)
 }
 
 fn spawn_prefs(rest: &Arc<RestClient>, tx: &UnboundedSender<NetEvent>) {

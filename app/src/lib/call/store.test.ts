@@ -223,6 +223,33 @@ const gainOf = (c: Client, peer: string) =>
   (c.store as unknown as { entries: Map<string, { relay: { gain: { gain: { value: number } } } | null }> }).entries.get(peer)!.relay!.gain.gain.value;
 
 describe('参加と音声', () => {
+  it("実験用の localStorage 'disnans.micRaw'='1' なら、次の参加からエコー消去などを切って開く", async () => {
+    const gum = vi.fn(async (_c: unknown) => new FakeStream([new FakeTrack('audio')]));
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: gum } });
+    const a = makeClient('u1');
+    await a.store.join();
+    expect(gum.mock.calls[0][0]).toMatchObject({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    a.store.leave();
+    localStorage.setItem('disnans.micRaw', '1');
+    await a.store.join();
+    expect(gum.mock.calls[1][0]).toMatchObject({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    localStorage.removeItem('disnans.micRaw');
+  });
+
+  it('マイクの最初のデータと、最初の大きい音を、開いてから 1 回ずつ出す', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const a = makeClient('u1');
+    await a.store.join();
+    const meter = (a.store as unknown as { localMeter: { analyser: { getByteTimeDomainData: (b: Uint8Array) => void } } }).localMeter;
+    meter.analyser.getByteTimeDomainData = (b: Uint8Array) => b.fill(255); // 大きい音
+    a.store.tick();
+    a.store.tick();
+    const lines = info.mock.calls.map((c) => String(c[0]));
+    expect(lines.filter((l) => l.includes('最初のデータまで'))).toHaveLength(1);
+    expect(lines.filter((l) => l.includes('最初の大きい音まで'))).toHaveLength(1);
+    info.mockRestore();
+  });
+
   it('参加すると参加していない人にも見え、抜けると消える。接続を作らず、双方の声がサーバー経由で届く', async () => {
     const a = makeClient('u1');
     const b = makeClient('u2');

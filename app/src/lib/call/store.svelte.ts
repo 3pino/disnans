@@ -8,6 +8,8 @@ import { callLatency } from './latency';
 import {
   EV_AUDIO,
   Framer,
+  micConstraints,
+  micRawFlag,
   LEVEL_MS,
   PeakLimiter,
   clipCurve,
@@ -125,6 +127,15 @@ const TRAIL_MAX = 8;
 const KEEPALIVE_HZ = 20;
 const KEEPALIVE_GAIN = 0.0001;
 
+/** 実験用の切り替えの値（localStorage。読めないときは null） */
+function readMicRawFlag(): string | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage.getItem('disnans.micRaw');
+  } catch {
+    return null;
+  }
+}
+
 export class CallStore {
   // ---- 画面が読む状態（リアクティブ） ----
   /** サーバーが知っている通話の参加者（自分を含む） */
@@ -158,6 +169,11 @@ export class CallStore {
   private localStream: MediaStream | null = null;
   private micGain: GainNode | null = null;
   private captureSrc: AudioNode | null = null;
+  /** 診断: マイクを開いた時刻と、最初にデータ・大きい音が見えた時刻（開いてからの ms） */
+  private micRaw = false;
+  private micOpenAt: number | null = null;
+  private micFirstData: number | null = null;
+  private micFirstLoud: number | null = null;
   private capture: Capture | null = null;
   private resampler: Resampler | null = null;
   private framer = new Framer();
@@ -497,6 +513,9 @@ export class CallStore {
       let stream: MediaStream;
       try {
         stream = await this.openMic();
+        this.micOpenAt = this.deps.now();
+        this.micFirstData = null;
+        this.micFirstLoud = null;
       } catch (e) {
         const name = errName(e);
         console.error('[call] マイクを開けませんでした', e);
@@ -576,6 +595,7 @@ export class CallStore {
     if (!this.joined && !this.localStream) return;
     console.info(`[call] 通話から抜けます: reason=${reason} sendLeave=${sendLeave}`);
     this.dropEmits();
+    this.micOpenAt = null;
     if (this.joined && sendLeave) this.sendCall({ type: 'call.leave' });
     this.joined = false;
     this.listed = false;
@@ -652,7 +672,10 @@ export class CallStore {
 
   /** マイクを開く。選んだ機器が使えなければ既定の機器で開き直す */
   private async openMic(): Promise<MediaStream> {
-    const base = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    // 実験用: localStorage 'disnans.micRaw' === '1' なら、処理（エコー消去など）を切って開く（次の参加から効く）
+    this.micRaw = micRawFlag(readMicRawFlag());
+    const base = micConstraints(this.micRaw);
+    console.info(`[call] マイクを開きます: raw=${this.micRaw} 要求=${JSON.stringify(base)}`);
     const id = this.settings.inputId;
     if (id) {
       try {
@@ -688,10 +711,19 @@ export class CallStore {
   /** 診断: 音の経路の設定（遅れの原因の切り分け用）。ブラウザーが出さない値は ? */
   private logAudioSetup(stream: MediaStream, ctx: AudioContext): void {
     const track = stream.getAudioTracks?.()?.[0];
-    const micLatency = (track?.getSettings?.() as { latency?: number } | undefined)?.latency;
+    const set = (track?.getSettings?.() ?? {}) as Record<string, unknown>;
     const out = (ctx as { outputLatency?: number }).outputLatency;
+    // 機器の識別子（deviceId 等）は出さない。処理や遅れに関係する値だけ
+    const mic = {
+      sampleRate: set.sampleRate,
+      channelCount: set.channelCount,
+      latency: set.latency,
+      echoCancellation: set.echoCancellation,
+      noiseSuppression: set.noiseSuppression,
+      autoGainControl: set.autoGainControl,
+    };
     console.info(
-      `[call] 音の設定: rate=${ctx.sampleRate} baseLatency=${ctx.baseLatency ?? '?'} outputLatency=${out ?? '?'} micLatency=${micLatency ?? '?'} state=${ctx.state}`,
+      `[call] 音の設定: ctxRate=${ctx.sampleRate} baseLatency=${ctx.baseLatency ?? '?'} outputLatency=${out ?? '?'} state=${ctx.state} raw=${this.micRaw} mic=${JSON.stringify(mic)}`,
     );
   }
 
@@ -857,11 +889,26 @@ export class CallStore {
     const report = callLatency.report(now);
     if (report) console.info(`[call] latency ${report}`);
     if (this.localMeter && this.updateMeter(this.localMeter, now, this.muted)) changed = true;
+    if (this.localMeter && !this.muted) this.noteMic(this.localMeter, now);
     for (const e of this.entries.values()) {
       const m = e.relay?.meter;
       if (m && this.updateMeter(m, now, e.status.muted || e.localMuted)) changed = true;
     }
     if (changed) this.refresh();
+  }
+
+  /** 診断: マイクを開いてから、最初にデータが来た時刻と、最初に大きい音が見えた時刻を 1 回ずつ出す */
+  private noteMic(m: Meter, now: number): void {
+    if (this.micOpenAt === null) return;
+    const since = Math.round(now - this.micOpenAt);
+    if (this.micFirstData === null && m.buf.some((v) => v !== 128)) {
+      this.micFirstData = since;
+      console.info(`[call] マイク: 最初のデータまで ${since}ms（開いてから）`);
+    }
+    if (this.micFirstLoud === null && m.speaking) {
+      this.micFirstLoud = since;
+      console.info(`[call] マイク: 最初の大きい音まで ${since}ms（開いてから）`);
+    }
   }
 
   private updateMeter(m: Meter, now: number, silent: boolean): boolean {

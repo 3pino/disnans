@@ -122,7 +122,7 @@ pub fn message_rows(
             .iter()
             .find(|u| u.id == message.author_id)
             .and_then(|u| u.avatar_url.as_deref())
-            .filter(|url| safe_path(url, "/api/avatars/"))
+            .filter(|url| safe_path(url, "/api/avatars/") || is_external_avatar(url))
             .map(str::to_owned)
     });
     let mut content: Vec<(RowKind, String)> = Vec::new();
@@ -256,6 +256,14 @@ pub fn message_rows(
 }
 
 /// 取得先に使ってよいパスか（サーバー由来の文字列をそのまま URL に入れない）。
+/// Tailscale のプロフィール画像など、サーバー外の https の絶対 URL（GUI と同じくそのまま取得する）。
+pub fn is_external_avatar(url: &str) -> bool {
+    url.len() <= 2048
+        && url.starts_with("https://")
+        && url.is_ascii()
+        && !url.bytes().any(|b| b.is_ascii_control() || b == b' ')
+}
+
 fn safe_path(path: &str, prefix: &str) -> bool {
     path.strip_prefix(prefix).is_some_and(|rest| {
         !rest.is_empty()
@@ -500,7 +508,7 @@ mod tests {
         );
         assert_eq!(rows[0].avatar.as_deref(), Some("/api/avatars/abc"));
         assert!(rows[1].avatar.is_none());
-        u.avatar_url = Some("https://example.test/x.png".into());
+        u.avatar_url = Some("http://example.test/x.png".into());
         let rows = message_rows(
             &message("m", "u1", "a"),
             &[u.clone()],

@@ -189,6 +189,20 @@ export function updateSpeaking(state: { lastLoud: number; speaking: boolean }, l
   return changed;
 }
 
+/** 実験用の切り替え（localStorage 'disnans.micRaw' === '1'）。ふだんは false（処理を通す） */
+export function micRawFlag(value: string | null): boolean {
+  return value === '1';
+}
+
+/**
+ * マイクを開くときの要求。raw は、エコー消去・雑音抑制・自動音量を切る（処理の遅れを減らせるかの実験）。
+ * sampleRate や latency は要求しない（ブラウザーの既定のまま）
+ */
+export function micConstraints(raw: boolean): { echoCancellation: boolean; noiseSuppression: boolean; autoGainControl: boolean } {
+  const on = !raw;
+  return { echoCancellation: on, noiseSuppression: on, autoGainControl: on };
+}
+
 /** 時間領域のバイト列（128 が無音）から RMS を出す */
 export function byteLevel(buf: Uint8Array): number {
   let sum = 0;
