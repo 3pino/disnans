@@ -33,6 +33,15 @@ pub enum Command {
     Watch(JsonOption),
     /// メインチャットを読み書きする端末画面（TUI）を開く。
     Tui,
+    /// 新しいバージョンを確認し、あれば更新する（GitHub Releases）。
+    Update(UpdateArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct UpdateArgs {
+    /// 確認だけして、インストールしない。
+    #[arg(long)]
+    pub check: bool,
 }
 
 #[derive(Debug, Args)]

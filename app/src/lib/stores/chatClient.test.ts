@@ -543,4 +543,32 @@ describe('chat over Rust: start and reconnect', () => {
     chat.push({ kind: 'event', generation: 1, event: { type: 'error', client_id: null, code: 'something_else', message: '別の失敗' } });
     expect(toastTexts()).toContain('別の失敗');
   });
+
+  it('音声（call.emit audio）は返事を待たずに送るが、返事の来ていないものは 8 件までにして、新しいほうを捨てる', async () => {
+    let release: () => void = () => {};
+    chat.emitHold = new Promise<void>((r) => (release = r));
+    const audio = { type: 'call.emit', name: 'audio', payload: { seq: 0, pcm: '' } } as never;
+    for (let i = 0; i < 12; i++) client.send(audio);
+    expect(chat.emits.length).toBe(8);
+    release();
+    await flush();
+    // 返事が戻ったら、また送れる
+    client.send(audio);
+    expect(chat.emits.length).toBe(9);
+    chat.emitHold = null;
+  });
+
+  it('音声の送信の失敗（busy など）は 1 件ずつ警告しない。プラグインの emit の失敗は、警告は出すが toast は出さない', async () => {
+    const warn = vi.spyOn(console, 'warn');
+    chat.emitError = { code: 'busy', message: '混み合っている' };
+    client.send({ type: 'call.emit', name: 'audio', payload: { seq: 0, pcm: '' } } as never);
+    await flush();
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('chat_emit 失敗') && String(c[0]).includes('call.emit'))).toBe(false);
+    chat.emitError = { code: 'write_failed', message: '書けませんでした' };
+    client.send({ type: 'call.emit', name: 'plugin-x', payload: {} } as never);
+    await flush();
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('type=call.emit'))).toBe(true);
+    expect(toastTexts()).not.toContain('書けませんでした');
+    chat.emitError = null;
+  });
 });

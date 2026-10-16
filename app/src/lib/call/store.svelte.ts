@@ -4,6 +4,7 @@ import type { ClientEvent } from '../protocol/ClientEvent';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import type { IconRef } from '../icons.svelte';
 import { startCapture, type Capture } from './capture';
+import { callLatency } from './latency';
 import {
   EV_AUDIO,
   Framer,
@@ -539,6 +540,8 @@ export class CallStore {
         this.ctxDetach = this.deps.audio.attach(this.ctx);
         this.localMeter = makeMeter(this.ctx.createAnalyser());
         await this.setupSend(stream, this.ctx, this.localMeter);
+        this.logAudioSetup(stream, this.ctx);
+        callLatency.reset(this.deps.now());
 
         this.peerId = randomId();
         this.rejoinRetried = false;
@@ -680,6 +683,16 @@ export class CallStore {
       src.connect(meter.analyser);
       this.captureSrc = src;
     }
+  }
+
+  /** 診断: 音の経路の設定（遅れの原因の切り分け用）。ブラウザーが出さない値は ? */
+  private logAudioSetup(stream: MediaStream, ctx: AudioContext): void {
+    const track = stream.getAudioTracks?.()?.[0];
+    const micLatency = (track?.getSettings?.() as { latency?: number } | undefined)?.latency;
+    const out = (ctx as { outputLatency?: number }).outputLatency;
+    console.info(
+      `[call] 音の設定: rate=${ctx.sampleRate} baseLatency=${ctx.baseLatency ?? '?'} outputLatency=${out ?? '?'} micLatency=${micLatency ?? '?'} state=${ctx.state}`,
+    );
   }
 
   // ---- ミュート・音量 ----
@@ -841,6 +854,8 @@ export class CallStore {
       void this.refreshOutputs();
     }
     if (this.entries.size > 0) this.ensureCapture();
+    const report = callLatency.report(now);
+    if (report) console.info(`[call] latency ${report}`);
     if (this.localMeter && this.updateMeter(this.localMeter, now, this.muted)) changed = true;
     for (const e of this.entries.values()) {
       const m = e.relay?.meter;
@@ -866,7 +881,7 @@ export class CallStore {
     if (this.capture || !ctx || !src) return;
     this.resampler = new Resampler(ctx.sampleRate);
     this.framer = new Framer();
-    this.capture = startCapture(ctx, src, (chunk) => this.onCapture(chunk));
+    this.capture = startCapture(ctx, src, (chunk, at) => this.onCapture(chunk, at));
   }
 
   private stopCapture(): void {
@@ -880,7 +895,12 @@ export class CallStore {
   }
 
   /** マイクの音（AudioContext の周波数）を 16kHz に直して送る */
-  private onCapture(chunk: Float32Array): void {
+  private onCapture(chunk: Float32Array, at?: number): void {
+    // 診断: マイクの塊が取れた時刻（ctx の時計）から、ここ（メインスレッド）に来るまでの遅れ
+    if (at !== undefined && this.ctx) {
+      const lag = this.ctx.currentTime - at - chunk.length / this.ctx.sampleRate;
+      callLatency.add('取り出し後の待ち', Math.max(0, lag) * 1000);
+    }
     // サーバーの一覧に自分が載るまで送らない（call.emit は制御のチェーンの外。先に着くと not_in_call になる）
     if (!this.listed || !this.resampler || this.entries.size === 0) return;
     const volume = this.micGain ? 1 : this.settings.micVolume;

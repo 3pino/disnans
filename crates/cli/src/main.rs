@@ -4,6 +4,7 @@ mod output;
 mod send;
 mod timefmt;
 mod tui;
+mod update;
 mod watch;
 
 use std::io::{self, Write};
@@ -216,7 +217,8 @@ async fn run(cli: Cli) -> Result<String, CliError> {
             let server = resolve_server(cli.server.as_deref(), saved_server)?;
             live::send(server, cli.dev_user, body, args.silent, args.json).await
         }
-        // `watch` は出力を逐次書くため `main` が直接扱う。
+        Command::Update(args) => update::run(args).await,
+        // `watch` と `tui` は出力を逐次書くため `main` が直接扱う。
         Command::Watch(_) | Command::Tui => Err(CliError::Usage("直接実行するコマンドです".into())),
     }
 }

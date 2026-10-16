@@ -19,12 +19,25 @@ import { bootChatTransport } from '../transport/boot';
 import { CALL_CONTROL_TYPES, CHAT_EVENT_TYPES, isChatEmit, type ChatEmitEvent, type ChatItem, type ChatSendEvent, type ChatTransport, type SendOutcome } from '../transport/chat';
 import { replyPreviewOf } from '../reply';
 import { reply } from './reply.svelte';
+import { EV_AUDIO } from '../call/pure';
+import { AUDIO_MAX_IN_FLIGHT, callLatency } from '../call/latency';
 
 type Listener = (ev: ServerEvent) => void;
 
 const MAIN = '__main__';
 /** 接続できないとき、チャットを再試行する間隔（JS Socket の再接続の上限と同じ） */
 const CHAT_RETRY_MS = 30_000;
+
+/** 通話の音声（call.emit の audio）か */
+function isAudioEmit(ev: ChatEmitEvent): boolean {
+  return ev.type === 'call.emit' && ev.name === EV_AUDIO;
+}
+
+/** 失敗の code（Rust の {code,message}。分からなければ unknown） */
+function errorCodeOf(e: unknown): string {
+  const c = (e as { code?: unknown } | null)?.code;
+  return typeof c === 'string' ? c : 'unknown';
+}
 
 /** 通話の操作のエラー。画面の toast は通話の状態が出す（ここでは出さない） */
 const CALL_ERROR_CODES: ReadonlySet<string> = new Set(['not_in_call', 'peer_in_use', 'invalid_peer', 'invalid_status', 'ws_only']);
@@ -130,6 +143,13 @@ class Client {
         // 通話の制御は前の結果を待ってから次を送る（並行だと順序が保証されない）。失敗は emitChat 内で処理済み
         const chat = this.chat;
         this.callControl = this.callControl.then(() => this.emitChat(chat, ev));
+      } else if (isAudioEmit(ev)) {
+        // 音声は返事を待たずに送るが、返事の来ていないものが溜まったら新しいほうを捨てる（溜めると遅れが積み上がる）
+        if (this.audioInflight >= AUDIO_MAX_IN_FLIGHT) {
+          callLatency.count('捨てた音声');
+          return true;
+        }
+        void this.emitChat(this.chat, ev);
       } else {
         void this.emitChat(this.chat, ev);
       }
@@ -147,17 +167,33 @@ class Client {
   /** 通話の制御の直列化用（直前の送信の完了を待つ鎖。emitChat は reject しない） */
   private callControl: Promise<void> = Promise.resolve();
 
+  /** まだ返事の来ていない音声（call.emit）の数 */
+  private audioInflight = 0;
+
   private async emitChat(chat: ChatTransport, ev: ChatEmitEvent): Promise<void> {
     const size = JSON.stringify(ev).length;
     this.chatEmitBytes += size;
+    const audio = isAudioEmit(ev);
+    const t0 = performance.now();
+    if (audio) {
+      this.audioInflight += 1;
+      callLatency.gauge('同時に送信中', this.audioInflight);
+    }
     try {
       await chat.emit(ev);
+      if (audio) callLatency.add('送信の往復', performance.now() - t0);
     } catch (e) {
-      // 診断: どの操作が、どの種別・code で失敗したか（通話の不具合の切り分け用）
-      console.warn(`[chat] chat_emit 失敗: type=${ev.type} ${describeEmitError(e)}`);
-      if (ev.type !== 'call.emit' && ev.type !== 'call.update') ui.toast(emitFailureText(e), 'error');
+      if (audio) {
+        // 音声は 1 件ずつ警告しない（毎回出すと Console が埋まる）。集計に code を残す
+        callLatency.fail(errorCodeOf(e));
+      } else {
+        // 診断: どの操作が、どの種別・code で失敗したか（通話の不具合の切り分け用）
+        console.warn(`[chat] chat_emit 失敗: type=${ev.type} ${describeEmitError(e)}`);
+        if (ev.type !== 'call.emit' && ev.type !== 'call.update') ui.toast(emitFailureText(e), 'error');
+      }
     } finally {
       this.chatEmitBytes -= size;
+      if (audio) this.audioInflight -= 1;
     }
   }
 

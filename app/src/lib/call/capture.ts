@@ -5,7 +5,7 @@ export type Capture = { stop(): void };
 /**
  * src の音を、AudioContext の周波数のまま onChunk に渡し続ける。stop() で止める
  */
-export function startCapture(ctx: AudioContext, src: AudioNode, onChunk: (chunk: Float32Array) => void): Capture {
+export function startCapture(ctx: AudioContext, src: AudioNode, onChunk: (chunk: Float32Array, at: number) => void): Capture {
   let stopped = false;
   const handle: Capture = {
     stop() {
@@ -20,7 +20,7 @@ export function startCapture(ctx: AudioContext, src: AudioNode, onChunk: (chunk:
     if (stopped) return;
     try {
       const node = ctx.createScriptProcessor(2048, 1, 1);
-      node.onaudioprocess = (ev) => onChunk(new Float32Array(ev.inputBuffer.getChannelData(0)));
+      node.onaudioprocess = (ev) => onChunk(new Float32Array(ev.inputBuffer.getChannelData(0)), ev.playbackTime);
       src.connect(node);
       node.connect(sink);
       handle.stop = () => {
@@ -36,7 +36,7 @@ export function startCapture(ctx: AudioContext, src: AudioNode, onChunk: (chunk:
   try {
     if (!ctx.audioWorklet || typeof AudioWorkletNode === 'undefined') throw new Error('AudioWorklet なし');
     const code =
-      "class C extends AudioWorkletProcessor{process(i){const c=i[0]&&i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor('call-capture',C)";
+      "class C extends AudioWorkletProcessor{process(i){const c=i[0]&&i[0][0];if(c)this.port.postMessage({c:c.slice(0),t:currentTime});return true}}registerProcessor('call-capture',C)";
     const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
     // addModule が返ってこない環境（WebKitGTK など）でも音を取り出せるよう、待ちすぎたら ScriptProcessor にする
     let fellBack = false;
@@ -52,7 +52,7 @@ export function startCapture(ctx: AudioContext, src: AudioNode, onChunk: (chunk:
         clearTimeout(timer);
         if (stopped || fellBack) return;
         const node = new AudioWorkletNode(ctx, 'call-capture', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1 });
-        node.port.onmessage = (ev) => onChunk(ev.data);
+        node.port.onmessage = (ev) => onChunk(ev.data.c, ev.data.t);
         src.connect(node);
         node.connect(sink);
         handle.stop = () => {

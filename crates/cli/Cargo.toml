@@ -21,6 +21,7 @@ unicode-width = "0.2"
 jiff = "0.2"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots", "stream"] }
 
 [dev-dependencies]
 axum = "0.8"
