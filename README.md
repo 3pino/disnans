@@ -48,6 +48,7 @@ Windows の `.exe` と Linux の `.deb` を入れると、CLI の `disnans` も�
 「みんなで1つの通話に、いつでも出入りできる」アプリ本体の機能です。画面の上部に通話のバーが出て（どのタブでも）、「＋」メニューの「通話に参加」や `/vc-join` で参加します。参加者を長押し（PC は右クリック）すると、その人を通話から外せます。設定は「設定」→「通話」にあります。
 
 - **Linux**: `gstreamer1.0-plugins-good`、`gstreamer1.0-plugins-bad`、`gstreamer1.0-pulseaudio`（PipeWire の環境なら `gstreamer1.0-pipewire` も）が要ります（`.deb` は推奨パッケージとして入れます）。
+- **Linux の既知の問題（未解決）**: 通話中、自分のマイクの音が約 5 秒遅れて送られ、通話を続けるほど遅れが増えることがあります（Windows では出ません。古い版からあります）。アプリ内の処理は遅れておらず、WebKitGTK のマイク取り込み（GStreamer）の内部に溜まっていると見ています。次の対策は、どれも効果がありませんでした: PipeWire の遅延設定（`PIPEWIRE_LATENCY`。v0.2.11 以降は既定で設定）、マイクの処理（エコー除去・雑音抑制・自動音量）を切る（`localStorage.setItem('disnans.micRaw','1')`）、聞こえない信号を止める（`disnans.noKeepAlive`）、音声処理のレートを変える（`disnans.ctxRate`）。マイクの取り込みを Rust に移せば避けられる見込みですが、作業が大きいため見送っています。遅れが気になるときは、通話から一度抜けて入り直すと、いったん戻ります。
 
 ### Linux の診断ログ
 
