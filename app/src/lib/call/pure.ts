@@ -210,12 +210,9 @@ export function ctxRateFlag(value: string | null): number | null {
  * マイクを開くときの要求。raw は、エコー消去・雑音抑制・自動音量を切る（処理の遅れを減らせるかの実験）。
  * sampleRate や latency は要求しない（ブラウザーの既定のまま）
  */
-export function micConstraints(raw: boolean, linux = false): MediaTrackConstraints {
+export function micConstraints(raw: boolean): { echoCancellation: boolean; noiseSuppression: boolean; autoGainControl: boolean } {
   const on = !raw;
-  const base: MediaTrackConstraints = { echoCancellation: on, noiseSuppression: on, autoGainControl: on };
-  // Linux（WebKitGTK）だけ、取り込みの周波数・チャンネル・遅れの希望を足す（理想値。合わなくても開ける）
-  if (linux) return { ...base, channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 }, latency: { ideal: 0.01 } };
-  return base;
+  return { echoCancellation: on, noiseSuppression: on, autoGainControl: on };
 }
 
 /** 時間領域のバイト列（128 が無音）から RMS を出す */

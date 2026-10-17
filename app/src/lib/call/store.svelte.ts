@@ -994,16 +994,19 @@ export class CallStore {
     }
     // サーバーの一覧に自分が載るまで送らない（call.emit は制御のチェーンの外。先に着くと not_in_call になる）
     if (!this.listed || !this.resampler || this.entries.size === 0) return;
-    const volume = this.micGain ? 1 : this.settings.micVolume;
     const out = this.resampler.push(chunk);
-    for (const frame of this.framer.push(out)) {
-      if (this.muted) continue;
-      if (volume !== 1) for (let i = 0; i < frame.length; i++) frame[i] *= volume;
-      const now = this.deps.now();
-      if (rms(frame) > RELAY_SILENCE) this.relayLoudAt = now;
-      else if (now - this.relayLoudAt > RELAY_HOLD_MS) continue;
-      this.sendCall({ type: 'call.emit', name: EV_AUDIO, payload: { seq: this.relaySeq++, pcm: pcmToBase64(floatToInt16(frame)) } });
-    }
+    for (const frame of this.framer.push(out)) this.sendFrame(frame);
+  }
+
+  /** 1 フレーム（16kHz・800 サンプル）を送る。ミュート・音量・無音の抑え方は、経路によらずここで揃える */
+  private sendFrame(frame: Float32Array): void {
+    if (this.muted) return;
+    const volume = this.micGain ? 1 : this.settings.micVolume;
+    if (volume !== 1) for (let i = 0; i < frame.length; i++) frame[i] *= volume;
+    const now = this.deps.now();
+    if (rms(frame) > RELAY_SILENCE) this.relayLoudAt = now;
+    else if (now - this.relayLoudAt > RELAY_HOLD_MS) return;
+    this.sendCall({ type: 'call.emit', name: EV_AUDIO, payload: { seq: this.relaySeq++, pcm: pcmToBase64(floatToInt16(frame)) } });
   }
 
   /** 上限の設定（オフなら null） */

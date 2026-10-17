@@ -370,18 +370,6 @@ describe('マイクの実験用の切り替え', () => {
     expect(micConstraints(true)).toEqual({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
   });
 
-  it('Linux だけ周波数・チャンネル・遅れの理想値を足す（他は不変、raw と併存）', () => {
-    expect(micConstraints(false, false)).not.toHaveProperty('sampleRate');
-    expect(micConstraints(false, true)).toEqual({
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      channelCount: { ideal: 1 },
-      sampleRate: { ideal: 48000 },
-      latency: { ideal: 0.01 },
-    });
-    expect(micConstraints(true, true)).toMatchObject({ echoCancellation: false, sampleRate: { ideal: 48000 } });
-  });
 });
 
 describe('通話の実験用の切り替え（時計・keep-alive・周波数）', () => {
