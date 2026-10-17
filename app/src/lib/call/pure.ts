@@ -194,6 +194,18 @@ export function micRawFlag(value: string | null): boolean {
   return value === '1';
 }
 
+/** 実験用の keep-alive の切り替え（localStorage 'disnans.noKeepAlive' === '1' で止める）。ふだんは動かす */
+export function noKeepAliveFlag(value: string | null): boolean {
+  return value === '1';
+}
+
+/** AudioContext の周波数の上書き（localStorage 'disnans.ctxRate'）。数値で範囲外・不正は null（既定を使う） */
+export function ctxRateFlag(value: string | null): number | null {
+  if (value === null || !/^\d+$/.test(value.trim())) return null;
+  const n = Number(value);
+  return n >= 8000 && n <= 192000 ? n : null;
+}
+
 /**
  * マイクを開くときの要求。raw は、エコー消去・雑音抑制・自動音量を切る（処理の遅れを減らせるかの実験）。
  * sampleRate や latency は要求しない（ブラウザーの既定のまま）

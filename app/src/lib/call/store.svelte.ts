@@ -4,12 +4,14 @@ import type { ClientEvent } from '../protocol/ClientEvent';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import type { IconRef } from '../icons.svelte';
 import { startCapture, type Capture } from './capture';
-import { callLatency } from './latency';
+import { LATENCY_REPORT_MS, callLatency, clockText, type ClockPoint } from './latency';
 import {
   EV_AUDIO,
   Framer,
+  ctxRateFlag,
   micConstraints,
   micRawFlag,
+  noKeepAliveFlag,
   LEVEL_MS,
   PeakLimiter,
   clipCurve,
@@ -128,11 +130,26 @@ const KEEPALIVE_HZ = 20;
 const KEEPALIVE_GAIN = 0.0001;
 
 /** 実験用の切り替えの値（localStorage。読めないときは null） */
-function readMicRawFlag(): string | null {
+function readLocal(key: string): string | null {
   try {
-    return typeof localStorage === 'undefined' ? null : localStorage.getItem('disnans.micRaw');
+    return typeof localStorage === 'undefined' ? null : localStorage.getItem(key);
   } catch {
     return null;
+  }
+}
+
+/**
+ * 通話用の AudioContext。周波数は 48000 を既定にする（Linux の既定の 44100 とマイクのずれを避けるため）。
+ * 'disnans.ctxRate' で上書き。周波数の指定が通らなければ既定で作る
+ */
+const CTX_RATE_DEFAULT = 48000;
+function makeCallContext(): AudioContext {
+  const rate = ctxRateFlag(readLocal('disnans.ctxRate')) ?? CTX_RATE_DEFAULT;
+  try {
+    return new AudioContext({ sampleRate: rate, latencyHint: 'interactive' });
+  } catch (e) {
+    console.warn(`[call] AudioContext(${rate}Hz) を作れません。既定で作ります`, e);
+    return new AudioContext();
   }
 }
 
@@ -174,6 +191,10 @@ export class CallStore {
   private micOpenAt: number | null = null;
   private micFirstData: number | null = null;
   private micFirstLoud: number | null = null;
+  /** 診断: 取り始めの時計と、受けた音のフレーム数、次に時計を出す時刻 */
+  private clockStart: ClockPoint | null = null;
+  private captureFrames = 0;
+  private clockAt = 0;
   private capture: Capture | null = null;
   private resampler: Resampler | null = null;
   private framer = new Framer();
@@ -549,7 +570,7 @@ export class CallStore {
 
       this.localStream = stream;
       try {
-        this.ctx = new AudioContext();
+        this.ctx = makeCallContext();
         void this.ctx.resume().catch(() => {});
         // 別のアプリを開いたとき、WebView が裏に回って AudioContext が止められることがある。止まったら動かし直す
         this.ctx.onstatechange = () => this.onContextState();
@@ -596,6 +617,8 @@ export class CallStore {
     console.info(`[call] 通話から抜けます: reason=${reason} sendLeave=${sendLeave}`);
     this.dropEmits();
     this.micOpenAt = null;
+    this.clockStart = null;
+    this.clockAt = 0;
     if (this.joined && sendLeave) this.sendCall({ type: 'call.leave' });
     this.joined = false;
     this.listed = false;
@@ -644,6 +667,11 @@ export class CallStore {
    */
   private startKeepAlive(ctx: AudioContext): void {
     if (typeof ctx.createOscillator !== 'function') return;
+    // 実験用: 'disnans.noKeepAlive'==='1' なら動かさない（音の遅れへの影響の切り分け）
+    if (noKeepAliveFlag(readLocal('disnans.noKeepAlive'))) {
+      console.info('[call] keep-alive を止めています（実験用）');
+      return;
+    }
     this.keepAlive?.stop();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -673,7 +701,7 @@ export class CallStore {
   /** マイクを開く。選んだ機器が使えなければ既定の機器で開き直す */
   private async openMic(): Promise<MediaStream> {
     // 実験用: localStorage 'disnans.micRaw' === '1' なら、処理（エコー消去など）を切って開く（次の参加から効く）
-    this.micRaw = micRawFlag(readMicRawFlag());
+    this.micRaw = micRawFlag(readLocal('disnans.micRaw'));
     const base = micConstraints(this.micRaw);
     console.info(`[call] マイクを開きます: raw=${this.micRaw} 要求=${JSON.stringify(base)}`);
     const id = this.settings.inputId;
@@ -888,6 +916,7 @@ export class CallStore {
     if (this.entries.size > 0) this.ensureCapture();
     const report = callLatency.report(now);
     if (report) console.info(`[call] latency ${report}`);
+    this.reportClock(now);
     if (this.localMeter && this.updateMeter(this.localMeter, now, this.muted)) changed = true;
     if (this.localMeter && !this.muted) this.noteMic(this.localMeter, now);
     for (const e of this.entries.values()) {
@@ -895,6 +924,17 @@ export class CallStore {
       if (m && this.updateMeter(m, now, e.status.muted || e.localMuted)) changed = true;
     }
     if (changed) this.refresh();
+  }
+
+  /** 診断: 取り始めからの時計のずれ（5 秒ごと）。ctx が壁より遅れる・受けた音が ctx より少ない、を見る */
+  private reportClock(now: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.clockStart || !this.capture || now < this.clockAt) return;
+    this.clockAt = now + LATENCY_REPORT_MS;
+    const ts = (ctx as { getOutputTimestamp?: () => { contextTime?: number } }).getOutputTimestamp?.();
+    const text = clockText(this.clockStart, { ctx: ctx.currentTime, wall: now, frames: this.captureFrames }, ctx.sampleRate);
+    const out = ts?.contextTime !== undefined ? ` 出力の時刻=${ts.contextTime.toFixed(2)}s` : '';
+    console.info(`[call] 時計: ${text}${out}`);
   }
 
   /** 診断: マイクを開いてから、最初にデータが来た時刻と、最初に大きい音が見えた時刻を 1 回ずつ出す */
@@ -929,6 +969,9 @@ export class CallStore {
     this.resampler = new Resampler(ctx.sampleRate);
     this.framer = new Framer();
     this.capture = startCapture(ctx, src, (chunk, at) => this.onCapture(chunk, at));
+    // 診断: 取り始めた時点の時計（ctx と壁と受けた音の数）。以後の差を見る
+    this.clockStart = { ctx: ctx.currentTime, wall: this.deps.now(), frames: 0 };
+    this.captureFrames = 0;
   }
 
   private stopCapture(): void {
@@ -943,6 +986,7 @@ export class CallStore {
 
   /** マイクの音（AudioContext の周波数）を 16kHz に直して送る */
   private onCapture(chunk: Float32Array, at?: number): void {
+    this.captureFrames += chunk.length;
     // 診断: マイクの塊が取れた時刻（ctx の時計）から、ここ（メインスレッド）に来るまでの遅れ
     if (at !== undefined && this.ctx) {
       const lag = this.ctx.currentTime - at - chunk.length / this.ctx.sampleRate;

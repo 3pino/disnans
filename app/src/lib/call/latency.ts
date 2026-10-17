@@ -57,5 +57,21 @@ export class LatencyStats {
   }
 }
 
+/** 時計の比べ方の一点（ctx の時刻・壁の時刻 ms・受けた音のフレーム数） */
+export type ClockPoint = { ctx: number; wall: number; frames: number };
+
+/**
+ * AudioContext の時計と、壁の時計と、受けたフレームの数を比べる（開始からの差）。
+ * ずれ(ctx-実) が負なら ctx が実時間より遅い（CPU 飽和・underrun）。差(フレーム-ctx) が負なら受けた音が足りない（落ちた）
+ */
+export function clockText(start: ClockPoint, now: ClockPoint, rate: number): string {
+  const wallSec = (now.wall - start.wall) / 1000;
+  const ctxSec = now.ctx - start.ctx;
+  const framesSec = (now.frames - start.frames) / rate;
+  const drift = (ctxSec - wallSec) * 1000;
+  const gap = (framesSec - ctxSec) * 1000;
+  return `実経過=${wallSec.toFixed(1)}s ctx経過=${ctxSec.toFixed(1)}s ずれ(ctx-実)=${drift.toFixed(0)}ms 受けた音=${framesSec.toFixed(2)}s分 差(受け-ctx)=${gap.toFixed(0)}ms`;
+}
+
 /** 通話の音声の診断の集計（1 つだけ。通話は同時に 1 つ） */
 export const callLatency = new LatencyStats();

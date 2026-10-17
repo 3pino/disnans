@@ -236,6 +236,71 @@ describe('参加と音声', () => {
     localStorage.removeItem('disnans.micRaw');
   });
 
+  it("AudioContext は 48000Hz・interactive で作る。'disnans.ctxRate' で上書きできる（不正なら既定）", async () => {
+    const opts: unknown[] = [];
+    class Spy extends FakeAudioContext {
+      constructor(o?: unknown) {
+        super();
+        opts.push(o);
+      }
+    }
+    vi.stubGlobal('AudioContext', Spy);
+    const a = makeClient('u1');
+    await a.store.join();
+    expect(opts[0]).toEqual({ sampleRate: 48000, latencyHint: 'interactive' });
+    a.store.leave();
+    localStorage.setItem('disnans.ctxRate', '44100');
+    await a.store.join();
+    expect(opts[1]).toEqual({ sampleRate: 44100, latencyHint: 'interactive' });
+    a.store.leave();
+    localStorage.setItem('disnans.ctxRate', 'bogus');
+    await a.store.join();
+    expect(opts[2]).toEqual({ sampleRate: 48000, latencyHint: 'interactive' });
+    localStorage.removeItem('disnans.ctxRate');
+  });
+
+  it("'disnans.noKeepAlive'='1' なら keep-alive（発振）を動かさない", async () => {
+    const made = vi.fn();
+    const osc = () => {
+      made();
+      return { frequency: { value: 0 }, connect: () => ({ connect: () => {} }), start: () => {}, stop: () => {} };
+    };
+    const fake = FakeAudioContext.prototype as unknown as Record<string, unknown>;
+    const gainOrig = fake.createGain;
+    fake.createOscillator = osc;
+    fake.createGain = () => ({ gain: { value: 0 }, connect: () => ({ connect: () => {} }) });
+    try {
+      localStorage.setItem('disnans.noKeepAlive', '1');
+      const a = makeClient('u1');
+      await a.store.join();
+      expect(made).not.toHaveBeenCalled();
+      a.store.leave();
+      localStorage.removeItem('disnans.noKeepAlive');
+      await a.store.join();
+      expect(made).toHaveBeenCalled();
+    } finally {
+      delete fake.createOscillator;
+      fake.createGain = gainOrig;
+    }
+  });
+
+  it('参加中は 5 秒ごとに時計のずれを出す（ctx と壁の時計）', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const a = makeClient('u1');
+    await a.store.join();
+    const priv = a.store as unknown as { ctx: { currentTime: number }; ensureCapture: () => void };
+    const ctx = priv.ctx;
+    priv.ensureCapture(); // 取り始める（相手がいるときと同じ）
+    ctx.currentTime = 1;
+    a.store.tick();
+    ctx.currentTime = 6;
+    a.store.tick();
+    const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[call] 時計'));
+    expect(lines.length).toBeGreaterThanOrEqual(1);
+    expect(lines[0]).toContain('ずれ(ctx-実)');
+    info.mockRestore();
+  });
+
   it('マイクの最初のデータと、最初の大きい音を、開いてから 1 回ずつ出す', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     const a = makeClient('u1');

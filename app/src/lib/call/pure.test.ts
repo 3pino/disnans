@@ -3,6 +3,8 @@ import {
   DEFAULT_CALL_SETTINGS,
   micConstraints,
   micRawFlag,
+  ctxRateFlag,
+  noKeepAliveFlag,
   LIMIT_LOOKAHEAD_MS,
   PeakLimiter,
   RELAY_RATE,
@@ -366,5 +368,23 @@ describe('マイクの実験用の切り替え', () => {
   it('既定はエコー消去・雑音抑制・自動音量を通す。raw は三つとも切る', () => {
     expect(micConstraints(false)).toEqual({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
     expect(micConstraints(true)).toEqual({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+  });
+});
+
+describe('通話の実験用の切り替え（時計・keep-alive・周波数）', () => {
+  it('周波数は数値だけ受ける。範囲外・不正は既定（null）', () => {
+    expect(ctxRateFlag('44100')).toBe(44100);
+    expect(ctxRateFlag(' 48000 ')).toBe(48000);
+    expect(ctxRateFlag(null)).toBeNull();
+    expect(ctxRateFlag('abc')).toBeNull();
+    expect(ctxRateFlag('100')).toBeNull();
+    expect(ctxRateFlag('1000000')).toBeNull();
+    expect(ctxRateFlag('48000.5')).toBeNull();
+  });
+
+  it("keep-alive は 'disnans.noKeepAlive'==='1' のときだけ止める", () => {
+    expect(noKeepAliveFlag('1')).toBe(true);
+    expect(noKeepAliveFlag(null)).toBe(false);
+    expect(noKeepAliveFlag('0')).toBe(false);
   });
 });
