@@ -138,10 +138,24 @@ fn use_android_system_certs() {
     unsafe { std::env::set_var("SSL_CERT_DIR", SYSTEM_CA_DIR) };
 }
 
+/// Linux: WebKitGTK のマイク取り込み（PipeWire）は、既定のバッファだと通話の音が数秒遅れ、
+/// しだいに増えることがある（PIPEWIRE_LATENCY=256/48000 で直ることを実機で確認）。
+/// 利用者が指定していれば、それを優先する。環境変数の書き換えは unsafe なので、run() の最初に呼ぶ。
+#[cfg(target_os = "linux")]
+fn set_linux_audio_latency() {
+    if std::env::var_os("PIPEWIRE_LATENCY").is_some() {
+        return;
+    }
+    // SAFETY: run() の先頭で、このプロセスがまだ自前のスレッドを作っていない時点で呼ぶ
+    unsafe { std::env::set_var("PIPEWIRE_LATENCY", "256/48000") };
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "android")]
     use_android_system_certs();
+    #[cfg(target_os = "linux")]
+    set_linux_audio_latency();
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
