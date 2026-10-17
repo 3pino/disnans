@@ -249,7 +249,7 @@ async fn threads_cannot_nest() {
     alice
         .recv_until(|e| matches!(e, ServerEvent::ThreadUpdated { .. }))
         .await;
-    match alice.recv().await {
+    match alice.recv_any().await {
         ServerEvent::Notify {
             title,
             body,
@@ -412,7 +412,7 @@ async fn threads_cannot_nest() {
 }
 
 #[tokio::test]
-async fn mentions_notify_only_the_target() {
+async fn mention_notifies_the_target_not_the_author() {
     let server = TestServer::start().await;
     let mut alice = server.ws(ALICE).await;
     let mut bob = server.ws(BOB).await;
@@ -449,7 +449,7 @@ async fn sample_notification_goes_only_to_the_requester() {
         .unwrap();
     assert_eq!(res.status(), 204);
 
-    let event = alice.recv().await;
+    let event = alice.recv_any().await;
     assert!(matches!(event, ServerEvent::Notify { sample: true, .. }));
     bob.assert_silent(Duration::from_millis(200)).await;
 }

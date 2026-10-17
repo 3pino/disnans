@@ -463,7 +463,7 @@ async fn plugin_notify() {
         thread_id,
         sample,
         ..
-    } = bob.recv().await
+    } = bob.recv_any().await
     else {
         panic!()
     };
@@ -507,7 +507,7 @@ async fn plugin_notify() {
             message_id,
             thread_id,
             ..
-        } = client.recv().await
+        } = client.recv_any().await
         else {
             panic!()
         };

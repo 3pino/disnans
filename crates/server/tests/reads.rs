@@ -102,7 +102,7 @@ async fn counts_unread_and_syncs_between_devices() {
     // 既読を進めると、自分のすべての接続に read.updated が届く
     let mut bob2 = server.ws(BOB).await;
     // bob の未読の返信は、接続し直したときに再送される（既読にしていないため）
-    match bob2.recv().await {
+    match bob2.recv_any().await {
         ServerEvent::Notify { replayed, .. } => assert!(replayed),
         other => panic!("再送が来るはずでした: {other:?}"),
     }

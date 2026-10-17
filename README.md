@@ -40,6 +40,7 @@ Windows の `.exe` と Linux の `.deb` を入れると、CLI の `disnans` も�
 ### 通知
 
 - 「設定」→「サンプル通知を送信」で、通知が届くか確かめられます。
+- メインチャットに投稿されると、投稿者以外の全員に通知が届きます（メンションや返信は、それぞれの文言で届きます）。「サイレント送信」（送信ボタンを上へなぞって送る）では通知しません。
 - **Android**: 初回の起動時に通知の許可を求められます。アプリを閉じていても通知が届くよう、裏でサーバーとつなぎ続けます（「通知を受け取っています」という通知が常に表示されますが、オフにして構いません）。
 - **Linux のトレイ**: システムトレイのアイコンに `libayatana-appindicator3-1` が要ります（`.deb` は依存として入れます。AppImage などでは `sudo apt install libayatana-appindicator3-1`。GNOME ではトレイを出す拡張機能「AppIndicator and KStatusNotifierItem Support」も要ります）。
 

@@ -161,8 +161,20 @@ impl WsClient {
         self.stream.send(WsMessage::text(text)).await.unwrap();
     }
 
-    /// 次のイベントを受け取る（3秒でタイムアウト）。
+    /// 次のイベントを受け取る（3秒でタイムアウト）。`notify` は読み飛ばす。
+    /// メインチャットの投稿は他の人にも通知されるため、通知を期待しない場所では読まないようにする。
+    /// 通知そのものを確かめたいときは [`Self::recv_any`] か [`Self::recv_until`] を使う。
     pub async fn recv(&mut self) -> ServerEvent {
+        loop {
+            let event = self.recv_any().await;
+            if !matches!(event, ServerEvent::Notify { .. }) {
+                return event;
+            }
+        }
+    }
+
+    /// 次のイベントを、通知も含めてそのまま受け取る（3秒でタイムアウト）。
+    pub async fn recv_any(&mut self) -> ServerEvent {
         tokio::time::timeout(Duration::from_secs(3), async {
             loop {
                 match self.stream.next().await.expect("切断されました").unwrap() {
@@ -176,22 +188,26 @@ impl WsClient {
         .expect("イベントが来ませんでした")
     }
 
-    /// 条件に合うイベントが来るまで読み飛ばす。
+    /// 条件に合うイベントが来るまで読み飛ばす（通知も対象に含む）。
     pub async fn recv_until(&mut self, mut pred: impl FnMut(&ServerEvent) -> bool) -> ServerEvent {
         loop {
-            let event = self.recv().await;
+            let event = self.recv_any().await;
             if pred(&event) {
                 return event;
             }
         }
     }
 
-    /// 指定した時間、イベントが来ないことを確かめる。
+    /// 指定した時間、通知以外のイベントが来ないことを確かめる（`notify` は無視する）。
     pub async fn assert_silent(&mut self, wait: Duration) {
-        if let Ok(Some(Ok(WsMessage::Text(text)))) =
-            tokio::time::timeout(wait, self.stream.next()).await
+        let deadline = tokio::time::Instant::now() + wait;
+        while let Ok(Some(Ok(WsMessage::Text(text)))) =
+            tokio::time::timeout_at(deadline, self.stream.next()).await
         {
-            panic!("予期しないイベント: {text}");
+            let event: ServerEvent = serde_json::from_str(&text).unwrap();
+            if !matches!(event, ServerEvent::Notify { .. }) {
+                panic!("予期しないイベント: {text}");
+            }
         }
     }
 

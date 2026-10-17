@@ -850,14 +850,14 @@ async fn bot_notify_is_opt_in_and_reaches_the_poster() {
     .unwrap();
     let loud: Message = res.json().await.unwrap();
 
-    // 最初に届いた通知が「見て」のものなので、「静かに」は通知されていない
+    // 「静かに」の通知は一度も届かない。投稿した本人には「ダイス からのメッセージ」が届く
     let ServerEvent::Notify {
         title,
         body,
         message_id,
         ..
     } = alice
-        .recv_until(|e| matches!(e, ServerEvent::Notify { .. }))
+        .recv_until(|e| matches!(e, ServerEvent::Notify { title, .. } if title == "ダイス からのメッセージ"))
         .await
     else {
         unreachable!()

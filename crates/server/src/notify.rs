@@ -20,6 +20,9 @@ pub struct Notification {
     pub thread_id: Option<Id>,
     /// 動作確認用のサンプル。
     pub sample: bool,
+    /// メインチャットの一般の投稿による通知（投稿者以外の全員）。再送の対象にしない。
+    /// メンション・返信・スレッドの通知を、大量の一般の投稿で押し出さないため。
+    pub general: bool,
 }
 
 impl Notification {
@@ -31,6 +34,7 @@ impl Notification {
             message_id: None,
             thread_id: None,
             sample: true,
+            general: false,
         }
     }
 }
@@ -53,7 +57,7 @@ pub trait Notifier: Send + Sync {
 }
 
 /// そのユーザーの WebSocket のすべての接続に `notify` を流す。
-/// 送った通知は [`REPLAY_WINDOW`] の間、ユーザーごとに [`REPLAY_LIMIT`] 件まで覚えておく（サンプルは覚えない）。
+/// 送った通知は [`REPLAY_WINDOW`] の間、ユーザーごとに [`REPLAY_LIMIT`] 件まで覚えておく（サンプルと一般の投稿の通知は覚えない）。
 pub struct WsNotifier {
     hub: Arc<Hub>,
     recent: Mutex<HashMap<String, VecDeque<(Instant, Notification)>>>,
@@ -68,7 +72,7 @@ impl WsNotifier {
     }
 
     fn record(&self, user_id: &str, n: &Notification, now: Instant) {
-        if n.sample {
+        if n.sample || n.general {
             return;
         }
         let mut map = self.lock();
@@ -224,7 +228,7 @@ pub fn plan(
         sent.insert(message.author_id.as_str());
     }
     let mut out = Vec::new();
-    let mut push = |user_id: &str, title: String| {
+    let mut push = |user_id: &str, title: String, general: bool| {
         out.push((
             user_id.to_owned(),
             Notification {
@@ -233,30 +237,44 @@ pub fn plan(
                 message_id: Some(message.id.clone()),
                 thread_id: message.thread_id.clone(),
                 sample: false,
+                general,
             },
         ));
     };
 
     for id in parse_mentions(&message.body) {
         if names.contains_key(id) && sent.insert(id) {
-            push(id, format!("{author} さんからのメンション"));
+            push(id, format!("{author} さんからのメンション"), false);
         }
     }
     if let Some(id) = reply_author
         && names.contains_key(id)
         && sent.insert(id)
     {
-        push(id, format!("{author} さんが返信"));
+        push(id, format!("{author} さんが返信"), false);
     }
     if message.thread_id.is_some() {
         for id in participants {
             if sent.insert(id.as_str()) {
-                push(id, format!("{author} さんがスレッドに返信"));
+                push(id, format!("{author} さんがスレッドに返信"), false);
+            }
+        }
+    }
+    // メインのチャットの投稿は、投稿者以外の全員に通知する（メンションや返信に当たる人は、上で優先して送り済み）。
+    // ボットの投稿も同じく全員に送る。ただし投稿した本人は、下の「{名前} からのメッセージ」を1件だけ受け取る。
+    // この通知は再送の対象にしない
+    if message.thread_id.is_none() {
+        for u in users {
+            if matches!(sender, Sender::Bot(_)) && u.id == message.author_id {
+                continue;
+            }
+            if sent.insert(u.id.as_str()) {
+                push(&u.id, format!("{author} さんのメッセージ"), true);
             }
         }
     }
     if let Some(title) = self_title.filter(|_| !sent.contains(message.author_id.as_str())) {
-        push(&message.author_id, title);
+        push(&message.author_id, title, false);
     }
     out
 }
@@ -361,28 +379,48 @@ mod tests {
     fn notifies_reply_target_unless_self_or_already_notified() {
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
         let msg = message("A", None, "了解");
+        // メインチャットなので、返信先（B）のほかに C にも「さんのメッセージ」が届く
         let p = plan(&msg, &users, &[], Some("B"), Sender::User);
-        assert_eq!(p.len(), 1);
+        let targets: Vec<_> = p
+            .iter()
+            .map(|(u, n)| (u.as_str(), n.title.as_str()))
+            .collect();
         assert_eq!(
-            (p[0].0.as_str(), p[0].1.title.as_str()),
-            ("B", "alice さんが返信")
+            targets,
+            vec![("B", "alice さんが返信"), ("C", "alice さんのメッセージ")]
         );
-        // 自分への返信には通知しない
-        assert!(plan(&msg, &users, &[], Some("A"), Sender::User).is_empty());
-        // メンション済みの人には1回だけ
+        // 自分への返信でも、本人には送らない（ほかの人には届く）
+        let p = plan(&msg, &users, &[], Some("A"), Sender::User);
+        assert!(p.iter().all(|(u, _)| u != "A"));
+        assert_eq!(p.len(), 2);
+        // メンション済みの人には1回だけ（メンションの文言を優先する）
         let msg = message("A", None, "<@B> 了解");
-        assert_eq!(plan(&msg, &users, &[], Some("B"), Sender::User).len(), 1);
+        let p = plan(&msg, &users, &[], Some("B"), Sender::User);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].1.title, "alice さんからのメンション");
+        assert_eq!(p[1].1.title, "alice さんのメッセージ");
     }
 
     #[test]
-    fn bot_notifies_the_poster_with_the_bot_name() {
-        let users = [user("A", "alice"), user("B", "bob")];
+    fn bot_main_chat_post_reaches_everyone_and_the_poster_once() {
+        // ボットの投稿（notify:true）は全員に届く。投稿した本人には「{名前} からのメッセージ」を1件だけ送る
+        let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
         let msg = message("A", None, "hello");
         let plan = plan(&msg, &users, &[], None, Sender::Bot("ダイス"));
-        assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].0, "A");
-        assert_eq!(plan[0].1.title, "ダイス からのメッセージ");
-        assert_eq!(plan[0].1.body, "hello");
+        let targets: Vec<_> = plan
+            .iter()
+            .map(|(u, n)| (u.as_str(), n.title.as_str()))
+            .collect();
+        assert_eq!(
+            targets,
+            vec![
+                ("B", "ダイス さんのメッセージ"),
+                ("C", "ダイス さんのメッセージ"),
+                ("A", "ダイス からのメッセージ"),
+            ]
+        );
+        assert!(plan.iter().all(|(_, n)| n.body == "hello"));
+        assert_eq!(plan.iter().filter(|(_, n)| n.general).count(), 2);
     }
 
     #[test]
@@ -415,10 +453,44 @@ mod tests {
     }
 
     #[test]
-    fn no_thread_notifications_in_main_chat() {
-        let users = [user("A", "alice"), user("B", "bob")];
+    fn main_chat_post_notifies_everyone_but_the_author() {
+        let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
         let msg = message("A", None, "hello");
-        assert!(plan(&msg, &users, &["B".into()], None, Sender::User).is_empty());
+        let plan = plan(&msg, &users, &[], None, Sender::User);
+        let targets: Vec<_> = plan
+            .iter()
+            .map(|(u, n)| (u.as_str(), n.title.as_str(), n.body.as_str()))
+            .collect();
+        assert_eq!(
+            targets,
+            vec![
+                ("B", "alice さんのメッセージ", "hello"),
+                ("C", "alice さんのメッセージ", "hello"),
+            ]
+        );
+        // メインチャットでは thread_id を持たない。一般の通知は再送の対象外（general）
+        assert!(plan.iter().all(|(_, n)| n.thread_id.is_none() && n.general));
+    }
+
+    #[test]
+    fn main_chat_mention_keeps_the_mention_title() {
+        let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
+        let msg = message("A", None, "<@C> 見て");
+        let plan = plan(&msg, &users, &[], None, Sender::User);
+        let targets: Vec<_> = plan
+            .iter()
+            .map(|(u, n)| (u.as_str(), n.title.as_str()))
+            .collect();
+        assert_eq!(
+            targets,
+            vec![
+                ("C", "alice さんからのメンション"),
+                ("B", "alice さんのメッセージ"),
+            ]
+        );
+        // メンションは再送の対象、一般の通知は対象外
+        assert!(!plan[0].1.general);
+        assert!(plan[1].1.general);
     }
 }
 
@@ -433,6 +505,7 @@ mod replay_tests {
             message_id: Some(id.into()),
             thread_id: None,
             sample: false,
+            general: false,
         }
     }
 
@@ -485,6 +558,23 @@ mod replay_tests {
             kept.last().unwrap().body,
             format!("m{:03}", REPLAY_LIMIT + 4)
         );
+    }
+
+    #[test]
+    fn general_notifications_are_not_kept() {
+        let n = notifier();
+        let now = Instant::now();
+        let mut general = note("一般");
+        general.general = true;
+        n.record("alice", &general, now);
+        n.record("alice", &note("メンション"), now);
+        // 一般の投稿の通知が多くても、メンションは押し出されない
+        for i in 0..REPLAY_LIMIT * 2 {
+            let mut g = note(&format!("g{i}"));
+            g.general = true;
+            n.record("alice", &g, now);
+        }
+        assert_eq!(bodies(&n.recent_at("alice", now)), ["メンション"]);
     }
 
     #[test]

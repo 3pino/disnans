@@ -211,6 +211,7 @@ pub async fn notify(state: &AppState, plugin_id: &str, req: PluginNotify) -> App
         message_id,
         thread_id,
         sample: false,
+        general: false,
     };
 
     let all_users = users::list(&state.pool).await?;

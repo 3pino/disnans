@@ -26,7 +26,7 @@ fn mention(bob_id: &str, text: &str) -> ClientEvent {
 async fn replayed_bodies(bob: &mut common::WsClient, count: usize) -> Vec<String> {
     let mut out = Vec::new();
     for _ in 0..count {
-        match bob.recv().await {
+        match bob.recv_any().await {
             ServerEvent::Notify { body, replayed, .. } => {
                 assert!(replayed, "再送の印が付いていません");
                 out.push(body);
