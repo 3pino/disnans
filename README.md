@@ -1,6 +1,6 @@
 # disnans
 
-小さな SNS。チャットとスレッド、写真やファイルの共有ができます。
+小さな SNS。チャットと、写真やファイルの共有ができます。
 
 - Tailscale の中だけで動きます。インターネットには公開しません。ログインも Tailscale のアカウントで自動的に行われます。
 - **サーバーは自宅の PC で動かします。** データは手元に置かれます
@@ -49,7 +49,7 @@ Windows の `.exe` と Linux の `.deb` を入れると、CLI の `disnans` も�
 「みんなで1つの通話に、いつでも出入りできる」アプリ本体の機能です。画面の上部に通話のバーが出て（どのタブでも）、「＋」メニューの「通話に参加」や `/vc-join` で参加します。参加者を長押し（PC は右クリック）すると、その人を通話から外せます。設定は「設定」→「通話」にあります。
 
 - **Linux**: `gstreamer1.0-plugins-good`、`gstreamer1.0-plugins-bad`、`gstreamer1.0-pulseaudio`（PipeWire の環境なら `gstreamer1.0-pipewire` も）が要ります（`.deb` は推奨パッケージとして入れます）。
-- **Linux の既知の問題（未解決）**: 通話中、自分のマイクの音が約 5 秒遅れて送られ、通話を続けるほど遅れが増えることがあります（Windows では出ません。古い版からあります）。アプリ内の処理は遅れておらず、WebKitGTK のマイク取り込み（GStreamer）の内部に溜まっていると見ています。次の対策は、どれも効果がありませんでした: PipeWire の遅延設定（`PIPEWIRE_LATENCY`。v0.2.11 以降は既定で設定）、マイクの処理（エコー除去・雑音抑制・自動音量）を切る（`localStorage.setItem('disnans.micRaw','1')`）、聞こえない信号を止める（`disnans.noKeepAlive`）、音声処理のレートを変える（`disnans.ctxRate`）。マイクの取り込みを Rust に移せば避けられる見込みですが、作業が大きいため見送っています。遅れが気になるときは、通話から一度抜けて入り直すと、いったん戻ります。
+- **Linux の既知の問題（未解決）**: 通話中、自分のマイクの音が遅れることがあります（Windows では出ません）。内容・試した対策・回避策は [FEEDBACKS.md](FEEDBACKS.md) を参照してください。
 
 ### Linux の診断ログ
 
@@ -161,11 +161,11 @@ node scripts/prepare-cli.mjs          # 本物の CLI を release で作って�
 
 `--dev-user` は開発サーバー専用です。本番では省略し、GUI と同じ Tailscale のサーバーへ接続します。接続先は `config set-server <URL>` で保存でき、`--server` は一時指定です。GUI で接続先の外部変更を検出しても、確認なしに別サーバーへ接続しません。JSON 出力には個人データが含まれるため、共有時は内容を確認してください。
 
-詳しくは [CLI の説明](crates/cli/README.md)、[CLI/TUI 要件](SPEC_cli_tui.md)、[共通基盤と移行の境界](docs/CLIENT_ARCHITECTURE.md) を参照してください。
+詳しくは [CLI の説明](crates/cli/README.md)、[共通基盤の境界](crates/client-core/README.md) を参照してください。未対応の項目・既知の問題・進行中の作業は [FEEDBACKS.md](FEEDBACKS.md) にまとめています。
 
 | ドキュメント | 内容 |
 |---|---|
-| [SPEC.md](SPEC.md) | 要件定義 |
+| [FEEDBACKS.md](FEEDBACKS.md) | 未対応の項目・既知の問題・進行中の作業 |
 | [docs/API.md](docs/API.md) | REST / WebSocket の仕様 |
 | [crates/shared](crates/shared) | API の型（`cargo test -p disnans-shared` で TypeScript の型を `app/src/lib/protocol/` に生成） |
 

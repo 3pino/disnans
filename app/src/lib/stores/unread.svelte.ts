@@ -4,7 +4,7 @@ import type { Message } from '../protocol/Message';
 import type { ReadMarker } from '../protocol/ReadMarker';
 
 /**
- * 未読の管理（SPEC 3.1「既読・未読」）。
+ * 未読の管理。
  *
  * メインチャットの「ここまで読んだ位置」（メッセージ ID）と未読数を持つ（スレッドは廃止した）。
  * 位置はサーバーに保存し、同じユーザーの端末どうしで共有する（`GET/PUT /api/me/read`、`read.updated`）。

@@ -1,6 +1,6 @@
 //! 通知（メンション、スレッドへの返信）。
 //!
-//! 送り方は `Notifier` で抽象化しておき、後から FCM などを足せるようにする（SPEC 4.3）。
+//! 送り方は `Notifier` で抽象化しておき、後から FCM などを足せるようにする。
 //! 今は WebSocket の接続に `ServerEvent::Notify` を流すだけ。
 
 use std::collections::{HashMap, HashSet, VecDeque};

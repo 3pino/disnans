@@ -19,7 +19,7 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 
 使っていないのは `notify` だけです（カードの書き換えで足りるため。→ [通知](#通知)）。
 
-- 設計: [`SPEC.md`](../SPEC.md) の 3.3 と 9章
+- 設計: 仕組みと配り方は、このファイルの各章と [`API.md`](API.md) を正とする
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
 - UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](PLUGIN_UI.md)
 - ホスト API のバージョン: **12**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から。`holdBackground` の通知のボタン `actions` / `onAction` と `update()` は 4 から。`disnans.audio` は 5、`postMessage` の `notify` と `openSettings` は 6、`disnans.call`（通話の拡張）は 7 から、`addMessageAction` / `openTimeline`・`disnans.screenCapture` / `disnans.pip`・`ui.onBack` / `ui.setImmersive` は 9 から、通話の画面の領域 `call.addPanel` と送信待ちの量 `call.bufferedAmount` は 10 から、ダイアログなしの静止画 `screenCapture.snapshot` は 11 から、通話画面だけに出すボタン `call.addButton({ location: 'view' })` と Linux のネイティブ画面取得（portal / PipeWire）は 12 から）
@@ -759,7 +759,7 @@ this.register(call.onEvent('screen', ({ user, payload }) => { /* <img> に paylo
 - 設定: FPS（5 / 20）、画質（480p・品質 50% / 720p・品質 60% / 1080p・品質 80%）、色数（フルカラー / 256 色 / グレースケール）。色数を減らす設定では、減色した画像を PNG・WebP・JPEG のうち小さいもので送ります（JPEG は減色の効果が薄いため）。設定画面に、今の設定で符号化した画像と 1 フレームのおおよそのサイズ・帯域のプレビューがあります。元は自分の実際の画面で、共有中ならその画面、そうでなければ設定を開くたびに `screenCapture.snapshot()`（v11）で 1 枚撮ります（選択や許可のダイアログは出ない。Windows と Linux の X11 は画面全体、Wayland と Android は disnans 自身の画面。撮れなければプレビューなしで文言だけ。「画面を取り込み直す」で撮り直せる）
 - 見る側: プラグインが `document.body` に全画面のオーバーレイを足して表示します（ダイアログ・トーストより下、Esc でも閉じる）。通話の画面にも `call.addPanel` で配信を出し、「大きく見る」でオーバーレイを開きます。共有者が複数ならタブで切り替えます。既定は画面全体が収まる表示（縦長のスマホの画面も切れない）。ピンチ・Ctrl+ホイール（トラックパッドのピンチ）でカーソルの位置を中心に拡大縮小、拡大中はドラッグ・ホイールで移動（Shift+ホイールで横）、等倍のときにホイールを上へ回すと拡大、ダブルタップ（ダブルクリック）で拡大／元に戻す、`+` / `-` / `0` キーでも拡大・縮小・元に戻す。全画面は `ui.setImmersive`（Android）か Fullscreen API、戻るジェスチャーは `ui.onBack` で全画面の解除→閲覧を閉じる、の順。PiP は Android なら `disnans.pip`、デスクトップなら受け取った画像を `<canvas>` に描いて `captureStream()` した `<video>` の `requestPictureInPicture()`
 
-本体の通話のしくみ（参加者の管理と kick はサーバー、音声とデータもサーバー経由）は [`SPEC.md`](../SPEC.md) の 9.11、サーバーの経路は [`API.md`](API.md) の WebSocket を参照してください。
+本体の通話のしくみ（参加者の管理と kick はサーバー、音声とデータもサーバー経由）は、サーバーの経路と合わせて [`API.md`](API.md) の通話の節と WebSocket を参照してください。
 マイクを使うには**アプリ版（Tauri）が必要**です（WebView の `getUserMedia` は安全なコンテキストでしか動かないため、`http://` で開いたブラウザー版では使えません）。
 
 ---

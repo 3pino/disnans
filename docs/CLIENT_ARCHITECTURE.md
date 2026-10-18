@@ -1,6 +1,6 @@
 # CLI/TUI と共通クライアント基盤
 
-要件は [`SPEC_cli_tui.md`](../SPEC_cli_tui.md)、通信契約は [`API.md`](API.md) と `crates/shared` を参照。ここでは実装の境界と段階を整理する。
+要件と未対応の項目は [`FEEDBACKS.md`](../FEEDBACKS.md)、通信契約は [`API.md`](API.md) と `crates/shared` を参照。ここでは実装の境界と段階を整理する。
 
 ## 現在の実装範囲
 

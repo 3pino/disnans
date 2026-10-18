@@ -1,6 +1,6 @@
-# disnans CLI（実装途中）
+# disnans CLI
 
-`disnans` は Linux / Windows 向けの CLI/TUI クライアント。現段階は**読み取り（`me` / `messages`）、メインチャットの `send` / `watch`、`tui`（メインチャットのみ）**で、まだリリース版アプリには同梱していません。全体の方針は [`SPEC_cli_tui.md`](../../SPEC_cli_tui.md) を参照してください。
+`disnans` は Linux / Windows 向けの CLI/TUI クライアント。現段階は**読み取り（`me` / `messages`）、メインチャットの `send` / `watch`、`tui`（メインチャットのみ）**で、Windows インストーラと Linux `.deb` に同梱しています（AppImage は同梱しません）。共通部品の境界は [`crates/client-core/README.md`](../client-core/README.md)、未対応の項目は [`FEEDBACKS.md`](../../FEEDBACKS.md) を参照してください。
 
 ## 現在使えるコマンド
 

@@ -10,7 +10,7 @@
   import { ui } from '../lib/stores/ui.svelte';
   import type { PluginVisibility } from '../lib/protocol/PluginVisibility';
 
-  // 設定の「外観」のカスタムテーマ（SPEC 9.10）: 配布済み・開発中のテーマの一覧。この端末で1つだけ選べる。
+  // 設定の「外観」のカスタムテーマ（docs/THEMES.md）: 配布済み・開発中のテーマの一覧。この端末で1つだけ選べる。
   // 開発用フォルダの設定は「プラグイン」セクションのものを共用する
 
   const entries = $derived(pluginHost.themeEntries);

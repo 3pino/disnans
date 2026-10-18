@@ -1,4 +1,4 @@
-//! Markdown サブセット（SPEC 3.1）の構文木（ステップ8・V3）。
+//! Markdown サブセットの構文木（ステップ8・V3）。
 //!
 //! `app/src/lib/markdown.ts` と同じ規則・同じ木の形（JSON も同じ）。GUI と core が同じ fixture
 //! （`crates/client-core/tests/fixtures/view/markdown.json`）を通すことで揃える。

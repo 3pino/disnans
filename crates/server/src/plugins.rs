@@ -1,4 +1,4 @@
-//! プラグイン・テーマの配布・更新・削除（SPEC 9.2, 9.6, 9.10）。
+//! プラグイン・テーマの配布・更新・削除（docs/PLUGINS.md・docs/THEMES.md）。
 //!
 //! ファイルは `<data_dir>/plugins/<id>/` に置く。サーバーはプラグインのコードを実行せず、
 //! 保存して配るだけ。配布・更新・削除のたびに `plugin.updated` / `plugin.removed` を配信する
@@ -255,7 +255,7 @@ pub fn too_large() -> AppError {
     )
 }
 
-/// manifest.json の中身（SPEC 9.2）。
+/// manifest.json の中身（docs/PLUGINS.md のパッケージの節）。
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawManifest {

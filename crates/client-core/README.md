@@ -1,6 +1,23 @@
 # disnans-client-core
 
-Shared Rust client-side primitives for the GUI, CLI, and TUI. The initial API provides normalized server URLs, REST reads (`me`, `users`, and message history), and shared local config/draft storage. The WebSocket client is available behind the `ws` feature (see below).
+GUI（Tauri）・CLI・TUI が共有するクライアント側の部品。URL の解釈、REST、WebSocket（feature `ws`）、共通ファイル（設定・下書き）、端末の方針、表示データ（`view`）を持つ。
+
+## 境界（何がどこにあるか）
+
+- `crates/shared`: サーバーとの型（ts-rs で TypeScript の型も作る）。
+- `crates/client-core`（このクレート）: 通信・保存・端末の方針（`platform`）・表示データ（`view`: 行の並び、同じ人の続き、Markdown の木、メンションの取り出し）。描画・文字の幅・色は持たない。
+- `crates/cli`: CLI と TUI。core を直接使い、TUI は `view` の行を端末の幅で描く。
+- `app/src-tauri`: Tauri の薄い橋（invoke の受け口、チャットの橋、共通ファイルの橋、端末の情報の注入）。方針は core に置き、橋は呼ぶだけ。
+- `app`（Svelte / TypeScript）: 画面、状態、Android の通知サービス（`notifier` プラグイン）。Tauri（Windows・Linux・Android）のチャットは Rust の接続を使う。ブラウザー開発版は TypeScript の WebSocket のまま。GUI の Markdown と表示は、まだ TypeScript の実装を使っている（[表示データの切り替え](../../docs/PLAN_SHARED_VIEW.md)）。
+- 端末ごとの方針（`platform::capabilities_for`）は core に一つだけ置く。Tauri・TUI・CLI の値はここから決まる。
+- スレッドは廃止済み。core に thread の型・API はない。
+
+## 通信の基本
+
+- REST は `disnans_shared` の型を返す。HTTP エラーの status・code・message を保持し、画面の文言や終了コードへの変換は呼び出し側が行う。
+- 接続先（URL）は GUI と CLI で同じ規則で解釈する。認証情報・query・fragment を含むものは拒否する。
+- 送信の成否が分からないとき（切断・タイムアウトなど）は「成否不明」とし、自動では再送しない。
+- 切断中のイベントは復元しない。再接続後に、呼び出し側が表示中の履歴を REST で取り直す。
 
 ## Storage contract
 

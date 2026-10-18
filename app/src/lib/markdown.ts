@@ -1,4 +1,4 @@
-// Markdown サブセット（SPEC 3.1）のパーサー。
+// Markdown サブセットのパーサー。
 // HTML 文字列は作らず、構文木を返す。描画は Svelte 側でテキストノードとして行うので、生 HTML は入り込まない。
 
 export type Inline =
