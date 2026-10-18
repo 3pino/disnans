@@ -5,6 +5,7 @@ import {
   micRawFlag,
   ctxRateFlag,
   noKeepAliveFlag,
+  keepAliveGain,
   LIMIT_LOOKAHEAD_MS,
   PeakLimiter,
   RELAY_RATE,
@@ -387,5 +388,14 @@ describe('通話の実験用の切り替え（時計・keep-alive・周波数）
     expect(noKeepAliveFlag('1')).toBe(true);
     expect(noKeepAliveFlag(null)).toBe(false);
     expect(noKeepAliveFlag('0')).toBe(false);
+  });
+
+  it('keep-alive の振幅は dBFS で決まる（既定値・上書き・範囲外は既定）', () => {
+    expect(keepAliveGain(null, -60)).toBeCloseTo(0.001, 6);
+    expect(keepAliveGain('-80', -60)).toBeCloseTo(0.0001, 7);
+    expect(keepAliveGain('abc', -60)).toBeCloseTo(0.001, 6);
+    expect(keepAliveGain('', -60)).toBeCloseTo(0.001, 6);
+    expect(keepAliveGain('0', -60)).toBeCloseTo(0.001, 6);
+    expect(keepAliveGain('-10', -60)).toBeCloseTo(0.001, 6);
   });
 });

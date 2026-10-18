@@ -306,7 +306,21 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   fun setKeepWebView(invoke: Invoke) {
     val args = invoke.parseArgs(SetKeepWebViewArgs::class.java)
     keepWebView = args.enabled
+    if (args.enabled) raiseRendererPriority()
     invoke.resolve()
+  }
+
+  /**
+   * レンダラー（WebView の描画・JS のプロセス）の優先度を、表示されていなくても下げないようにする。
+   * 既定では裏に回った WebView の優先度が下がり、JS が止められやすい。Android 8 未満には無い設定。
+   */
+  private fun raiseRendererPriority() {
+    val view = webView ?: return
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    activity.runOnUiThread {
+      view.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+      Log.i(LOG_TAG, "[call] レンダラーの優先度を下げないようにしました")
+    }
   }
 
   /** JS の [call] のログを logcat に出す（リリース版では WebView の console が出ないため） */

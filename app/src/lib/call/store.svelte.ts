@@ -6,9 +6,11 @@ import type { IconRef } from '../icons.svelte';
 import { startCapture, type Capture } from './capture';
 import { installCallLogForwarding, keepWebViewEnabled, setKeepWebViewResumed } from './nativeCall';
 import { LATENCY_REPORT_MS, callLatency, clockText, type ClockPoint } from './latency';
+import { isAndroid } from '../platform';
 import {
   EV_AUDIO,
   Framer,
+  keepAliveGain,
   ctxRateFlag,
   micConstraints,
   micRawFlag,
@@ -134,7 +136,13 @@ const EMIT_QUEUE_MS = 5000;
 /** 診断用に、直近に送った call.* を覚えておく件数 */
 const TRAIL_MAX = 8;
 const KEEPALIVE_HZ = 20;
-const KEEPALIVE_GAIN = 0.0001;
+/**
+ * keep-alive の既定の大きさ（dBFS）。Chromium は「音が出ている」ページを凍結しない。その判定の無音のしきい値は約 -72 dBFS。
+ * Android では -60 dBFS（振幅 1e-3）の 20 Hz の正弦にする。スマホのスピーカーではほぼ鳴らず、人にはまず聞こえない。
+ * デスクトップなど他の環境は、これまでどおり -80 dBFS（ほぼ無音）のまま。localStorage 'disnans.keepAliveLevel' で上書きできる。
+ */
+const KEEPALIVE_DB_ANDROID = -60;
+const KEEPALIVE_DB_OTHER = -80;
 
 /** 実験用の切り替えの値（localStorage。読めないときは null） */
 function readLocal(key: string): string | null {
@@ -761,8 +769,10 @@ export class CallStore {
     this.keepAlive?.stop();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
+    const db = isAndroid() ? KEEPALIVE_DB_ANDROID : KEEPALIVE_DB_OTHER;
     osc.frequency.value = KEEPALIVE_HZ;
-    gain.gain.value = KEEPALIVE_GAIN;
+    gain.gain.value = keepAliveGain(readLocal('disnans.keepAliveLevel'), db);
+    console.info(`[call] keep-alive を ${KEEPALIVE_HZ} Hz・既定 ${db} dBFS で動かします`);
     osc.connect(gain).connect(ctx.destination);
     osc.start();
     this.keepAlive = osc;

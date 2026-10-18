@@ -199,6 +199,16 @@ export function noKeepAliveFlag(value: string | null): boolean {
   return value === '1';
 }
 
+/**
+ * keep-alive の振幅（localStorage 'disnans.keepAliveLevel' の dBFS で上書き）。
+ * 値が数でない・範囲外（-120〜-30 dBFS）なら既定の fallbackDb を使う。
+ */
+export function keepAliveGain(value: string | null, fallbackDb: number): number {
+  const n = value === null || value.trim() === '' ? NaN : Number(value);
+  const db = Number.isFinite(n) && n >= -120 && n <= -30 ? n : fallbackDb;
+  return dbToLinear(db);
+}
+
 /** AudioContext の周波数の上書き（localStorage 'disnans.ctxRate'）。数値で範囲外・不正は null（既定を使う） */
 export function ctxRateFlag(value: string | null): number | null {
   if (value === null || !/^\d+$/.test(value.trim())) return null;
