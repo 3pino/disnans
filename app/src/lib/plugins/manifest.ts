@@ -39,6 +39,11 @@ export function parsePackageManifest(text: string): { manifest: Manifest; kind: 
   if (!PLUGIN_ID_RE.test(id)) throw new Error(`manifest.json の id「${id}」は、英小文字・数字・ハイフンの 2〜32 文字にしてください`);
   const min = o.minApiVersion ?? 1;
   if (typeof min !== 'number' || !Number.isInteger(min) || min < 0) throw new Error('manifest.json の minApiVersion は整数にしてください');
+  // 作られた対象の版（任意。1 以上の整数で、minApiVersion 以上）。省略すると minApiVersion とみなす
+  const api = o.apiVersion;
+  if (api !== undefined && (typeof api !== 'number' || !Number.isInteger(api) || api < 1 || api < min)) {
+    throw new Error('manifest.json の apiVersion は 1 以上の整数で、minApiVersion 以上にしてください');
+  }
   const icon = o.icon;
   if (icon !== undefined && (typeof icon !== 'string' || !MANIFEST_ICON_RE.test(icon))) {
     throw new Error('manifest.json の icon は Lucide のアイコン名（英小文字・数字・ハイフン。例: "dice-5"）にしてください');
@@ -54,11 +59,13 @@ export function parsePackageManifest(text: string): { manifest: Manifest; kind: 
     minApiVersion: min,
   };
   if (icon !== undefined) m.icon = icon;
+  if (api !== undefined) m.apiVersion = api;
   return { manifest: m, kind: type };
 }
 
 /** サーバーの PluginInfo から manifest を作る */
 export function manifestOf(info: PluginInfo): Manifest {
+  const api = info.api_version;
   return {
     id: info.id,
     name: info.name,
@@ -66,6 +73,7 @@ export function manifestOf(info: PluginInfo): Manifest {
     description: info.description,
     author: info.author,
     minApiVersion: info.min_api_version,
+    ...(api !== null ? { apiVersion: api } : {}),
     ...(info.icon ? { icon: info.icon } : {}),
   };
 }

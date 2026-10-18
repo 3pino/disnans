@@ -2,14 +2,10 @@ import type { Session as SessionData } from '../protocol/Session';
 import type { User } from '../protocol/User';
 import { avatarSrc } from '../config';
 import { errorMessage, isVersionConflict, type Cleanup, type HostServices } from './types';
+import { PluginError, VersionConflictError } from './errors';
+import { sameViewers, uniqueViewers } from '../presence';
 
-/** Session.update がぶつかったときのエラー（disnans.VersionConflictError） */
-export class VersionConflictError extends Error {
-  constructor(message = 'ほかの人の更新とぶつかりました') {
-    super(message);
-    this.name = 'VersionConflictError';
-  }
-}
+export { VersionConflictError };
 
 type EventListener = (payload: unknown, from: Disnans.User) => void;
 
@@ -38,6 +34,9 @@ export class SessionImpl implements Disnans.Session<unknown> {
 
   private changeListeners = new Set<(s: Disnans.Session<unknown>) => void>();
   private eventListeners = new Map<string, Set<EventListener>>();
+  private viewerListeners = new Set<(viewers: string[]) => void>();
+  /** いまこのセッションを開いている人（ユーザー ID） */
+  private viewerIds: string[] = [];
   /** 外したあと（メッセージの削除・プラグインの解除）は何もしない */
   disposed = false;
 
@@ -73,6 +72,31 @@ export class SessionImpl implements Disnans.Session<unknown> {
     return true;
   }
 
+  /** いまこのセッションを開いている人（ユーザー ID。自分を含む。API v14） */
+  get viewers(): string[] {
+    return [...this.viewerIds];
+  }
+
+  /** session.presence を受け取ったとき。変わったときだけ onViewers を呼ぶ */
+  applyViewers(ids: readonly string[]): void {
+    if (this.disposed) return;
+    const next = uniqueViewers(ids);
+    if (sameViewers(this.viewerIds, next)) return;
+    this.viewerIds = next;
+    for (const cb of [...this.viewerListeners]) {
+      try {
+        cb([...next]);
+      } catch (e) {
+        console.error(`[plugin:${this.plugin}] onViewers で例外`, e);
+      }
+    }
+  }
+
+  onViewers(cb: (viewers: string[]) => void): Cleanup {
+    this.viewerListeners.add(cb);
+    return () => this.viewerListeners.delete(cb);
+  }
+
   /** session.event を受け取ったとき */
   dispatchEvent(name: string, payload: unknown, fromId: string): void {
     if (this.disposed) return;
@@ -90,7 +114,7 @@ export class SessionImpl implements Disnans.Session<unknown> {
   }
 
   async update(state: unknown, opts?: { card?: Disnans.Card }): Promise<void> {
-    if (this.disposed) throw new Error('このセッションはもう使えません');
+    if (this.disposed) throw new PluginError('stopped', 'このセッションはもう使えません');
     let data: SessionData;
     try {
       data = await this.services.api.updateSession(this.id, {
@@ -135,6 +159,8 @@ export class SessionImpl implements Disnans.Session<unknown> {
     this.disposed = true;
     this.changeListeners.clear();
     this.eventListeners.clear();
+    this.viewerListeners.clear();
+    this.viewerIds = [];
   }
 }
 
@@ -189,6 +215,11 @@ export class SessionsImpl implements Disnans.Sessions {
   /** session.updated */
   applyUpdate(data: SessionData): void {
     this.cache.get(data.id)?.apply(data);
+  }
+
+  /** session.presence（読み込んでいるセッションだけ。開いていないものは持たない） */
+  applyPresence(sessionId: string, viewers: readonly string[]): void {
+    this.cache.get(sessionId)?.applyViewers(viewers);
   }
 
   /** session.event */

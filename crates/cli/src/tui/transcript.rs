@@ -6,6 +6,7 @@ use disnans_shared::{Message, User};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
+use super::markdown::{self, Deco};
 use super::sanitize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +22,10 @@ pub struct Row {
     pub kind: RowKind,
     /// 端末へそのまま出せる文字だけ（制御文字・双方向制御はエスケープ済み）。
     pub text: String,
+    /// `text` の中の装飾の範囲（バイト位置。Markdown の強調・コードなど）。
+    pub decos: Vec<(usize, usize, Deco)>,
+    /// このメッセージの ID（選択の強調に使う）。日付の区切りは空。
+    pub message_id: String,
     /// `text` の先頭にある「アイコン 名前」の長さ（バイト）。0 なら無し。
     pub prefix: usize,
     /// 投稿者ごとの色番号（`ACCENTS` の添字）。アバターが無いときの色。
@@ -44,6 +49,9 @@ pub struct ImageSlot {
     /// 行の左端から画像までの桁数。
     pub offset: u16,
 }
+
+/// 1行分の内容（種類, 文字, 装飾の範囲）。
+type Content = (RowKind, String, Vec<(usize, usize, Deco)>);
 
 const IMAGE_MAX_COLS: usize = 32;
 const IMAGE_MAX_ROWS: usize = 10;
@@ -84,6 +92,8 @@ pub fn separator_row(label: &str, width: usize) -> Row {
     Row {
         kind: RowKind::Separator,
         text: format!("{}{text}{}", "─".repeat(left), "─".repeat(fill - left)),
+        decos: Vec::new(),
+        message_id: String::new(),
         prefix: 0,
         accent: 0,
         author_id: String::new(),
@@ -220,21 +230,36 @@ fn message_rows_with(
         _ => None,
     };
 
-    let mut content: Vec<(RowKind, String)> = Vec::new();
+    let mut content: Vec<Content> = Vec::new();
     // 画像の予約行（内容の行の後ろに追加する）。
     let mut images: Vec<(usize, ImageSlot)> = Vec::new();
-    let push = |content: &mut Vec<(RowKind, String)>, kind: RowKind, text: &str| {
+    let push = |content: &mut Vec<Content>, kind: RowKind, text: &str| {
         for line in sanitize::wrap(text, inner) {
-            content.push((kind, line));
+            content.push((kind, line, Vec::new()));
         }
     };
+    let name_of = |id: &str| {
+        users.iter().find(|u| u.id == id).map_or_else(
+            || UNKNOWN_USER.to_owned(),
+            |u| sanitize::inline(&u.display_name),
+        )
+    };
+    let mut body_done = false;
     for row in model {
         let view::Row::Message { line, .. } = row else {
             continue;
         };
         match line {
-            view::Line::Body { segments } => {
-                push(&mut content, RowKind::Body, &body_text(segments));
+            view::Line::Body { .. } => {
+                // 本文は Markdown として一度にまとめて出す（core の行は本文の行ごとに来る）。
+                if !body_done {
+                    body_done = true;
+                    for line in markdown::render(&message.body, &name_of) {
+                        for (text, decos) in markdown::layout_line(&line, inner) {
+                            content.push((RowKind::Body, text, decos));
+                        }
+                    }
+                }
             }
             view::Line::Meta { meta } => match meta {
                 view::Meta::Bot { name } => push(
@@ -292,7 +317,7 @@ fn message_rows_with(
                                     offset: lead_w as u16,
                                 },
                             ));
-                            content.push((RowKind::Meta, String::new()));
+                            content.push((RowKind::Meta, String::new(), Vec::new()));
                         }
                     }
                 }
@@ -309,18 +334,24 @@ fn message_rows_with(
         }
     }
     if content.is_empty() {
-        content.push((RowKind::Body, String::new()));
+        content.push((RowKind::Body, String::new(), Vec::new()));
     }
 
     let blank = " ".repeat(lead_w);
     content
         .into_iter()
         .enumerate()
-        .map(|(i, (kind, line))| {
+        .map(|(i, (kind, line, decos))| {
             let first = i == 0;
+            let shift = if first { lead.len() } else { blank.len() };
             Row {
                 kind,
                 text: format!("{}{line}", if first { &lead } else { &blank }),
+                decos: decos
+                    .into_iter()
+                    .map(|(s, e, d)| (s + shift, e + shift, d))
+                    .collect(),
+                message_id: message.id.clone(),
                 prefix: if first && head.is_some() {
                     lead.len()
                 } else {
@@ -334,20 +365,6 @@ fn message_rows_with(
                     .find(|(index, _)| *index == i)
                     .map(|(_, slot)| slot.clone()),
             }
-        })
-        .collect()
-}
-
-/// 本文の 1 行（部品）を端末の文字にする。メンションは `@名前`（分からなければ `@不明なユーザー`）
-fn body_text(segments: &[view::Segment]) -> String {
-    segments
-        .iter()
-        .map(|segment| match segment {
-            view::Segment::Text { text } => sanitize::escape_text(text, false),
-            view::Segment::Mention { name, .. } => format!(
-                "@{}",
-                sanitize::inline(name.as_deref().unwrap_or(UNKNOWN_USER))
-            ),
         })
         .collect()
 }

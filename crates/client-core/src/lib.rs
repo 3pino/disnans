@@ -28,6 +28,6 @@ pub use url::{ServerUrl, UrlError, normalize_server_url};
 #[cfg(feature = "ws")]
 pub use ws::{
     ChatConnection, ChatSession, ChatWatch, ConnectOptions, Disconnected, EmitError, Message,
-    SendOutcome, SendRequest, ServerEvent, SessionSender, UnknownReason, User, WatchItem, WsError,
-    new_client_id,
+    ReactOutcome, SendOutcome, SendRequest, ServerEvent, SessionSender, UnknownReason, User,
+    WatchItem, WsError, new_client_id,
 };

@@ -303,6 +303,8 @@ fn check_emit_kind(event: &ClientEvent) -> Result<(), ChatCommandError> {
         | ClientEvent::ReactionAdd { .. }
         | ClientEvent::ReactionRemove { .. }
         | ClientEvent::SessionEmit { .. }
+        | ClientEvent::SessionOpen { .. }
+        | ClientEvent::SessionClose { .. }
         | ClientEvent::PluginEmit { .. }
         | ClientEvent::CallJoin { .. }
         | ClientEvent::CallLeave

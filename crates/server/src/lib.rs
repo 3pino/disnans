@@ -12,6 +12,7 @@ pub mod hub;
 pub mod image_proc;
 pub mod notify;
 pub mod plugins;
+pub mod presence;
 pub mod routes;
 pub mod sessions;
 pub mod state;

@@ -189,6 +189,9 @@
       {#if e.error}
         <p class="plugin-settings-error">{e.error}</p>
       {/if}
+      {#each e.warnings as w (w)}
+        <p class="plugin-settings-warning">{w}</p>
+      {/each}
 
     </div>
   {/each}
@@ -262,6 +265,13 @@
     background: var(--mention-soft);
     color: var(--mention);
   }
+  .plugin-settings-warning {
+    margin: 6px 0 0;
+    color: var(--warning);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+
   .plugin-settings-error {
     margin: 6px 0 0;
     color: var(--danger);

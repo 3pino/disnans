@@ -5,5 +5,6 @@
   "description": "メッセージの操作に「あとで読む」を足し、集めたメッセージをパネルに並べる（API v9 の addMessageAction / openTimeline の例）",
   "author": "sanpino",
   "minApiVersion": 9,
+  "apiVersion": 14,
   "icon": "bookmark"
 }

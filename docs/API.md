@@ -112,7 +112,7 @@
   - ファイル名はパスの最後の部分で判別する（`dice/main.js` も可）。上の5つ以外のファイル名や、種類に合わないファイル（テーマの `main.js`、プラグインの `theme.css` など）は `400 invalid_file_name`、同じファイルが2つあれば `400 duplicate_file`、必須のファイルがなければ `400 missing_file`
   - テキストのフィールド `visibility` で範囲を選ぶ: `public`（みんなに配布。省略時）か `private`（自分だけ）。それ以外は `400 invalid_visibility`
   - 合計 5 MB まで。超えたら `413 plugin_too_large`
-  - manifest（camelCase）: `id`（英小文字・数字・ハイフンの 2〜32 文字。不正なら `400 invalid_plugin_id`）、`type`（`plugin` か `theme`。省略すると `plugin`）、`name`・`version`（必須）、`description`・`author`（省略すると空文字）、`minApiVersion`（省略すると 1）、`icon`（任意。Lucide のアイコン名で、英小文字・数字・ハイフンの 64 文字まで。空なら省略と同じ）。読めない・足りないときは `400 invalid_manifest`
+  - manifest（camelCase）: `apiVersion`（任意。このプラグインを作った本体の版。1 以上の整数。`0` は `400 invalid_manifest`。`PluginInfo.api_version` に入り、なければ `null`。本体は版が違うと警告する）、`id`（英小文字・数字・ハイフンの 2〜32 文字。不正なら `400 invalid_plugin_id`）、`type`（`plugin` か `theme`。省略すると `plugin`）、`name`・`version`（必須）、`description`・`author`（省略すると空文字）、`minApiVersion`（省略すると 1）、`icon`（任意。Lucide のアイコン名で、英小文字・数字・ハイフンの 64 文字まで。空なら省略と同じ）。読めない・足りないときは `400 invalid_manifest`
   - `PluginInfo.icon` は manifest の `icon`（なければ `null`）
   - `icon.svg` は 64 KB まで、UTF-8 で `<svg` を含むこと。満たさなければ `400 invalid_icon`。あれば `PluginInfo.has_icon` が `true`
   - 同じ `id` なら上書きする（含まれなかったファイルは消える。種類・範囲も今回の値になる）。新しいファイルを一時ディレクトリに書いてから入れ替えるので、失敗しても前のものが残る
@@ -165,6 +165,10 @@
 - 編集・削除は本人のメッセージだけ
 - 古いクライアントの `message.send` に付いている `thread_id` / `start_thread` は無視し、メインチャットに入れる。`thread.create` は知らない形として `invalid_event` で断る
 - プラグインの配布・更新・削除（`plugin.updated` / `plugin.removed`）と、セッションの更新（`session.updated`）は全員に配信する（自分だけのプラグイン・テーマのイベントは持ち主にだけ）
+- セッションを開いている人（プレゼンス）。メモリだけで持ち、保存しない
+  - `session.open { session_id }` で開く、`session.close { session_id }` で閉じる。接続が切れたときは自動で閉じる。同じ人の複数の端末は1人として数える
+  - 開いたら、そのセッションを開いている接続（開いたばかりの接続を含む）全員に `session.presence { session_id, user_ids }` を送る。`user_ids` は開いている人のユーザー ID（重複なし・並びは ID 順）。開いた直後の一覧も同じイベントで返る。閉じた・切れたときも、残っている人の接続に送る（閉じた接続には送らない）
+  - 送り先はそのセッションを開いている接続だけ。`session_id` が存在しなければ `not_found`
 - `session.emit` は保存せず、送信した接続以外の全員（同じユーザーの別の接続を含む）に `session.event` として中継する。`from` は送信者のユーザー ID
   - セッションがなければ `not_found`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）
 - 通話（みんな共通の1部屋）。参加者はサーバーがメモリ上で持つ（接続ごと。保存しない）

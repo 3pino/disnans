@@ -1,10 +1,11 @@
 # @disnans/plugin-sdk
 
-disnans のプラグインを書くための型定義（ホスト API バージョン 13）。
+disnans のプラグインを書くための型定義（ホスト API バージョン 14）。
 
 - `index.d.ts`: ホスト API の型。グローバルの `disnans` と、名前空間 `Disnans`（`Disnans.Session` など）を宣言する
 - 実行時のコードは入っていない。ホスト API の実体は disnans 本体がグローバルの `disnans` として用意する
 - v12 では `disnans.call.addButton({ ..., location: 'view' })` を使うと、ボタンを通話画面だけに表示できる（省略時は従来どおり通話バーと通話画面の両方）
+- v14 で本体の例外は `disnans.PluginError`（`code` 付き）にそろえた。`disnans.VersionConflictError` はその一種。v13 でスレッドの API を削除した。manifest の `apiVersion`（任意）と、削除・変更の警告は [`docs/PLUGINS.md`](../../docs/PLUGINS.md) の「互換」を見る
 - 作り方のガイドは [`docs/PLUGINS.md`](../../docs/PLUGINS.md)、実例は [`examples/dice/`](../../examples/dice/)
 
 ## 素の JS で使う（ビルドなし）
@@ -145,9 +146,10 @@ export default defineConfig({
 
 | 型 | 内容 |
 |---|---|
-| `Disnans.Host` | グローバルの `disnans`（`Plugin`, `ui`, `VersionConflictError`, `apiVersion`） |
+| `Disnans.Host` | グローバルの `disnans`（`Plugin`, `ui`, `PluginError`, `VersionConflictError`, `apiVersion`） |
 | `Disnans.Plugin` | 継承するクラス。`add*` / `register*` / `sessions` / `notify` / `loadData` など |
 | `Disnans.Session<S>` | セッション。`state` の型を `S` で指定する |
 | `Disnans.View` | パネルに出す画面（`onOpen` / `onClose` / `title`） |
 | `Disnans.Ui` | 本体と同じ見た目の部品 |
-| `Disnans.VersionConflictError` | `session.update` が他の人の更新とぶつかったときのエラー |
+| `Disnans.PluginError` | 本体が投げる例外。`code`（機械向けの語）と `message`（v14） |
+| `Disnans.VersionConflictError` | `session.update` が他の人の更新とぶつかったときのエラー（`PluginError` の一種。code は `version_conflict`） |

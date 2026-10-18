@@ -66,6 +66,8 @@ const CHAT_EMIT_TYPES: ReadonlySet<string> = new Set([
   'reaction.add',
   'reaction.remove',
   'session.emit',
+  'session.open',
+  'session.close',
   'plugin.emit',
   'call.join',
   'call.leave',

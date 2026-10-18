@@ -20,6 +20,7 @@ function server(id: string, hash: string, type: PluginInfo['type'] = 'theme'): P
     description: '',
     author: '',
     min_api_version: 1,
+    api_version: null,
     icon: null,
     has_icon: false,
     files: ['manifest.json', 'theme.css'],

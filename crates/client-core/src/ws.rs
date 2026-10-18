@@ -172,6 +172,20 @@ pub enum SendOutcome {
     NotSent { reason: String },
 }
 
+/// Result of [`ChatConnection::react`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReactOutcome {
+    /// The server broadcast the reaction state we asked for.
+    Confirmed,
+    /// The server answered with an error (e.g. the message does not exist, invalid emoji).
+    Rejected { code: String, message: String },
+    /// Reactions are idempotent, but the result is not known (no update within the timeout, or
+    /// the connection ended). Not retried automatically.
+    Unknown(UnknownReason),
+    /// Refused before anything was written.
+    NotSent { reason: String },
+}
+
 /// Why the outcome of a send is unknown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnknownReason {
@@ -275,7 +289,20 @@ impl ChatConnection {
             silent,
             ..SendRequest::default()
         };
-        if let Err(reason) = validate_send(client_id, &request) {
+        self.send_request_with_id(client_id, request, ack_timeout)
+            .await
+    }
+
+    /// Like [`ChatConnection::send_message_with_id`] with all `message.send` options (reply
+    /// target, attachments, silent). Same outcome rules; never retried automatically.
+    pub async fn send_request_with_id(
+        &mut self,
+        client_id: &str,
+        request: SendRequest,
+        ack_timeout: Duration,
+    ) -> SendOutcome {
+        let request = &request;
+        if let Err(reason) = validate_send(client_id, request) {
             return SendOutcome::NotSent { reason };
         }
         if !self.sendable {
@@ -292,7 +319,7 @@ impl ChatConnection {
         }
 
         let client_id = client_id.to_owned();
-        let text = match send_frame(&client_id, &request) {
+        let text = match send_frame(&client_id, request) {
             Ok(text) => text,
             Err(err) => {
                 return SendOutcome::NotSent {
@@ -373,6 +400,112 @@ impl ChatConnection {
                         Ok(Err(_)) => {
                             self.sendable = false;
                             return unknown(client_id, UnknownReason::Disconnected);
+                        }
+                        Ok(Ok(())) => self.last_sent = TokioInstant::now(),
+                    }
+                }
+                Some(Ok(_)) => {}
+            }
+        }
+    }
+
+    /// Add (`add`) or remove the caller's reaction `emoji` on `message_id`.
+    ///
+    /// `reaction.add` / `reaction.remove` carry no `client_id`, so the result is settled by the
+    /// next `reaction.updated` for this message that shows the wanted state (the caller's user ID
+    /// present or absent under `emoji`), or by an `error` event. Do not run this on a connection
+    /// that is also used for other sends. Never retried automatically.
+    pub async fn react(
+        &mut self,
+        message_id: &str,
+        emoji: &str,
+        add: bool,
+        ack_timeout: Duration,
+    ) -> ReactOutcome {
+        if message_id.is_empty() || emoji.is_empty() {
+            return ReactOutcome::NotSent {
+                reason: "ID または絵文字が空です".into(),
+            };
+        }
+        if !self.sendable {
+            return ReactOutcome::NotSent {
+                reason: NOT_CONNECTED.into(),
+            };
+        }
+        if self.last_sent.elapsed() >= self.idle_timeout {
+            return ReactOutcome::NotSent {
+                reason: IDLE_REASON.into(),
+            };
+        }
+        let event = if add {
+            ClientEvent::ReactionAdd {
+                message_id: message_id.to_owned(),
+                emoji: emoji.to_owned(),
+            }
+        } else {
+            ClientEvent::ReactionRemove {
+                message_id: message_id.to_owned(),
+                emoji: emoji.to_owned(),
+            }
+        };
+        let text = match serde_json::to_string(&event) {
+            Ok(text) => text,
+            Err(err) => {
+                return ReactOutcome::NotSent {
+                    reason: format!("送信データを作れません: {err}"),
+                };
+            }
+        };
+        let deadline = TokioInstant::now() + ack_timeout;
+        match timeout_at(deadline, self.socket.send(WsMessage::Text(text.into()))).await {
+            Err(_) => {
+                self.sendable = false;
+                return ReactOutcome::Unknown(UnknownReason::Timeout);
+            }
+            Ok(Err(_)) => {
+                self.sendable = false;
+                return ReactOutcome::Unknown(UnknownReason::WriteFailed);
+            }
+            Ok(Ok(())) => self.last_sent = TokioInstant::now(),
+        }
+        loop {
+            let next = match timeout_at(deadline, self.socket.next()).await {
+                Err(_) => return ReactOutcome::Unknown(UnknownReason::Timeout),
+                Ok(next) => next,
+            };
+            match next {
+                None | Some(Err(_)) | Some(Ok(WsMessage::Close(_))) => {
+                    self.sendable = false;
+                    return ReactOutcome::Unknown(UnknownReason::Disconnected);
+                }
+                Some(Ok(WsMessage::Text(text))) => {
+                    let Ok(event) = serde_json::from_str::<ServerEvent>(text.as_str()) else {
+                        continue;
+                    };
+                    match event {
+                        ServerEvent::ReactionUpdated {
+                            message_id: id,
+                            reactions,
+                        } if id == message_id => {
+                            let mine = reactions
+                                .iter()
+                                .any(|r| r.emoji == emoji && r.user_ids.contains(&self.me.id));
+                            if mine == add {
+                                return ReactOutcome::Confirmed;
+                            }
+                        }
+                        ServerEvent::Error { code, message, .. } => {
+                            return ReactOutcome::Rejected { code, message };
+                        }
+                        _ => {}
+                    }
+                }
+                Some(Ok(WsMessage::Ping(_))) => {
+                    match timeout_at(deadline, self.socket.flush()).await {
+                        Err(_) => return ReactOutcome::Unknown(UnknownReason::Timeout),
+                        Ok(Err(_)) => {
+                            self.sendable = false;
+                            return ReactOutcome::Unknown(UnknownReason::Disconnected);
                         }
                         Ok(Ok(())) => self.last_sent = TokioInstant::now(),
                     }

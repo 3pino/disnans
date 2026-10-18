@@ -9,6 +9,7 @@ use crate::calls::Calls;
 use crate::config::Config;
 use crate::hub::Hub;
 use crate::notify::Notifier;
+use crate::presence::Presence;
 use crate::tailscale::Tailscale;
 
 pub struct AppState {
@@ -18,6 +19,8 @@ pub struct AppState {
     pub notifier: Arc<dyn Notifier>,
     /// 通話の参加者。
     pub calls: Calls,
+    /// セッションを開いている人の一覧（メモリだけ）。
+    pub presence: Presence,
     pub tailscale: Tailscale,
     /// 書き込みを1つずつ行うためのロック。
     ///
@@ -42,6 +45,7 @@ impl AppState {
             hub,
             notifier,
             calls: Calls::new(),
+            presence: Presence::default(),
             tailscale,
             write_lock: Mutex::new(()),
         }

@@ -19,6 +19,10 @@ type: PluginKind, visibility: PluginVisibility,
  */
 owner: string | null, name: string, version: string, description: string, author: string, min_api_version: number, 
 /**
+ * manifest の `apiVersion`（このプラグインを作った本体の版）。なければ `null`。版が違えば本体が警告する。
+ */
+api_version: number | null, 
+/**
  * manifest の `icon`（Lucide のアイコン名、英小文字・数字・ハイフン）。なければ `null`。
  */
 icon: string | null, 

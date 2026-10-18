@@ -4,13 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { PluginBase, PluginRuntime } from './runtime';
 import { createUi } from './ui';
 import { API_VERSION, type HostCommand, type HostServices, type HostSlashCommand, type PluginClass } from './types';
-import { VersionConflictError } from './sessions';
+import { PluginError, VersionConflictError } from './errors';
 
 const toast = vi.fn();
 (globalThis as unknown as { disnans: Partial<Disnans.Host> }).disnans = {
   apiVersion: API_VERSION,
   Plugin: PluginBase,
   ui: createUi({ toast: (...a) => toast(...a), confirm: async () => true }),
+  PluginError,
   VersionConflictError,
 };
 

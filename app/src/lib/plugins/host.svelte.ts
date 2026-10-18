@@ -16,7 +16,9 @@ import { devFolderSupported, readDevPlugin, scanDevFolder } from './dev';
 import { manifestOf, parsePackageManifest, PLUGIN_FILES } from './manifest';
 import { THEME_STYLE_SELECTOR, themeHost } from './themes.svelte';
 import { PluginBase, PluginRuntime, type ViewHandle } from './runtime';
-import { toPluginUser, VersionConflictError } from './sessions';
+import { toPluginUser } from './sessions';
+import { plainPluginErrors, PluginError, VersionConflictError } from './errors';
+import { apiWarnings } from './compat';
 import { createUi } from './ui';
 import { holdBackground } from './background';
 import { audio } from './audio';
@@ -89,6 +91,8 @@ export type PluginEntry = {
   loaded: boolean;
   /** 読み込みの失敗など */
   error: string | null;
+  /** 読み込んだうえでの警告（対象の版より新しい本体で削除・変更された API を使っている可能性） */
+  warnings: string[];
   /** 設定タブがあるか */
   hasSettings: boolean;
   /** プラグインのアイコンの名前（icon.svg → manifest.icon → puzzle） */
@@ -201,14 +205,16 @@ class PluginHost {
         return window.matchMedia(DARK_QUERY).matches ? 'dark' : 'light';
       },
     },
+    // サーバーを呼ぶ API の失敗は PluginError（code 付き）にそろえる
     api: {
-      createSession: (body) => api.createSession(body),
-      getSession: (id) => api.session(id),
-      updateSession: (id, body) => api.updateSession(id, body),
-      notify: (id, body) => api.pluginNotify(id, body),
-      postMessage: async (id, body) => void (await api.pluginPostMessage(id, body)),
+      createSession: plainPluginErrors((body) => api.createSession(body)),
+      getSession: plainPluginErrors((id) => api.session(id)),
+      updateSession: plainPluginErrors((id, body) => api.updateSession(id, body)),
+      notify: plainPluginErrors((id, body) => api.pluginNotify(id, body)),
+      postMessage: plainPluginErrors(async (id, body) => void (await api.pluginPostMessage(id, body))),
     },
     send: (ev) => void client.send(ev),
+    presence: (sessionId, open) => void client.send(open ? { type: 'session.open', session_id: sessionId } : { type: 'session.close', session_id: sessionId }),
     registerSlashCommand,
     registerComposerAction,
     registerCommand,
@@ -254,6 +260,7 @@ class PluginHost {
           return ok;
         }),
       }),
+      PluginError,
       VersionConflictError,
       audio,
       call: callApi,
@@ -273,6 +280,8 @@ class PluginHost {
   private onHello(): void {
     // 再接続のたびに一覧を取り直す（切れている間の配布・削除を拾う）
     void this.refreshServer();
+    // 開いているセッションは、サーバーの側では閉じられているので、開いたと知らせ直す（プレゼンス）
+    for (const l of this.loaded.values()) l.runtime.resendPresence();
     if (!this.helloSeen) {
       this.helloSeen = true;
       this.restartDevPolling();
@@ -300,6 +309,9 @@ class PluginHost {
         break;
       case 'plugin.event':
         this.loaded.get(ev.plugin)?.runtime.dispatchBroadcast(ev.name, ev.payload, ev.from);
+        break;
+      case 'session.presence':
+        for (const l of this.loaded.values()) l.runtime.applyPresence(ev.session_id, ev.user_ids);
         break;
       case 'session.event':
         for (const l of this.loaded.values()) l.runtime.sessions.dispatchEvent(ev.session_id, ev.name, ev.payload, ev.from);
@@ -343,6 +355,7 @@ class PluginHost {
           enabled: !this.disabled.includes(id),
           loaded: !!l,
           error: this.errors[id] ?? (l && l.runtime.errors.length > 0 ? l.runtime.errors.join('\n') : null),
+          warnings: [],
           hasSettings: !!l && l.runtime.settingTabs.length > 0,
           icon: DEFAULT_PLUGIN_ICON,
         };
@@ -363,7 +376,10 @@ class PluginHost {
       if (d.manifest) e.manifest = d.manifest;
       if (d.error && !e.error) e.error = d.error;
     }
-    for (const e of map.values()) e.icon = this.iconOf(e.id, e.manifest);
+    for (const e of map.values()) {
+      e.icon = this.iconOf(e.id, e.manifest);
+      e.warnings = e.manifest ? apiWarnings(e.manifest, API_VERSION) : [];
+    }
     return [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
 

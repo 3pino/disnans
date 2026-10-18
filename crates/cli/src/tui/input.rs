@@ -60,6 +60,10 @@ impl EnterKeys {
 pub enum Action {
     Quit,
     Send,
+    /// Alt+S: 通知を送らずに送信する。
+    SendSilent,
+    /// Esc: 返信の取消・選択モードへ・各モードの取消。
+    Cancel,
     Newline,
     Insert(char),
     Backspace,
@@ -120,12 +124,14 @@ impl Keymap {
                 'r' => Action::Refetch,
                 _ => Action::Ignore,
             },
+            KeyCode::Char(c) if alt && !ctrl && c.eq_ignore_ascii_case(&'s') => Action::SendSilent,
             // AltGr（Ctrl+Alt）で入る文字は通常の入力として受ける。
             KeyCode::Char(c) if ctrl && alt => Action::Insert(c),
             KeyCode::Char(_) if alt || ctrl => Action::Ignore,
             KeyCode::Char(c) => Action::Insert(c),
             KeyCode::Tab if !ctrl && !alt => Action::FocusButton,
             KeyCode::BackTab => Action::FocusInput,
+            KeyCode::Esc => Action::Cancel,
             KeyCode::Backspace => Action::Backspace,
             KeyCode::Delete => Action::Delete,
             KeyCode::Left => Action::Left,
@@ -179,7 +185,7 @@ impl Keymap {
             names.join("/")
         };
         format!(
-            "送信: {} | 改行: {} | Tab: 送信ボタン | PgUp/PgDn: 履歴 | Ctrl+Q: 終了",
+            "送信: {} | 改行: {} | Alt+S: 通知なし送信 | Esc: メッセージ選択 | Tab: 送信ボタン | PgUp/PgDn: 履歴 | Ctrl+Q: 終了",
             pick(EnterAction::Send, "Ctrl+S"),
             pick(EnterAction::Newline, "Ctrl+J"),
         )

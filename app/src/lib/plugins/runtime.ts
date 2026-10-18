@@ -1,6 +1,7 @@
 import { parseHotkey } from './hotkey';
 import { SLASH_NAME_RE } from '../slashCommands.svelte';
 import { SessionsImpl, type SessionImpl } from './sessions';
+import { PluginError } from './errors';
 import { errorMessage, type Cleanup, type HostTimelineEntry, type HostTimelineHandle, type HostServices, type Manifest, type PluginClass } from './types';
 
 /** パネルの上部（題名・アイコン）。null は既定（プラグイン名・プラグインのアイコン）、空文字列は出さない */
@@ -23,7 +24,7 @@ let constructing: PluginRuntime | null = null;
 
 function rt(p: object): PluginRuntime {
   const r = runtimes.get(p);
-  if (!r) throw new Error('このプラグインは本体に読み込まれていません');
+  if (!r) throw new PluginError('not_loaded', 'このプラグインは本体に読み込まれていません');
   return r;
 }
 
@@ -31,7 +32,7 @@ function rt(p: object): PluginRuntime {
 export class PluginBase implements Disnans.Plugin {
   constructor() {
     const r = constructing;
-    if (!r) throw new Error('Plugin のインスタンスは本体が作ります（new しないでください）');
+    if (!r) throw new PluginError('invalid_argument', 'Plugin のインスタンスは本体が作ります（new しないでください）');
     runtimes.set(this, r);
   }
 
@@ -138,6 +139,8 @@ export class PluginRuntime {
   private broadcastListeners = new Map<string, Set<(payload: unknown, from: Disnans.User) => void>>();
   private openViews = new Set<ViewHandle>();
   private openTimelines = new Set<Disnans.TimelineHandle>();
+  /** いま view を開いているセッション（ID ごとの数）。プレゼンスの open / close を、最初と最後だけ送るため */
+  private presenceCounts = new Map<string, number>();
 
   constructor(
     readonly manifest: Manifest,
@@ -319,7 +322,7 @@ export class PluginRuntime {
 
   /** メッセージの集合をパネルに開く（API v9） */
   openTimeline(opts: Disnans.TimelineOptions): Disnans.TimelineHandle {
-    if (opts.messages && opts.messageIds) throw new Error('openTimeline には messages と messageIds のどちらか一方を渡してください');
+    if (opts.messages && opts.messageIds) throw new PluginError('invalid_argument', 'openTimeline には messages と messageIds のどちらか一方を渡してください');
     const services = this.services;
     type Source = Pick<Disnans.TimelineOptions, 'messages' | 'messageIds' | 'depths'>;
     let source: Source = { messages: opts.messages, messageIds: opts.messageIds, depths: opts.depths };
@@ -344,7 +347,7 @@ export class PluginRuntime {
       },
       update: (patch) => {
         if (closed) return;
-        if (patch.messages && patch.messageIds) throw new Error('update には messages と messageIds のどちらか一方を渡してください');
+        if (patch.messages && patch.messageIds) throw new PluginError('invalid_argument', 'update には messages と messageIds のどちらか一方を渡してください');
         const hostPatch: Parameters<HostTimelineHandle['update']>[0] = {};
         if (patch.title !== undefined) hostPatch.title = String(patch.title);
         if (patch.icon !== undefined) hostPatch.icon = patch.icon;
@@ -573,7 +576,7 @@ export class PluginRuntime {
 
   openView(type: string, sessionId: string): void {
     if (this.stopped) return;
-    if (!this.views.has(type)) throw new Error(`view「${type}」は登録されていません`);
+    if (!this.views.has(type)) throw new PluginError('not_found', `view「${type}」は登録されていません`);
     this.services.openPanel(this.id, type, sessionId);
   }
 
@@ -594,13 +597,15 @@ export class PluginRuntime {
     containerEl: HTMLElement,
     onHeader?: (header: ViewHeader) => void,
   ): Promise<ViewHandle> {
-    if (this.stopped) throw new Error('プラグインは外されています');
+    if (this.stopped) throw new PluginError('stopped', 'プラグインは外されています');
     const session = (await this.sessions.get(sessionId)) as SessionImpl;
     const factory = this.views.get(type);
-    if (!factory) throw new Error(`view「${type}」は登録されていません`);
-    if (this.stopped) throw new Error('プラグインは外されています');
+    if (!factory) throw new PluginError('not_found', `view「${type}」は登録されていません`);
+    if (this.stopped) throw new PluginError('stopped', 'プラグインは外されています');
     const view = factory(session);
     let closed = false;
+    // 開けた（onOpen が済んだ）ときに数えて、閉じたときに外す
+    let counted = false;
     const handle: ViewHandle = {
       view,
       session,
@@ -611,6 +616,10 @@ export class PluginRuntime {
         if (closed) return;
         closed = true;
         this.openViews.delete(handle);
+        if (counted) {
+          counted = false;
+          this.markPresenceClose(session.id);
+        }
         try {
           view.onClose?.();
         } catch (e) {
@@ -651,7 +660,39 @@ export class PluginRuntime {
       handle.close();
       throw e;
     }
+    counted = true;
+    this.markPresenceOpen(session.id);
     return handle;
+  }
+
+  /** プレゼンス: セッションのビューを開いた（最初の 1 つだけサーバーへ送る） */
+  private markPresenceOpen(sessionId: string): void {
+    const n = this.presenceCounts.get(sessionId) ?? 0;
+    this.presenceCounts.set(sessionId, n + 1);
+    if (n === 0) this.services.presence(sessionId, true);
+  }
+
+  /** プレゼンス: セッションのビューを閉じた（最後の 1 つだけサーバーへ送る） */
+  private markPresenceClose(sessionId: string): void {
+    const n = this.presenceCounts.get(sessionId) ?? 0;
+    if (n <= 0) return;
+    if (n === 1) {
+      this.presenceCounts.delete(sessionId);
+      this.services.presence(sessionId, false);
+    } else {
+      this.presenceCounts.set(sessionId, n - 1);
+    }
+  }
+
+  /** 接続し直したあと（hello のあと）、開いているセッションを開いた状態にし直す */
+  resendPresence(): void {
+    if (this.stopped) return;
+    for (const [sessionId, n] of this.presenceCounts) if (n > 0) this.services.presence(sessionId, true);
+  }
+
+  /** セッションの参加者の一覧を、受け取った値で置き換える（session.presence） */
+  applyPresence(sessionId: string, viewers: readonly string[]): void {
+    this.sessions.applyPresence(sessionId, viewers);
   }
 
   /** カードのメッセージが消えた: そのセッションの view を閉じ、キャッシュを捨てる */

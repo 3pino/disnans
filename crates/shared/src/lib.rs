@@ -138,6 +138,8 @@ pub struct PluginInfo {
     pub description: String,
     pub author: String,
     pub min_api_version: u32,
+    /// manifest の `apiVersion`（このプラグインを作った本体の版）。なければ `null`。版が違えば本体が警告する。
+    pub api_version: Option<u32>,
     /// manifest の `icon`（Lucide のアイコン名、英小文字・数字・ハイフン）。なければ `null`。
     pub icon: Option<String>,
     /// `icon.svg` が配布されているか（`/api/plugins/{id}/files/icon.svg`）。
@@ -348,6 +350,12 @@ pub enum ClientEvent {
         #[ts(type = "unknown")]
         payload: serde_json::Value,
     },
+    /// セッションを開いた（画面に出している）ことを知らせる。返事として `session.presence` が届く。
+    #[serde(rename = "session.open")]
+    SessionOpen { session_id: Id },
+    /// セッションを閉じた。接続が切れたときも自動で閉じる。
+    #[serde(rename = "session.close")]
+    SessionClose { session_id: Id },
     /// プラグインの一時的なイベント（保存しない・セッションに紐づかない）。送信した接続以外の全員に中継する。
     #[serde(rename = "plugin.emit")]
     PluginEmit {
@@ -426,6 +434,9 @@ pub enum ServerEvent {
     /// セッションの state（とカード）が更新された。
     #[serde(rename = "session.updated")]
     SessionUpdated { session: Session },
+    /// セッションを開いている人の一覧（同じ人の複数の端末は1人）。そのセッションを開いている接続にだけ、変わるたびに送る。
+    #[serde(rename = "session.presence")]
+    SessionPresence { session_id: Id, user_ids: Vec<Id> },
     /// `session.emit` の中継。
     #[serde(rename = "session.event")]
     SessionEvent {

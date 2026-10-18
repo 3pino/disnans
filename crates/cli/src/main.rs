@@ -42,6 +42,13 @@ enum CliError {
         reason: String,
         http_status: Option<u16>,
     },
+    /// サーバーがリアクションを拒否した（終了コード1）。
+    ReactRejected {
+        code: String,
+        message: String,
+    },
+    /// リアクションの結果が不明（終了コード4）。自動再送はしない。
+    ReactUnknown(String),
     /// Ctrl-C。送信前または watch の正常中断（終了コード130）。
     Interrupted,
     Json(serde_json::Error),
@@ -57,7 +64,7 @@ impl CliError {
             Self::Ws(WsError::Connect(_) | WsError::Timeout) => 3,
             Self::Body(send::BodyError::Io(_)) => 1,
             Self::Body(_) => 2,
-            Self::SendUnknown { .. } => 4,
+            Self::SendUnknown { .. } | Self::ReactUnknown(_) => 4,
             Self::Interrupted => 130,
             _ => 1,
         }
@@ -82,6 +89,16 @@ impl std::fmt::Display for CliError {
                 "サーバーが投稿を受け付けませんでした ({code}): {message} [client_id: {client_id}]"
             ),
             Self::SendNotSent(reason) => write!(f, "送信していません: {reason}"),
+            Self::ReactRejected { code, message } => {
+                write!(
+                    f,
+                    "サーバーがリアクションを受け付けませんでした ({code}): {message}"
+                )
+            }
+            Self::ReactUnknown(detail) => write!(
+                f,
+                "リアクションの結果が不明です。再送していません。`disnans messages --json` で確認してください ({detail})"
+            ),
             Self::SendUnknown { client_id, detail } => {
                 f.write_str(
                     "送信結果が不明です。二重投稿を避けるため再送していません。`disnans messages` で確認してください",
@@ -214,7 +231,23 @@ async fn run(cli: Cli) -> Result<String, CliError> {
         Command::Send(args) => {
             let body = live::read_send_body(&args)?;
             let server = resolve_server(cli.server.as_deref(), saved_server)?;
-            live::send(server, cli.dev_user, body, args.silent, args.json).await
+            live::send(
+                server,
+                cli.dev_user,
+                body,
+                args.silent,
+                args.reply_to,
+                args.json,
+            )
+            .await
+        }
+        Command::React(args) => {
+            let server = resolve_server(cli.server.as_deref(), saved_server)?;
+            live::react(server, cli.dev_user, args, true).await
+        }
+        Command::Unreact(args) => {
+            let server = resolve_server(cli.server.as_deref(), saved_server)?;
+            live::react(server, cli.dev_user, args, false).await
         }
         Command::Update(args) => update::run(args).await,
         // `watch` と `tui` は出力を逐次書くため `main` が直接扱う。

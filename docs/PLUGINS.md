@@ -114,7 +114,8 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `13`（`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまの版は `14`（`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `apiVersion` | | このプラグインを作った（対象の）ホスト API のバージョン。省略すると `minApiVersion` とみなす。`minApiVersion` 以上の整数。本体がこれより新しく、その後に削除・意味を変えた API があると、読み込んだうえで設定の一覧に警告が出る（→ [互換](#互換apiversion-と削除の警告)） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -247,12 +248,14 @@ app/node_modules/.bin/tsc -p examples/dice
 | `this.loadData()` / `this.saveData(data)` | その端末にだけ保存するデータ |
 | `this.register(cleanup)` / `this.registerDomEvent(...)` / `this.registerInterval(id)` | 後始末を自動で行う登録 |
 | `disnans.ui.*` | 本体と同じ見た目の部品とアイコン（→ [PLUGIN_UI.md](PLUGIN_UI.md)） |
-| `disnans.VersionConflictError` | `session.update` がぶつかったときのエラー |
+| `disnans.PluginError` | 本体が投げる例外（`code` 付き。→ [エラー](#エラーdisnanspluginerrorv14)） |
+| `session.viewers` / `session.onViewers(cb)` | セッションを開いている人（v14。→ [開いている人](#開いている人viewersv14)） |
+| `disnans.VersionConflictError` | `session.update` がぶつかったときのエラー（`PluginError` の一種。code は `version_conflict`） |
 | `disnans.audio.listOutputs()` / `setOutput(id)` / `listInputs()` / `attach(el)` | 音の入出力の選択（v5）。Android は通話中の出力先（受話口・スピーカー・イヤホン・Bluetooth）、デスクトップは `setSinkId`。使えない環境では一覧が空 |
 | `disnans.call.*` | 本体の通話の状態の読み取りと、参加者どうしのデータの送受信、通話のバーのボタン（v8）、通話の画面の領域と送信待ちの量（v10。→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)） |
 | `disnans.ui.onBack(handler)` / `ui.setImmersive(on)` | 戻る操作（Android の戻るジェスチャー・PC の Alt+←）で閉じる層を足す／Android で全画面（システムバーを隠す没入モード）にする（v9。→ [画面共有のためのネイティブ API](#画面共有のためのネイティブ-apiv9)） |
 | `disnans.screenCapture.*` / `disnans.pip.*` | Android の画面のキャプチャ（MediaProjection）と、ピクチャーインピクチャー（v9。同上）。Linux の画面のキャプチャは portal / PipeWire（v12）。ダイアログなしの静止画 `screenCapture.snapshot()`（v11。デスクトップでも使える） |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 13） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 14） |
 
 ### コマンド（パレット・ホットキー・スラッシュコマンド）
 
@@ -512,6 +515,48 @@ async roll() {
 
 ゲームでは「自分の番か」「その手はまだ有効か」を、やり直しのたびに最新の state で確かめてください。
 友達同士なので、チート対策は考えません（state は誰でも書き換えられます）。
+
+### エラー（disnans.PluginError、v14）
+
+本体が投げる例外は `disnans.PluginError` です。`code` は機械向けの語で、分岐に使えます。`message` は表示用の文です（変わることがあります）。
+
+| code | 意味 |
+|---|---|
+| `version_conflict` | `session.update` が他の人の更新とぶつかった（`disnans.VersionConflictError` の code） |
+| `disconnected` | サーバーに届かなかった（通信の失敗） |
+| `not_loaded` | プラグインが本体に読み込まれていない |
+| `invalid_argument` | 渡された値が正しくない（例: `messages` と `messageIds` の両方） |
+| `not_found` | 指定されたもの（view の種類など）が本体にない |
+| `stopped` | プラグインが外された、またはセッションがもう使えない |
+| `unsupported` | この環境では使えない（例: 画面を撮る機能のない環境） |
+| `failed` | 上のどれでもない、本体側の失敗 |
+| そのほか | サーバーのエラーは、サーバーの code をそのまま使う（例: `not_found`、`invalid_plugin_id`） |
+
+```js
+try {
+  await this.sessions.get(id);
+} catch (e) {
+  if (e instanceof disnans.PluginError && e.code === 'not_found') { /* ない */ }
+  else throw e;
+}
+```
+
+`disnans.VersionConflictError` は `PluginError` の一種なので、`instanceof disnans.PluginError` でも見分けられます（`code` は `version_conflict`）。
+v13 以前の本体には `disnans.PluginError` がありません。これを使うプラグインは `minApiVersion` を `14` にしてください。
+
+#### 開いている人（viewers、v14）
+
+セッションのビュー（パネル）を開いている人は `session.viewers`（ユーザー ID の一覧。自分を含む）で分かります。開いた・閉じたは本体が知らせるので、プラグインは何もしなくてかまいません。変わったときは `session.onViewers` で受け取ります。
+
+```js
+const off = session.onViewers((ids) => {
+  this.renderViewers(ids); // ids は ユーザー ID の配列
+});
+```
+
+- 開いていない人（カードだけ見ている人）は含みません
+- 接続し直したあとも、開いたままのものは、本体が開いた状態に戻して知らせます
+- 外したあと（プラグインが外れたら）は届きません
 
 ### 一時的なイベント
 
@@ -928,6 +973,20 @@ esbuild は型をチェックしないので、`tsc --noEmit` も合わせて使
 - テーマ（`theme.css` だけのパッケージ）も同じ方法で配れます。作り方は [THEMES.md](THEMES.md) を見てください
 
 ---
+
+## 互換（apiVersion と削除の警告）
+
+本体は、削除した・意味を変えた API の表（版ごと）を持っています。
+
+| 版 | 変わったこと |
+|---|---|
+| 13 | スレッドの API が削除されました |
+| 14 | エラーの形が変わりました（`disnans.PluginError` と `code`） |
+
+- manifest の `apiVersion` は、そのプラグインを作った（対象の）版です。省略すると `minApiVersion` とみなします。新しい API を使って作り直したら、`apiVersion` をその版に上げてください
+- 本体がプラグインの対象の版より新しく、その後に削除・変更があると、プラグインは**読み込まれたまま**、設定 → プラグインの一覧に警告が出ます。例: 「このプラグインは v12 向けです。v13 でスレッドの API が削除されました」
+- 警告は「動かないかもしれない」という知らせです。動いていれば無視してかまいません
+- `minApiVersion` より古い本体では読み込まれません（これは従来どおり）
 
 ## 注意点
 

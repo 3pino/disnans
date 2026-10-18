@@ -5,7 +5,7 @@ import { PluginBase, PluginRuntime } from './runtime';
 import { createUi } from './ui';
 import { setLucideForTest } from '../icons.svelte';
 import { API_VERSION, type HostServices, type PluginClass } from './types';
-import { VersionConflictError } from './sessions';
+import { PluginError, VersionConflictError } from './errors';
 import { toCaptureError, toSnapshotError } from './nativeScreen';
 
 type Mod = typeof import('../../../../examples/screenshare/main.js');
@@ -21,6 +21,7 @@ const load = () => import('../../../../examples/screenshare/main.js') as Promise
     onBack: (run) => hooks.onBack(run),
     setImmersive: (on) => hooks.setImmersive(on),
   }),
+  PluginError,
   VersionConflictError,
 };
 

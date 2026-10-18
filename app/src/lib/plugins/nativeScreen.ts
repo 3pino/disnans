@@ -1,4 +1,5 @@
 import { capabilities, isAndroid, isTauri } from '../platform';
+import { PluginError } from './errors';
 
 /**
  * ネイティブの画面取得への橋渡し。
@@ -79,7 +80,7 @@ export const screenCaptureApi: Disnans.ScreenCapture = {
     return capabilities().nativeScreen !== null;
   },
   async start(opts, onFrame) {
-    if (!screenCaptureApi.supported) throw new Error('この環境では使えません');
+    if (!screenCaptureApi.supported) throw new PluginError('unsupported', 'この環境では使えません');
     if (capturing) await screenCaptureApi.stop();
     capturing = true;
     const seq = ++captureSeq;
@@ -170,13 +171,13 @@ const SNAPSHOT_QUALITY = 0.85;
  * Rust 側に画像のエンコーダーを入れないよう、JPEG への符号化は canvas で行う（snapshotDesktop）
  */
 export function decodeSnapshotBytes(buf: ArrayBuffer): { width: number; height: number; source: 'screen' | 'app'; rgba: Uint8ClampedArray } {
-  if (buf.byteLength < 12) throw new Error('画面の画像が壊れています');
+  if (buf.byteLength < 12) throw new PluginError('failed', '画面の画像が壊れています');
   const view = new DataView(buf);
   const width = view.getUint32(0, true);
   const height = view.getUint32(4, true);
   const source = view.getUint8(8) === 0 ? 'screen' : 'app';
   const len = width * height * 4;
-  if (!width || !height || buf.byteLength < 12 + len) throw new Error('画面の画像が壊れています');
+  if (!width || !height || buf.byteLength < 12 + len) throw new PluginError('failed', '画面の画像が壊れています');
   return { width, height, source, rgba: new Uint8ClampedArray(buf, 12, len) };
 }
 
@@ -189,7 +190,7 @@ async function snapshotDesktop(): Promise<Disnans.ScreenSnapshot> {
   cv.width = width;
   cv.height = height;
   const ctx = cv.getContext('2d');
-  if (!ctx) throw new Error('画像を作れません');
+  if (!ctx) throw new PluginError('failed', '画像を作れません');
   ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), width, height), 0, 0);
   return { dataUrl: cv.toDataURL('image/jpeg', SNAPSHOT_QUALITY), width, height, source };
 }
@@ -227,7 +228,7 @@ async function snapshotAndroid(): Promise<Disnans.ScreenSnapshot> {
       }),
     ]);
     if (!f || typeof f.data !== 'string' || !f.data || !(f.width > 0) || !(f.height > 0)) {
-      throw new Error('画面を撮れませんでした（アプリから届いた画像が空です）');
+      throw new PluginError('failed', '画面を撮れませんでした（アプリから届いた画像が空です）');
     }
     return { dataUrl: `data:${f.mime || 'image/jpeg'};base64,${f.data}`, width: f.width, height: f.height, source: 'app' };
   } catch (e) {
@@ -239,7 +240,7 @@ async function snapshotAndroid(): Promise<Disnans.ScreenSnapshot> {
 
 /** 静止画を 1 枚撮る。選択や許可のダイアログは出さない */
 async function snapshot(): Promise<Disnans.ScreenSnapshot> {
-  if (!isTauri()) throw new Error('この環境では画面を撮れません');
+  if (!isTauri()) throw new PluginError('unsupported', 'この環境では画面を撮れません');
   return isAndroid() ? snapshotAndroid() : snapshotDesktop();
 }
 

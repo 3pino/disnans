@@ -8,6 +8,7 @@ use disnans_shared::{Card, CreateSession, Id, PluginNotify, ServerEvent, Session
 use crate::chat::{self, Actor};
 use crate::db;
 use crate::error::{AppError, AppResult};
+use crate::hub::ConnId;
 use crate::notify::Notification;
 use crate::plugins;
 use crate::state::AppState;
@@ -128,6 +129,25 @@ pub async fn emit(
         None => state.hub.broadcast(&event),
     }
     Ok(())
+}
+
+/// セッションを開いたことを記録する（開いている人の一覧は `session.presence` で送る）。
+pub async fn open(
+    state: &AppState,
+    actor: &Actor<'_>,
+    conn: ConnId,
+    session_id: &str,
+) -> AppResult<()> {
+    find(state, session_id).await?;
+    state
+        .presence
+        .open(&state.hub, conn, &actor.user.id, session_id);
+    Ok(())
+}
+
+/// セッションを閉じたことを記録する。
+pub fn close(state: &AppState, conn: ConnId, session_id: &str) {
+    state.presence.close(&state.hub, conn, session_id);
 }
 
 /// セッションに紐づかない、プラグインの一時的なイベントを、送信した接続以外の全員に中継する（保存しない）。

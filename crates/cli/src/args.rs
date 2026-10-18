@@ -29,6 +29,10 @@ pub enum Command {
     Messages(MessagesArgs),
     /// メインチャットへ投稿する。自動再送はしない。
     Send(SendArgs),
+    /// メッセージにリアクションを付ける。成否が不明でも自動再送しない。
+    React(ReactArgs),
+    /// 自分が付けたリアクションを外す。成否が不明でも自動再送しない。
+    Unreact(ReactArgs),
     /// メインチャットの新着・編集・削除を1行ずつ表示し続ける。
     Watch(JsonOption),
     /// メインチャットを読み書きする端末画面（TUI）を開く。
@@ -42,6 +46,29 @@ pub struct UpdateArgs {
     /// 確認だけして、インストールしない。
     #[arg(long)]
     pub check: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ReactArgs {
+    /// 対象のメッセージ ID。
+    #[arg(value_name = "MESSAGE_ID")]
+    pub message_id: String,
+
+    /// 絵文字（例: 👍）。
+    #[arg(value_name = "EMOJI", value_parser = emoji_arg)]
+    pub emoji: String,
+
+    /// 結果を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// 空・制御文字・長すぎるものは接続前に断る（細かい判定はサーバーが行う）。
+fn emoji_arg(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() || value.len() > 64 || value.chars().any(char::is_control) {
+        return Err("絵文字は 64 バイト以内で、空や制御文字を含めないでください".into());
+    }
+    Ok(value.to_owned())
 }
 
 #[derive(Debug, Args)]
@@ -61,6 +88,10 @@ pub struct SendArgs {
     /// 通知を送らずに投稿する。
     #[arg(long)]
     pub silent: bool,
+
+    /// 返信先のメッセージ ID（メインチャットのメッセージ）。
+    #[arg(long, value_name = "MESSAGE_ID")]
+    pub reply_to: Option<String>,
 
     /// 確認済みの message_id と client_id を JSON で標準出力へ書く。
     #[arg(long)]
@@ -180,7 +211,7 @@ mod tests {
             Cli::try_parse_from(["disnans", "send", "本文", "--silent", "--json"]).unwrap();
         assert!(matches!(
             inline.command,
-            Command::Send(SendArgs { text: Some(ref t), stdin: false, silent: true, json: true }) if t == "本文"
+            Command::Send(SendArgs { text: Some(ref t), stdin: false, silent: true, json: true, .. }) if t == "本文"
         ));
         let stdin = Cli::try_parse_from(["disnans", "send", "--stdin"]).unwrap();
         assert!(matches!(
@@ -190,6 +221,28 @@ mod tests {
                 stdin: true,
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn react_unreact_and_reply_to_parse_and_reject_bad_emoji() {
+        let react = Cli::try_parse_from(["disnans", "react", "m1", "👍", "--json"]).unwrap();
+        assert!(matches!(
+            react.command,
+            Command::React(ReactArgs { ref message_id, ref emoji, json: true }) if message_id == "m1" && emoji == "👍"
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["disnans", "unreact", "m1", "🔥"])
+                .unwrap()
+                .command,
+            Command::Unreact(_)
+        ));
+        assert!(Cli::try_parse_from(["disnans", "react", "m1", ""]).is_err());
+        assert!(Cli::try_parse_from(["disnans", "react", "m1"]).is_err());
+        let send = Cli::try_parse_from(["disnans", "send", "--reply-to", "m9", "返信"]).unwrap();
+        assert!(matches!(
+            send.command,
+            Command::Send(SendArgs { reply_to: Some(ref r), .. }) if r == "m9"
         ));
     }
 

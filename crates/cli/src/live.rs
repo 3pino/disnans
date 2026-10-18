@@ -4,12 +4,12 @@ use std::io::{self, IsTerminal, Write};
 use std::time::Duration;
 
 use disnans_client_core::{
-    ChatConnection, ChatWatch, ConnectOptions, SendOutcome, ServerUrl, UnknownReason, WatchItem,
-    new_client_id,
+    ChatConnection, ChatWatch, ConnectOptions, ReactOutcome, SendOutcome, SendRequest, ServerUrl,
+    UnknownReason, WatchItem, new_client_id,
 };
 use tokio::signal::ctrl_c;
 
-use crate::args::SendArgs;
+use crate::args::{ReactArgs, SendArgs};
 use crate::{CliError, output, send, watch};
 
 /// 投稿の確認応答を待つ上限。
@@ -57,6 +57,7 @@ pub async fn send(
     dev_user: Option<String>,
     body: String,
     silent: bool,
+    reply_to: Option<String>,
     json: bool,
 ) -> Result<String, CliError> {
     let ack_timeout = ack_timeout()?;
@@ -70,7 +71,11 @@ pub async fn send(
     // 中断しても確認に使えるよう、client_id は先に決めて表示する。
     let client_id = new_client_id();
     let outcome = tokio::select! {
-        outcome = connection.send_message_with_id(&client_id, &body, silent, ack_timeout) => outcome,
+        outcome = connection.send_request_with_id(
+            &client_id,
+            SendRequest { body, silent, reply_to, ..SendRequest::default() },
+            ack_timeout,
+        ) => outcome,
         _ = &mut interrupt => {
             return Err(CliError::SendUnknown {
                 client_id: Some(client_id),
@@ -80,6 +85,57 @@ pub async fn send(
     };
     connection.close().await;
     send_result(outcome, json)
+}
+
+/// `react` / `unreact`。リアクションは付け外しとも同じ状態にするだけなので重ねて実行しても害はないが、
+/// 成否が不明でも自動では再送しない。
+pub async fn react(
+    server: ServerUrl,
+    dev_user: Option<String>,
+    args: ReactArgs,
+    add: bool,
+) -> Result<String, CliError> {
+    let ack_timeout = ack_timeout()?;
+    let mut interrupt = std::pin::pin!(ctrl_c());
+    let mut connection = tokio::select! {
+        result = ChatConnection::connect(&server, options(dev_user)) => result?,
+        _ = &mut interrupt => return Err(CliError::Interrupted),
+    };
+    let outcome = tokio::select! {
+        outcome = connection.react(&args.message_id, &args.emoji, add, ack_timeout) => outcome,
+        _ = &mut interrupt => {
+            return Err(CliError::ReactUnknown("確認を待つ間に中断されました".into()));
+        }
+    };
+    connection.close().await;
+    react_result(outcome, &args, add)
+}
+
+pub fn react_result(
+    outcome: ReactOutcome,
+    args: &ReactArgs,
+    add: bool,
+) -> Result<String, CliError> {
+    match outcome {
+        ReactOutcome::Confirmed => {
+            if args.json {
+                Ok(output::json_value(&serde_json::json!({
+                    "message_id": args.message_id,
+                    "emoji": args.emoji,
+                    "reaction": if add { "added" } else { "removed" },
+                }))?)
+            } else {
+                Ok(format!(
+                    "{} を{}しました",
+                    output::escape_human(&args.emoji),
+                    if add { "追加" } else { "削除" }
+                ))
+            }
+        }
+        ReactOutcome::Rejected { code, message } => Err(CliError::ReactRejected { code, message }),
+        ReactOutcome::NotSent { reason } => Err(CliError::SendNotSent(reason)),
+        ReactOutcome::Unknown(reason) => Err(CliError::ReactUnknown(unknown_reason(&reason))),
+    }
 }
 
 pub fn send_result(outcome: SendOutcome, json: bool) -> Result<String, CliError> {

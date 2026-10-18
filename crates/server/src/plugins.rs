@@ -208,6 +208,7 @@ impl Package {
             description: manifest.description,
             author: manifest.author,
             min_api_version: manifest.min_api_version,
+            api_version: manifest.api_version,
             icon: manifest.icon,
             has_icon: self.file("icon.svg").is_some(),
             files: self.files.iter().map(|(n, _)| (*n).to_owned()).collect(),
@@ -265,6 +266,8 @@ struct RawManifest {
     description: Option<String>,
     author: Option<String>,
     min_api_version: Option<u32>,
+    /// このプラグインを作った本体の版（任意）。
+    api_version: Option<u32>,
     icon: Option<String>,
     /// `plugin`（省略時）か `theme`。
     #[serde(rename = "type")]
@@ -279,6 +282,7 @@ struct Manifest {
     description: String,
     author: String,
     min_api_version: u32,
+    api_version: Option<u32>,
     /// Lucide のアイコン名。空なら `None`。
     icon: Option<String>,
 }
@@ -328,6 +332,10 @@ fn parse_manifest(data: &[u8]) -> AppResult<Manifest> {
         description: field(raw.description, "description", MAX_DESCRIPTION_CHARS, false)?,
         author: field(raw.author, "author", MAX_AUTHOR_CHARS, false)?,
         min_api_version: raw.min_api_version.unwrap_or(1),
+        api_version: match raw.api_version {
+            Some(0) => return Err(invalid("apiVersion は 1 以上にしてください".into())),
+            other => other,
+        },
         icon,
     })
 }
@@ -534,6 +542,19 @@ mod tests {
         assert_eq!(m.description, "");
         assert_eq!(m.author, "");
         assert_eq!(m.min_api_version, 1);
+        assert_eq!(m.api_version, None);
+        let m =
+            parse_manifest(r#"{"id":"dice","name":"a","version":"1","apiVersion":13}"#.as_bytes())
+                .ok()
+                .unwrap();
+        assert_eq!(m.api_version, Some(13));
+        assert_eq!(
+            parse_manifest(r#"{"id":"dice","name":"a","version":"1","apiVersion":0}"#.as_bytes())
+                .err()
+                .unwrap()
+                .code,
+            "invalid_manifest"
+        );
 
         let err = |json: &str| parse_manifest(json.as_bytes()).err().unwrap().code;
         assert_eq!(err(r#"{"id":"dice","version":"1"}"#), "invalid_manifest");

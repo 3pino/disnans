@@ -105,6 +105,7 @@ function fakeServices() {
       pluginIcon: () => 'puzzle',
       registerIcon,
       registerStatusItem: () => () => {},
+      presence: vi.fn(),
       holdBackground: async () => Object.assign(() => {}, { update: () => {} }),
       changed: vi.fn(),
     } as unknown as HostServices,

@@ -1,5 +1,5 @@
 /**
- * disnans プラグインの型定義（ホスト API バージョン 12）。
+ * disnans プラグインの型定義（ホスト API バージョン 14）。
  *
  * プラグインの main.js は ES モジュールで、`Plugin` を継承したクラスを `export default` する。
  * ホスト API はグローバルの `disnans` から取る（`import` は使わない）。
@@ -37,7 +37,13 @@ declare global {
       version: string;
       description: string;
       author: string;
+      /** 必要なホスト API の最低の版。本体がこれより古ければ読み込まない */
       minApiVersion: number;
+      /**
+       * このプラグインを作った（対象の）ホスト API の版。省略すると minApiVersion とみなす。
+       * 本体がこれより新しく、その後に削除・意味を変えた API があると、読み込んだうえで設定の一覧に警告が出る（docs/PLUGINS.md の「互換」）。
+       */
+      apiVersion?: number;
       /** Lucide のアイコン名（例: `dice-5`。英小文字・数字・ハイフン、64 文字まで）。画像にしたいときは `icon.svg` を同梱する */
       icon?: string;
     };
@@ -56,13 +62,15 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 12） */
+      /** ホスト API のバージョン（いまは 14） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
       /** 本体と同じ見た目の部品 */
       readonly ui: Ui;
-      /** Session.update が他の人の更新とぶつかったときのエラー（`instanceof` で見分ける） */
+      /** 本体が投げる例外（code 付き。docs/PLUGINS.md の「エラー」）。`instanceof` で見分ける */
+      readonly PluginError: typeof PluginError;
+      /** Session.update が他の人の更新とぶつかったときのエラー（PluginError の一種。`instanceof` で見分ける） */
       readonly VersionConflictError: typeof VersionConflictError;
       /** 音の入出力の選択（API v5）。通話のプラグイン向け。環境の違い（Android・デスクトップ）はここで隠す */
       readonly audio: Audio;
@@ -295,8 +303,19 @@ declare global {
       attach(el: HTMLMediaElement | AudioContext): Cleanup;
     }
 
-    /** Session.update が他の人の更新とぶつかったときのエラー */
-    class VersionConflictError extends Error {
+    /**
+     * 本体が投げる例外（API v14）。`code` は機械向けの語。
+     * サーバーのエラーは、サーバーの code をそのまま使う（例: `not_found`）。本体側の失敗は次のどれか:
+     * `disconnected`（サーバーに届かなかった）、`not_loaded`（読み込まれていない）、`invalid_argument`（値が正しくない）、
+     * `not_found`（指定されたものがない）、`stopped`（外された・もう使えない）、`unsupported`（この環境では使えない）、`failed`（そのほか）
+     */
+    class PluginError extends Error {
+      readonly code: string;
+      constructor(code: string, message?: string);
+    }
+
+    /** Session.update が他の人の更新とぶつかったときのエラー（code は `version_conflict`） */
+    class VersionConflictError extends PluginError {
       constructor(message?: string);
     }
 
@@ -682,6 +701,11 @@ declare global {
       readonly state: S;
       readonly version: number;
       readonly card: Card;
+      /**
+       * いまこのセッションのビューを開いている人のユーザー ID（自分を含む。API v14）。
+       * 開いた・閉じたのは本体が知らせる（プレゼンス）。ほかの人の分も、変わるたびに届く
+       */
+      readonly viewers: string[];
 
       /**
        * state（とカード）を保存する。読み込んだときから他の人が更新していたら
@@ -692,6 +716,8 @@ declare global {
       update(state: S, opts?: { card?: Card }): Promise<void>;
       /** 他の人（または自分）が更新したときに呼ばれる */
       onChange(cb: (session: Session<S>) => void): Cleanup;
+      /** viewers が変わったときに呼ばれる（API v14） */
+      onViewers(cb: (viewers: string[]) => void): Cleanup;
       /** 保存しない一時的なイベントを、ほかのメンバーに送る */
       emit(name: string, payload?: unknown): void;
       /** 一時的なイベントを受け取る */

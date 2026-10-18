@@ -2,6 +2,7 @@
 // 見た目の正はグローバルのクラス（app.css）。Svelte の部品（components/ui/）と同じ DOM になるようにする
 
 import { createIcon } from '../icons.svelte';
+import { PluginError } from './errors';
 
 export type UiDeps = {
   toast(text: string, kind?: 'info' | 'error'): void;
@@ -38,8 +39,8 @@ export function createUi(deps: UiDeps): Disnans.Ui {
     button(opts) {
       // components/ui/Button.svelte と同じ
       const text = opts.text ?? '';
-      if (!text && !opts.icon) throw new Error('ui.button には text か icon を渡してください');
-      if (!text && !opts.label) throw new Error('アイコンだけのボタンには label（読み上げ用の名前）を渡してください');
+      if (!text && !opts.icon) throw new PluginError('invalid_argument', 'ui.button には text か icon を渡してください');
+      if (!text && !opts.label) throw new PluginError('invalid_argument', 'アイコンだけのボタンには label（読み上げ用の名前）を渡してください');
       const el = document.createElement('button');
       el.type = 'button';
       el.className = 'btn';

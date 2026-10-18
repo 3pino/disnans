@@ -42,6 +42,9 @@ function errorCodeOf(e: unknown): string {
 /** 通話の操作のエラー。画面の toast は通話の状態が出す（ここでは出さない） */
 const CALL_ERROR_CODES: ReadonlySet<string> = new Set(['not_in_call', 'peer_in_use', 'invalid_peer', 'invalid_status', 'ws_only']);
 
+/** chat_emit が失敗しても toast しない種類（通話の音声・状態、プレゼンス） */
+const SILENT_EMIT_FAILURES: ReadonlySet<string> = new Set(['call.emit', 'call.update', 'session.open', 'session.close']);
+
 class Client {
   me = $state<User | null>(null);
   users = $state<Record<string, User>>({});
@@ -189,7 +192,8 @@ class Client {
       } else {
         // 診断: どの操作が、どの種別・code で失敗したか（通話の不具合の切り分け用）
         console.warn(`[chat] chat_emit 失敗: type=${ev.type} ${describeEmitError(e)}`);
-        if (ev.type !== 'call.emit' && ev.type !== 'call.update') ui.toast(emitFailureText(e), 'error');
+        // プレゼンス（session.open / close）も黙る。接続し直しのときに開き直すので、利用者の操作は要らない
+        if (!SILENT_EMIT_FAILURES.has(ev.type)) ui.toast(emitFailureText(e), 'error');
       }
     } finally {
       this.chatEmitBytes -= size;

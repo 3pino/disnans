@@ -219,6 +219,7 @@ async fn seed(server: &TestServer) -> String {
             description: "d".into(),
             author: "a".into(),
             min_api_version: 1,
+            api_version: None,
             icon: None,
             has_icon: false,
             files: vec!["manifest.json".into()],

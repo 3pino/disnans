@@ -861,3 +861,48 @@ async fn bot_notify_is_opt_in_and_reaches_the_poster() {
     assert_eq!(title, "ダイス mentioned you");
     assert_eq!(message_id.as_deref(), Some(loud.id.as_str()));
 }
+
+/// manifest の `apiVersion`（作られた対象の版）は PluginInfo に入る。なければ null。0 は断る。
+#[tokio::test]
+async fn api_version_is_recorded_and_optional() {
+    let server = TestServer::start().await;
+    let with = serde_json::to_vec(&serde_json::json!({
+        "id": "dice",
+        "name": "ダイス",
+        "version": "1.0.0",
+        "apiVersion": 13,
+    }))
+    .unwrap();
+    let res = server
+        .upload_plugin(ALICE, &[("manifest.json", &with), ("main.js", MAIN_JS)])
+        .await;
+    assert_eq!(res.status(), 200);
+    let info: PluginInfo = res.json().await.unwrap();
+    assert_eq!(info.api_version, Some(13));
+
+    let without = manifest("quiz", "1.0.0");
+    let res = server
+        .upload_plugin(ALICE, &[("manifest.json", &without), ("main.js", MAIN_JS)])
+        .await;
+    let info: PluginInfo = res.json().await.unwrap();
+    assert_eq!(info.api_version, None);
+
+    let zero = serde_json::to_vec(&serde_json::json!({
+        "id": "bad",
+        "name": "x",
+        "version": "1",
+        "apiVersion": 0,
+    }))
+    .unwrap();
+    let res = server
+        .upload_plugin(ALICE, &[("manifest.json", &zero), ("main.js", MAIN_JS)])
+        .await;
+    assert_eq!(error_code(res).await, (400, "invalid_manifest".into()));
+
+    // 一覧にも残る（再読み込みしても同じ）
+    let list: Vec<PluginInfo> = server.get_json(ALICE, "/api/plugins").await;
+    let dice = list.iter().find(|p| p.id == "dice").unwrap();
+    assert_eq!(dice.api_version, Some(13));
+    let quiz = list.iter().find(|p| p.id == "quiz").unwrap();
+    assert_eq!(quiz.api_version, None);
+}

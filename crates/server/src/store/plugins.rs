@@ -14,6 +14,7 @@ struct PluginRow {
     description: String,
     author: String,
     min_api_version: i64,
+    api_version: Option<i64>,
     icon: Option<String>,
     /// ファイル名の JSON 配列。
     files: String,
@@ -41,6 +42,7 @@ impl From<PluginRow> for PluginInfo {
             description: row.description,
             author: row.author,
             min_api_version: row.min_api_version.max(0) as u32,
+            api_version: row.api_version.map(|v| v.max(0) as u32),
             icon: row.icon,
             has_icon: files.iter().any(|f| f == "icon.svg"),
             files,
@@ -51,7 +53,7 @@ impl From<PluginRow> for PluginInfo {
     }
 }
 
-const COLUMNS: &str = "id, kind, visibility, owner, name, version, description, author, min_api_version, icon, files, hash, updated_by, updated_at";
+const COLUMNS: &str = "id, kind, visibility, owner, name, version, description, author, min_api_version, icon, files, hash, updated_by, updated_at, api_version";
 
 pub async fn get(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<PluginInfo>> {
     let row: Option<PluginRow> =
@@ -76,7 +78,7 @@ pub async fn list_visible(pool: &SqlitePool, viewer: &str) -> sqlx::Result<Vec<P
 /// 追加する。同じ ID があれば上書きする。
 pub async fn upsert(conn: &mut SqliteConnection, p: &PluginInfo) -> sqlx::Result<()> {
     sqlx::query(&format!(
-        "INSERT INTO plugins ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO plugins ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
              kind = excluded.kind,
              visibility = excluded.visibility,
@@ -90,7 +92,8 @@ pub async fn upsert(conn: &mut SqliteConnection, p: &PluginInfo) -> sqlx::Result
              files = excluded.files,
              hash = excluded.hash,
              updated_by = excluded.updated_by,
-             updated_at = excluded.updated_at"
+             updated_at = excluded.updated_at,
+             api_version = excluded.api_version"
     ))
     .bind(&p.id)
     .bind(kind_str(p.kind))
@@ -106,6 +109,7 @@ pub async fn upsert(conn: &mut SqliteConnection, p: &PluginInfo) -> sqlx::Result
     .bind(&p.hash)
     .bind(&p.updated_by)
     .bind(p.updated_at)
+    .bind(p.api_version.map(i64::from))
     .execute(conn)
     .await?;
     Ok(())

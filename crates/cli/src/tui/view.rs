@@ -7,7 +7,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Padding, Paragraph};
 
 use super::app::{App, ConnState, Focus, ImageState, SendState};
+use super::commands::Mode;
 use super::graphics::Placement;
+use super::markdown::Deco;
 use super::sanitize;
 use super::transcript::{self, Row, RowKind};
 
@@ -75,6 +77,18 @@ pub fn message_line(app: &App) -> Option<(String, Color)> {
         }
         _ => {}
     }
+    if app.mode == Mode::React {
+        return Some((
+            format!(
+                "リアクション（絵文字）: {}▏",
+                sanitize::inline(app.react_input.as_str())
+            ),
+            Color::Yellow,
+        ));
+    }
+    if app.mode == Mode::Select {
+        return Some(("メッセージを選択中".into(), Color::Yellow));
+    }
     if let Some((title, body)) = &app.alert {
         return Some((
             format!(
@@ -87,6 +101,21 @@ pub fn message_line(app: &App) -> Option<(String, Color)> {
     }
     if let Some(notice) = &app.notice {
         return Some((notice.clone(), Color::Yellow));
+    }
+    if let Some(id) = &app.reply_to {
+        let target = app.messages.iter().find(|m| &m.id == id);
+        let who = target
+            .and_then(|m| app.users.iter().find(|u| u.id == m.author_id))
+            .map_or("不明なユーザー", |u| u.display_name.as_str());
+        let excerpt = target.map_or("", |m| m.body.as_str());
+        return Some((
+            format!(
+                "↩ 返信先: {}: {} (Esc で取消)",
+                sanitize::inline(who),
+                sanitize::truncate(&sanitize::inline(excerpt), 30)
+            ),
+            Color::Cyan,
+        ));
     }
     app.history_error.clone().map(|e| (e, Color::Red))
 }
@@ -179,7 +208,78 @@ fn blank_first_cells(text: &str, cells: usize) -> String {
     out
 }
 
-fn row_line(row: &Row, color: Color, hide_icon: bool, note: Option<&str>) -> Line<'static> {
+/// Markdown の装飾を端末の修飾・色にする。
+fn deco_style(deco: Deco, base: Style) -> Style {
+    let mut style = base;
+    if deco.has(Deco::BOLD) {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+    if deco.has(Deco::ITALIC) {
+        style = style.add_modifier(Modifier::ITALIC);
+    }
+    if deco.has(Deco::UNDERLINE) {
+        style = style.add_modifier(Modifier::UNDERLINED);
+    }
+    if deco.has(Deco::STRIKE) {
+        style = style.add_modifier(Modifier::CROSSED_OUT);
+    }
+    if deco.has(Deco::CODE) {
+        style = style.fg(Color::Rgb(230, 190, 120));
+    }
+    if deco.has(Deco::LINK) {
+        style = style.fg(BLUE).add_modifier(Modifier::UNDERLINED);
+    }
+    if deco.has(Deco::QUOTE) {
+        style = style.fg(Color::DarkGray);
+    }
+    if deco.has(Deco::MENTION) {
+        style = style.fg(BLUE).add_modifier(Modifier::BOLD);
+    }
+    if deco.has(Deco::HIGHLIGHT) {
+        style = style.bg(Color::Rgb(90, 80, 20));
+    }
+    style
+}
+
+/// `text` を、装飾の範囲（`decos`。`text` 全体でのバイト位置）に沿って分ける。`from` は `text` の中の開始位置。
+fn deco_spans(
+    text: &str,
+    from: usize,
+    decos: &[(usize, usize, Deco)],
+    base: Style,
+) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut pos = from;
+    for &(start, end, deco) in decos {
+        if start < pos
+            || end > text.len()
+            || !text.is_char_boundary(start)
+            || !text.is_char_boundary(end)
+        {
+            continue;
+        }
+        if start > pos {
+            spans.push(Span::styled(text[pos..start].to_owned(), base));
+        }
+        spans.push(Span::styled(
+            text[start..end].to_owned(),
+            deco_style(deco, base),
+        ));
+        pos = end;
+    }
+    if pos < text.len() {
+        spans.push(Span::styled(text[pos..].to_owned(), base));
+    }
+    spans
+}
+
+fn row_line(
+    row: &Row,
+    color: Color,
+    hide_icon: bool,
+    note: Option<&str>,
+    selected: bool,
+) -> Line<'static> {
     match row.kind {
         RowKind::Separator => Line::from(Span::styled(
             row.text.clone(),
@@ -197,15 +297,24 @@ fn row_line(row: &Row, color: Color, hide_icon: bool, note: Option<&str>) -> Lin
                 _ => Style::new(),
             };
             let lead_style = Style::new().fg(color).add_modifier(Modifier::BOLD);
-            let mut spans = vec![
-                Span::styled(lead, lead_style),
-                Span::styled(rest.to_owned(), rest_style),
-            ];
+            let mut spans = vec![Span::styled(lead, lead_style)];
+            spans.extend(deco_spans(
+                &row.text,
+                row.prefix.min(row.text.len()),
+                &row.decos,
+                rest_style,
+            ));
             if let Some(note) = note {
                 spans.push(Span::styled(
                     note.to_owned(),
                     Style::new().fg(Color::DarkGray),
                 ));
+            }
+            if selected {
+                let mark = Style::new().bg(Color::Rgb(45, 45, 75));
+                for span in &mut spans {
+                    span.style = span.style.patch(mark);
+                }
             }
             Line::from(spans)
         }
@@ -300,10 +409,7 @@ fn navbar_line(width: u16) -> Line<'static> {
     };
     let disabled = Style::new().fg(Color::DarkGray).add_modifier(Modifier::DIM);
     Line::from(vec![
-        item(
-            "Chat",
-            Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED),
-        ),
+        item("Chat", Style::new().fg(BLUE).add_modifier(Modifier::BOLD)),
         item("Settings", disabled),
     ])
 }
@@ -346,7 +452,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                     _ => Some("(画像を読み込み中…)"),
                 }
             });
-            row_line(row, author_color(app, row), hide_icon, note)
+            let selected =
+                app.mode != Mode::Input && app.selected.as_deref() == Some(row.message_id.as_str());
+            row_line(row, author_color(app, row), hide_icon, note, selected)
         })
         .collect();
     // 少ないときは下に寄せる（最新が入力欄の近くにある）。
@@ -425,13 +533,18 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Paragraph::new(lines), inner);
     let x = inner.x + cursor_col as u16;
     let y = inner.y + (cursor_row - first) as u16;
-    if !focused {
+    if !focused && app.mode == Mode::Input {
         frame.set_cursor_position((x.min(inner.right().saturating_sub(1)), y));
     }
 
     frame.render_widget(
         Paragraph::new(sanitize::truncate(
-            &if focused {
+            &if app.mode == Mode::Select {
+                "↑↓/j k: 選択 | r: リアクション | 1-5: 👍🎉😂😮🙏 | p/Enter: 返信 | Esc: 戻る"
+                    .to_owned()
+            } else if app.mode == Mode::React {
+                "Enter: 付ける/外す | Esc: 戻る".to_owned()
+            } else if focused {
                 "送信ボタン: Enter / Space で送信 | Shift+Tab: 入力欄へ戻る".to_owned()
             } else {
                 app.keymap.hint()

@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use jiff::tz::TimeZone;
 
+use super::commands::{self, Mode};
 use super::graphics::Placement;
 use super::input::{Action, EnterKeys, Keymap};
 use super::picture::Prepared;
@@ -99,6 +100,8 @@ pub enum NetEvent {
     },
     /// 下書きを保存できなかった。
     DraftError(String),
+    /// 画面に出す知らせ（サーバーのエラーなど）。
+    Notice(String),
     /// サーバーからの通知（メンション・返信など）。
     Notify {
         title: String,
@@ -119,6 +122,16 @@ pub enum Effect {
     Send {
         client_id: String,
         body: String,
+        /// 返信先のメッセージ ID。
+        reply_to: Option<String>,
+        /// 通知を送らない。
+        silent: bool,
+    },
+    /// リアクションを付ける（`add`）か外す。結果は `reaction.updated` で届く。
+    React {
+        message_id: String,
+        emoji: String,
+        add: bool,
     },
     LoadOlder {
         before: String,
@@ -191,6 +204,14 @@ pub struct App {
     /// 表示済みの通知のメッセージ ID（再接続での再送を二重に出さない）。
     seen_notify: Vec<String>,
     pub should_quit: bool,
+    /// 操作モード（入力・メッセージ選択・リアクション入力）。
+    pub mode: Mode,
+    /// 選択モードで選んでいるメッセージの ID。
+    pub selected: Option<String>,
+    /// リアクションの絵文字の入力。
+    pub react_input: TextBuf,
+    /// 返信先のメッセージ ID（次の送信に付く）。
+    pub reply_to: Option<String>,
     /// 表示に使うタイムゾーン。`None` は UTC（`Z` 付き）。
     pub zone: Option<TimeZone>,
     /// 履歴の表示領域（桁・行）。描画のたびに更新する。
@@ -234,6 +255,10 @@ impl App {
             bell: false,
             seen_notify: Vec::new(),
             should_quit: false,
+            mode: Mode::Input,
+            selected: None,
+            react_input: TextBuf::default(),
+            reply_to: None,
             zone,
             viewport: (80, 20),
             scroll: 0,
@@ -374,14 +399,14 @@ impl App {
                     _ => {}
                 }
                 self.on_action(action.clone(), &mut effects);
-                if matches!(action, Action::Send)
+                if matches!(action, Action::Send | Action::SendSilent)
                     && effects.iter().any(|e| matches!(e, Effect::Send { .. }))
                 {
                     self.focus = Focus::Input;
                 }
             }
             Event::Paste(text) => {
-                if self.input_locked() {
+                if self.input_locked() || self.mode != Mode::Input {
                     return effects;
                 }
                 self.clear_transient();
@@ -412,8 +437,162 @@ impl App {
     }
 
     fn on_action(&mut self, action: Action, effects: &mut Vec<Effect>) {
+        match self.mode {
+            Mode::Input => {}
+            Mode::Select => {
+                if commands::is_passthrough(&action) {
+                    self.on_input_action(action, effects);
+                } else if let Some(id) = commands::from_key(self.mode, &action, false) {
+                    self.run_command(id, effects);
+                }
+                return;
+            }
+            Mode::React => {
+                if let Some(id) = commands::from_key(self.mode, &action, false) {
+                    self.run_command(id, effects);
+                } else {
+                    match action {
+                        Action::Insert(c) => self.react_input.insert_char(c),
+                        Action::Backspace => self.react_input.backspace(),
+                        Action::Delete => self.react_input.delete(),
+                        Action::Left => self.react_input.left(),
+                        Action::Right => self.react_input.right(),
+                        Action::Home => self.react_input.home(),
+                        Action::End => self.react_input.end(),
+                        Action::Quit => self.on_input_action(action, effects),
+                        _ => {}
+                    }
+                }
+                return;
+            }
+        }
+        match commands::from_key(self.mode, &action, self.reply_to.is_some()) {
+            Some(id @ (commands::MESSAGE_SELECT | commands::MESSAGE_REPLY_CANCEL)) => {
+                self.run_command(id, effects);
+            }
+            _ => self.on_input_action(action, effects),
+        }
+    }
+
+    /// コマンド ID を実行する（キーとの対応は `commands::from_key`）。
+    fn run_command(&mut self, id: &str, effects: &mut Vec<Effect>) {
+        match id {
+            commands::CHAT_SEND => self.send_pressed(false, effects),
+            commands::CHAT_SEND_SILENT => self.send_pressed(true, effects),
+            commands::MESSAGE_SELECT => {
+                if let Some(last) = self.messages.last() {
+                    self.selected = Some(last.id.clone());
+                    self.mode = Mode::Select;
+                    self.focus = Focus::Input;
+                    self.reveal_selected();
+                }
+            }
+            commands::MESSAGE_SELECT_PREV => self.move_selection(-1),
+            commands::MESSAGE_SELECT_NEXT => self.move_selection(1),
+            commands::MESSAGE_SELECT_CANCEL => {
+                self.mode = Mode::Input;
+                self.selected = None;
+            }
+            commands::MESSAGE_REPLY => {
+                if let Some(id) = self.selected.take() {
+                    self.reply_to = Some(id);
+                }
+                self.mode = Mode::Input;
+            }
+            commands::MESSAGE_REPLY_CANCEL => self.reply_to = None,
+            commands::MESSAGE_REACT => {
+                self.react_input.clear();
+                self.mode = Mode::React;
+            }
+            commands::MESSAGE_REACT_CANCEL => self.mode = Mode::Select,
+            commands::MESSAGE_REACT_APPLY => {
+                let emoji = self.react_input.as_str().trim().to_owned();
+                self.apply_reaction(&emoji, effects);
+            }
+            quick => {
+                if let Some((_, emoji)) = commands::QUICK_REACTIONS
+                    .iter()
+                    .find(|(command, _)| *command == quick)
+                {
+                    self.apply_reaction(emoji, effects);
+                }
+            }
+        }
+    }
+
+    fn move_selection(&mut self, delta: isize) {
+        let Some(current) = self
+            .selected
+            .as_ref()
+            .and_then(|id| self.messages.iter().position(|m| &m.id == id))
+        else {
+            return;
+        };
+        let next = current
+            .saturating_add_signed(delta)
+            .min(self.messages.len() - 1);
+        self.selected = Some(self.messages[next].id.clone());
+        self.reveal_selected();
+    }
+
+    /// 選択中のメッセージが画面に入るようにスクロールする。
+    fn reveal_selected(&mut self) {
+        let Some(id) = self.selected.clone() else {
+            return;
+        };
+        let rows = self.rows();
+        let Some(first) = rows.iter().position(|r| r.message_id == id) else {
+            return;
+        };
+        let last = rows
+            .iter()
+            .rposition(|r| r.message_id == id)
+            .unwrap_or(first);
+        let total = rows.len();
+        let height = self.viewport.1.max(1);
+        let end = total.saturating_sub(self.scroll);
+        let start = end.saturating_sub(height);
+        if first < start {
+            self.scroll = total.saturating_sub((first + height).min(total));
+        } else if last >= end {
+            self.scroll = total.saturating_sub(last + 1);
+        }
+        self.scroll = self.scroll.min(total.saturating_sub(height));
+    }
+
+    /// 選んだメッセージへ、自分のリアクションを付ける（付いていれば外す）。
+    fn apply_reaction(&mut self, emoji: &str, effects: &mut Vec<Effect>) {
+        let Some(id) = self.selected.clone() else {
+            self.mode = Mode::Input;
+            return;
+        };
+        if emoji.is_empty() || emoji.len() > 64 || emoji.chars().any(char::is_control) {
+            self.notice = Some("絵文字は 64 バイト以内で、空や制御文字を含めないでください".into());
+            return;
+        }
+        if !matches!(self.conn, ConnState::Connected { .. }) {
+            self.notice = Some("接続中ではないためリアクションできません".into());
+            self.mode = Mode::Input;
+            return;
+        }
+        let mine = self.me.as_ref().map(|me| me.id.clone());
+        let add = !self.messages.iter().find(|m| m.id == id).is_some_and(|m| {
+            m.reactions.iter().any(|r| {
+                r.emoji == emoji && mine.as_ref().is_some_and(|me| r.user_ids.contains(me))
+            })
+        });
+        effects.push(Effect::React {
+            message_id: id,
+            emoji: emoji.to_owned(),
+            add,
+        });
+        self.mode = Mode::Input;
+        self.selected = None;
+    }
+
+    fn on_input_action(&mut self, action: Action, effects: &mut Vec<Effect>) {
         // 再送の確認中に送信キー以外を押したら取り消す。
-        if !matches!(action, Action::Send | Action::Ignore) {
+        if !matches!(action, Action::Send | Action::SendSilent | Action::Ignore) {
             self.confirm_resend = false;
         }
         match action {
@@ -422,7 +601,9 @@ impl App {
                 effects.push(Effect::SaveDraftNow(self.draft_value()));
                 effects.push(Effect::Quit);
             }
-            Action::Send => self.send_pressed(effects),
+            Action::Send => self.send_pressed(false, effects),
+            Action::SendSilent => self.send_pressed(true, effects),
+            Action::Cancel => {}
             Action::Refetch => self.start_refetch(effects),
             Action::PageUp => self.scroll_up(self.viewport.1.saturating_sub(1).max(1), effects),
             Action::PageDown => self.scroll_down(self.viewport.1.saturating_sub(1).max(1)),
@@ -487,7 +668,7 @@ impl App {
         }
     }
 
-    fn send_pressed(&mut self, effects: &mut Vec<Effect>) {
+    fn send_pressed(&mut self, silent: bool, effects: &mut Vec<Effect>) {
         if self.input_locked() {
             self.notice = Some("送信中です。確認を待っています".into());
             return;
@@ -522,7 +703,12 @@ impl App {
             client_id: client_id.clone(),
             body: body.clone(),
         };
-        effects.push(Effect::Send { client_id, body });
+        effects.push(Effect::Send {
+            client_id,
+            body,
+            reply_to: self.reply_to.clone(),
+            silent,
+        });
     }
 
     fn on_net(&mut self, event: NetEvent, effects: &mut Vec<Effect>) {
@@ -621,6 +807,7 @@ impl App {
                     effects.push(Effect::Bell);
                 }
             }
+            NetEvent::Notice(text) => self.notice = Some(text),
             NetEvent::DraftError(reason) => {
                 self.notice = Some(format!(
                     "下書きを保存できません: {}",
@@ -645,6 +832,7 @@ impl App {
             _ => return,
         };
         self.send = SendState::Idle;
+        self.reply_to = None;
         if self.input.as_str() == body {
             self.input.clear();
             effects.push(Effect::SaveDraftNow(None));
@@ -668,6 +856,7 @@ impl App {
         match result {
             SendResult::Confirmed(message) => {
                 self.send = SendState::Idle;
+                self.reply_to = None;
                 self.insert_live(*message);
                 self.input.clear();
                 self.notice = None;
@@ -896,6 +1085,98 @@ mod tests {
         assert!(app.alert.is_none());
     }
 
+    fn two_messages(app: &mut App) {
+        connect(app, 1);
+        for (id, n) in [("a", 1), ("b", 2)] {
+            net(
+                app,
+                NetEvent::Created {
+                    message: Box::new(msg(id, n, "text")),
+                    client_id: None,
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn select_mode_moves_and_reply_attaches_to_the_next_send_silently_with_alt_s() {
+        let mut app = make();
+        two_messages(&mut app);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(
+            (app.mode, app.selected.as_deref()),
+            (Mode::Select, Some("b"))
+        );
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.selected.as_deref(), Some("a"));
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::NONE);
+        assert_eq!(app.selected.as_deref(), Some("a"));
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::NONE);
+        assert_eq!(
+            (app.mode, app.reply_to.as_deref()),
+            (Mode::Input, Some("a"))
+        );
+        // 返信先がある間の Esc は、選択ではなく返信の取消。
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!((app.mode, app.reply_to.clone()), (Mode::Input, None));
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        type_text(&mut app, "hi");
+        let effects = press(&mut app, KeyCode::Char('s'), KeyModifiers::ALT);
+        assert!(
+            matches!(&effects[..], [Effect::Send { reply_to: Some(r), silent: true, body, .. }] if r == "b" && body == "hi"),
+            "{effects:?}"
+        );
+    }
+
+    #[test]
+    fn reactions_toggle_by_quick_key_or_typed_emoji() {
+        let mut app = make();
+        two_messages(&mut app);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        let effects = press(&mut app, KeyCode::Char('1'), KeyModifiers::NONE);
+        assert_eq!(
+            effects,
+            [Effect::React {
+                message_id: "b".into(),
+                emoji: "👍".into(),
+                add: true
+            }]
+        );
+        assert_eq!(app.mode, Mode::Input);
+        // 自分が付けた絵文字は、もう一度で外す。
+        net(
+            &mut app,
+            NetEvent::Reactions {
+                message_id: "b".into(),
+                reactions: vec![Reaction {
+                    emoji: "🔥".into(),
+                    user_ids: vec!["u1".into()],
+                }],
+            },
+        );
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Char('r'), KeyModifiers::NONE);
+        assert_eq!(app.mode, Mode::React);
+        type_text(&mut app, "🔥");
+        let effects = press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(
+            effects,
+            [Effect::React {
+                message_id: "b".into(),
+                emoji: "🔥".into(),
+                add: false
+            }]
+        );
+        // 空のままでは送らず、Esc で選択へ戻る。
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Char('r'), KeyModifiers::NONE);
+        assert!(press(&mut app, KeyCode::Enter, KeyModifiers::NONE).is_empty());
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(app.mode, Mode::Select);
+    }
+
     #[test]
     fn updates_deletes_and_reactions_apply_by_id() {
         let mut app = make();
@@ -935,7 +1216,7 @@ mod tests {
         type_text(&mut app, "hello");
         let effects = send_key(&mut app);
         assert!(
-            matches!(&effects[..], [Effect::Send { client_id, body }] if client_id == "cid1" && body == "hello")
+            matches!(&effects[..], [Effect::Send { client_id, body, reply_to: None, silent: false }] if client_id == "cid1" && body == "hello")
         );
         // 送信中は編集も二重送信もできない。
         type_text(&mut app, "x");

@@ -140,8 +140,9 @@ async fn run(state: SharedState, user: User, ip: IpAddr, socket: WebSocket) {
     }
 
     state.hub.unregister(conn);
-    // 切れた接続は通話からも外す
+    // 切れた接続は通話からも外し、開いていたセッションも閉じる
     state.calls.leave(&state.hub, conn);
+    state.presence.disconnect(&state.hub, conn);
     writer.abort();
     tracing::info!(conn, user = %user.login_name, "WebSocket 切断");
 }
@@ -198,6 +199,13 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
             name,
             payload,
         } => sessions::emit(state, actor, session_id, name, payload).await,
+        ClientEvent::SessionOpen { session_id } => {
+            sessions::open(state, actor, conn, &session_id).await
+        }
+        ClientEvent::SessionClose { session_id } => {
+            sessions::close(state, conn, &session_id);
+            Ok(())
+        }
         ClientEvent::PluginEmit {
             plugin,
             name,

@@ -14,6 +14,7 @@
   import { client } from './lib/stores/client.svelte';
   import { ui } from './lib/stores/ui.svelte';
   import { orientation } from './lib/stores/orientation.svelte';
+  import { presence } from './lib/stores/presence.svelte';
   import { notifications } from './lib/stores/notifications.svelte';
   import { startShareReceiver } from './lib/share';
   import { pluginHost } from './lib/plugins/host.svelte';
@@ -33,6 +34,7 @@
     client.start();
     pluginHost.start();
     orientation.start();
+    presence.start();
     void notifications.init();
     void startShareReceiver();
   });

@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use crossterm::event::{self, KeyEventKind};
 use disnans_client_core::{
-    ChatSession, ConnectOptions, DraftKey, DraftPlace, LocalStore, MessagesQuery, RestClient,
-    SendOutcome, ServerUrl, StoredValue, WatchItem, new_client_id,
+    ChatSession, ClientEvent, ConnectOptions, DraftKey, DraftPlace, LocalStore, MessagesQuery,
+    RestClient, SendOutcome, SendRequest, ServerUrl, StoredValue, WatchItem, new_client_id,
 };
 use disnans_shared::ServerEvent;
 use ratatui::Terminal;
@@ -150,9 +150,27 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
         let mut quit = false;
         for effect in effects {
             match effect {
-                Effect::Send { client_id, body } => {
-                    spawn_send(&session, &tx, client_id, body, ack_timeout);
+                Effect::Send {
+                    client_id,
+                    body,
+                    reply_to,
+                    silent,
+                } => {
+                    spawn_send(
+                        &session,
+                        &tx,
+                        client_id,
+                        body,
+                        reply_to,
+                        silent,
+                        ack_timeout,
+                    );
                 }
+                Effect::React {
+                    message_id,
+                    emoji,
+                    add,
+                } => spawn_react(&session, &tx, message_id, emoji, add),
                 Effect::LoadOlder { before } => {
                     spawn_history(&rest, &tx, Some(before), HistoryPurpose::Older, PAGE_SIZE);
                 }
@@ -377,11 +395,19 @@ fn spawn_send(
     tx: &UnboundedSender<NetEvent>,
     client_id: String,
     body: String,
+    reply_to: Option<String>,
+    silent: bool,
     ack_timeout: Duration,
 ) {
     let (sender, tx) = (session.sender(), tx.clone());
     tokio::spawn(async move {
-        let outcome = sender.send(&client_id, &body, false, ack_timeout).await;
+        let request = SendRequest {
+            body,
+            reply_to,
+            silent,
+            ..SendRequest::default()
+        };
+        let outcome = sender.send_request(&client_id, request, ack_timeout).await;
         let result = match outcome {
             SendOutcome::Confirmed { message, .. } => SendResult::Confirmed(Box::new(message)),
             SendOutcome::Rejected { code, message, .. } => SendResult::Rejected { code, message },
@@ -391,6 +417,29 @@ fn spawn_send(
             },
         };
         let _ = tx.send(NetEvent::SendResult { client_id, result });
+    });
+}
+
+/// リアクションの付け外し。確認の応答は無く、結果は `reaction.updated` で届く。書けなかったときだけ知らせる。
+fn spawn_react(
+    session: &ChatSession,
+    tx: &UnboundedSender<NetEvent>,
+    message_id: String,
+    emoji: String,
+    add: bool,
+) {
+    let (sender, tx) = (session.sender(), tx.clone());
+    tokio::spawn(async move {
+        let event = if add {
+            ClientEvent::ReactionAdd { message_id, emoji }
+        } else {
+            ClientEvent::ReactionRemove { message_id, emoji }
+        };
+        if let Err(e) = sender.emit(event).await {
+            let _ = tx.send(NetEvent::Notice(format!(
+                "リアクションできませんでした: {e}"
+            )));
+        }
     });
 }
 
@@ -439,6 +488,14 @@ fn to_net_event(item: WatchItem) -> Option<NetEvent> {
                 body,
                 message_id,
             },
+            ServerEvent::Error {
+                client_id: None,
+                code,
+                message,
+            } => NetEvent::Notice(format!(
+                "サーバーのエラー ({code}): {}",
+                super::sanitize::inline(&message)
+            )),
             ServerEvent::PrefsUpdated { prefs } => NetEvent::Prefs(EnterKeys::from_prefs(&prefs)),
             _ => return None,
         },

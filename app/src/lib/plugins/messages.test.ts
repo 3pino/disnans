@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PluginBase, PluginRuntime } from './runtime';
 import { createUi } from './ui';
 import { API_VERSION, type HostCommand, type HostMessageAction, type HostServices, type HostTimelineSpec, type PluginClass } from './types';
-import { VersionConflictError } from './sessions';
+import { PluginError, VersionConflictError } from './errors';
 import type { Message } from '../protocol/Message';
 
 const toast = vi.fn();
@@ -12,6 +12,7 @@ const toast = vi.fn();
   apiVersion: API_VERSION,
   Plugin: PluginBase,
   ui: createUi({ toast: (...a) => toast(...a), confirm: async () => true }),
+  PluginError,
   VersionConflictError,
 };
 

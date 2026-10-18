@@ -15,7 +15,7 @@ import type { Message } from '../protocol/Message';
 import type { TimelineEntry, TimelineHandle, TimelineSpec } from '../stores/timelinePanel.svelte';
 
 /** ホスト API のバージョン。index.d.ts を変えたら上げる */
-export const API_VERSION = 13;
+export const API_VERSION = 14;
 
 export type Manifest = Disnans.Manifest;
 export type Cleanup = Disnans.Cleanup;
@@ -46,6 +46,8 @@ export interface HostServices {
     postMessage(pluginId: string, body: PluginPostMessage): Promise<void>;
   };
   send(ev: ClientEvent): void;
+  /** セッションのビューを開いた（open）・閉じた（!open）ことを、サーバーに知らせる（プレゼンス。API v14） */
+  presence(sessionId: string, open: boolean): void;
   registerSlashCommand(def: HostSlashCommand): Cleanup;
   registerComposerAction(action: HostComposerAction): Cleanup;
   /** コマンド（ホットキー・パレット・スラッシュコマンド）を登録する（lib/commands.svelte.ts） */
@@ -80,14 +82,9 @@ export interface HostServices {
   changed(): void;
 }
 
-/** 409 の判定に使う（api.ts の HttpError と同じ形） */
+/** 他の人の更新とぶつかったか（HttpError でも PluginError でも、code で見分ける） */
 export function isVersionConflict(e: unknown): boolean {
-  return (
-    typeof e === 'object' &&
-    e !== null &&
-    (e as { status?: unknown }).status === 409 &&
-    (e as { code?: unknown }).code === 'version_conflict'
-  );
+  return typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'version_conflict';
 }
 
 export function errorMessage(e: unknown): string {

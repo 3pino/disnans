@@ -1,8 +1,10 @@
 //! `disnans tui`: メインチャットを読んで送る端末画面。
 
 mod app;
+mod commands;
 mod graphics;
 mod input;
+mod markdown;
 mod net;
 mod picture;
 mod sanitize;

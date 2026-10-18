@@ -2,7 +2,7 @@
 // examples/dice をそのまま読み込んで、ホスト API の契約どおりに動くか確かめる
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PluginBase, PluginRuntime, type ViewHeader } from './runtime';
-import { VersionConflictError } from './sessions';
+import { PluginError, VersionConflictError } from './errors';
 import { createUi, type UiDeps } from './ui';
 import { registerIcon, setLucideForTest } from '../icons.svelte';
 import { API_VERSION, type HostCommand, type HostComposerAction, type HostServices, type HostSlashCommand, type PluginClass } from './types';
@@ -18,6 +18,7 @@ const uiDeps: UiDeps = { toast: () => {}, confirm: async () => true };
   apiVersion: API_VERSION,
   Plugin: PluginBase,
   ui: createUi({ toast: (...a) => uiDeps.toast(...a), confirm: (o) => uiDeps.confirm(o) }),
+  PluginError,
   VersionConflictError,
   audio: { listOutputs: async () => [], setOutput: async () => false, listInputs: async () => [], attach: () => () => {} },
   call: {} as Disnans.Call,
@@ -127,6 +128,7 @@ function setup(opts: { me?: string; data?: unknown; server?: SessionData } = {})
     pluginIcon: () => 'puzzle',
     registerIcon,
     registerStatusItem: () => () => {},
+    presence: vi.fn(),
     holdBackground: async () => Object.assign(() => {}, { update: () => {} }),
     changed: () => {},
   } as unknown as HostServices;
