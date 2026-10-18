@@ -145,14 +145,27 @@ pub fn timeline(
     let ctx = view::Context::new(users, None, &calendar);
     let mut rows = Vec::new();
     let mut day: Option<view::Day> = None;
+    let mut previous: Option<&Message> = None;
     for message in messages {
         let today = calendar.day_of(message.created_at);
-        if day != Some(today) {
+        let new_day = day != Some(today);
+        if new_day {
             rows.push(separator_row(&day_text(today), width));
             day = Some(today);
         }
+        // 同じ人の続き（5 分未満・同じ日）は、名前とアイコンを省く（GUI と同じ）
+        let continuation =
+            !new_day && previous.is_some_and(|prev| view::is_continuation(prev, message));
         let model = view::message_rows(message, &ctx);
-        rows.extend(message_rows_with(message, &model, users, width, gfx));
+        rows.extend(message_rows_with(
+            message,
+            &model,
+            users,
+            width,
+            gfx,
+            continuation,
+        ));
+        previous = Some(message);
     }
     rows
 }
@@ -169,35 +182,42 @@ pub fn message_rows(
     let calendar = view::UtcCalendar;
     let ctx = view::Context::new(users, None, &calendar);
     let model = view::message_rows(message, &ctx);
-    message_rows_with(message, &model, users, width, gfx)
+    message_rows_with(message, &model, users, width, gfx, false)
 }
 
-/// 表示データ（core の行）を、TUI の行（幅で折り返し、接頭辞と画像の予約を付ける）に変える
+/// 表示データ（core の行）を、TUI の行（幅で折り返し、接頭辞と画像の予約を付ける）に変える。
+/// `continuation` なら先頭行も名前とアイコンを省き、空白で本文の位置をそろえる。
 fn message_rows_with(
     message: &Message,
     model: &[view::Row],
     users: &[User],
     width: usize,
     gfx: Option<(u16, u16)>,
+    continuation: bool,
 ) -> Vec<Row> {
-    let Some(view::Row::Message {
-        head: Some(head), ..
-    }) = model.first()
-    else {
-        return Vec::new();
+    let head = match model.first() {
+        Some(view::Row::Message {
+            head: Some(head), ..
+        }) if !continuation => Some(head),
+        _ => None,
     };
     let name_w = name_column(users, width);
     // アイコン(2桁) + 空白 + 名前 + 空白2つ。名前と本文が詰まって見えないようにする。
     let lead_w = 2 + 1 + name_w + 2;
     let width = width.max(lead_w + 1);
     let inner = width - lead_w;
-    let name = sanitize::inline(head.name.as_deref().unwrap_or(UNKNOWN_USER));
-    let icon = name.chars().next().map_or("?".to_owned(), String::from);
-    let lead = format!("{} {}  ", pad_to(&icon, 2), pad_to(&name, name_w));
+    let lead = match head {
+        Some(head) => {
+            let name = sanitize::inline(head.name.as_deref().unwrap_or(UNKNOWN_USER));
+            let icon = name.chars().next().map_or("?".to_owned(), String::from);
+            format!("{} {}  ", pad_to(&icon, 2), pad_to(&name, name_w))
+        }
+        None => " ".repeat(lead_w),
+    };
     let accent = accent(&message.author_id);
-    let avatar = match gfx {
-        Some(_) => head.avatar.as_ref().map(|a| a.url.clone()),
-        None => None,
+    let avatar = match (gfx, head) {
+        (Some(_), Some(head)) => head.avatar.as_ref().map(|a| a.url.clone()),
+        _ => None,
     };
 
     let mut content: Vec<(RowKind, String)> = Vec::new();
@@ -301,7 +321,11 @@ fn message_rows_with(
             Row {
                 kind,
                 text: format!("{}{line}", if first { &lead } else { &blank }),
-                prefix: if first { lead.len() } else { 0 },
+                prefix: if first && head.is_some() {
+                    lead.len()
+                } else {
+                    0
+                },
                 accent,
                 author_id: message.author_id.clone(),
                 avatar: if first { avatar.clone() } else { None },
@@ -462,6 +486,22 @@ mod tests {
             .collect();
         // 2027-01-15 08:00 UTC（金）と翌日
         assert_eq!(separators, ["1月15日 (金)", "1月16日 (土)"]);
+    }
+
+    #[test]
+    fn a_continued_message_drops_the_name_and_keeps_the_text_column() {
+        let users = [user("u1", "Alice")];
+        let a = message("a", "u1", "one");
+        let mut b = message("b", "u1", "two");
+        b.created_at = a.created_at + 60_000;
+        let mut c = message("c", "u2", "three");
+        c.created_at = a.created_at + 120_000;
+        let rows = timeline(&[a, b, c], &users, 40, None, None);
+        // 区切り・1 件目（名前あり）・2 件目（同じ人の続きなので名前なし）・別の人（名前あり）
+        assert_eq!(rows[1].text, "A  Alice  one");
+        assert_eq!(rows[2].text, "          two");
+        assert_eq!(rows[2].prefix, 0);
+        assert_eq!(rows[3].text, "不 不明…  three");
     }
 
     #[test]

@@ -237,7 +237,7 @@ pub fn timeline_rows(messages: &[Message], ctx: &Context<'_>) -> Vec<Row> {
 
 /// `cur` が `prev` の続きか（同じ人・同じボット・5 分未満。日付の変わり目は含めない）。
 /// 呼び出し側が日付の区切りを判断する。スレッドの条件は持たない（スレッド廃止）
-fn is_continuation(prev: &Message, cur: &Message) -> bool {
+pub fn is_continuation(prev: &Message, cur: &Message) -> bool {
     let bot_of = |m: &Message| m.bot.as_ref().map(|b| (b.plugin.clone(), b.name.clone()));
     prev.author_id == cur.author_id
         && bot_of(prev) == bot_of(cur)
