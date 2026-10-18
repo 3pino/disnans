@@ -66,7 +66,7 @@ fn defaults_match_the_fixture() {
     let mut failures = Vec::new();
     for (key, expected) in defaults {
         let def = find_definition(key).unwrap_or_else(|| panic!("no definition for {key}"));
-        if default_of(def) != *expected {
+        if !same_json(&default_of(def), expected) {
             failures.push(format!("{key}: {} != {expected}", default_of(def)));
         }
     }
@@ -82,5 +82,21 @@ fn defaults_match_the_fixture() {
             "{} is not in defaults.json",
             def.key
         );
+    }
+}
+
+/// JSON の値が同じか。数は整数・小数の書き方を区別しない（TS の 1 と Rust の 1.0 を同じとみなす）。
+fn same_json(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(x, y)| same_json(x, y))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| same_json(v, w)))
+        }
+        _ => a == b,
     }
 }
