@@ -4,6 +4,7 @@
 //! blocking context. The WebSocket client (`ChatConnection`, `ChatWatch`, `ChatSession`) is behind the `ws`
 //! feature; the desktop GUI does not enable it yet.
 
+mod platform;
 mod rest;
 mod rest_api;
 mod storage;
@@ -13,6 +14,9 @@ mod ws;
 
 #[cfg(feature = "ws")]
 pub use disnans_shared::ClientEvent;
+pub use platform::{
+    Capabilities, PlatformInfo, Surface, capabilities_for, host_os, info_for, terminal_info,
+};
 pub use rest::{ClientError, MessagesQuery, RestClient};
 pub use rest_api::{
     MessageSearchQuery, ReadFailure, UploadAbortHandle, UploadAbortRegistration, messages_path,
