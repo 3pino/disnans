@@ -621,7 +621,7 @@ dependencies = [
 
 [[package]]
 name = "disnans-cli"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -645,7 +645,7 @@ dependencies = [
 
 [[package]]
 name = "disnans-client-core"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "disnans-shared",
  "fastrand",
