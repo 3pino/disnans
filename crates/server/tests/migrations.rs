@@ -6,7 +6,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
 const M1: &str = "01A000000000000000000000M1";
 const M2: &str = "01A000000000000000000000M2";
-const M3: &str = "01A000000000000000000000M3";
+const M3: &str = "01A000000000000000000000Z3"; // R1・R2 より後（ID の順＝時刻順）
 const R1: &str = "01A000000000000000000000R1";
 const R2: &str = "01A000000000000000000000R2";
 
