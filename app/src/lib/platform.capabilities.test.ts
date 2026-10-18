@@ -22,7 +22,7 @@ function rustCaps(os: Os): Capabilities {
   const android = os === 'android';
   const shared = desktop && (os === 'windows' || os === 'linux');
   return {
-    sharedStorage: shared,
+    sharedStorage: shared || android,
     rustApi: shared || android,
     rustChat: shared || android ? 'default' : 'off',
     bodyMode: android ? 'base64' : 'raw',

@@ -26,7 +26,7 @@ pub struct PlatformInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {
-    /// 共有ファイルの設定（client_storage）を使う（Windows・Linux の Tauri）
+    /// 共有の設定と下書き（client_storage）を Rust で持つ（Windows・Linux の Tauri と、Android）
     pub shared_storage: bool,
     /// 読取・書込・添付を Rust 経路で行う（既定で on。flag "0" で off）
     pub rust_api: bool,
@@ -64,16 +64,13 @@ pub fn info() -> PlatformInfo {
 /// 端末の事実から方針を決める（この 1 か所だけ）。
 /// 従来の TS の判定（desktop = Windows/Linux の Tauri、android = Tauri の Android）と同じ結果になるように書いてある。
 pub fn capabilities_for(os: &str, desktop: bool, android: bool) -> Capabilities {
-    let shared_storage = desktop && matches!(os, "windows" | "linux");
+    // Android は S1 のあと、設定と下書きも Rust に寄せる（step6 の (3)。データは app_data_dir）
+    let shared_storage = (desktop && matches!(os, "windows" | "linux")) || android;
     Capabilities {
         shared_storage,
-        rust_api: shared_storage || android,
+        rust_api: shared_storage,
         // Android は既定で Rust（S1）。JS Socket と同じ uid で動くので、背景の条件は同じ
-        rust_chat: if shared_storage || android {
-            "default"
-        } else {
-            "off"
-        },
+        rust_chat: if shared_storage { "default" } else { "off" },
         body_mode: if android { "base64" } else { "raw" },
         notify_backend: if android { "android" } else { "desktop" },
         updater: Some(if android { "android" } else { "desktop" }),
@@ -198,7 +195,7 @@ mod tests {
         assert_eq!(mac.native_screen, None);
 
         let android = capabilities_for("android", false, true);
-        assert!(android.rust_api && !android.shared_storage && !android.dev_folder);
+        assert!(android.rust_api && android.shared_storage && !android.dev_folder);
         assert_eq!(
             (android.rust_chat, android.body_mode),
             ("default", "base64")

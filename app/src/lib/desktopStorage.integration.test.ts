@@ -289,7 +289,7 @@ describe('desktop shared storage integration', () => {
     await expect(drafts.flushDraftSaves()).resolves.toBeUndefined();
   });
 
-  it('keeps browser, Android, and macOS server writes local without calling Tauri IPC', async () => {
+  it('keeps browser and macOS server writes local without calling Tauri IPC', async () => {
     delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
     Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla Chrome browser' });
     Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Win32' });
@@ -297,13 +297,50 @@ describe('desktop shared storage integration', () => {
     expect(invokeMock).not.toHaveBeenCalled();
 
     installDesktopGlobals();
-    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla Android 14' });
-    expect(await saveServerUrl(server)).toEqual({ status: 'local' });
-    expect(invokeMock).not.toHaveBeenCalled();
-
     Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla Mac OS X' });
     Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' });
     expect(await saveServerUrl(server)).toEqual({ status: 'local' });
     expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('Android: a legacy draft is imported into the Rust store once; later reads use Rust (step6 (3))', async () => {
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla Linux; Android 14' });
+    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Linux armv8l' });
+    localStorage.setItem('disnans.server', server);
+    localStorage.setItem('disnans.draft.user-a.main', 'from legacy');
+    const files = installStorageInvoke();
+    const { desktopStorage } = await freshDesktopModules();
+    const shared = desktopStorage.getDesktopSharedStorage()!;
+    expect(await shared.getDraft(server, 'user-a', 'main')).toBe('from legacy');
+    expect(files.get(keyId({ kind: 'draft', serverUrl: server, userId: 'user-a', place: 'main' }))).toBe('from legacy');
+    // 取り込みを確かめたので、localStorage の下書きは消す（サーバーの値は消さない）
+    expect(localStorage.getItem('disnans.draft.user-a.main')).toBeNull();
+    expect(localStorage.getItem('disnans.server')).toBe(server);
+
+    // 二回目以降は Rust の値が正（localStorage を変えても読まない）
+    localStorage.setItem('disnans.draft.user-a.main', 'changed legacy');
+    const again = (await freshDesktopModules()).desktopStorage.getDesktopSharedStorage()!;
+    expect(await again.getDraft(server, 'user-a', 'main')).toBe('from legacy');
+  });
+
+  it('Android: when the Rust store cannot be read, the legacy draft is kept and shown (not deleted)', async () => {
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla Linux; Android 14' });
+    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Linux armv8l' });
+    localStorage.setItem('disnans.server', server);
+    localStorage.setItem('disnans.draft.user-a.main', 'keep me');
+    invokeMock.mockRejectedValue(new Error('storage unavailable'));
+    const { desktopStorage } = await freshDesktopModules();
+    const shared = desktopStorage.getDesktopSharedStorage()!;
+    expect(await shared.getDraft(server, 'user-a', 'main')).toBe('keep me');
+    expect(localStorage.getItem('disnans.draft.user-a.main')).toBe('keep me');
+  });
+
+  it('Android (Tauri) saves the server through the Rust shared store (step6 (3))', async () => {
+    installStorageInvoke();
+    installDesktopGlobals();
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla Android 14' });
+    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Linux armv8l' });
+    expect(await saveServerUrl(server)).toEqual({ status: 'shared' });
+    expect(invokeMock.mock.calls[0][0]).toBe('client_storage_write');
   });
 });

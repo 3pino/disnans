@@ -12,7 +12,8 @@ mod platform;
 mod dev_plugins;
 
 // Desktop shared server settings and drafts; browser/Android keep their existing storage.
-#[cfg(desktop)]
+// 共有の設定と下書き（デスクトップは既定の場所、Android はアプリのデータの中）
+#[cfg(any(desktop, target_os = "android"))]
 mod client_storage;
 
 #[cfg(all(test, desktop))]
@@ -324,8 +325,17 @@ pub fn run() {
                 chat_bridge::chat_send,
                 chat_bridge::chat_emit,
                 chat_bridge::chat_reconnect,
-                chat_bridge::chat_stop
+                chat_bridge::chat_stop,
+                client_storage::client_storage_read,
+                client_storage::client_storage_write,
+                client_storage::client_storage_import
             ])
+            .setup(|app| {
+                use tauri::Manager;
+                // 共有の設定と下書きは、アプリのデータの中に置く（Android には HOME が無い）
+                client_storage::use_app_data_root(app.path().app_data_dir()?);
+                Ok(())
+            })
             .plugin(tauri_plugin_apk_updater::init())
             .plugin(tauri_plugin_system_bars::init())
             .plugin(tauri_plugin_screen::init())

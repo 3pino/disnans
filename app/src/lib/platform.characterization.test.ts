@@ -54,7 +54,7 @@ type Row = {
   isTauri: boolean;
   isAndroid: boolean;
   isLinuxDesktop: boolean;
-  sharedStorage: boolean; // isDesktopStorageSupported（macOS は false のまま）
+  sharedStorage: boolean; // isDesktopStorageSupported（macOS は false のまま。Android は true（step6 の (3)））
   devFolder: boolean;
   isMac: boolean;
   needsServerSetup: boolean;
@@ -70,7 +70,7 @@ const EXPECTED: Row[] = [
   { env: 'windows Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: false, sharedStorage: true, devFolder: true, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
   { env: 'linux Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: true, sharedStorage: true, devFolder: true, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
   { env: 'mac Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: true, isMac: true, needsServerSetup: true, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
-  { env: 'android Tauri', isTauri: true, isAndroid: true, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'base64', chat: 'rust', deviceKindGuess: 'smartphone' },
+  { env: 'android Tauri', isTauri: true, isAndroid: true, isLinuxDesktop: false, sharedStorage: true, devFolder: false, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'base64', chat: 'rust', deviceKindGuess: 'smartphone' },
   { env: 'windows browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
   { env: 'linux browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
   { env: 'mac browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: true, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },

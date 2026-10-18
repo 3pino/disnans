@@ -18,7 +18,7 @@ export type InjectedPlatform = {
 
 /** この端末での方針（Rust の capabilities と同じ名前・同じ値。platform.rs の capabilities_for） */
 export type Capabilities = {
-  /** 共有ファイルの設定（client_storage）を使う（Windows・Linux の Tauri） */
+  /** 共有の設定と下書き（client_storage）を Rust で持つ（Windows・Linux の Tauri と、Android） */
   sharedStorage: boolean;
   /** 読取・書込・添付を Rust 経路で行う（既定で on。localStorage の "0" で off） */
   rustApi: boolean;
@@ -115,7 +115,8 @@ function inferred(): Capabilities {
   const android = tauri && isAndroid();
   const shared = isSharedStorageOs();
   return {
-    sharedStorage: shared,
+    // Android は設定と下書きも Rust に寄せた（step6 の (3)）
+    sharedStorage: shared || android,
     rustApi: shared || android,
     rustChat: shared || android ? 'default' : 'off',
     bodyMode: android ? 'base64' : 'raw',

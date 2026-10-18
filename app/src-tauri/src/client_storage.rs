@@ -8,6 +8,27 @@ use serde_json::Value as JsonValue;
 
 use disnans_client_core::{DraftKey, DraftPlace, LocalStore, ServerUrl, StoreError, StoredValue};
 
+/// Android のデータの置き場（アプリのデータの中）。起動時に 1 回だけ決める。デスクトップは使わない（既定の場所を使う）
+#[cfg(target_os = "android")]
+static APP_DATA_ROOT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// Android の起動時に、アプリのデータの場所を渡す（HOME が無いので、既定の場所は使えない）
+#[cfg(target_os = "android")]
+pub fn use_app_data_root(root: std::path::PathBuf) {
+    let _ = APP_DATA_ROOT.set(root);
+}
+
+/// 共有の設定と下書きを開く。Android は app_data_dir、それ以外は既定の場所（従来どおり）
+fn open_store() -> Result<LocalStore, StoreError> {
+    #[cfg(target_os = "android")]
+    {
+        if let Some(root) = APP_DATA_ROOT.get() {
+            return LocalStore::open_at(root);
+        }
+    }
+    LocalStore::open_default()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(
     tag = "kind",
@@ -127,7 +148,7 @@ pub struct WriteArgs {
 pub async fn client_storage_read(key: StorageKey) -> Result<StorageState, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let key = key.validate()?;
-        let store = LocalStore::open_default().map_err(store_error)?;
+        let store = open_store().map_err(store_error)?;
         read_state(&store, key)
     })
     .await
@@ -140,7 +161,7 @@ pub async fn client_storage_read(key: StorageKey) -> Result<StorageState, String
 pub async fn client_storage_import(args: ImportArgs) -> Result<StorageState, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let key = args.key.validate()?;
-        let store = LocalStore::open_default().map_err(store_error)?;
+        let store = open_store().map_err(store_error)?;
         match (key, args.value) {
             (key, ImportValue::Missing) => read_state(&store, key),
             (ValidatedKey::Server, ImportValue::Value(value)) => {
@@ -178,7 +199,7 @@ pub async fn client_storage_import(args: ImportArgs) -> Result<StorageState, Str
 pub async fn client_storage_write(args: WriteArgs) -> Result<StorageState, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let key = args.key.validate()?;
-        let store = LocalStore::open_default().map_err(store_error)?;
+        let store = open_store().map_err(store_error)?;
         match (key, args.value) {
             (ValidatedKey::Server, JsonValue::String(value)) => {
                 store.set_server_url(Some(&value)).map_err(store_error)?;
