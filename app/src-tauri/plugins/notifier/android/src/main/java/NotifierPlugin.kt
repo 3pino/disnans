@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.OpenableColumns
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import android.webkit.WebView
 import androidx.core.app.NotificationManagerCompat
 import app.tauri.PermissionState
@@ -56,6 +57,16 @@ class SetOrientationArgs {
   lateinit var mode: String
 }
 
+@InvokeArg
+class SetKeepWebViewArgs {
+  var enabled: Boolean = true
+}
+
+@InvokeArg
+class LogCallArgs {
+  lateinit var message: String
+}
+
 @TauriPlugin(
   permissions = [
     Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = "notifications")
@@ -68,6 +79,10 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   private var launchTarget: JSObject? = null
 
   private var webView: WebView? = null
+
+  /** 通話中に裏へ回っても WebView を動かし続けるか（JS が通話の参加時に決める。既定は動かし続ける） */
+  @Volatile
+  private var keepWebView = true
 
   // ---- 他のアプリからの共有（ACTION_SEND / ACTION_SEND_MULTIPLE） ----
 
@@ -240,6 +255,8 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   companion object {
     private const val EXTRA_SHARE_HANDLED = "dev.disnans.notifier.SHARE_HANDLED"
     private const val SHARE_DIR = "disnans-share"
+    private const val LOG_TAG = "disnans"
+    private const val MAX_LOG_CHARS = 1000
     /** 1ファイルの上限。サーバーに上限はないが、JS が全体をメモリに読むのでデバイスの都合で決めている */
     private const val MAX_SHARE_BYTES = 200L * 1024 * 1024
   }
@@ -263,13 +280,41 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
 
   /**
    * 通話中は、画面を消したり別のアプリに切り替えたりしても WebView を止めない。
-   * WryActivity.onPause が WebView.onPause() を呼ぶので、その直後に動かし直す（タイマーと WebRTC を保つ）。
+   * TauriActivity.onPause は、WryActivity の onPause（WebView.onPause()）のあとに、この処理を呼ぶ。
+   * そのため、ここで動かし直すと WebView は動いたままになる（タイマーと音の経路を保つ）。
+   * 実験用の逃げ道: localStorage 'disnans.keepWebViewResumed'='0' なら JS が keepWebView を false にする。
    */
   override fun onPause() {
-    if (CallService.running) {
-      webView?.onResume()
-      webView?.resumeTimers()
+    if (!CallService.running) return
+    if (!keepWebView) {
+      Log.i(LOG_TAG, "[call] onPause: 無効のため WebView を止めたままにします")
+      return
     }
+    webView?.onResume()
+    webView?.resumeTimers()
+    Log.i(LOG_TAG, "[call] onPause: WebView を動かし続けます")
+  }
+
+  /** 裏から戻ったときの記録（通話中だけ。WebView の状態は onPause のときに決めている） */
+  override fun onResume() {
+    if (!CallService.running) return
+    Log.i(LOG_TAG, "[call] onResume: WebView は${if (keepWebView) "動き続けていました" else "止めたままでした"}")
+  }
+
+  /** 通話の参加時に JS から呼ぶ。false なら、裏に回ったとき WebView を止めたままにする（実験用） */
+  @Command
+  fun setKeepWebView(invoke: Invoke) {
+    val args = invoke.parseArgs(SetKeepWebViewArgs::class.java)
+    keepWebView = args.enabled
+    invoke.resolve()
+  }
+
+  /** JS の [call] のログを logcat に出す（リリース版では WebView の console が出ないため） */
+  @Command
+  fun logCall(invoke: Invoke) {
+    val args = invoke.parseArgs(LogCallArgs::class.java)
+    Log.i(LOG_TAG, args.message.take(MAX_LOG_CHARS))
+    invoke.resolve()
   }
 
   /** 通話用のフォアグラウンドサービス（microphone 型）を始める。マイクの許可を得たあと、前面にいるときに呼ぶ */

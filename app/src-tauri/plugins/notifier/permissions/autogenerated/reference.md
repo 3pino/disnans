@@ -16,6 +16,8 @@
 - `allow-request-permission`
 - `allow-open-battery-settings`
 - `allow-set-orientation`
+- `allow-set-keep-web-view`
+- `allow-log-call`
 - `allow-take-launch-target`
 - `allow-register-listener`
 - `allow-remove-listener`
@@ -102,6 +104,58 @@ Enables the set_orientation command without any pre-configured scope.
 <td>
 
 Denies the set_orientation command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:allow-set-keep-web-view`
+
+</td>
+<td>
+
+Enables the set_keep_web_view command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:deny-set-keep-web-view`
+
+</td>
+<td>
+
+Denies the set_keep_web_view command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:allow-log-call`
+
+</td>
+<td>
+
+Enables the log_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:deny-log-call`
+
+</td>
+<td>
+
+Denies the log_call command without any pre-configured scope.
 
 </td>
 </tr>

@@ -745,6 +745,49 @@ describe('参加と音声', () => {
     }
   });
 
+  it('AudioContext が running のまま時計が進まないと、音の経路を作り直す（参加者はそのまま）', async () => {
+    const a = makeClient('u1');
+    await a.store.join();
+    await flush();
+    const priv = a.store as unknown as {
+      ctx: FakeAudioContext;
+      stallSince: number | null;
+      stallCtxTime: number;
+      lastRebuildAt: number;
+      joined: boolean;
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const before = priv.ctx;
+    // 時計が 3 秒以上止まっていた、と見せかける
+    priv.stallCtxTime = before.currentTime;
+    priv.stallSince = performance.now() - 4000;
+    priv.lastRebuildAt = Number.NEGATIVE_INFINITY;
+    a.store.tick();
+    expect(priv.ctx).not.toBe(before);
+    expect(priv.joined).toBe(true);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('[call] 音の経路を作り直します'))).toBe(true);
+
+    // 作り直しの直後は、また止まっていても 10 秒は作り直さない（間隔）
+    const after = priv.ctx;
+    priv.stallCtxTime = after.currentTime;
+    priv.stallSince = performance.now() - 4000;
+    a.store.tick();
+    expect(priv.ctx).toBe(after);
+    warn.mockRestore();
+  });
+
+  it('時計が進んでいれば、作り直さない', async () => {
+    const a = makeClient('u1');
+    await a.store.join();
+    await flush();
+    const priv = a.store as unknown as { ctx: FakeAudioContext; stallSince: number | null };
+    const before = priv.ctx;
+    priv.stallSince = performance.now() - 4000;
+    before.currentTime += 1;
+    a.store.tick();
+    expect(priv.ctx).toBe(before);
+  });
+
   it('参加中は 5 秒ごとに call.alive を送る。一覧に載るまでは送らない', async () => {
     const a = makeClient('u1');
     const priv = a.store as unknown as { aliveAt: number; listed: boolean };

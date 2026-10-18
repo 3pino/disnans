@@ -4,6 +4,7 @@ import type { ClientEvent } from '../protocol/ClientEvent';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import type { IconRef } from '../icons.svelte';
 import { startCapture, type Capture } from './capture';
+import { installCallLogForwarding, keepWebViewEnabled, setKeepWebViewResumed } from './nativeCall';
 import { LATENCY_REPORT_MS, callLatency, clockText, type ClockPoint } from './latency';
 import {
   EV_AUDIO,
@@ -123,6 +124,10 @@ function errName(e: unknown): string {
 const LISTED_CHECK_MS = 3000;
 /** 参加中であることを知らせる間隔（サーバーは ALIVE_TIMEOUT の 20 秒届かなければ外す） */
 const ALIVE_MS = 5000;
+/** AudioContext が動いている（running）のに出力の時計が進まないのが、この時間続いたら音の経路を作り直す */
+const STALL_MS = 3000;
+/** 作り直しの間隔（作り直しても止まったままのとき、何度も作り直さないため） */
+const REBUILD_MIN_MS = 10000;
 /** 一覧に載る前の plugin の emit を待たせる上限（件数と時間。超えたら捨てる） */
 const EMIT_QUEUE_MAX = 50;
 const EMIT_QUEUE_MS = 5000;
@@ -434,6 +439,64 @@ export class CallStore {
     this.leave(false, 'not-listed');
     this.deps.toast('通話から外れました', 'info');
   }
+  /** 出力の時計（ctx.currentTime）の見張り。進まないまま止まっているかを見る */
+  private stallCtxTime = -1;
+  private stallSince: number | null = null;
+  private lastRebuildAt = Number.NEGATIVE_INFINITY;
+
+  /**
+   * AudioContext は running なのに時計が進まない（出力が裏で止められた）ときは、音の経路を作り直す。
+   * suspended なら onContextState / keepContextRunning が動かすので、ここでは running のときだけ見る。
+   */
+  private checkOutputStall(now: number): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') {
+      this.stallSince = null;
+      return;
+    }
+    if (this.stallSince === null || ctx.currentTime !== this.stallCtxTime) {
+      this.stallCtxTime = ctx.currentTime;
+      this.stallSince = now;
+      return;
+    }
+    if (now - this.stallSince < STALL_MS || now - this.lastRebuildAt < REBUILD_MIN_MS) return;
+    const held = Math.round(now - this.stallSince);
+    this.lastRebuildAt = now;
+    this.stallSince = null;
+    this.rebuildAudio(`出力の時計が ${held}ms 進んでいません（state=running）`);
+  }
+
+  /**
+   * 音の経路（AudioContext・マイクの接続・受け取りの音）を作り直す。通話の参加者は変えない。
+   * 作り直したあとは、マイクの送りと受け取りが次のフレームから新しい経路で動く。
+   */
+  private rebuildAudio(reason: string): void {
+    const stream = this.localStream;
+    if (!this.joined || !stream) return;
+    console.warn(`[call] 音の経路を作り直します: ${reason}`);
+    this.stopCapture();
+    this.captureSrc = null;
+    this.micGain = null;
+    this.limitBus = null;
+    this.limitKey = '';
+    for (const e of this.entries.values()) e.relay = null;
+    this.ctxDetach?.();
+    this.ctxDetach = null;
+    if (this.ctx) this.ctx.onstatechange = null;
+    void this.ctx?.close().catch(() => {});
+    const ctx = makeCallContext();
+    this.ctx = ctx;
+    void ctx.resume().catch(() => {});
+    ctx.onstatechange = () => this.onContextState();
+    this.startKeepAlive(ctx);
+    this.ctxDetach = this.deps.audio.attach(ctx);
+    const meter = makeMeter(ctx.createAnalyser());
+    this.localMeter = meter;
+    this.logAudioSetup(stream, ctx);
+    void this.setupSend(stream, ctx, meter).catch((e) => console.warn('[call] 作り直しの後のマイクの接続に失敗しました', e));
+    this.refresh();
+  }
+
   /** 外れてからの自動の入り直しを使ったか（手動で入り直したら戻す） */
   private autoRejoinUsed = false;
   private aliveAt = 0;
@@ -567,6 +630,9 @@ export class CallStore {
         }
         return;
       }
+      // 通話の診断（[call] の行）を logcat にも出す。WebView を裏でも動かすかを、常駐の開始の前に決める
+      installCallLogForwarding();
+      setKeepWebViewResumed(keepWebViewEnabled());
       // マイクの許可を得たあとで常駐を始める（Android 14 以降は許可前だと失敗する）
       try {
         this.notifyKey = '';
@@ -934,6 +1000,7 @@ export class CallStore {
       this.aliveAt = now;
       this.sendCall({ type: 'call.alive' });
     }
+    this.checkOutputStall(now);
     if (++this.outputsTick >= OUTPUTS_REFRESH_TICKS) {
       this.outputsTick = 0;
       void this.refreshOutputs();
