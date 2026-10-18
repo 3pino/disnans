@@ -722,7 +722,9 @@ async fn plugin_can_post_message_as_bot() {
         .await
         .unwrap();
     assert_eq!(res.status(), 200);
+    // 古いクライアントの thread_id は無視され、メインのチャットに入る
     let posted: Message = res.json().await.unwrap();
+    assert_eq!(posted.body, "in thread");
 
     // 作者（呼び出した人）は削除できる。他人は削除できない
     bob.send(ClientEvent::MessageDelete {
