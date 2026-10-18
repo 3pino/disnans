@@ -4,7 +4,7 @@
   import Icon from './Icon.svelte';
   import type { IconRef } from '../../lib/icons.svelte';
 
-  // 見た目はグローバルの .btn（app.css）。ここは薄い包みにする。プラグイン向けの ui.button も同じ DOM を作る。
+  // 見た目はグローバルの .btn（styles/components.css）。ここは薄い包みにする。プラグイン向けの ui.button も同じ DOM を作る。
   // icon を渡すと文字の左にアイコンを出す。中身（children）がなければアイコンだけのボタン（.btn-icon-only）で、label は必須
   let {
     variant = 'default',

@@ -2,7 +2,7 @@
   import { fillIcon, iconRevision, type IconRef } from '../../lib/icons.svelte';
 
   // アイコン。icon は名前（本体の独自のもの・プラグインが登録したもの・Lucide）か、Svelte のアイコン部品。
-  // 名前のときは lib/icons.svelte.ts で引いて描く。見た目はグローバルの .icon（app.css）。
+  // 名前のときは lib/icons.svelte.ts で引いて描く。見た目はグローバルの .icon（styles/components.css）。
   // プラグイン向けの ui.icon も同じ DOM を作る
   let {
     icon,

@@ -551,7 +551,7 @@
   .composer-plus {
     position: relative;
   }
-  /* メニューの見た目は .menu（app.css）。ここでは ＋ ボタンの上に出す位置だけを決める */
+  /* メニューの見た目は .menu（styles/components.css）。ここでは ＋ ボタンの上に出す位置だけを決める */
   .composer-plus > :global(.composer-menu) {
     position: absolute;
     bottom: calc(100% + 8px);

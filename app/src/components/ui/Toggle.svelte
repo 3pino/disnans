@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 見た目はグローバルの .toggle（app.css）。プラグイン向けの ui.toggle も同じ DOM を作る
+  // 見た目はグローバルの .toggle（styles/components.css）。プラグイン向けの ui.toggle も同じ DOM を作る
   let {
     checked = $bindable(false),
     label,

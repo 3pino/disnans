@@ -338,7 +338,7 @@
     color: var(--text-muted);
     opacity: 0.8;
   }
-  /* 候補の見た目は .suggest-list（app.css）。ここでは入力欄の上に出す位置だけを決める。
+  /* 候補の見た目は .suggest-list（styles/components.css）。ここでは入力欄の上に出す位置だけを決める。
      基準は近くの position の付いた要素（ふつうは .message-input）。使う側が .message-input を static にすると、
      その外側の枠いっぱいに広げられる。左右のはみ出しは --message-input-suggest-inset で変えられる */
   .message-input > :global(.message-input-suggestions),

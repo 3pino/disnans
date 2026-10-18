@@ -30,8 +30,18 @@
 
 ## 最小の持ち出し手順
 
-1. `app/src/app.css` をそのままコピーする（約 800 行。トークン・リセット・部品がすべて入っている）。
-   - 末尾の `::highlight(search-hit)`（検索ヒット強調）と `.top-bar` などは不要なら消す。
+1. `app/src/styles/` の 3 ファイルをコピーして、この順に読み込む（`app/src/app.css` がその入り口の例）。
+   | ファイル | 中身 | 流用先での扱い |
+   | --- | --- | --- |
+   | `tokens.css` | 色・文字サイズ・余白・角丸・影などのトークン（ライト／ダーク） | **アプリごとに値を調整する場所** |
+   | `base.css` | リセット、`body`、スクロール・タッチの方針、フォーカスの輪郭、`prefers-reduced-motion` | そのまま |
+   | `components.css` | `.btn`・`.toggle`・`.menu`・`.modal` などの部品 | そのまま（足すときは同じ命名で） |
+   ```css
+   @import './styles/tokens.css';
+   @import './styles/base.css';
+   @import './styles/components.css';
+   ```
+   `components.css` は `tokens.css` のトークンだけに依存している（直書きの色はない）。`app.css` に残っている検索ヒット強調（`::highlight`）は disnans 本体だけのものなので不要。
 2. `<meta name="color-scheme" content="light dark" />` と `viewport` を入れる:
    ```html
    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -91,8 +101,11 @@
 | `--shadow`（ライト） | `0 8px 28px oklch(0.22 0.015 248 / 0.16), 0 1px 3px oklch(0.22 0.015 248 / 0.1)` |
 | `--shadow`（ダーク） | `0 10px 32px oklch(0.05 0.01 248 / 0.6), 0 1px 3px oklch(0.05 0.01 248 / 0.45)` |
 | `--avatar-l` | ライト `0.45` / ダーク `0.74`（イニシャルアバターの明度） |
-| モーダルの幕 | `oklch(0.08 0.01 248 / 0.5)` |
-| トグルのつまみの影 | `0 1px 2px oklch(0.08 0.01 248 / 0.3)` |
+| `--scrim` / `--scrim-strong` | モーダル・ボトムシートの幕 `oklch(0.08 0.01 248 / 0.5)` / 画像ビューアの幕 `oklch(0.1 0.01 248 / 0.92)`（ライト・ダーク共通） |
+| `--on-scrim` / `--on-scrim-soft` | 幕の上の文字 / ボタンの背景 |
+| `--shadow-sm` | トグル・スライダーのつまみの影 |
+| `--shadow-media` | 画像ビューアの画像の影 |
+| `--mark` | 本文中のハイライト（黄色の半透明） |
 
 ### イニシャルアバター
 
@@ -155,7 +168,7 @@ function hueOf(id: string): number {
 
 ## ベース設定（リセット）
 
-`app.css` の冒頭に入っているもの。流用時もそのまま入れる。
+`styles/base.css` に入っているもの。流用時もそのまま入れる。
 
 - `box-sizing: border-box`（全要素）
 - `html, body`: `height: 100%; overflow: hidden; overscroll-behavior: none`（画面全体はスクロールさせず、`.scroll` の領域だけが動く）
@@ -191,7 +204,7 @@ function hueOf(id: string): number {
 | 状態表示 | `.status-line`（`-muted` `-ok` `-accent` `-warn` `-error`） | アイコン + 14px/600 の 1 行。色は意味色 |
 | メニュー | `.menu` / `.menu-item`（`-danger`） | `--surface` 地・枠 1px・`--radius`・`--shadow`・padding 4px・min-width 200px。項目は padding 8×10・`--radius-sm`・間隔 10px、ホバー/押下で `--surface-2`。z-index 30（背後に透明な `.menu-backdrop` 29） |
 | 補完候補 | `.suggest-list` / `-item`（`-selected`） | メニューと同じ面。選択中は `--accent-soft` 地。タイトル 600、詳細は 12px `--text-muted` で省略表示 |
-| モーダル | `.modal-scrim` / `.modal` | 幕は `oklch(0.08 0.01 248 / 0.5)`。本体は幅 `min(420px, 100vw-32px)`・padding 20px・角丸 14px・`--surface`・枠 1px・`--shadow`・中央配置。出現は 0.15s のフェード + わずかなせり上がり。ボタンは右寄せ・間隔 8px（`.modal-actions`）。z-index 80/81 |
+| モーダル | `.modal-scrim` / `.modal` | 幕は `--scrim`。本体は幅 `min(420px, 100vw-32px)`・padding 20px・角丸 14px・`--surface`・枠 1px・`--shadow`・中央配置。出現は 0.15s のフェード + わずかなせり上がり。ボタンは右寄せ・間隔 8px（`.modal-actions`）。z-index 80/81 |
 | トースト | `.toast` | 画面上部中央（幅 min(440px, 100vw-24px)）、`--surface`・枠・`--radius`・`--shadow`・14px。エラーは左に 3px の `--danger` 帯だけ。z-index 90 |
 | カード | `.message-card` | `--surface` 地・枠 1px・`--radius-sm`・padding 8×12。押せるものはホバーで `--border-hover`。使えないものは破線枠 |
 | スクロール領域 | `.scroll` | `overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent` |
@@ -224,7 +237,7 @@ z-index の目安: メニュー 29–30 / パネル（モバイル全面）30 / 
 ## モーション・アクセシビリティ・タッチ
 
 - 動きは短く控えめ: 0.12s（トグル）・0.15s（モーダル）・0.18s（スライド・トースト）。イージングは `ease-out`。
-- `prefers-reduced-motion: reduce` では全アニメーション・トランジションを 0.01ms にする（`app.css` に入っている）。
+- `prefers-reduced-motion: reduce` では全アニメーション・トランジションを 0.01ms にする（`base.css` に入っている）。
 - ホバー表現は `@media (hover: hover)` の中だけ（タッチ操作のデバイスで押したあと明るいまま残るのを防ぐ）。`.menu-item`・`.icon-btn` が該当。
 - アイコンだけのボタンには必ず `aria-label`。飾りのアイコンは `aria-hidden`。
 - キーボードフォーカスは `:focus-visible` の 2px `--ring` 輪郭。
@@ -233,7 +246,7 @@ z-index の目安: メニュー 29–30 / パネル（モバイル全面）30 / 
 
 ## 流用時のチェックリスト
 
-- [ ] `app.css` を取り込み、`color-scheme` メタを入れた
+- [ ] `styles/` の 3 ファイルを取り込み、`color-scheme` メタを入れた
 - [ ] ダークのトークンを `@media` 内と `[data-theme='dark']` の両方で更新した
 - [ ] 色は必ずトークンから使っている（直書きの色がない）
 - [ ] 新しい部品も `.part` / `.part-child` / `.part-state` の命名にした

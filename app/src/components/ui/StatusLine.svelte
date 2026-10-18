@@ -2,7 +2,7 @@
   import type { Component, Snippet } from 'svelte';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 
-  // アイコン付きの1行の状態表示。見た目はグローバルの .status-line（app.css）
+  // アイコン付きの1行の状態表示。見た目はグローバルの .status-line（styles/components.css）
   let {
     kind = 'default',
     icon,

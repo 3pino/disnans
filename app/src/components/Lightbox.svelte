@@ -179,7 +179,7 @@
     z-index: 100;
     display: grid;
     place-items: center;
-    background: oklch(0.1 0.01 248 / 0.92);
+    background: var(--scrim-strong);
     animation: fade 0.15s;
   }
   /* 全画面の操作面。ブラウザ自身のパン・ズームは効かせず、指の動きはすべてこちらで受ける */
@@ -203,7 +203,7 @@
     max-height: calc(100dvh - 96px);
     object-fit: contain;
     border-radius: var(--radius-xs);
-    box-shadow: 0 10px 40px oklch(0 0 0 / 0.5);
+    box-shadow: var(--shadow-media);
     pointer-events: none;
   }
   .lightbox-toolbar {
@@ -214,13 +214,13 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    color: oklch(0.93 0.015 248);
+    color: var(--on-scrim);
   }
   .lightbox-toolbar > :global(.icon-btn) {
     color: inherit;
   }
   .lightbox-toolbar > :global(.icon-btn:hover) {
-    background: oklch(1 0 0 / 0.1);
+    background: var(--on-scrim-soft);
   }
   .lightbox-file-name {
     flex: 1;

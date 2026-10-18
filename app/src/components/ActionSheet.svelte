@@ -72,7 +72,7 @@
     position: fixed;
     inset: 0;
     z-index: 60;
-    background: oklch(0.08 0.01 248 / 0.45);
+    background: var(--scrim);
     animation: fade 0.15s;
   }
   .action-sheet {
@@ -109,7 +109,7 @@
     place-items: center;
     color: var(--text-muted);
   }
-  /* 項目の見た目は .menu-item（app.css）。指で押しやすいよう大きくする */
+  /* 項目の見た目は .menu-item（styles/components.css）。指で押しやすいよう大きくする */
   .action-sheet-items > :global(.action-sheet-item) {
     gap: 14px;
     height: 50px;

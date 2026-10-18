@@ -91,7 +91,7 @@
   .command-palette-results {
     max-height: min(360px, 55dvh);
   }
-  /* 見た目は .suggest-list（app.css）。モーダルの中なので枠と影は付けない */
+  /* 見た目は .suggest-list（styles/components.css）。モーダルの中なので枠と影は付けない */
   .command-palette-results > :global(.command-palette-list) {
     padding: 0;
     border: none;

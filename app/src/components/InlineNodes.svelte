@@ -43,7 +43,7 @@
   .inline-highlight {
     padding: 0 var(--space-1);
     border-radius: 3px;
-    background: rgba(250, 204, 21, 0.35);
+    background: var(--mark);
     color: inherit;
   }
   .inline-code {
