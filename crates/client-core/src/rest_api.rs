@@ -477,6 +477,45 @@ impl RestClient {
         .await
     }
 
+    /// 自分の端末の一覧（`GET /api/me/devices`）
+    pub async fn list_devices(&self) -> Result<Value, ReadFailure> {
+        self.get_value("/api/me/devices").await
+    }
+
+    /// 端末を登録する、または名前を変える（`PUT /api/me/devices/{id}`）。冪等。
+    pub async fn put_device(&self, id: &str, name: &str) -> Result<Value, ReadFailure> {
+        let path = with_id("/api/me/devices/", id, "");
+        send_write(
+            self.write_request(reqwest::Method::PUT, &path)
+                .json(&serde_json::json!({ "name": name })),
+            true,
+        )
+        .await
+    }
+
+    /// 端末とその設定を消す（`DELETE /api/me/devices/{id}`）
+    pub async fn delete_device(&self, id: &str) -> Result<Value, ReadFailure> {
+        let path = with_id("/api/me/devices/", id, "");
+        send_write(self.write_request(reqwest::Method::DELETE, &path), true).await
+    }
+
+    /// この端末の設定（`GET /api/me/devices/{id}/prefs`）。設定が無ければ 404
+    pub async fn get_device_prefs(&self, id: &str) -> Result<Value, ReadFailure> {
+        self.get_value(&with_id("/api/me/devices/", id, "/prefs"))
+            .await
+    }
+
+    /// この端末の設定をまるごと置き換える（`PUT /api/me/devices/{id}/prefs`）。端末が未登録なら 404
+    pub async fn put_device_prefs(&self, id: &str, prefs: &Value) -> Result<Value, ReadFailure> {
+        let path = with_id("/api/me/devices/", id, "/prefs");
+        send_write(
+            self.write_request(reqwest::Method::PUT, &path)
+                .json(&serde_json::json!({ "prefs": prefs })),
+            true,
+        )
+        .await
+    }
+
     pub async fn mark_read(&self, body: &Value) -> Result<Value, ReadFailure> {
         send_write(
             self.write_request(reqwest::Method::PUT, "/api/me/read")
@@ -979,6 +1018,39 @@ mod write_tests {
         let seen = seen.lock().unwrap();
         assert_eq!(seen.requests, vec!["PATCH /api/me HTTP/1.1"]);
         assert_eq!(seen.bodies[0], br#"{"display_name":"Alice"}"#);
+    }
+
+    #[tokio::test]
+    async fn device_calls_use_the_device_paths_and_bodies() {
+        let (client, seen) = scripted(vec![Action::Reply {
+            status: "200 OK",
+            body: r#"{"prefs":{"inputId":"x"},"updated_at":5}"#,
+            keep_alive: false,
+        }])
+        .await;
+        client
+            .put_device_prefs("01J8", &serde_json::json!({"inputId": "x"}))
+            .await
+            .unwrap();
+        let seen = seen.lock().unwrap();
+        assert_eq!(
+            seen.requests,
+            vec!["PUT /api/me/devices/01J8/prefs HTTP/1.1"]
+        );
+        assert_eq!(seen.bodies[0], br#"{"prefs":{"inputId":"x"}}"#);
+    }
+
+    #[tokio::test]
+    async fn device_not_found_keeps_status_and_code() {
+        let (client, _seen) = scripted(vec![Action::Reply {
+            status: "404 Not Found",
+            body: r#"{"code":"not_found","message":"設定がありません"}"#,
+            keep_alive: false,
+        }])
+        .await;
+        let err = client.get_device_prefs("01J8").await.unwrap_err();
+        assert_eq!(err.status, Some(404));
+        assert_eq!(err.code, "not_found");
     }
 
     #[tokio::test]

@@ -12,6 +12,7 @@
 
 mod calendar;
 pub mod markdown;
+pub mod settings;
 
 use std::collections::HashMap;
 

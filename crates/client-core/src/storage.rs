@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs::{self, File, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
@@ -8,9 +9,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 
-use crate::ServerUrl;
+use crate::{ServerUrl, platform::Surface};
 
 const STORAGE_SCHEMA: u32 = 1;
+/// 端末 ID の保存先（設定ディレクトリの中。surface ごとに 1 つ）
+const DEVICES_FILE: &str = "devices.json";
 
 #[derive(Debug)]
 pub enum StoreError {
@@ -18,6 +21,8 @@ pub enum StoreError {
     Json(serde_json::Error),
     InvalidUrl(crate::UrlError),
     UnsupportedSchema(u32),
+    /// 保存された端末 ID が、サーバーの決まり（1〜64 文字の英数字とハイフン）に合わない
+    InvalidDeviceId,
 }
 impl std::fmt::Display for StoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -26,6 +31,7 @@ impl std::fmt::Display for StoreError {
             Self::Json(e) => write!(f, "storage JSON error: {e}"),
             Self::InvalidUrl(e) => write!(f, "invalid stored server URL: {e}"),
             Self::UnsupportedSchema(v) => write!(f, "unsupported storage schema version: {v}"),
+            Self::InvalidDeviceId => write!(f, "stored device ID is invalid"),
         }
     }
 }
@@ -72,6 +78,14 @@ pub struct DraftKey {
 struct ConfigFile {
     schema_version: u32,
     server_url: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DevicesFile {
+    schema_version: u32,
+    /// surface（`tauri` など）→ 端末 ID
+    ids: BTreeMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -216,6 +230,25 @@ impl LocalStore {
         Ok(true)
     }
 
+    /// この端末の、surface ごとの端末 ID。無ければ ULID を作って保存し、それを返す。
+    /// 壊れたファイルや不正な ID は直さずエラーにする（黙って別の ID に替えない）。
+    pub fn device_id(&self, surface: Surface) -> Result<String, StoreError> {
+        let path = self.config_dir.join(DEVICES_FILE);
+        let _lock = FileLock::acquire(&self.config_dir.join("devices.lock"))?;
+        let mut file = read_devices_file(&path)?.unwrap_or_else(|| DevicesFile {
+            schema_version: STORAGE_SCHEMA,
+            ids: BTreeMap::new(),
+        });
+        let name = surface_name(surface);
+        if let Some(id) = file.ids.get(name) {
+            return Ok(id.clone());
+        }
+        let id = ulid::Ulid::new().to_string();
+        file.ids.insert(name.to_owned(), id.clone());
+        atomic_replace(&path, &serde_json::to_vec(&file)?)?;
+        Ok(id)
+    }
+
     fn read_config(&self) -> Result<Option<ConfigFile>, StoreError> {
         let path = self.config_dir.join("config.json");
         let bytes = match fs::read(path) {
@@ -263,6 +296,33 @@ fn check_schema(version: u32) -> Result<(), StoreError> {
     } else {
         Err(StoreError::UnsupportedSchema(version))
     }
+}
+
+/// 端末 ID の形（サーバーの `check_device_id` と同じ）: 1〜64 文字の英数字とハイフン
+pub fn is_valid_device_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+fn surface_name(surface: Surface) -> &'static str {
+    match surface {
+        Surface::Tauri => "tauri",
+        Surface::Tui => "tui",
+        Surface::Cli => "cli",
+    }
+}
+
+fn read_devices_file(path: &Path) -> Result<Option<DevicesFile>, StoreError> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    let file: DevicesFile = serde_json::from_slice(&bytes)?;
+    check_schema(file.schema_version)?;
+    if file.ids.values().any(|id| !is_valid_device_id(id)) {
+        return Err(StoreError::InvalidDeviceId);
+    }
+    Ok(Some(file))
 }
 
 fn read_draft_file(path: &Path) -> Result<Option<DraftFile>, StoreError> {

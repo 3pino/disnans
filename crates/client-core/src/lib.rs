@@ -23,7 +23,9 @@ pub use rest_api::{
     MessageSearchQuery, ReadFailure, UploadAbortHandle, UploadAbortRegistration, messages_path,
     search_path, session_path,
 };
-pub use storage::{DraftKey, DraftPlace, LocalStore, StoreError, StoredValue};
+pub use storage::{
+    DraftKey, DraftPlace, LocalStore, StoreError, StoredValue, is_valid_device_id,
+};
 pub use url::{ServerUrl, UrlError, normalize_server_url};
 #[cfg(feature = "ws")]
 pub use ws::{

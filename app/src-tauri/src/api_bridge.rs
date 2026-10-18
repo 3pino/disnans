@@ -579,6 +579,84 @@ pub async fn api_create_plugin(request: Request<'_>) -> Result<Value, ReadFailur
     create_plugin(&args, &data).await
 }
 
+// ---- 端末（ステップ8・V5）: /api/me/devices。端末 ID は client_device_id（LocalStore）が決める ----
+
+/// 端末の登録・名前の変更（PUT /api/me/devices/{id}）
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeviceRegisterArgs {
+    pub server: String,
+    #[serde(default)]
+    pub dev_user: Option<String>,
+    pub id: String,
+    pub name: String,
+}
+
+/// 端末の設定の結果。`saved` が false は「まだ設定が無い」（または端末が未登録）。`prefs` は正規化済み。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevicePrefsView {
+    pub prefs: Value,
+    pub updated_at: Option<i64>,
+    pub saved: bool,
+}
+
+fn device_prefs_view(value: &Value, saved: bool) -> DevicePrefsView {
+    DevicePrefsView {
+        prefs: disnans_client_core::view::settings::normalize_device_prefs(
+            value.get("prefs").unwrap_or(&Value::Null),
+        ),
+        updated_at: value.get("updated_at").and_then(Value::as_i64),
+        saved,
+    }
+}
+
+pub async fn device_register(args: &DeviceRegisterArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .put_device(&args.id, &args.name)
+        .await
+}
+
+/// この端末の設定を読む。設定が無い（404）ときは既定の値を `saved: false` で返す。
+pub async fn device_prefs_read(args: &IdArgs) -> Result<DevicePrefsView, ReadFailure> {
+    let client = client(&args.server, args.dev_user.as_deref())?;
+    match client.get_device_prefs(&args.id).await {
+        Ok(value) => Ok(device_prefs_view(&value, true)),
+        Err(e) if e.status == Some(404) => Ok(device_prefs_view(&Value::Null, false)),
+        Err(e) => Err(e),
+    }
+}
+
+/// この端末の設定をまるごと書き換える。送る前に正規化する（型の合わない値は既定に、定義に無い項目は残す）。
+pub async fn device_prefs_write(args: &IdBodyArgs) -> Result<DevicePrefsView, ReadFailure> {
+    let prefs = disnans_client_core::view::settings::normalize_device_prefs(&args.body);
+    let value = client(&args.server, args.dev_user.as_deref())?
+        .put_device_prefs(&args.id, &prefs)
+        .await?;
+    Ok(device_prefs_view(&value, true))
+}
+
+/// 設定項目の定義（キー・保存先・型・既定値）。core の一覧が正（起動時に一度読む想定）
+#[tauri::command]
+pub fn api_settings_definitions() -> Value {
+    disnans_client_core::view::settings::definitions_json()
+}
+
+#[tauri::command]
+pub async fn api_device_register(args: DeviceRegisterArgs) -> Result<Value, ReadFailure> {
+    device_register(&args).await
+}
+
+#[tauri::command]
+pub async fn api_device_prefs_read(args: IdArgs) -> Result<DevicePrefsView, ReadFailure> {
+    device_prefs_read(&args).await
+}
+
+#[tauri::command]
+pub async fn api_device_prefs_write(args: IdBodyArgs) -> Result<DevicePrefsView, ReadFailure> {
+    device_prefs_write(&args).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -614,6 +692,74 @@ mod tests {
             server: server.to_owned(),
             dev_user: Some("alice".into()),
         }
+    }
+
+    #[tokio::test]
+    async fn device_prefs_read_returns_normalized_prefs_and_reports_missing_as_unsaved() {
+        let body =
+            r#"{"prefs":{"inputId":"mic-1","orientation":"sideways","keep":1},"updated_at":7}"#;
+        let (server, task) = one_shot("200 OK", body).await;
+        let view = device_prefs_read(&IdArgs {
+            server,
+            dev_user: Some("alice".into()),
+            id: "01J8".into(),
+        })
+        .await
+        .unwrap();
+        assert!(view.saved);
+        assert_eq!(view.updated_at, Some(7));
+        assert_eq!(view.prefs["inputId"], "mic-1");
+        assert_eq!(
+            view.prefs["orientation"], "auto",
+            "invalid value -> default"
+        );
+        assert_eq!(view.prefs["keep"], 1, "unknown key kept");
+        assert_eq!(
+            task.await.unwrap(),
+            "GET /api/me/devices/01J8/prefs HTTP/1.1"
+        );
+
+        let (server, _task) = one_shot(
+            "404 Not Found",
+            r#"{"code":"not_found","message":"設定がありません"}"#,
+        )
+        .await;
+        let view = device_prefs_read(&IdArgs {
+            server,
+            dev_user: Some("alice".into()),
+            id: "01J8".into(),
+        })
+        .await
+        .unwrap();
+        assert!(!view.saved);
+        assert_eq!(view.updated_at, None);
+        assert_eq!(
+            view.prefs,
+            disnans_client_core::view::settings::device_defaults()
+        );
+    }
+
+    #[tokio::test]
+    async fn device_prefs_write_normalizes_before_sending() {
+        let (server, task) = one_shot(
+            "200 OK",
+            r#"{"prefs":{"hideNavigationBar":true},"updated_at":9}"#,
+        )
+        .await;
+        let view = device_prefs_write(&IdBodyArgs {
+            server,
+            dev_user: Some("alice".into()),
+            id: "01J8".into(),
+            body: serde_json::json!({"hideNavigationBar": "yes", "deviceKind": "tablet"}),
+        })
+        .await
+        .unwrap();
+        assert!(view.saved);
+        assert_eq!(view.updated_at, Some(9));
+        assert_eq!(
+            task.await.unwrap(),
+            "PUT /api/me/devices/01J8/prefs HTTP/1.1"
+        );
     }
 
     #[tokio::test]

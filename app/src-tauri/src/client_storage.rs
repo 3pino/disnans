@@ -6,7 +6,9 @@
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value as JsonValue;
 
-use disnans_client_core::{DraftKey, DraftPlace, LocalStore, ServerUrl, StoreError, StoredValue};
+use disnans_client_core::{
+    DraftKey, DraftPlace, LocalStore, ServerUrl, StoreError, StoredValue, Surface,
+};
 
 /// Android のデータの置き場（アプリのデータの中）。起動時に 1 回だけ決める。デスクトップは使わない（既定の場所を使う）
 #[cfg(target_os = "android")]
@@ -139,6 +141,17 @@ pub struct WriteArgs {
     pub key: StorageKey,
     /// Required: string saves; null explicitly clears. Omitted/undefined is an IPC argument error.
     pub value: JsonValue,
+}
+
+/// この端末（Tauri の surface）の端末 ID。無ければ ULID を作って保存する。
+#[tauri::command]
+pub async fn client_device_id() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = open_store().map_err(store_error)?;
+        store.device_id(Surface::Tauri).map_err(store_error)
+    })
+    .await
+    .map_err(|e| format!("storage task failed: {e}"))?
 }
 
 #[tauri::command]

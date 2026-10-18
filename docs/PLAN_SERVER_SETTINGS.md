@@ -43,9 +43,26 @@
 3. 端末 ID の発行元（クライアント発行の案）。
 4. 移行する設定の範囲。
 
+## V5（Rust 側の実装。CI 待ち）
+
+- **端末 ID**: `LocalStore::device_id(Surface)`。設定ディレクトリの `devices.json`（surface ごとに ULID を 1 つ）。無ければ作って保存し、あれば同じ値を返す。壊れた・不正な ID・未知の schema は直さずエラー（`StoreError::InvalidDeviceId` など）。`is_valid_device_id` は `client-core` から公開（サーバーの検査と同じ）。
+- **REST**（`RestClient`）: `list_devices` `put_device(id, name)` `delete_device(id)` `get_device_prefs(id)` `put_device_prefs(id, prefs)`。
+- **項目の定義**（`crates/client-core/src/view/settings.rs`）: キー・保存先（`user` / `device` / `local`）・型（`Kind`）・既定値を一覧にした `DEFINITIONS`。`device_defaults()`、`normalize_device_prefs(raw)`（型の合わない値は既定、範囲外の数は範囲内に、定義に無いキーは残す）、`definitions_json()`。
+  - 既定値は GUI の今の値と合わせる（`DEFAULT_CALL_SETTINGS` など）。テストで確かめている。
+  - 既存のユーザー prefs（ホットキー・Enter・スラッシュの別名・「＋」メニュー・メッセージの表示）は、TypeScript の正規化のまま。ここには入れていない（形が複雑。後で判断）。
+  - 下書き・プラグインの保存データ・テーマ CSS のキャッシュ・開発用フラグ（`disnans.rustApi` など）は、キーが動的か文字列の値のため、この一覧には入れていない（この端末だけの保存のまま）。
+- **Tauri コマンド**（`app/src-tauri`）:
+  - `client_device_id()` → `string`（この端末（tauri）の端末 ID。無ければ作る）
+  - `api_settings_definitions()` → 項目の定義（`{ key, scope, default, kind }` の配列）
+  - `api_device_register({ server, devUser?, id, name })` → 端末の登録・名前の変更（`PUT /api/me/devices/{id}`）
+  - `api_device_prefs_read({ server, devUser?, id })` → `{ prefs, updatedAt, saved }`。`prefs` は正規化済み。設定が無い（404）ときは既定の値と `saved: false`（端末が未登録の場合も 404 になる。登録してから呼ぶ）。
+  - `api_device_prefs_write({ server, devUser?, id, body })` → `{ prefs, updatedAt, saved: true }`。`body` は設定のオブジェクト。送る前に正規化する。
+- **注意（GUI の移行で扱う）**: 現在の localStorage の値は文字列（例: `disnans.hideNavigationBar` は `'1'`）。サーバーの端末の設定では真偽値（`hideNavigationBar: true`）にする。移行の変換は GUI 側。
+- **未実装**: 端末の一覧・削除の Tauri コマンド（設定画面の作業で追加する）。TUI の端末ごとの設定（ベル・通知対象・画像・タイムゾーン・Enter・密度）は後回し。
+
 ## 残りの作業
 
-1. クライアント側（TypeScript と Rust）の対応づけ。どの設定を端末単位にするか決める。
+1. GUI の対応づけ（TypeScript）: 上の Tauri コマンドを呼ぶ。どの設定を端末単位にするかは分類どおり。
 2. 移行の実装（サーバーに値がなければ、ローカルの値を取り込む）。
 3. 設定画面での端末の一覧と名前の変更、古い端末の削除。
 4. 実機での確認（Windows・Linux・Android で、端末ごとの設定が他の端末に混ざらないこと）。

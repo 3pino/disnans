@@ -255,3 +255,46 @@ fn dedicated_directories_and_all_files_have_private_permissions() {
         }
     }
 }
+
+#[test]
+fn device_id_is_created_once_per_surface_and_survives_reopen() {
+    use disnans_client_core::{Surface, is_valid_device_id};
+
+    let temp = tempfile::tempdir().unwrap();
+    let store = LocalStore::open_at(temp.path()).unwrap();
+    let tauri = store.device_id(Surface::Tauri).unwrap();
+    let tui = store.device_id(Surface::Tui).unwrap();
+    assert!(is_valid_device_id(&tauri));
+    assert_eq!(tauri.len(), 26, "ULID");
+    assert_ne!(tauri, tui, "each surface has its own device");
+
+    // 開き直しても同じ ID（再起動で端末が増えない）
+    let reopened = LocalStore::open_at(temp.path()).unwrap();
+    assert_eq!(reopened.device_id(Surface::Tauri).unwrap(), tauri);
+    assert_eq!(reopened.device_id(Surface::Tui).unwrap(), tui);
+    assert!(temp.path().join("config/devices.json").is_file());
+}
+
+#[test]
+fn invalid_or_corrupt_device_file_is_an_error_and_is_not_replaced() {
+    use disnans_client_core::Surface;
+
+    let temp = tempfile::tempdir().unwrap();
+    let store = LocalStore::open_at(temp.path()).unwrap();
+    let path = temp.path().join("config/devices.json");
+
+    let bad_id = br#"{"schema_version":1,"ids":{"tauri":"not/valid"}}"#;
+    fs::write(&path, bad_id).unwrap();
+    assert!(store.device_id(Surface::Tauri).is_err());
+    assert_eq!(fs::read(&path).unwrap(), bad_id, "not replaced");
+
+    let corrupt = b"{oops";
+    fs::write(&path, corrupt).unwrap();
+    assert!(store.device_id(Surface::Cli).is_err());
+    assert_eq!(fs::read(&path).unwrap(), corrupt, "not replaced");
+
+    let future = br#"{"schema_version":2,"ids":{}}"#;
+    fs::write(&path, future).unwrap();
+    assert!(store.device_id(Surface::Cli).is_err());
+    assert_eq!(fs::read(&path).unwrap(), future, "not replaced");
+}
