@@ -22,8 +22,8 @@ export type Capabilities = {
   sharedStorage: boolean;
   /** 読取・書込・添付を Rust 経路で行う（既定で on。localStorage の "0" で off） */
   rustApi: boolean;
-  /** チャットの経路。"default" は既定で Rust、"opt-in" は "1" のときだけ Rust、"off" は JS のまま */
-  rustChat: 'default' | 'opt-in' | 'off';
+  /** チャットの経路。"default" は既定で Rust（localStorage の "0" で JS に戻る）、"off" は JS のまま */
+  rustChat: 'default' | 'off';
   /** 本体の渡し方（Android の WebView は base64） */
   bodyMode: 'raw' | 'base64';
   /** 通知の出し方（web はブラウザー） */
@@ -117,7 +117,7 @@ function inferred(): Capabilities {
   return {
     sharedStorage: shared,
     rustApi: shared || android,
-    rustChat: shared ? 'default' : android ? 'opt-in' : 'off',
+    rustChat: shared || android ? 'default' : 'off',
     bodyMode: android ? 'base64' : 'raw',
     notifyBackend: !tauri ? 'web' : isAndroid() ? 'android' : 'desktop',
     updater: !tauri ? null : isAndroid() ? 'android' : 'desktop',
@@ -138,7 +138,7 @@ export function capabilities(): Capabilities {
   return {
     sharedStorage: fromRust(raw, 'sharedStorage', isBool, guess.sharedStorage),
     rustApi: fromRust(raw, 'rustApi', isBool, guess.rustApi),
-    rustChat: fromRust(raw, 'rustChat', oneOf('default', 'opt-in', 'off'), guess.rustChat) as Capabilities['rustChat'],
+    rustChat: fromRust(raw, 'rustChat', oneOf('default', 'off'), guess.rustChat) as Capabilities['rustChat'],
     bodyMode: fromRust(raw, 'bodyMode', oneOf('raw', 'base64'), guess.bodyMode) as Capabilities['bodyMode'],
     notifyBackend: fromRust(raw, 'notifyBackend', oneOf('android', 'desktop'), guess.notifyBackend) as Capabilities['notifyBackend'],
     updater: fromRust(raw, 'updater', oneOf('desktop', 'android', null), guess.updater) as Capabilities['updater'],

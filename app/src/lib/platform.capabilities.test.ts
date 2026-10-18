@@ -24,7 +24,7 @@ function rustCaps(os: Os): Capabilities {
   return {
     sharedStorage: shared,
     rustApi: shared || android,
-    rustChat: shared ? 'default' : android ? 'opt-in' : 'off',
+    rustChat: shared || android ? 'default' : 'off',
     bodyMode: android ? 'base64' : 'raw',
     notifyBackend: android ? 'android' : 'desktop',
     updater: android ? 'android' : 'desktop',

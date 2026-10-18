@@ -70,7 +70,7 @@ const EXPECTED: Row[] = [
   { env: 'windows Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: false, sharedStorage: true, devFolder: true, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
   { env: 'linux Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: true, sharedStorage: true, devFolder: true, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
   { env: 'mac Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: true, isMac: true, needsServerSetup: true, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
-  { env: 'android Tauri', isTauri: true, isAndroid: true, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'base64', chat: 'js', deviceKindGuess: 'smartphone' },
+  { env: 'android Tauri', isTauri: true, isAndroid: true, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'base64', chat: 'rust', deviceKindGuess: 'smartphone' },
   { env: 'windows browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
   { env: 'linux browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
   { env: 'mac browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: true, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
@@ -168,7 +168,7 @@ describe('フラグ（localStorage）による上書き', () => {
     }
   });
 
-  it('chat: desktop は "0" で js、Android は "1" で rust（opt-in）', () => {
+  it('chat: desktop と Android は "0" で js（既定は rust）', () => {
     const chat = (name: string, flag: string | null) => {
       stubEnv(ENVS.find((e) => e.name === name)!);
       const base = currentBootEnv();
@@ -177,7 +177,7 @@ describe('フラグ（localStorage）による上書き', () => {
     expect(chat('windows Tauri', '0')).toBe('js');
     expect(chat('windows Tauri', null)).toBe('rust');
     expect(chat('android Tauri', '1')).toBe('rust');
-    expect(chat('android Tauri', null)).toBe('js');
+    expect(chat('android Tauri', null)).toBe('rust');
     expect(chat('android Tauri', '0')).toBe('js');
   });
 });

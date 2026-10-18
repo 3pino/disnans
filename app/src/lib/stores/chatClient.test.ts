@@ -572,3 +572,43 @@ describe('chat over Rust: start and reconnect', () => {
     chat.emitError = null;
   });
 });
+
+// S3（方針）: 切断中の plugin.emit・session.emit は、キューに入れず失敗にして toast。自動では再送しない（JS Socket の queue は Rust 経路にない）
+describe('chat over Rust: plugin and session emits while disconnected (S3)', () => {
+  it('plugin.emit with not_connected shows a toast, is not queued, and is not sent again after reconnect', async () => {
+    chat.emitError = { code: 'not_connected', message: 'x' };
+    client.send({ type: 'plugin.emit', plugin: 'p', name: 'n', payload: null });
+    await flush();
+    expect(chat.emits).toHaveLength(1);
+    expect(ui.toasts.at(-1)?.text).toContain('接続中ではないため送れませんでした');
+    expect(ui.toasts.at(-1)?.kind).toBe('error');
+
+    // つながり直しても、前の plugin.emit は送られない
+    chat.emitError = null;
+    chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME, BOB] });
+    await flush();
+    expect(chat.emits).toHaveLength(1);
+  });
+
+  it('session.emit with not_connected shows a toast, is not queued, and is not sent again after reconnect', async () => {
+    chat.emitError = { code: 'not_connected', message: 'x' };
+    client.send({ type: 'session.emit', session_id: 's1', name: 'n', payload: null });
+    await flush();
+    expect(chat.emits).toHaveLength(1);
+    expect(ui.toasts.at(-1)?.kind).toBe('error');
+
+    chat.emitError = null;
+    chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME, BOB] });
+    await flush();
+    expect(chat.emits).toHaveLength(1);
+    expect(FakeSocket.instances).toHaveLength(0);
+  });
+
+  it('a write_failed plugin.emit is shown as unknown text, still one send only', async () => {
+    chat.emitError = { code: 'write_failed', message: '書けませんでした' };
+    client.send({ type: 'plugin.emit', plugin: 'p', name: 'n', payload: null });
+    await flush();
+    expect(chat.emits).toHaveLength(1);
+    expect(ui.toasts.length).toBeGreaterThan(0);
+  });
+});

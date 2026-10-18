@@ -30,7 +30,7 @@ pub struct Capabilities {
     pub shared_storage: bool,
     /// 読取・書込・添付を Rust 経路で行う（既定で on。flag "0" で off）
     pub rust_api: bool,
-    /// チャットの経路: "default"（既定で Rust）・"opt-in"（"1" のときだけ Rust）・"off"（JS のまま）
+    /// チャットの経路: "default"（既定で Rust。localStorage "disnans.rustChat"="0" で JS に戻る）・"off"（JS のまま）
     pub rust_chat: &'static str,
     /// 本体の渡し方: "raw"（バイト列）・"base64"（Android の WebView）
     pub body_mode: &'static str,
@@ -68,10 +68,9 @@ pub fn capabilities_for(os: &str, desktop: bool, android: bool) -> Capabilities 
     Capabilities {
         shared_storage,
         rust_api: shared_storage || android,
-        rust_chat: if shared_storage {
+        // Android は既定で Rust（S1）。JS Socket と同じ uid で動くので、背景の条件は同じ
+        rust_chat: if shared_storage || android {
             "default"
-        } else if android {
-            "opt-in"
         } else {
             "off"
         },
@@ -200,7 +199,10 @@ mod tests {
 
         let android = capabilities_for("android", false, true);
         assert!(android.rust_api && !android.shared_storage && !android.dev_folder);
-        assert_eq!((android.rust_chat, android.body_mode), ("opt-in", "base64"));
+        assert_eq!(
+            (android.rust_chat, android.body_mode),
+            ("default", "base64")
+        );
         assert_eq!(android.updater, Some("android"));
         assert_eq!(android.native_screen, Some("android"));
         assert!(android.native_audio_output && android.background_service);

@@ -77,11 +77,11 @@ class Client {
   start(chat: ChatTransport | null = bootChatTransport()): void {
     if (this.socket || this.chat) return;
     page.init();
-    // Rust 経路（デスクトップ）では JS Socket を作らない。接続・ping・再接続・通話の送受信はすべて chat 側
+    // Rust 経路（デスクトップ・Android）では JS Socket を作らない。接続・ping・再接続・通話の送受信はすべて chat 側
     if (chat) {
       this.chat = chat;
       void this.startChat();
-      // Android（opt-in の rust チャットのみ）: 背景から戻った・ネットワークが変わったら、接続を作り直す。
+      // Android（rust チャット。既定）: 背景から戻った・ネットワークが変わったら、接続を作り直す。
       // chat_reconnect は接続中に何もしないので、chat_start（強制の作り直し）を使う。新しい接続の hello で履歴も読み直す
       if (isTauri() && isAndroid() && typeof window !== 'undefined') {
         window.addEventListener('online', () => this.restartChat());
@@ -200,9 +200,11 @@ class Client {
 
   /**
    * まだ送り出せていないバイト数（通話の映像の間引きに使う）。
-   * 通話の音声は JS Socket から出るので、その bufferedAmount。Rust 経路の chat_emit は送信中のぶんを足す（概算）
+   * Rust 経路（デスクトップ・Android）では、送信中の chat_emit のバイト数だけ（JS Socket を使わない。S5）。
+   * ブラウザーの開発用 Socket のときは、その bufferedAmount を足す
    */
   get sendBuffered(): number {
+    if (this.chat) return this.chatEmitBytes;
     return (this.socket?.bufferedAmount ?? 0) + this.chatEmitBytes;
   }
 

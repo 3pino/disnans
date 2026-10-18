@@ -99,20 +99,20 @@ describe('chat mode selection', () => {
     expect(selectChatMode({ flag: '1', desktop: false })).toBe('js');
   });
 
-  it('Android: opt-in only ("1"); null and "0" stay js (the background disconnect is not yet explained)', () => {
-    expect(selectChatMode({ flag: null, desktop: false, android: true })).toBe('js');
-    expect(selectChatMode({ flag: '0', desktop: false, android: true })).toBe('js');
+  it('Android (S1): default on; only "0" turns it off; other values are not "0", so still on', () => {
+    expect(selectChatMode({ flag: null, desktop: false, android: true })).toBe('rust');
     expect(selectChatMode({ flag: '1', desktop: false, android: true })).toBe('rust');
-    expect(selectChatMode({ flag: 'yes', desktop: false, android: true })).toBe('js');
+    expect(selectChatMode({ flag: '0', desktop: false, android: true })).toBe('js');
+    expect(selectChatMode({ flag: 'yes', desktop: false, android: true })).toBe('rust');
   });
 
-  it('the full matrix: desktop default on, Android opt-in, browser and macOS always js', () => {
+  it('the full matrix: desktop and Android default on, browser and macOS always js', () => {
     const rows: [string | null, boolean, boolean, 'rust' | 'js'][] = [
       // flag, desktop, android, expected
       [null, true, false, 'rust'],
       ['1', true, false, 'rust'],
       ['0', true, false, 'js'],
-      [null, false, true, 'js'],
+      [null, false, true, 'rust'],
       ['1', false, true, 'rust'],
       ['0', false, true, 'js'],
       ['1', false, false, 'js'],

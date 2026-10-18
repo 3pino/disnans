@@ -76,18 +76,15 @@ export function selectWriteApi(env: ReadApiEnv): WriteApiChoice {
 
 /**
  * チャットの経路（契約 §8.1）。
- * - デスクトップ（Windows/Linux の Tauri）: "disnans.rustChat" が "0" でなければ rust（既定 on）。
- * - Android の Tauri: opt-in のみ。"disnans.rustChat" が "1" のときだけ rust（既定 off。背景中の切断を実機で切り分けるまで）。
- * - それ以外（ブラウザ・macOS など）は js。
+ * - デスクトップ（Windows/Linux の Tauri）と Android の Tauri: "disnans.rustChat" が "0" でなければ rust（既定 on）。
+ *   Android は S1 で既定を rust に変えた（JS Socket と同じ uid で動くため、背景の条件は同じ）。"0" で JS に戻せる。
+ * - それ以外（ブラウザ・macOS など）は js（ブラウザーの開発用 Socket は残す）。
+ * 方針の値（capabilities.rustChat）があれば、それに従う。無いときは desktop と android から決める。
  */
-export function selectChatMode(env: { flag: string | null; desktop: boolean; android?: boolean; rustChat?: 'default' | 'opt-in' | 'off' }): 'rust' | 'js' {
-  // 方針の値（capabilities.rustChat）があれば、それに従う
+export function selectChatMode(env: { flag: string | null; desktop: boolean; android?: boolean; rustChat?: 'default' | 'off' }): 'rust' | 'js' {
   if (env.rustChat !== undefined) {
-    if (env.rustChat === 'default') return env.flag !== '0' ? 'rust' : 'js';
-    if (env.rustChat === 'opt-in') return env.flag === '1' ? 'rust' : 'js';
-    return 'js';
+    return env.rustChat === 'default' && env.flag !== '0' ? 'rust' : 'js';
   }
-  if (env.desktop) return rustEnabled(env.flag, true) ? 'rust' : 'js';
-  if (env.android) return env.flag === '1' ? 'rust' : 'js';
+  if (env.desktop || env.android) return env.flag !== '0' ? 'rust' : 'js';
   return 'js';
 }

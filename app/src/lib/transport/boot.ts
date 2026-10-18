@@ -41,7 +41,7 @@ export function bootChatTransport(
     flag: string | null;
     desktop: boolean;
     android?: boolean;
-    rustChat?: 'default' | 'opt-in' | 'off';
+    rustChat?: 'default' | 'off';
     invoke: typeof tauriInvoke;
     context: BridgeContext;
     log?: (m: string) => void;

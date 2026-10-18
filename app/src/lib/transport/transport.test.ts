@@ -61,7 +61,7 @@ describe('read transport selection', () => {
     expect(selectWriteApi({ ...base, desktop: false, android: false, flag: null }).kind).toBe('http');
   });
 
-  it('chat stays JS on Android (the chat mode uses desktop only)', () => {
+  it('chat stays JS outside Tauri (neither desktop nor Android)', () => {
     expect(selectChatMode({ flag: null, desktop: false })).toBe('js');
   });
 
