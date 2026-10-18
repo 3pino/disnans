@@ -129,7 +129,7 @@
   }
   .setup-error {
     color: var(--danger);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   .setup-card > :global(.btn) {
     height: 42px;

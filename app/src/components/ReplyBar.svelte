@@ -41,7 +41,7 @@
     background: var(--surface);
     border: 1px solid var(--border);
     color: var(--text-muted);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   .reply-bar > :global(.icon-btn) {
     width: 28px;

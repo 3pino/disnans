@@ -227,7 +227,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   .call-person {
     position: relative;

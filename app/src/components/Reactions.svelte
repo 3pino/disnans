@@ -50,7 +50,7 @@
     border-radius: 13px;
     border: 1px solid var(--border);
     background: var(--surface);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   .reaction-pill:hover {
     border-color: var(--text-muted);

@@ -583,7 +583,7 @@
     border-radius: var(--radius-xs);
     background: var(--surface-2);
     color: var(--text-muted);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
     line-height: 15px;
     letter-spacing: 0.04em;

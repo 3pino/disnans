@@ -229,7 +229,7 @@
   .plugin-settings-empty,
   .plugin-settings-small {
     margin: 0;
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   .plugin-settings-item {
     padding: var(--space-5) 0;
@@ -268,14 +268,14 @@
   .plugin-settings-warning {
     margin: var(--space-3) 0 0;
     color: var(--warning);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     overflow-wrap: anywhere;
   }
 
   .plugin-settings-error {
     margin: var(--space-3) 0 0;
     color: var(--danger);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     -webkit-user-select: text;

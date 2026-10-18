@@ -116,7 +116,7 @@
   }
   .theme-settings-small {
     margin: 0;
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   .theme-settings-item {
     padding: var(--space-5) 0;
@@ -152,7 +152,7 @@
   .theme-settings-error {
     margin: var(--space-3) 0 0;
     color: var(--danger);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }

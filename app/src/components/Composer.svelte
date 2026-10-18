@@ -560,7 +560,7 @@
   .composer-menu-empty {
     margin: 0;
     padding: var(--space-4) var(--space-5);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   .composer-send {
     position: relative;
@@ -637,8 +637,8 @@
     border-radius: var(--radius-pill);
     background: color-mix(in oklch, var(--bg) 80%, transparent);
     color: var(--text);
-    font-size: var(--fs-2xs);
-    line-height: var(--lh-normal);
+    font-size: var(--fs-xs);
+    line-height: var(--lh-body);
     pointer-events: none;
   }
   .composer-upload .composer-upload-preview,

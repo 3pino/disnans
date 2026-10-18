@@ -35,7 +35,7 @@
 <style>
   .enter-key-settings-note {
     margin: 0;
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   /* 「改行・送信・なし」の3つを、窮屈にならない幅で並べる（名前の欄とは、狭いときは比率で分ける） */
   :global(.enter-key-settings-row .setting-row-control) {

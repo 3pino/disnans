@@ -225,7 +225,7 @@
     gap: var(--space-5);
     padding: var(--space-7);
     color: var(--text-muted);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     text-align: center;
   }
   .search-results-error {

@@ -279,7 +279,7 @@
     place-items: center;
     padding: var(--space-7);
     color: var(--text-muted);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   .message-list-error {
     display: flex;

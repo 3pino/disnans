@@ -93,6 +93,6 @@
   }
   .plugin-settings-page-empty {
     margin: 0;
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
 </style>

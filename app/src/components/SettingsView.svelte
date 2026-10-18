@@ -619,7 +619,7 @@
     min-width: 0;
   }
   .settings-small-text {
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     margin: 0;
   }
   .settings-server-line {
@@ -632,7 +632,7 @@
   }
   .settings-display-name-error {
     color: var(--danger);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     margin: var(--space-3) 0 0;
   }
   /* バージョンの行は、名前を控えめな色にする */
@@ -641,7 +641,7 @@
   }
   .settings-version {
     font-family: var(--mono);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   /* バージョンの右に、アップデートを確認するボタン */
   .settings-version-control {

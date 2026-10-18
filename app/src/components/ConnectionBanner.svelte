@@ -36,7 +36,7 @@
     padding: var(--space-3) var(--space-7);
     background: color-mix(in oklch, var(--warning) 16%, var(--bg));
     color: var(--warning);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     font-weight: var(--fw-medium);
     border-bottom: 1px solid color-mix(in oklch, var(--warning) 40%, transparent);
   }
@@ -46,6 +46,6 @@
     background: none;
     color: inherit;
     text-decoration: underline;
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
 </style>

@@ -41,6 +41,6 @@
   .plugin-setting-tab-error {
     margin: 0;
     color: var(--danger);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
 </style>

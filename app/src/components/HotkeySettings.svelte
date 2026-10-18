@@ -223,12 +223,12 @@
 <style>
   .hotkey-settings-note {
     margin: 0;
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   /* ほかのコマンドと同じキーになっているときの警告 */
   .hotkey-settings-command > :global(.hotkey-settings-conflict) {
     margin-top: var(--space-2);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   /* 行の右にキーを並べる。各キーの中の × で外す */
   .hotkey-settings-command :global(.hotkey-settings-row .setting-row-control) {
@@ -258,7 +258,7 @@
   }
   .hotkey-settings-none,
   .hotkey-settings-recording {
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   /* 記録中は、キーを待っていることがわかるようにアクセントの色にする */
   .hotkey-settings-recording {
@@ -276,14 +276,14 @@
     align-items: center;
     gap: var(--space-1);
     margin: var(--space-1) 0 0 var(--space-2);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
   }
   .hotkey-settings-slash-form :global(.hotkey-settings-slash-input) {
     width: 160px;
   }
   .hotkey-settings-slash-error {
     margin: var(--space-1) 0 0 var(--space-2);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     color: var(--danger);
   }
 </style>

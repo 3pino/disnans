@@ -318,7 +318,7 @@
     outline: none;
     background: transparent;
     padding: var(--space-4) var(--space-2);
-    line-height: var(--lh-normal);
+    line-height: var(--lh-body);
     max-height: 40vh;
     scrollbar-width: thin;
   }
@@ -371,7 +371,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     pointer-events: none;
     z-index: 20;
   }

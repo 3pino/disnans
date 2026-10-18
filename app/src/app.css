@@ -40,10 +40,8 @@
   --radius-pill: 999px;
 
   /* 文字サイズ */
-  --fs-2xs: 10px;
-  --fs-xs: 11px; /* バッジ・ナビのラベル */
-  --fs-sm: 12px; /* 小見出し・補足 */
-  --fs-md: 13px; /* 説明文 */
+  --fs-xs: 10px; /* バッジ・ナビのラベル */
+  --fs-sm: 12px; /* 小見出し・補足・説明文 */
   --fs-base: 14px; /* 設定の行・トースト */
   --fs-body: 15px; /* 本文 */
   --fs-lg: 16px; /* モーダルのタイトルなど */
@@ -55,7 +53,6 @@
   --fw-bold: 700;
   /* 行の高さ */
   --lh-tight: 1.4;
-  --lh-normal: 1.5;
   --lh-body: 1.55;
 
   /* 余白（gap・padding・margin） */
@@ -365,7 +362,7 @@ a {
   color: var(--text);
   font-family: var(--mono);
   font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
+  line-height: var(--lh-body);
   white-space: nowrap;
 }
 
@@ -515,7 +512,7 @@ a {
   border-radius: 5px;
   background: transparent;
   color: var(--text-muted);
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
 }
 .segmented .segmented-option.segmented-option-selected {
@@ -642,7 +639,7 @@ a {
 }
 .setting-row-description {
   color: var(--text-muted);
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
 }
 .setting-row-control {
   display: flex;

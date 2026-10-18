@@ -141,13 +141,13 @@ function hueOf(id: string): number {
 
 | 種別 | トークン |
 | --- | --- |
-| 文字サイズ | `--fs-2xs` 10 / `--fs-xs` 11（バッジ・ナビのラベル）/ `--fs-sm` 12（小見出し・補足）/ `--fs-md` 13（説明文）/ `--fs-base` 14（設定の行・トースト）/ `--fs-body` 15（本文）/ `--fs-lg` 16（モーダルのタイトルなど）/ `--fs-xl` 20（大見出し）/ `--fs-2xl` 24 |
+| 文字サイズ | `--fs-xs` 10（バッジ・ナビのラベル）/ `--fs-sm` 12（小見出し・補足・説明文）/ `--fs-base` 14（設定の行・トースト）/ `--fs-body` 15（本文）/ `--fs-lg` 16（モーダルのタイトルなど）/ `--fs-xl` 20（大見出し）/ `--fs-2xl` 24 |
 | 太さ | `--fw-medium` 500 / `--fw-semibold` 600 / `--fw-bold` 700 |
-| 行の高さ | `--lh-tight` 1.4 / `--lh-normal` 1.5 / `--lh-body` 1.55（本文） |
+| 行の高さ | `--lh-tight` 1.4 / `--lh-body` 1.55（本文） |
 | 余白 | `--space-1` 2 / `-2` 4 / `-3` 6 / `-4` 8 / `-5` 10 / `-6` 12 / `-7` 16 / `-8` 24（px。gap・padding・margin 用） |
 | 角丸 | `--radius-xs` 4 / `--radius-sm` 6（ボタン・入力欄）/ `--radius` 10（メニュー・カード）/ `--radius-lg` 14（モーダル・入力カード）/ `--radius-xl` 16（吹き出し）/ `--radius-pill` 999。丸（アバター・バッジ）は `50%` |
 
-主な使い分け: 本文 `--fs-body` + `--lh-body`、設定の行 `--fs-base`（説明文 `--fs-md`）、小見出し `--fs-sm` + `--fw-bold`（セクション見出しは字間 0.06em）、キー表示 `--mono` + `--fs-sm`。
+主な使い分け: 本文 `--fs-body` + `--lh-body`、設定の行 `--fs-base`（説明文 `--fs-sm`）、小見出し `--fs-sm` + `--fw-bold`（セクション見出しは字間 0.06em）、キー表示 `--mono` + `--fs-sm`。
 
 高さの基準（直書き）: ボタン 36px / 入力欄 40px / アイコンボタン 34px / トグル 38×22 / セグメント内ボタン 32px。画面端の左右余白は `--space-7`（16px）。
 
@@ -180,9 +180,9 @@ function hueOf(id: string): number {
 | 小見出し | `.field-label` | 入力欄の上に置く 12px/700 の `--text-muted` |
 | トグル | `.toggle`（`.toggle-on`） | 38×22・角丸 11px。OFF は `--border` 地、ON は `--accent` 地。つまみは 16px の `--bg` 色の丸で、ON で 16px 右へ（0.12s） |
 | スライダー | `.slider` / `-input` / `-value` | トラック 4px（`--border`）、つまみ 16px の `--accent` 丸。値は 12px・等幅数字・右寄せ |
-| セグメント | `.segmented` / `-option`（`-selected`） | 地 `--surface-2` の枠、内側 4px。選択中の項目は `--bg` 地 + `--text`、他は `--text-muted`。高さ 32px・13px/600 |
-| タブバー | `.nav-bar` / `-item`（`-selected`） | 下タブ: 上線 1px、地 `--surface`、アイコン + 11px ラベルを等分。選択は `--accent`。`.nav-bar-side` で幅 76px の左縦並び（右線 1px） |
-| バッジ | `.badge` | 高さ 18px・min-width 18px・丸・`--accent` 地・11px/700 |
+| セグメント | `.segmented` / `-option`（`-selected`） | 地 `--surface-2` の枠、内側 4px。選択中の項目は `--bg` 地 + `--text`、他は `--text-muted`。高さ 32px・12px/600 |
+| タブバー | `.nav-bar` / `-item`（`-selected`） | 下タブ: 上線 1px、地 `--surface`、アイコン + 10px ラベルを等分。選択は `--accent`。`.nav-bar-side` で幅 76px の左縦並び（右線 1px） |
+| バッジ | `.badge` | 高さ 18px・min-width 18px・丸・`--accent` 地・10px/700 |
 | 未読の点 | `.nav-bar-item-alert` | 9px の `--danger` 丸 + `0 0 0 2px var(--surface)` の縁取り |
 | キー表示 | `.kbd` | 枠 1px（下だけ 2px）・`--surface-2` 地・等幅 12px |
 | 区切り線 | `.divider` | `border-top: 1px solid var(--border)` |

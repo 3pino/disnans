@@ -76,8 +76,8 @@
     border: 1px solid var(--border);
     overflow-x: auto;
     font-family: var(--mono);
-    font-size: var(--fs-md);
-    line-height: var(--lh-normal);
+    font-size: var(--fs-sm);
+    line-height: var(--lh-body);
     white-space: pre;
     scrollbar-width: thin;
   }
