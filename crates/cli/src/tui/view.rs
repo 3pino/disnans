@@ -286,7 +286,7 @@ fn row_line(
             Style::new().fg(Color::DarkGray),
         )),
         kind => {
-            let (lead, rest) = row.text.split_at(row.prefix.min(row.text.len()));
+            let (lead, _) = row.text.split_at(row.prefix.min(row.text.len()));
             let lead = if hide_icon {
                 blank_first_cells(lead, 2)
             } else {

@@ -211,8 +211,11 @@ fn trim_end(mut cells: Vec<Cell>) -> Vec<Cell> {
     cells
 }
 
+/// 表示行 1 つ（文字列と、装飾の範囲。範囲は文字列内のバイト位置）。
+pub type LaidLine = (String, Vec<(usize, usize, Deco)>);
+
 /// 論理行を、幅 `inner` 桁の表示行（文字列と、装飾の範囲）へ。範囲は文字列内のバイト位置。
-pub fn layout_line(line: &MdLine, inner: usize) -> Vec<(String, Vec<(usize, usize, Deco)>)> {
+pub fn layout_line(line: &MdLine, inner: usize) -> Vec<LaidLine> {
     let lead = width_of(&line.first).max(width_of(&line.rest));
     let avail = inner.saturating_sub(lead).max(1);
     wrap_cells(&line.content, avail)

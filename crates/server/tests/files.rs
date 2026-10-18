@@ -295,8 +295,11 @@ async fn attachments_follow_their_message() {
         message_id: reply.id.clone(),
     })
     .await;
-    bob.recv_until(|e| matches!(e, ServerEvent::MessageDeleted { .. }))
-        .await;
+    // bob は root の削除も受け取っているので、返信の削除を待つ
+    bob.recv_until(
+        |e| matches!(e, ServerEvent::MessageDeleted { message_id } if *message_id == reply.id),
+    )
+    .await;
     {
         let id = &bobs.id;
         let res = server

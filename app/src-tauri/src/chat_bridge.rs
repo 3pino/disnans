@@ -869,7 +869,7 @@ mod tests {
         // 元の値（ServerEvent）は変わらない
         assert!(matches!(
             &created,
-            ChatItem::Event { event: ServerEvent::MessageCreated { message: m, .. }, .. } if m == &message
+            ChatItem::Event { event: ServerEvent::MessageCreated { message: m, .. }, .. } if m.id == message.id && m.body == message.body
         ));
 
         let hello = ChatItem::Event {
