@@ -54,12 +54,7 @@ async fn is_read(state: &SharedState, user: &User, n: &Notification) -> bool {
         return false;
     };
     match reads::get(&state.pool, user).await {
-        Ok(marker) => {
-            let position = marker
-                .map(|m| m.last_read_id)
-                .unwrap_or_else(|| reads::baseline(user));
-            message_id.as_str() <= position.as_str()
-        }
+        Ok(marker) => message_id.as_str() <= marker.last_read_id.as_str(),
         Err(err) => {
             tracing::warn!("既読の位置を読めないので再送しません: {err}");
             true

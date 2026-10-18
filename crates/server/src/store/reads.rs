@@ -18,7 +18,6 @@ pub fn baseline(user: &User) -> String {
 
 #[derive(sqlx::FromRow)]
 struct MarkerRow {
-    scope: String,
     last_read_id: String,
     unread_count: i64,
 }
@@ -32,41 +31,25 @@ impl From<MarkerRow> for ReadMarker {
     }
 }
 
-/// 既読の位置と未読数（メインチャットの 1 件）。
+/// メインチャットの既読の位置と未読数。
 /// 未読数は、既読の位置より新しい他人のメッセージの数（削除したものは行ごと消えるので数えない）。
-async fn query(pool: &SqlitePool, user: &User) -> sqlx::Result<Vec<ReadMarker>> {
-    let rows: Vec<MarkerRow> = sqlx::query_as(
-        "WITH scopes (scope) AS (
-             SELECT ''
-         ),
-         cursors AS (
-             SELECT s.scope, MAX(COALESCE(r.last_read_id, ''), ?) AS last_read_id
-             FROM scopes s
-             LEFT JOIN read_markers r ON r.user_id = ? AND r.scope = s.scope
-         )
-         SELECT c.scope, c.last_read_id,
+pub async fn get(pool: &SqlitePool, user: &User) -> sqlx::Result<ReadMarker> {
+    let row: MarkerRow = sqlx::query_as(
+        "SELECT c.last_read_id,
                 (SELECT COUNT(*) FROM messages m
                  WHERE m.id > c.last_read_id
                    AND m.author_id != ?) AS unread_count
-         FROM cursors c
-         ORDER BY c.scope",
+         FROM (SELECT MAX(COALESCE(
+                   (SELECT last_read_id FROM read_markers WHERE user_id = ? AND scope = ?), ''), ?)
+               AS last_read_id) c",
     )
+    .bind(&user.id)
+    .bind(&user.id)
+    .bind(MAIN)
     .bind(baseline(user))
-    .bind(&user.id)
-    .bind(&user.id)
-    .fetch_all(pool)
+    .fetch_one(pool)
     .await?;
-    Ok(rows.into_iter().map(Into::into).collect())
-}
-
-/// メインチャットの既読の位置と未読数（一覧）。
-pub async fn list(pool: &SqlitePool, user: &User) -> sqlx::Result<Vec<ReadMarker>> {
-    query(pool, user).await
-}
-
-/// メインチャットの既読の位置と未読数。
-pub async fn get(pool: &SqlitePool, user: &User) -> sqlx::Result<Option<ReadMarker>> {
-    Ok(query(pool, user).await?.pop())
+    Ok(row.into())
 }
 
 /// 既読の位置を進める。いまの位置より古い ID なら何もしない（戻さない）。

@@ -75,6 +75,16 @@ pub fn message_line(app: &App) -> Option<(String, Color)> {
         }
         _ => {}
     }
+    if let Some((title, body)) = &app.alert {
+        return Some((
+            format!(
+                "通知: {} {}",
+                sanitize::inline(title),
+                sanitize::inline(body)
+            ),
+            Color::Cyan,
+        ));
+    }
     if let Some(notice) = &app.notice {
         return Some((notice.clone(), Color::Yellow));
     }

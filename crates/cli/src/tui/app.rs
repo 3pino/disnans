@@ -99,6 +99,13 @@ pub enum NetEvent {
     },
     /// 下書きを保存できなかった。
     DraftError(String),
+    /// サーバーからの通知（メンション・返信など）。
+    Notify {
+        title: String,
+        body: String,
+        message_id: Option<String>,
+        replayed: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +125,8 @@ pub enum Effect {
         before: String,
     },
     Refetch,
+    /// 端末のベルを鳴らす（通知）。
+    Bell,
     /// 入力の変化。呼び出し側がまとめて（遅らせて）保存してよい。
     SaveDraft(Option<String>),
     /// 今すぐ保存（送信確定後の削除・終了時）。
@@ -176,6 +185,12 @@ pub struct App {
     pub send: SendState,
     /// 一時的な通知（次の操作で消える）。
     pub notice: Option<String>,
+    /// サーバーからの通知（タイトル, 本文）。次の操作で消える。
+    pub alert: Option<(String, String)>,
+    /// 通知でベルを鳴らすか（`notifyBackend == "bell"`）。
+    pub bell: bool,
+    /// 表示済みの通知のメッセージ ID（再接続での再送を二重に出さない）。
+    seen_notify: Vec<String>,
     pub should_quit: bool,
     /// 表示に使うタイムゾーン。`None` は UTC（`Z` 付き）。
     pub zone: Option<TimeZone>,
@@ -216,6 +231,9 @@ impl App {
             conn: ConnState::Connecting,
             send: SendState::Idle,
             notice: None,
+            alert: None,
+            bell: false,
+            seen_notify: Vec::new(),
             should_quit: false,
             zone,
             viewport: (80, 20),
@@ -382,6 +400,7 @@ impl App {
 
     fn clear_transient(&mut self) {
         self.notice = None;
+        self.alert = None;
         self.confirm_resend = false;
     }
 
@@ -581,6 +600,27 @@ impl App {
             NetEvent::Prefs(keys) => self.keymap.enter_keys = keys,
             NetEvent::SendResult { client_id, result } => {
                 self.on_send_result(&client_id, result, effects);
+            }
+            NetEvent::Notify {
+                title,
+                body,
+                message_id,
+                ..
+            } => {
+                if let Some(id) = &message_id {
+                    if self.seen_notify.contains(id) {
+                        return;
+                    }
+                    self.seen_notify.push(id.clone());
+                    if self.seen_notify.len() > 128 {
+                        self.seen_notify.remove(0);
+                    }
+                }
+                // 再接続での再送分も、まだ見ていなければ出す（文言はサーバーのまま。表示時に無害化する）。
+                self.alert = Some((title, body));
+                if self.bell {
+                    effects.push(Effect::Bell);
+                }
             }
             NetEvent::DraftError(reason) => {
                 self.notice = Some(format!(
@@ -835,6 +875,27 @@ mod tests {
         );
         assert_eq!(ids(&app), ["a", "b", "c"]);
         assert_eq!(app.messages[2].body, "again");
+    }
+
+    #[test]
+    fn notify_shows_an_alert_rings_the_bell_once_per_message_and_clears_on_key() {
+        let mut app = make();
+        app.bell = true;
+        let notify = |id: &str, replayed: bool| NetEvent::Notify {
+            title: "題".into(),
+            body: "本文".into(),
+            message_id: Some(id.into()),
+            replayed,
+        };
+        let effects = app.update(Event::Net(notify("m1", false)));
+        assert_eq!(effects, [Effect::Bell]);
+        assert_eq!(app.alert, Some(("題".into(), "本文".into())));
+        assert!(app.update(Event::Net(notify("m1", true))).is_empty());
+        app.bell = false;
+        assert!(app.update(Event::Net(notify("m2", false))).is_empty());
+        assert!(app.alert.is_some());
+        app.update(Event::Key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)));
+        assert!(app.alert.is_none());
     }
 
     #[test]

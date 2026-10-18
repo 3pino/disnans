@@ -57,6 +57,11 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
         Box::new(new_client_id),
     );
     app.notice = draft_warning;
+    // 通知の方針は共通の表（client-core の platform）から読む。
+    app.bell = disnans_client_core::terminal_info(disnans_client_core::Surface::Tui)
+        .capabilities
+        .notify_backend
+        == "bell";
 
     let guard = TerminalGuard::enter().map_err(CliError::Io)?;
     app.keymap.enhanced = guard.enhanced_keys;
@@ -151,6 +156,7 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
                 Effect::LoadOlder { before } => {
                     spawn_history(&rest, &tx, Some(before), HistoryPurpose::Older, PAGE_SIZE);
                 }
+                Effect::Bell => write_raw(b"\x07"),
                 Effect::Refetch => {
                     spawn_history(&rest, &tx, None, HistoryPurpose::Refetch, REFETCH_SIZE);
                 }
@@ -423,6 +429,18 @@ fn to_net_event(item: WatchItem) -> Option<NetEvent> {
                 reactions,
             },
             ServerEvent::UserUpdated { user } => NetEvent::UserUpdated(user),
+            ServerEvent::Notify {
+                title,
+                body,
+                message_id,
+                replayed,
+                ..
+            } => NetEvent::Notify {
+                title,
+                body,
+                message_id,
+                replayed,
+            },
             ServerEvent::PrefsUpdated { prefs } => NetEvent::Prefs(EnterKeys::from_prefs(&prefs)),
             _ => return None,
         },

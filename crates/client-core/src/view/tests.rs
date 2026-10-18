@@ -1,6 +1,4 @@
-use disnans_shared::{
-    Attachment, BotInfo, Message, MessageCard, Reaction, ReplyPreview, ThreadInfo, User,
-};
+use disnans_shared::{Attachment, BotInfo, Message, MessageCard, Reaction, ReplyPreview, User};
 
 use super::*;
 
@@ -65,7 +63,7 @@ fn body_line(row: &Row) -> Option<&Vec<Segment>> {
 
 fn head_at(row: &Row) -> Option<&Head> {
     match row {
-        Row::Message { head, .. } => head.as_ref(),
+        Row::Message { head, .. } => head.as_deref(),
         Row::Separator { .. } => None,
     }
 }
@@ -505,7 +503,7 @@ fn the_json_shape_is_camel_case_with_type_tags() {
     let value = serde_json::to_value(&rows[1]).unwrap();
     assert_eq!(value["type"], "message");
     assert_eq!(value["messageId"], "m1");
-    assert_eq!(value["head"]["own"], true);
+    assert_eq!(value["head"]["own"], json!(true));
     assert_eq!(value["head"]["avatar"]["kind"], "own");
     assert_eq!(value["line"]["kind"], "body");
     assert_eq!(value["line"]["segments"][0]["type"], "text");

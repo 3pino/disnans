@@ -11,6 +11,7 @@
 //! 日付の区切り → （同じ人の続きでなければ）先頭行に投稿者の頭（`head`）→ 本文の行 → メタ（bot・返信・カード・添付・リアクション・編集）。
 
 mod calendar;
+pub mod markdown;
 
 use std::collections::HashMap;
 
@@ -169,10 +170,11 @@ pub enum Line {
 pub enum Row {
     /// 日付の区切り（その日の最初の発言の前に 1 つ）
     Separator { day: Day },
-    /// メッセージの 1 行。`head` は、そのメッセージの先頭行だけに付く（同じ人の続きなら、どの行にも付かない）
+    /// メッセージの 1 行。`head` は、そのメッセージの先頭行だけに付く（同じ人の続きなら、どの行にも付かない）。
+    /// 大きい値は箱に入れる（`Row` の変種の大きさをそろえる。JSON の形は変わらない）
     Message {
         message_id: String,
-        head: Option<Head>,
+        head: Option<Box<Head>>,
         line: Line,
     },
 }
@@ -259,7 +261,7 @@ fn rows_of(message: &Message, continuation: bool, ctx: &Context<'_>) -> Vec<Row>
         .map(|(i, line)| Row::Message {
             message_id: message.id.clone(),
             head: if i == 0 && !continuation {
-                Some(head.clone())
+                Some(Box::new(head.clone()))
             } else {
                 None
             },
@@ -416,22 +418,23 @@ fn segments_of(line: &str, ctx: &Context<'_>) -> Vec<Segment> {
     let mut i = 0;
     let bytes = line.as_bytes();
     while i + 1 < bytes.len() {
-        if bytes[i] == b'<' && bytes[i + 1] == b'@' {
-            if let Some((id, end)) = mention_at(line, i) {
-                if text_start < i {
-                    out.push(Segment::Text {
-                        text: line[text_start..i].to_owned(),
-                    });
-                }
-                out.push(Segment::Mention {
-                    user_id: id.to_owned(),
-                    name: ctx.users.name(id),
-                    me: ctx.me == Some(id),
+        if bytes[i] == b'<'
+            && bytes[i + 1] == b'@'
+            && let Some((id, end)) = mention_at(line, i)
+        {
+            if text_start < i {
+                out.push(Segment::Text {
+                    text: line[text_start..i].to_owned(),
                 });
-                i = end;
-                text_start = end;
-                continue;
             }
+            out.push(Segment::Mention {
+                user_id: id.to_owned(),
+                name: ctx.users.name(id),
+                me: ctx.me == Some(id),
+            });
+            i = end;
+            text_start = end;
+            continue;
         }
         i += 1;
     }
