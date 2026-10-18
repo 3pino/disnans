@@ -1,5 +1,5 @@
-import { getItem, setItem } from '../storage';
-import { orientationLock, nativeOrientation, normalizeOrientationMode, ORIENTATION_KEY, type OrientationMode } from '../orientation';
+import { orientationLock, nativeOrientation, type OrientationMode } from '../orientation';
+import { deviceSettings } from './deviceSettings.svelte';
 import { setScreenOrientation } from '../systemBars';
 import { ui } from './ui.svelte';
 
@@ -8,7 +8,10 @@ import { ui } from './ui.svelte';
  * 全画面の検知: 写真の全画面（ui.lightbox）と、プラグインの没入モード（ui.setImmersive が成功したとき）。
  */
 class Orientation {
-  mode = $state<OrientationMode>(normalizeOrientationMode(getItem(ORIENTATION_KEY)));
+  /** 画面の向きの設定（この端末だけ。deviceSettings の値） */
+  get mode(): OrientationMode {
+    return deviceSettings.orientation;
+  }
   /** プラグインが没入モード（全画面の画面共有など）にしているか */
   immersive = $state(false);
   private started = false;
@@ -18,8 +21,7 @@ class Orientation {
   readonly lock = $derived(orientationLock(this.mode, this.mediaFullscreen));
 
   set(mode: OrientationMode): void {
-    this.mode = mode;
-    setItem(ORIENTATION_KEY, mode);
+    deviceSettings.set('orientation', mode);
     this.push();
   }
 

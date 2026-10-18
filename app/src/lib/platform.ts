@@ -54,6 +54,18 @@ export function injectedPlatform(): InjectedPlatform | null {
 }
 
 /** Tauri の中か（WebView の内部オブジェクトの有無） */
+/** この端末の OS の名前（windows・linux・macos・android・ios。分からなければ空）。Rust の値が正しければそれ、無ければ UA から */
+export function osName(): string {
+  const os = injectedPlatform()?.os;
+  if (os && os !== 'other') return os;
+  if (typeof navigator === 'undefined') return '';
+  const ua = navigator.userAgent;
+  if (/android/i.test(ua)) return 'android';
+  if (/windows/i.test(ua)) return 'windows';
+  if (/linux/i.test(ua)) return 'linux';
+  return '';
+}
+
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }

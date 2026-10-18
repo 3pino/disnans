@@ -1,5 +1,7 @@
 import { api } from '../api';
 import { getItem, setItem } from '../storage';
+import { deviceSettings } from '../stores/deviceSettings.svelte';
+import { prefs } from '../stores/prefs.svelte';
 import { registerSlashCommand } from '../slashCommands.svelte';
 import { registerComposerAction } from '../composerActions';
 import { registerMessageAction } from '../messageActions.svelte';
@@ -29,8 +31,6 @@ import { callApi } from '../call/instance.svelte';
 import { loadLucide, registerIcon } from '../icons.svelte';
 import { API_VERSION, errorMessage, type HostServices, type Manifest, type PluginClass } from './types';
 
-const DISABLED_KEY = 'disnans.plugins.disabled';
-const DEV_DIR_KEY = 'disnans.plugins.devDir';
 const DEV_POLL_MS = 1000;
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
@@ -134,15 +134,6 @@ type Loaded = {
 /** 読み込むべきもの */
 type Wanted = { sig: string; manifest: Manifest; load: () => Promise<{ main: string; styles: string | null }> };
 
-function loadDisabled(): string[] {
-  try {
-    const v = JSON.parse(getItem(DISABLED_KEY) ?? '[]') as unknown;
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
 /** main.js（ES モジュール）を Blob URL から import する */
 async function importModule(id: string, code: string): Promise<{ default?: unknown }> {
   // DevTools で見分けやすいように名前を付ける
@@ -165,10 +156,15 @@ class PluginHost {
   serverError = $state<string | null>(null);
   /** 開発用フォルダのもの */
   dev = $state<DevPlugin[]>([]);
-  devDir = $state(getItem(DEV_DIR_KEY) ?? '');
+  /** 開発用フォルダ（この端末の設定 deviceSettings.pluginsDevDir） */
+  get devDir(): string {
+    return deviceSettings.pluginsDevDir ?? '';
+  }
   devError = $state<string | null>(null);
-  /** この端末でオフにしたもの */
-  disabled = $state<string[]>(loadDisabled());
+  /** この端末でオフにしたもの（この端末の設定 deviceSettings.pluginsDisabled） */
+  get disabled(): string[] {
+    return deviceSettings.pluginsDisabled;
+  }
   /** 読み込みのエラー（ID ごと） */
   errors = $state<Record<string, string>>({});
   /** 常時表示のステータス欄に出している要素（addStatusBarItem） */
@@ -271,6 +267,9 @@ class PluginHost {
 
     // ホットキー（addCommand）は lib/commandHost.svelte.ts がまとめて受け付ける
     client.subscribe((ev) => this.onEvent(ev));
+    // 端末の設定（オフの一覧）と、テーマ（prefs）が変わったら、読み込みを合わせ直す（サーバーの値が後から届くため）
+    deviceSettings.subscribe(() => void this.reconcile());
+    prefs.subscribe(() => void this.reconcile());
     // すでに hello を受け取っていたら（HMR など）そのまま始める
     if (client.ready) this.onHello();
   }
@@ -489,8 +488,8 @@ class PluginHost {
   }
 
   setEnabled(id: string, on: boolean): void {
-    this.disabled = on ? this.disabled.filter((x) => x !== id) : [...new Set([...this.disabled, id])];
-    setItem(DISABLED_KEY, this.disabled.length > 0 ? JSON.stringify(this.disabled) : null);
+    const disabled = on ? this.disabled.filter((x) => x !== id) : [...new Set([...this.disabled, id])];
+    deviceSettings.set('pluginsDisabled', disabled);
     // オンにし直したら、前に失敗したものも読み直す
     if (on) this.dropError(id);
     this.reconcile();
@@ -738,8 +737,7 @@ class PluginHost {
   }
 
   setDevDir(dir: string): void {
-    this.devDir = dir.trim();
-    setItem(DEV_DIR_KEY, this.devDir || null);
+    deviceSettings.set('pluginsDevDir', dir.trim() || null);
     this.dev = [];
     this.devError = null;
     this.devScanned = false;

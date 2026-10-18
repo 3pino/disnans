@@ -381,7 +381,7 @@ mod tests {
             map(keys, KeyCode::Char('r'), KeyModifiers::CONTROL),
             Action::Refetch
         );
-        assert_eq!(map(keys, KeyCode::Esc, KeyModifiers::NONE), Action::Ignore);
+        assert_eq!(map(keys, KeyCode::Esc, KeyModifiers::NONE), Action::Cancel);
     }
 
     #[test]

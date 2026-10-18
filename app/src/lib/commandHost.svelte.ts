@@ -172,7 +172,7 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       run: () => {
         const dark =
           ui.theme === 'system' ? window.matchMedia('(prefers-color-scheme: dark)').matches : ui.theme === 'dark';
-        ui.setTheme(dark ? 'light' : 'dark');
+        prefs.setTheme(dark ? 'light' : 'dark');
       },
     },
   ];

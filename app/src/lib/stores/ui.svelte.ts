@@ -1,6 +1,8 @@
 import type { AuthorView } from '../author';
-import { getItem, setItem } from '../storage';
 import { setNavigationBarHidden, syncSystemBars } from '../systemBars';
+import { prefs } from './prefs.svelte';
+import { deviceSettings } from './deviceSettings.svelte';
+import { setSettingsErrorHandler } from '../settingsModel';
 import type { User } from '../protocol/User';
 import { forgetPanelIn, navBack, navBackDepth, navigate, normalizeNav, type NavMode, type NavState, type NavTab, type Panel, type SettingsSubpage } from '../navHistory';
 
@@ -29,15 +31,18 @@ export type ConfirmRequest = {
   resolve: (ok: boolean) => void;
 };
 
-const THEME_KEY = 'disnans.theme';
-const HIDE_NAV_BAR_KEY = 'disnans.hideNavigationBar';
 const MOBILE_QUERY = '(max-width: 767px)';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 class Ui {
-  theme = $state<ThemePref>((getItem(THEME_KEY) as ThemePref | null) ?? 'system');
-  /** Android のナビゲーションバーを隠す（その端末にだけ保存する） */
-  hideNavigationBar = $state(getItem(HIDE_NAV_BAR_KEY) === '1');
+  /** テーマ（ユーザーごと。prefs の値） */
+  get theme(): ThemePref {
+    return prefs.theme;
+  }
+  /** Android のナビゲーションバーを隠す（その端末だけ。deviceSettings の値） */
+  get hideNavigationBar(): boolean {
+    return deviceSettings.hideNavigationBar;
+  }
   isMobile = $state(false);
   /** ナビゲーションバーのタブ（狭い画面では下、広い画面では左に出る） */
   tab = $state<NavTab>('chat');
@@ -68,20 +73,24 @@ class Ui {
     setInterval(() => (this.now = Date.now()), 30_000);
     // 「自動」のときはシステムの切り替えにも追従する
     window.matchMedia(DARK_QUERY).addEventListener('change', () => this.applyTheme());
-    this.applyTheme();
-    if (this.hideNavigationBar) void setNavigationBarHidden(true).catch((e) => console.error('ナビゲーションバーを隠せませんでした', e));
+    // 設定の失敗は、トーストで知らせる（stores 側は UI に依存しない）
+    setSettingsErrorHandler((text) => this.toast(text, 'error'));
+    // テーマ・ナビバーを隠す（起動時のキャッシュの値から始め、サーバーの値が届いたら追う）
+    $effect.root(() => {
+      $effect(() => {
+        void this.theme;
+        this.applyTheme();
+      });
+      $effect(() => {
+        const hidden = this.hideNavigationBar;
+        void setNavigationBarHidden(hidden).catch((e) => console.error('ナビゲーションバーを切り替えられませんでした', e));
+      });
+    });
   }
 
+  /** ナビゲーションバーを隠すかを、この端末に保存する（テーマは prefs.setTheme） */
   setHideNavigationBar(hidden: boolean): void {
-    this.hideNavigationBar = hidden;
-    setItem(HIDE_NAV_BAR_KEY, hidden ? '1' : null);
-    void setNavigationBarHidden(hidden).catch((e) => this.toast(`ナビゲーションバーを切り替えられませんでした: ${e instanceof Error ? e.message : String(e)}`, 'error'));
-  }
-
-  setTheme(t: ThemePref): void {
-    this.theme = t;
-    setItem(THEME_KEY, t === 'system' ? null : t);
-    this.applyTheme();
+    deviceSettings.set('hideNavigationBar', hidden);
   }
 
   private applyTheme(): void {

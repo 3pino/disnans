@@ -23,7 +23,7 @@ export const NAV_REQUIRED_IDS: readonly string[] = [NAV_CHAT_ID, NAV_SETTINGS_ID
 export const DEFAULT_NAV_ITEMS: readonly string[] = [NAV_CHAT_ID, NAV_SETTINGS_ID];
 
 /**
- * 保存したもの（端末の localStorage）を読む。配列でなければ既定。文字列でないものと重複は捨てる。
+ * 保存したもの（ユーザーの設定）を読む。配列でなければ既定。文字列でないものと重複は捨てる。
  * 必須の項目がなければ末尾に足す
  */
 export function normalizeNavItems(raw: unknown): string[] {
@@ -73,7 +73,7 @@ export const DEFAULT_NAV_LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
- * 保存した表示名（端末の localStorage）を読む。オブジェクトでなければ空。文字列でない値は捨てる。
+ * 保存した表示名（ユーザーの設定）を読む。オブジェクトでなければ空。文字列でない値は捨てる。
  * 空欄（""）は「設定済みで空欄」の意味なので残す（未設定＝キーがないこととは区別する）
  */
 export function normalizeNavLabels(raw: unknown): Record<string, string> {

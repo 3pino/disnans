@@ -1,7 +1,7 @@
-import { getItem, setItem } from './storage';
 import { isAndroid } from './platform';
+import { deviceSettings } from './stores/deviceSettings.svelte';
 
-// この端末の種類（アイコン用）。端末ごとの設定で、サーバーには送らない（storage の localStorage に置く）
+// この端末の種類（アイコン用）。端末ごとの設定（サーバーの端末の設定。キャッシュは deviceSettings）
 // まだ使っている場所はない。使うときは deviceKind.value を読む（リアクティブ）
 
 export const DEVICE_KINDS = ['smartphone', 'tablet', 'laptop', 'monitor'] as const;
@@ -13,8 +13,6 @@ export const DEVICE_KIND_LABELS: Record<DeviceKind, string> = {
   laptop: 'ノートPC',
   monitor: 'デスクトップ',
 };
-
-const KEY = 'disnans.deviceKind';
 
 /** 保存した値を読む。知らない値・空は null */
 export function normalizeDeviceKind(raw: unknown): DeviceKind | null {
@@ -29,17 +27,14 @@ export function guessDeviceKind(userAgent?: string): DeviceKind {
 }
 
 class DeviceKindStore {
-  private current = $state<DeviceKind>(normalizeDeviceKind(getItem(KEY)) ?? guessDeviceKind());
-
-  /** この端末の種類（リアクティブ） */
+  /** この端末の種類（リアクティブ）。未設定なら推測 */
   get value(): DeviceKind {
-    return this.current;
+    return normalizeDeviceKind(deviceSettings.deviceKind) ?? guessDeviceKind();
   }
 
   /** 変える。null で推測に戻す */
   set(kind: DeviceKind | null): void {
-    this.current = kind ?? guessDeviceKind();
-    setItem(KEY, kind);
+    deviceSettings.set('deviceKind', kind);
   }
 }
 

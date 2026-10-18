@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "note": "既定値の固定。TS の定数（DEFAULT_*）と Rust の定義（view/settings.rs）が、どちらもこの値であることを確かめる。値を変えるときは両方と理由を直す。",
+  "defaults": {
+    "theme": "system",
+    "customTheme": null,
+    "navBarItems": [
+      "app:open-chat",
+      "app:open-settings"
+    ],
+    "navBarLabels": {},
+    "joinMuted": false,
+    "micVolume": 1,
+    "outVolume": 1,
+    "limiter": true,
+    "limitDb": -6,
+    "hotkeys": {},
+    "slashNames": {},
+    "enterKeys": {
+      "enter": "newline",
+      "shift": "newline",
+      "ctrl": "send",
+      "alt": "send"
+    },
+    "composerMenu": {
+      "order": [],
+      "hidden": []
+    },
+    "messageLayout": "list",
+    "inputId": "",
+    "output": null,
+    "deviceKind": null,
+    "hideNavigationBar": false,
+    "orientation": "auto",
+    "pluginsDisabled": [],
+    "pluginsDevDir": null,
+    "server": null,
+    "devUser": null,
+    "updateCheckedAt": null,
+    "updateNotifiedVersion": null
+  }
+}

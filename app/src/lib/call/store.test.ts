@@ -6,7 +6,7 @@ import type { CallMember } from '../protocol/CallMember';
 import type { ClientEvent } from '../protocol/ClientEvent';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import { createCallApi } from './api';
-import { CallSettings } from './settings.svelte';
+import { CallSettings, createCallSource } from './settings.svelte';
 import { dbToLinear, pcmToBase64 } from './pure';
 import { CallStore, type CallDeps } from './store.svelte';
 
@@ -151,7 +151,7 @@ function makeClient(userId: string, opts: { device?: string } = {}): Client {
   const confirm = vi.fn(async () => true);
   const hold = vi.fn(async () => Object.assign(() => {}, { update: vi.fn() }));
   const client = { userId, conn: server.clients.length + 1, toast, confirm, hold, sent: [] as ClientEvent[] } as Client;
-  client.settings = new CallSettings();
+  client.settings = new CallSettings(createCallSource());
   const deps: CallDeps = {
     send: (ev) => server.handle(client, ev),
     meId: () => userId,

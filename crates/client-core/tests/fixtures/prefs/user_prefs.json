@@ -1,0 +1,333 @@
+{
+  "schema": 1,
+  "note": "ユーザー共通の設定（prefs）の読み方。expected は TS の normalize* の出力（app/src/lib/prefsFixtures.test.ts が TS で確かめ、Rust の tests/prefs_fixtures.rs が core で確かめる）。",
+  "cases": [
+    {
+      "key": "hotkeys",
+      "name": "empty object",
+      "input": {},
+      "expected": {}
+    },
+    {
+      "key": "hotkeys",
+      "name": "string key",
+      "input": {
+        "cmd": "Mod+Shift+D"
+      },
+      "expected": {
+        "cmd": [
+          "Mod+Shift+D"
+        ]
+      }
+    },
+    {
+      "key": "hotkeys",
+      "name": "empty string means none",
+      "input": {
+        "cmd": ""
+      },
+      "expected": {
+        "cmd": []
+      }
+    },
+    {
+      "key": "hotkeys",
+      "name": "array: unique, non-empty strings only",
+      "input": {
+        "cmd": [
+          "a",
+          "a",
+          "",
+          "b",
+          3
+        ]
+      },
+      "expected": {
+        "cmd": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "key": "hotkeys",
+      "name": "empty array stays empty",
+      "input": {
+        "cmd": []
+      },
+      "expected": {
+        "cmd": []
+      }
+    },
+    {
+      "key": "hotkeys",
+      "name": "other value types are dropped",
+      "input": {
+        "x": 5,
+        "y": true,
+        "cmd": "K"
+      },
+      "expected": {
+        "cmd": [
+          "K"
+        ]
+      }
+    },
+    {
+      "key": "hotkeys",
+      "name": "null is treated as no overrides",
+      "input": null,
+      "expected": {}
+    },
+    {
+      "key": "hotkeys",
+      "name": "array is not an object",
+      "input": [
+        "a"
+      ],
+      "expected": {}
+    },
+    {
+      "key": "slashNames",
+      "name": "valid names are kept",
+      "input": {
+        "a": "hello",
+        "b": "2d6",
+        "c": "x-y"
+      },
+      "expected": {
+        "a": "hello",
+        "b": "2d6",
+        "c": "x-y"
+      }
+    },
+    {
+      "key": "slashNames",
+      "name": "uppercase and leading hyphen are dropped",
+      "input": {
+        "a": "Hello",
+        "b": "-x"
+      },
+      "expected": {}
+    },
+    {
+      "key": "slashNames",
+      "name": "32 characters are kept",
+      "input": {
+        "a": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected": {
+        "a": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "key": "slashNames",
+      "name": "33 characters are dropped",
+      "input": {
+        "a": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected": {}
+    },
+    {
+      "key": "slashNames",
+      "name": "non-strings are dropped",
+      "input": {
+        "a": 5,
+        "b": "ok"
+      },
+      "expected": {
+        "b": "ok"
+      }
+    },
+    {
+      "key": "slashNames",
+      "name": "null is treated as none",
+      "input": null,
+      "expected": {}
+    },
+    {
+      "key": "enterKeys",
+      "name": "null gives the defaults",
+      "input": null,
+      "expected": {
+        "enter": "newline",
+        "shift": "newline",
+        "ctrl": "send",
+        "alt": "send"
+      }
+    },
+    {
+      "key": "enterKeys",
+      "name": "empty object gives the defaults",
+      "input": {},
+      "expected": {
+        "enter": "newline",
+        "shift": "newline",
+        "ctrl": "send",
+        "alt": "send"
+      }
+    },
+    {
+      "key": "enterKeys",
+      "name": "unknown action falls back per key",
+      "input": {
+        "enter": "send",
+        "shift": "none",
+        "ctrl": "bogus"
+      },
+      "expected": {
+        "enter": "send",
+        "shift": "none",
+        "ctrl": "send",
+        "alt": "send"
+      }
+    },
+    {
+      "key": "enterKeys",
+      "name": "unknown keys are not returned",
+      "input": {
+        "enter": "send",
+        "alt": "newline",
+        "extra": 1
+      },
+      "expected": {
+        "enter": "send",
+        "shift": "newline",
+        "ctrl": "send",
+        "alt": "newline"
+      }
+    },
+    {
+      "key": "composerMenu",
+      "name": "null gives empty lists",
+      "input": null,
+      "expected": {
+        "order": [],
+        "hidden": []
+      }
+    },
+    {
+      "key": "composerMenu",
+      "name": "strings are de-duplicated and non-strings dropped",
+      "input": {
+        "order": [
+          "builtin:file",
+          "cmd:x",
+          "",
+          1,
+          "builtin:file"
+        ],
+        "hidden": [
+          "cmd:y"
+        ]
+      },
+      "expected": {
+        "order": [
+          "builtin:file",
+          "cmd:x"
+        ],
+        "hidden": [
+          "cmd:y"
+        ]
+      }
+    },
+    {
+      "key": "composerMenu",
+      "name": "version marker is not returned",
+      "input": {
+        "v": 2,
+        "order": [
+          "a"
+        ]
+      },
+      "expected": {
+        "order": [
+          "a"
+        ],
+        "hidden": []
+      }
+    },
+    {
+      "key": "composerMenu",
+      "name": "array is not an object",
+      "input": [],
+      "expected": {
+        "order": [],
+        "hidden": []
+      }
+    },
+    {
+      "key": "composerMenu",
+      "name": "non-array lists are empty",
+      "input": {
+        "order": "x"
+      },
+      "expected": {
+        "order": [],
+        "hidden": []
+      }
+    },
+    {
+      "key": "messageLayout",
+      "name": "bubble",
+      "input": "bubble",
+      "expected": "bubble"
+    },
+    {
+      "key": "messageLayout",
+      "name": "list",
+      "input": "list",
+      "expected": "list"
+    },
+    {
+      "key": "messageLayout",
+      "name": "unknown is list",
+      "input": "x",
+      "expected": "list"
+    },
+    {
+      "key": "messageLayout",
+      "name": "null is list",
+      "input": null,
+      "expected": "list"
+    },
+    {
+      "key": "navBarItems",
+      "name": "null gives the default items",
+      "input": null,
+      "expected": [
+        "app:open-chat",
+        "app:open-settings"
+      ]
+    },
+    {
+      "key": "navBarItems",
+      "name": "required items are added at the end",
+      "input": [
+        "app:search"
+      ],
+      "expected": [
+        "app:search",
+        "app:open-chat",
+        "app:open-settings"
+      ]
+    },
+    {
+      "key": "navBarItems",
+      "name": "removed items, duplicates and non-strings are dropped",
+      "input": [
+        "app:open-threads",
+        "x",
+        "x",
+        "",
+        3,
+        "app:open-settings"
+      ],
+      "expected": [
+        "x",
+        "app:open-settings",
+        "app:open-chat"
+      ]
+    }
+  ]
+}

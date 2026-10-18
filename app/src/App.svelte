@@ -15,6 +15,7 @@
   import { ui } from './lib/stores/ui.svelte';
   import { orientation } from './lib/stores/orientation.svelte';
   import { presence } from './lib/stores/presence.svelte';
+  import { deviceSettings } from './lib/stores/deviceSettings.svelte';
   import { notifications } from './lib/stores/notifications.svelte';
   import { startShareReceiver } from './lib/share';
   import { pluginHost } from './lib/plugins/host.svelte';
@@ -35,6 +36,7 @@
     pluginHost.start();
     orientation.start();
     presence.start();
+    void deviceSettings.start();
     void notifications.init();
     void startShareReceiver();
   });

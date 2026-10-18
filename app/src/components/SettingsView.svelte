@@ -49,6 +49,7 @@
   import { saveServerUrl } from '../lib/desktopStorage';
   import { notifications } from '../lib/stores/notifications.svelte';
   import { orientation } from '../lib/stores/orientation.svelte';
+  import { deviceSettings } from '../lib/stores/deviceSettings.svelte';
   import type { OrientationMode } from '../lib/orientation';
 
   // 表示名は、カードの名前を押したときだけその場で編集する
@@ -64,6 +65,8 @@
 
   onMount(() => {
     void updater.loadVersion();
+    // 端末ごとの設定は、ほかの端末の変更がイベントで届かないので、開くたびに読み直す
+    void deviceSettings.refresh();
     if (notifications.backend !== 'android') return;
     // 接続の状態や、端末の設定画面から戻ったときの変化を反映する
     void notifications.refresh();
@@ -326,7 +329,7 @@
 
       <Section title="外観" class="settings-appearance">
         <span class="field-label">テーマ</span>
-        <SegmentedButton class="settings-theme-picker" label="テーマ" options={themes} value={ui.theme} onchange={(v) => ui.setTheme(v)} />
+        <SegmentedButton class="settings-theme-picker" label="テーマ" options={themes} value={prefs.theme} onchange={(v) => prefs.setTheme(v)} />
         <ThemeSettings />
         {#if isTauri() && isAndroid()}
           <span class="field-label">画面の向き</span>

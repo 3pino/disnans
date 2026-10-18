@@ -49,7 +49,8 @@
 - **REST**（`RestClient`）: `list_devices` `put_device(id, name)` `delete_device(id)` `get_device_prefs(id)` `put_device_prefs(id, prefs)`。
 - **項目の定義**（`crates/client-core/src/view/settings.rs`）: キー・保存先（`user` / `device` / `local`）・型（`Kind`）・既定値を一覧にした `DEFINITIONS`。`device_defaults()`、`normalize_device_prefs(raw)`（型の合わない値は既定、範囲外の数は範囲内に、定義に無いキーは残す）、`definitions_json()`。
   - 既定値は GUI の今の値と合わせる（`DEFAULT_CALL_SETTINGS` など）。テストで確かめている。
-  - 既存のユーザー prefs（ホットキー・Enter・スラッシュの別名・「＋」メニュー・メッセージの表示）は、TypeScript の正規化のまま。ここには入れていない（形が複雑。後で判断）。
+  - 既存のユーザー prefs（`hotkeys`・`slashNames`・`enterKeys`・`composerMenu`・`messageLayout`、ナビの `navBarItems`）も入れた。読み方（`normalize_value`）は GUI の TypeScript の `normalize*` と同じ規則で、fixture `crates/client-core/tests/fixtures/prefs/user_prefs.json` を TS（`app/src/lib/prefsFixtures.test.ts`）と Rust（`tests/prefs_fixtures.rs`）の両方が通す。既定値は `defaults.json` を TS の定数と core の定義の両方で確かめる。
+  - 読むだけの規則。GUI は今どおり、保存するときは元のオブジェクトを保って書く（`composerMenu` の版の印 `v` を落とさないため）。`composerMenu` の移行（版 2）は TypeScript のまま。
   - 下書き・プラグインの保存データ・テーマ CSS のキャッシュ・開発用フラグ（`disnans.rustApi` など）は、キーが動的か文字列の値のため、この一覧には入れていない（この端末だけの保存のまま）。
 - **Tauri コマンド**（`app/src-tauri`）:
   - `client_device_id()` → `string`（この端末（tauri）の端末 ID。無ければ作る）
@@ -60,9 +61,15 @@
 - **注意（GUI の移行で扱う）**: 現在の localStorage の値は文字列（例: `disnans.hideNavigationBar` は `'1'`）。サーバーの端末の設定では真偽値（`hideNavigationBar: true`）にする。移行の変換は GUI 側。
 - **未実装**: 端末の一覧・削除の Tauri コマンド（設定画面の作業で追加する）。TUI の端末ごとの設定（ベル・通知対象・画像・タイムゾーン・Enter・密度）は後回し。
 
+## GUI の移行（済み・TypeScript）
+
+- 保存先: ユーザー共通は `stores/prefs.svelte.ts`（`/api/me/prefs`）、端末ごとは `stores/deviceSettings.svelte.ts`（Tauri では `api_device_*`、ブラウザ版は localStorage のキャッシュだけ）。どちらも起動時の値は端末のキャッシュ（`disnans.prefs` / `disnans.devicePrefs`）から始め、サーバーの値が届いたら置き換える。
+- 項目の振り分け: `lib/settingsModel.ts`（キーの一覧・既定・以前の localStorage の読み方）。テーマ・ナビバー・通話の機器によらない設定はユーザー共通、通話の機器・端末の種類・ナビバーを隠す・画面の向き・プラグインの無効化・開発フォルダは端末ごと。
+- 移行: 以前の localStorage の値は、サーバーに無いときだけ一度取り込む（既存の値は上書きしない）。以前の保存先のキーは読むだけで、消さない。
+- 端末: 起動時に `client_device_id` で ID を得て登録する。名前は既定で OS の名前（Windows・Linux・Android など。ホスト名は取らない）。`deviceSettings.renameDevice` で変えられる（設定の画面は未作成）。
+- 読み直し: 端末ごとの設定は、設定画面を開いたとき（`refresh`）に読む。ユーザー共通は従来どおり `prefs.updated` で届く。
+
 ## 残りの作業
 
-1. GUI の対応づけ（TypeScript）: 上の Tauri コマンドを呼ぶ。どの設定を端末単位にするかは分類どおり。
-2. 移行の実装（サーバーに値がなければ、ローカルの値を取り込む）。
-3. 設定画面での端末の一覧と名前の変更、古い端末の削除。
-4. 実機での確認（Windows・Linux・Android で、端末ごとの設定が他の端末に混ざらないこと）。
+1. 設定画面での端末の一覧・名前の変更・古い端末の削除（一覧と削除の Tauri コマンドは未実装）。
+2. 実機での確認（Windows・Linux・Android で、端末ごとの設定が他の端末に混ざらないこと）。

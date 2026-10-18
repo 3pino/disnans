@@ -82,7 +82,10 @@ async fn only_openers_hear_about_who_is_open() {
             session_id: sid.into(),
         })
         .await;
-    assert_eq!(presence_of(&mut alice, sid).await, [alice_id.clone()]);
+    assert_eq!(
+        presence_of(&mut alice, sid).await,
+        std::slice::from_ref(&alice_id)
+    );
 
     bob.send(ClientEvent::SessionOpen {
         session_id: sid.into(),
@@ -121,7 +124,10 @@ async fn same_user_on_two_devices_counts_once() {
         session_id: sid.into(),
     })
     .await;
-    assert_eq!(presence_of(&mut bob, sid).await, [bob_id.clone()]);
+    assert_eq!(
+        presence_of(&mut bob, sid).await,
+        std::slice::from_ref(&bob_id)
+    );
 
     alice
         .send(ClientEvent::SessionOpen {
@@ -169,7 +175,10 @@ async fn a_dropped_connection_closes_its_sessions() {
         session_id: sid.into(),
     })
     .await;
-    assert_eq!(presence_of(&mut bob, sid).await, [bob_id.clone()]);
+    assert_eq!(
+        presence_of(&mut bob, sid).await,
+        std::slice::from_ref(&bob_id)
+    );
 
     alice
         .send(ClientEvent::SessionOpen {

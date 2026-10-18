@@ -3,11 +3,11 @@
 
 import { api } from '../api';
 import { getItem, setItem } from '../storage';
+import { prefs } from '../stores/prefs.svelte';
 import type { PluginInfo } from '../protocol/PluginInfo';
 import type { DevPlugin } from './host.svelte';
 import { errorMessage } from './types';
 
-const SELECTED_KEY = 'disnans.customTheme';
 /** 選んだテーマの CSS のキャッシュ（起動直後のちらつきを防ぐ） */
 const CACHE_KEY = 'disnans.customTheme.cache';
 /** キャッシュする CSS の上限（localStorage を圧迫しないように） */
@@ -25,8 +25,10 @@ export function isDevTheme(d: DevPlugin): boolean {
 }
 
 class ThemeHost {
-  /** この端末で選んだテーマの ID（なければ null） */
-  selected = $state<string | null>(getItem(SELECTED_KEY));
+  /** 選んだテーマの ID（なければ null。ユーザーごとの設定 prefs.customTheme） */
+  get selected(): string | null {
+    return prefs.customTheme;
+  }
   /** いま適用しているテーマの ID */
   applied = $state<string | null>(null);
   /** 読み込みのエラー */
@@ -49,10 +51,9 @@ class ThemeHost {
     }
   }
 
-  /** 選ぶ（null でテーマなし）。その端末に保存する */
+  /** 選ぶ（null でテーマなし）。ユーザーごとの設定に保存する */
   select(id: string | null): void {
-    this.selected = id;
-    setItem(SELECTED_KEY, id);
+    prefs.setCustomTheme(id);
     this.error = null;
     const { server, dev, devReady } = this.last;
     this.sync(server, dev, devReady);

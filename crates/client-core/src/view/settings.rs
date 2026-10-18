@@ -42,6 +42,16 @@ pub enum Kind {
     TextList,
     /// 形を問わない JSON（オブジェクトなど。中身は GUI が決める）
     Any,
+    /// ホットキー（コマンド ID → キーの一覧）。`prefs.svelte`・`commands.svelte.ts` の `normalizeHotkeys` と同じ
+    HotkeyMap,
+    /// スラッシュコマンドの別名（コマンド ID → 名前）。`slashAlias.ts` の `normalizeSlashAliases` と同じ
+    SlashAliases,
+    /// Enter の動作（enter・shift・ctrl・alt）。`enterKeys.ts` の `normalizeEnterKeys` と同じ
+    EnterKeys,
+    /// 「＋」メニューの並び・隠す項目。`composerMenu.ts` の `normalizeComposerMenu` と同じ
+    ComposerMenu,
+    /// ナビの項目の並び（`navBar.ts` の `normalizeNavItems`）。削除した項目は捨て、本体の 2 つは必ず入れる
+    NavItems,
 }
 
 /// 既定値
@@ -53,6 +63,8 @@ pub enum DefaultValue {
     Text(&'static str),
     EmptyList,
     EmptyObject,
+    /// JSON の値（テキスト）。定義の中で書く。正しい JSON であること（テストで確かめる）
+    Json(&'static str),
 }
 
 impl DefaultValue {
@@ -64,6 +76,7 @@ impl DefaultValue {
             Self::Text(s) => Value::String(s.to_owned()),
             Self::EmptyList => Value::Array(Vec::new()),
             Self::EmptyObject => Value::Object(Map::new()),
+            Self::Json(text) => serde_json::from_str(text).unwrap_or(Value::Null),
         }
     }
 }
@@ -81,6 +94,20 @@ pub struct Def {
 pub const ORIENTATION_OPTIONS: &[&str] = &["portrait", "media", "auto"];
 pub const DEVICE_KIND_OPTIONS: &[&str] = &["smartphone", "tablet", "laptop", "monitor"];
 pub const THEME_OPTIONS: &[&str] = &["system", "light", "dark"];
+/// メッセージの表示（`messageLayout.ts`）
+pub const MESSAGE_LAYOUT_OPTIONS: &[&str] = &["list", "bubble"];
+/// Enter キーの動作（`enterKeys.ts` の ACTIONS）と組み合わせ
+const ENTER_ACTIONS: &[&str] = &["send", "newline", "none"];
+const ENTER_COMBOS: &[&str] = &["enter", "shift", "ctrl", "alt"];
+/// ナビの既定の並び（`DEFAULT_NAV_ITEMS`）。本体の 2 つ
+const NAV_ITEMS_DEFAULT: &str = r#"["app:open-chat","app:open-settings"]"#;
+/// 削除した項目（`NAV_REMOVED_IDS`）。読むときに捨てる
+const NAV_REMOVED_IDS: &[&str] = &["app:open-threads"];
+/// 必ず出す項目（`NAV_REQUIRED_IDS`）。無ければ末尾に足す
+const NAV_REQUIRED_IDS: &[&str] = &["app:open-chat", "app:open-settings"];
+/// 既定: Enter・Shift+Enter は改行、Ctrl+Enter・Alt+Enter は送信（`DEFAULT_ENTER_KEYS`）
+const ENTER_KEYS_DEFAULT: &str =
+    r#"{"enter":"newline","shift":"newline","ctrl":"send","alt":"send"}"#;
 
 /// 通話の上限（dBFS）。`call/pure.ts` の `LIMIT_DB_MIN` / `LIMIT_DB_MAX` / `LIMIT_DB_DEFAULT` と同じ
 pub const LIMIT_DB_MIN: f64 = -18.0;
@@ -112,8 +139,8 @@ pub const DEFINITIONS: &[Def] = &[
     Def {
         key: "navBarItems",
         scope: Scope::User,
-        kind: Kind::TextList,
-        default: DefaultValue::EmptyList,
+        kind: Kind::NavItems,
+        default: DefaultValue::Json(NAV_ITEMS_DEFAULT),
     },
     Def {
         key: "navBarLabels",
@@ -159,6 +186,39 @@ pub const DEFINITIONS: &[Def] = &[
             max: LIMIT_DB_MAX,
         },
         default: DefaultValue::Number(LIMIT_DB_DEFAULT),
+    },
+    Def {
+        key: "hotkeys",
+        scope: Scope::User,
+        kind: Kind::HotkeyMap,
+        default: DefaultValue::EmptyObject,
+    },
+    Def {
+        key: "slashNames",
+        scope: Scope::User,
+        kind: Kind::SlashAliases,
+        default: DefaultValue::EmptyObject,
+    },
+    Def {
+        key: "enterKeys",
+        scope: Scope::User,
+        kind: Kind::EnterKeys,
+        default: DefaultValue::Json(ENTER_KEYS_DEFAULT),
+    },
+    Def {
+        key: "composerMenu",
+        scope: Scope::User,
+        kind: Kind::ComposerMenu,
+        default: DefaultValue::Json(r#"{"order":[],"hidden":[]}"#),
+    },
+    Def {
+        key: "messageLayout",
+        scope: Scope::User,
+        kind: Kind::Choice {
+            options: MESSAGE_LAYOUT_OPTIONS,
+            nullable: false,
+        },
+        default: DefaultValue::Text("list"),
     },
     // ---- 端末ごと（サーバーの端末の prefs）----
     Def {
@@ -229,7 +289,7 @@ pub const DEFINITIONS: &[Def] = &[
             min: 0.0,
             max: f64::MAX,
         },
-        default: DefaultValue::Number(0.0),
+        default: DefaultValue::Null,
     },
     Def {
         key: "updateNotifiedVersion",
@@ -277,9 +337,140 @@ pub fn normalize_value(def: &Def, value: Option<&Value>) -> Value {
             Value::Array(items.clone())
         }
         (Kind::Any, Some(v)) if !v.is_null() => v.clone(),
+        (Kind::HotkeyMap, Some(v)) => hotkey_map(v),
+        (Kind::SlashAliases, Some(v)) => slash_aliases(v),
+        (Kind::EnterKeys, Some(v)) => enter_keys(v),
+        (Kind::ComposerMenu, Some(v)) => composer_menu(v),
+        (Kind::NavItems, Some(v)) => nav_items(v),
         (_, None) => fallback(),
         _ => fallback(),
     }
+}
+
+/// 既定の値（定義の既定を JSON にしたもの）
+pub fn default_of(def: &Def) -> Value {
+    def.default.to_value()
+}
+
+/// `normalizeNavItems`: 配列でなければ既定。空でない文字列の重複なしで、削除した項目を除き、必須の項目を末尾に足す
+fn nav_items(raw: &Value) -> Value {
+    let Value::Array(items) = raw else {
+        return default_of(find_definition("navBarItems").expect("navBarItems is defined"));
+    };
+    let mut out: Vec<Value> = unique_strings(items)
+        .into_iter()
+        .filter(|v| !v.as_str().is_some_and(|s| NAV_REMOVED_IDS.contains(&s)))
+        .collect();
+    for id in NAV_REQUIRED_IDS {
+        if !out.iter().any(|v| v.as_str() == Some(*id)) {
+            out.push(Value::String((*id).to_owned()));
+        }
+    }
+    Value::Array(out)
+}
+
+/// 定義をキーで探す
+pub fn find_definition(key: &str) -> Option<&'static Def> {
+    DEFINITIONS.iter().find(|d| d.key == key)
+}
+
+/// 文字列の一覧（空でない文字列だけ、重複は最初の 1 つ。順序は保つ）
+fn unique_strings(items: &[Value]) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    for item in items {
+        if let Value::String(s) = item
+            && !s.is_empty()
+            && !out.iter().any(|v| v == item)
+        {
+            out.push(item.clone());
+        }
+    }
+    out
+}
+
+/// `normalizeHotkeys`: 文字列は 1 つの組み合わせ（空は「なし」）、配列は空でない文字列の重複なし一覧。ほかは捨てる
+fn hotkey_map(raw: &Value) -> Value {
+    let Value::Object(map) = raw else {
+        return Value::Object(Map::new());
+    };
+    let mut out = Map::new();
+    for (id, v) in map {
+        match v {
+            Value::String(s) if s.is_empty() => {
+                out.insert(id.clone(), Value::Array(Vec::new()));
+            }
+            Value::String(_) => {
+                out.insert(id.clone(), Value::Array(vec![v.clone()]));
+            }
+            Value::Array(items) => {
+                out.insert(id.clone(), Value::Array(unique_strings(items)));
+            }
+            _ => {}
+        }
+    }
+    Value::Object(out)
+}
+
+/// `normalizeSlashAliases`: 文字列で、`^[a-z0-9][a-z0-9-]{0,31}$` に合うものだけ
+fn slash_aliases(raw: &Value) -> Value {
+    let Value::Object(map) = raw else {
+        return Value::Object(Map::new());
+    };
+    let mut out = Map::new();
+    for (id, v) in map {
+        if let Value::String(s) = v
+            && is_slash_name(s)
+        {
+            out.insert(id.clone(), v.clone());
+        }
+    }
+    Value::Object(out)
+}
+
+/// `SLASH_NAME_RE`（`slashCommands.svelte.ts`）と同じ: 先頭は英小文字か数字、以後は英小文字・数字・ハイフン、全体 32 字まで
+pub fn is_slash_name(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.is_empty() || bytes.len() > 32 {
+        return false;
+    }
+    let first_ok = bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit();
+    first_ok
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(i, &b)| b.is_ascii_lowercase() || b.is_ascii_digit() || (i > 0 && b == b'-'))
+}
+
+/// `normalizeEnterKeys`: 4 つの組み合わせだけを持つ。読めない項目は既定（`enter`・`shift` は改行、`ctrl`・`alt` は送信）
+fn enter_keys(raw: &Value) -> Value {
+    let mut out = match DefaultValue::Json(ENTER_KEYS_DEFAULT).to_value() {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    };
+    if let Value::Object(map) = raw {
+        for combo in ENTER_COMBOS {
+            if let Some(Value::String(action)) = map.get(*combo)
+                && ENTER_ACTIONS.contains(&action.as_str())
+            {
+                out.insert((*combo).to_owned(), Value::String(action.clone()));
+            }
+        }
+    }
+    Value::Object(out)
+}
+
+/// `normalizeComposerMenu`: `order` と `hidden` だけを、空でない文字列の重複なしの一覧で持つ。他の項目（版の印など）は入れない
+fn composer_menu(raw: &Value) -> Value {
+    let strings = |key: &str| -> Value {
+        match raw.get(key) {
+            Some(Value::Array(items)) => Value::Array(unique_strings(items)),
+            _ => Value::Array(Vec::new()),
+        }
+    };
+    if !raw.is_object() {
+        return serde_json::json!({"order": [], "hidden": []});
+    }
+    serde_json::json!({"order": strings("order"), "hidden": strings("hidden")})
 }
 
 /// 端末ごとの設定を正規化する。項目の型が合わないものは既定値に、足りないものは既定値で埋める。
@@ -325,6 +516,11 @@ fn kind_json(kind: Kind) -> Value {
         Kind::NullableText => serde_json::json!({"type": "nullableText"}),
         Kind::TextList => serde_json::json!({"type": "textList"}),
         Kind::Any => serde_json::json!({"type": "any"}),
+        Kind::HotkeyMap => serde_json::json!({"type": "hotkeyMap"}),
+        Kind::SlashAliases => serde_json::json!({"type": "slashAliases"}),
+        Kind::EnterKeys => serde_json::json!({"type": "enterKeys"}),
+        Kind::ComposerMenu => serde_json::json!({"type": "composerMenu"}),
+        Kind::NavItems => serde_json::json!({"type": "navItems"}),
     }
 }
 

@@ -15,7 +15,7 @@
   import { MIC_VOLUME_MAX, OUT_VOLUME_MAX, limiterStrength, limiterStrengthPatch, type LimiterStrength } from '../lib/call/pure';
   import { audio } from '../lib/plugins/audio';
 
-  // 設定の「通話」。この端末だけの設定で、サーバーには送らない（lib/call/settings.svelte.ts）
+  // 設定の「通話」。機器の項目はこの端末だけ、そのほかはユーザーごとに保存する（lib/call/settings.svelte.ts）
 
   const s = $derived(callSettings.value);
   let inputs = $state<Disnans.AudioInput[]>([]);
