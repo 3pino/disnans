@@ -104,7 +104,6 @@ pub enum NetEvent {
         title: String,
         body: String,
         message_id: Option<String>,
-        replayed: bool,
     },
 }
 
@@ -881,11 +880,10 @@ mod tests {
     fn notify_shows_an_alert_rings_the_bell_once_per_message_and_clears_on_key() {
         let mut app = make();
         app.bell = true;
-        let notify = |id: &str, replayed: bool| NetEvent::Notify {
+        let notify = |id: &str, _replayed: bool| NetEvent::Notify {
             title: "題".into(),
             body: "本文".into(),
             message_id: Some(id.into()),
-            replayed,
         };
         let effects = app.update(Event::Net(notify("m1", false)));
         assert_eq!(effects, [Effect::Bell]);

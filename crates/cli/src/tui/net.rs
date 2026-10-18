@@ -433,13 +433,11 @@ fn to_net_event(item: WatchItem) -> Option<NetEvent> {
                 title,
                 body,
                 message_id,
-                replayed,
                 ..
             } => NetEvent::Notify {
                 title,
                 body,
                 message_id,
-                replayed,
             },
             ServerEvent::PrefsUpdated { prefs } => NetEvent::Prefs(EnterKeys::from_prefs(&prefs)),
             _ => return None,
