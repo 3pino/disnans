@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Sidebar from './Sidebar.svelte';
+  import ThreadsView from './ThreadsView.svelte';
   import ChatView from './ChatView.svelte';
   import ThreadPanel from './ThreadPanel.svelte';
   import PluginPanel from './PluginPanel.svelte';
@@ -16,7 +16,8 @@
   import { commandHost } from '../lib/commandHost.svelte';
 
   const panelOpen = $derived(ui.panel !== null);
-  const showChat = $derived(ui.isMobile ? ui.tab === 'chat' : ui.tab !== 'settings' && ui.tab !== 'call');
+  // チャットは Chat タブのときだけ。スレッドの一覧（Threads タブ）・設定・通話はその場所を使う（どの幅でも同じ）
+  const showChat = $derived(ui.tab === 'chat');
 
   // 設定（ホットキーなど）の読み込み・本体のコマンドの登録・ホットキーの受け付けを始める
   onMount(() => commandHost.start());
@@ -35,10 +36,6 @@
 <!-- 画面上部の共通の枠（通話のバー・プラグインのステータス欄）。どのタブでも一番上に出る -->
 <TopBarSlot />
 <div class="shell" class:shell-mobile={ui.isMobile} class:shell-with-panel={panelOpen} data-tab={ui.tab}>
-  {#if !ui.isMobile}
-    <div class="shell-sidebar"><Sidebar /></div>
-  {/if}
-
   <main id="main-chat" class="shell-main-chat" class:shell-main-chat-hidden={!showChat}>
     <header class="top-bar"></header>
     <ConnectionBanner />
@@ -59,8 +56,8 @@
     <div class="shell-call"><CallView /></div>
   {/if}
 
-  {#if ui.isMobile && ui.tab === 'threads'}
-    <div class="shell-mobile-threads"><Sidebar showMain={false} /></div>
+  {#if ui.tab === 'threads'}
+    <div class="shell-threads"><ThreadsView /></div>
   {/if}
 
   {#if ui.panel?.kind === 'thread'}
@@ -88,8 +85,9 @@
     </div>
   {/if}
 
-  {#if ui.isMobile && !panelOpen}
-    <NavBar withThreads />
+  <!-- 狭い画面ではパネルが開いている間は出さない（下の横並びが覆われるため）。広い画面では左に縦に出し続ける -->
+  {#if !ui.isMobile || !panelOpen}
+    <NavBar />
   {/if}
 </div>
 </div>
@@ -112,12 +110,19 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+    grid-template-columns: var(--nav-side-w) minmax(0, 1fr);
   }
   .shell.shell-with-panel:not(.shell-mobile) {
-    grid-template-columns: var(--sidebar-w) minmax(320px, 1fr) minmax(320px, var(--panel-w));
+    grid-template-columns: var(--nav-side-w) minmax(320px, 1fr) minmax(320px, var(--panel-w));
   }
-  .shell-sidebar {
+  /* 広い画面では、ナビゲーションバーを左の列に置く（DOM の並びは下の横並びのままにしておき、順だけ変える） */
+  .shell:not(.shell-mobile) > :global(.app-nav-bar) {
+    order: -1;
+  }
+  .shell-threads {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
     min-height: 0;
   }
   .shell-settings {
@@ -163,7 +168,7 @@
   .shell-mobile .shell-main-chat,
   .shell-mobile .shell-settings,
   .shell-mobile .shell-call,
-  .shell-mobile-threads {
+  .shell-mobile .shell-threads {
     flex: 1;
     min-height: 0;
   }
@@ -176,10 +181,6 @@
     z-index: 30;
     border: none;
     animation: slide 0.18s ease-out;
-  }
-  .shell-mobile-threads :global(.sidebar) {
-    border-right: none;
-    background: var(--bg);
   }
   @keyframes slide {
     from {

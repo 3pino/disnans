@@ -17,7 +17,7 @@ export const NAV_BUILTIN_IDS: readonly string[] = [NAV_CHAT_ID, NAV_THREADS_ID, 
 /** 外せない項目。チャットと設定は、設定画面に戻れるように必ず出す */
 export const NAV_REQUIRED_IDS: readonly string[] = [NAV_CHAT_ID, NAV_SETTINGS_ID];
 
-/** 既定の並び（デスクトップではスレッドはサイドバーに出るので、表示では外れる） */
+/** 既定の並び */
 export const DEFAULT_NAV_ITEMS: readonly string[] = [NAV_CHAT_ID, NAV_THREADS_ID, NAV_SETTINGS_ID];
 
 /**
@@ -31,12 +31,9 @@ export function normalizeNavItems(raw: unknown): string[] {
   return out;
 }
 
-/**
- * 出す項目を、並びの順に返す。本体の3つは常に出し、ほかは登録されている（available に入っている）ものだけ。
- * デスクトップ（withThreads が false）ではスレッドの項目を出さない
- */
-export function visibleNavItems(list: readonly string[], available: ReadonlySet<string>, { withThreads }: { withThreads: boolean }): string[] {
-  return list.filter((id) => (available.has(id) || NAV_BUILTIN_IDS.includes(id)) && (withThreads || id !== NAV_THREADS_ID));
+/** 出す項目を、並びの順に返す。本体の3つは常に出し、ほかは登録されている（available に入っている）ものだけ */
+export function visibleNavItems(list: readonly string[], available: ReadonlySet<string>): string[] {
+  return list.filter((id) => available.has(id) || NAV_BUILTIN_IDS.includes(id));
 }
 
 /** 項目を末尾に足す。もう入っていれば変えない */

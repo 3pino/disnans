@@ -160,7 +160,7 @@ body {
 | `--radius-sm` | 小さな角の丸み（ボタン、入力欄、タグ） | `6px` |
 | `--font` | 本文のフォント | システムのフォント（日本語は Hiragino / Noto Sans JP / Yu Gothic UI など） |
 | `--mono` | 等幅のフォント（コード） | `ui-monospace` ほか |
-| `--sidebar-w` | PC 版のサイドバーの幅 | `280px` |
+| `--nav-side-w` | 広い画面で左に縦に並べるナビゲーションバーの幅 | `76px` |
 | `--panel-w` | PC 版の右側のパネルの幅 | `420px` |
 
 ## 配布と、端末ごとの選択

@@ -33,7 +33,7 @@
 
   --radius: 10px;
   --radius-sm: 6px;
-  --sidebar-w: 280px;
+  --nav-side-w: 76px;
   --panel-w: 420px;
   --font: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP',
     'Yu Gothic UI', Meiryo, sans-serif;
@@ -541,6 +541,18 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 広い画面では左に縦に並べる（components/NavBar.svelte が nav-bar-side を付ける）。項目は内容の高さで、上から順に */
+.nav-bar.nav-bar-side {
+  flex-direction: column;
+  width: var(--nav-side-w);
+  padding: 8px 0;
+  border-top: none;
+  border-right: 1px solid var(--border);
+}
+.nav-bar.nav-bar-side .nav-bar-item {
+  flex: none;
+  padding: 10px 2px 8px;
 }
 
 /* 横の区切り線。<hr class="divider"> */

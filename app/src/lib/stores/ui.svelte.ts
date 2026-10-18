@@ -39,7 +39,7 @@ class Ui {
   /** Android のナビゲーションバーを隠す（その端末にだけ保存する） */
   hideNavigationBar = $state(getItem(HIDE_NAV_BAR_KEY) === '1');
   isMobile = $state(false);
-  /** モバイルのボトムナビ。デスクトップでは chat と settings だけを使う */
+  /** ナビゲーションバーのタブ（狭い画面では下、広い画面では左に出る） */
   tab = $state<NavTab>('chat');
   panel = $state<Panel>(null);
   /** 設定で開いているプラグインの設定画面（プラグインの ID）。設定のタブでだけ使う */
@@ -154,7 +154,7 @@ class Ui {
   }
 
   /**
-   * ナビゲーションバー（デスクトップはサイドバー）でタブを選ぶ。タブの切り替えは履歴を捨てる
+   * ナビゲーションバーでタブを選ぶ。タブの切り替えは履歴を捨てる
    * （チャット以外のタブで戻ると、チャットのトップへ。Android のボトムナビと同じ）。closePanel ならパネルも閉じる
    */
   selectTab(tab: NavTab, closePanel = false): void {

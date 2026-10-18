@@ -39,16 +39,15 @@ describe('normalizeNavItems', () => {
 describe('visibleNavItems', () => {
   it('登録されているものだけ、並びの順に出す', () => {
     const list = ['dice:gone', NAV_SETTINGS_ID, 'dice:roll', NAV_CHAT_ID];
-    expect(visibleNavItems(list, ALL, { withThreads: true })).toEqual([NAV_SETTINGS_ID, 'dice:roll', NAV_CHAT_ID]);
+    expect(visibleNavItems(list, ALL)).toEqual([NAV_SETTINGS_ID, 'dice:roll', NAV_CHAT_ID]);
   });
 
   it('本体の3つは登録より前でも出す（登録されるまで空にしない）', () => {
-    expect(visibleNavItems(DEFAULT_NAV_ITEMS, new Set(), { withThreads: true })).toEqual(DEFAULT_NAV_ITEMS);
+    expect(visibleNavItems(DEFAULT_NAV_ITEMS, new Set())).toEqual(DEFAULT_NAV_ITEMS);
   });
 
-  it('デスクトップ（withThreads が false）ではスレッドを出さない', () => {
-    expect(visibleNavItems(DEFAULT_NAV_ITEMS, ALL, { withThreads: false })).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID]);
-    expect(visibleNavItems(DEFAULT_NAV_ITEMS, ALL, { withThreads: true })).toEqual([NAV_CHAT_ID, NAV_THREADS_ID, NAV_SETTINGS_ID]);
+  it('スレッドは広い画面でも出す（左の縦並びでも Threads タブで一覧へ行ける）', () => {
+    expect(visibleNavItems(DEFAULT_NAV_ITEMS, ALL)).toEqual([NAV_CHAT_ID, NAV_THREADS_ID, NAV_SETTINGS_ID]);
   });
 });
 

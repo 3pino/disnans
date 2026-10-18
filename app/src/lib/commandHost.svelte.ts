@@ -131,13 +131,11 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       name: 'スレッドの一覧を開く',
       icon: MessagesSquare,
       run: async () => {
-        if (ui.isMobile) {
-          ui.selectTab('threads', true);
-          return;
-        }
-        // デスクトップでは横に出ているので、一覧の先頭にフォーカスする
-        await showChat();
-        document.querySelector<HTMLElement>('#sidebar .thread-list-item')?.focus();
+        // Threads タブを開く（狭い画面ではパネルを閉じる）。広い画面では一覧の先頭にフォーカスする
+        ui.selectTab('threads', ui.isMobile);
+        if (ui.isMobile) return;
+        await tick();
+        document.querySelector<HTMLElement>('#threads-view .thread-list-item')?.focus();
       },
     },
     {
