@@ -1,0 +1,1417 @@
+{
+  "schema": 1,
+  "note": "Characterization of app/src/lib/markdown.ts (parse, parseInline) at step 8 V0. Expected trees are the TS output at that time.",
+  "inline": [
+    {
+      "name": "plain",
+      "input": "hello world",
+      "expected": [
+        {
+          "type": "text",
+          "text": "hello world"
+        }
+      ]
+    },
+    {
+      "name": "bold",
+      "input": "a **b** c",
+      "expected": [
+        {
+          "type": "text",
+          "text": "a "
+        },
+        {
+          "type": "bold",
+          "children": [
+            {
+              "type": "text",
+              "text": "b"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " c"
+        }
+      ]
+    },
+    {
+      "name": "italic_underscore_star",
+      "input": "_x_ *y*",
+      "expected": [
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "x"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " "
+        },
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "y"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nested_emphasis",
+      "input": "**a _b_**",
+      "expected": [
+        {
+          "type": "bold",
+          "children": [
+            {
+              "type": "text",
+              "text": "a "
+            },
+            {
+              "type": "italic",
+              "children": [
+                {
+                  "type": "text",
+                  "text": "b"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "snake_case_literal",
+      "input": "snake_case_name foo_bar_ baz",
+      "expected": [
+        {
+          "type": "text",
+          "text": "snake_case_name foo_bar_ baz"
+        }
+      ]
+    },
+    {
+      "name": "unclosed_delimiters",
+      "input": "**open a * b * c ** x** 2*3*4",
+      "expected": [
+        {
+          "type": "bold",
+          "children": [
+            {
+              "type": "text",
+              "text": "open a * b * c ** x"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " 2"
+        },
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "3"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "4"
+        }
+      ]
+    },
+    {
+      "name": "japanese_bold",
+      "input": "これは**太字**です",
+      "expected": [
+        {
+          "type": "text",
+          "text": "これは"
+        },
+        {
+          "type": "bold",
+          "children": [
+            {
+              "type": "text",
+              "text": "太字"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "です"
+        }
+      ]
+    },
+    {
+      "name": "autolink_trims_punct",
+      "input": "see https://example.com/a?b=1.",
+      "expected": [
+        {
+          "type": "text",
+          "text": "see "
+        },
+        {
+          "type": "link",
+          "href": "https://example.com/a?b=1",
+          "text": "https://example.com/a?b=1"
+        },
+        {
+          "type": "text",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "name": "autolink_parens",
+      "input": "(https://ja.wikipedia.org/wiki/X_(Y))",
+      "expected": [
+        {
+          "type": "text",
+          "text": "("
+        },
+        {
+          "type": "link",
+          "href": "https://ja.wikipedia.org/wiki/X_(Y)",
+          "text": "https://ja.wikipedia.org/wiki/X_(Y)"
+        },
+        {
+          "type": "text",
+          "text": ")"
+        }
+      ]
+    },
+    {
+      "name": "url_underscore_not_italic",
+      "input": "https://a.com/_x_",
+      "expected": [
+        {
+          "type": "link",
+          "href": "https://a.com/_x_",
+          "text": "https://a.com/_x_"
+        }
+      ]
+    },
+    {
+      "name": "only_http_links",
+      "input": "javascript:alert(1) xhttps://a.com https://",
+      "expected": [
+        {
+          "type": "text",
+          "text": "javascript:alert(1) xhttps://a.com https://"
+        }
+      ]
+    },
+    {
+      "name": "mention",
+      "input": "hi <@01JABC> !",
+      "expected": [
+        {
+          "type": "text",
+          "text": "hi "
+        },
+        {
+          "type": "mention",
+          "userId": "01JABC"
+        },
+        {
+          "type": "text",
+          "text": " !"
+        }
+      ]
+    },
+    {
+      "name": "mention_in_bold",
+      "input": "**<@u1>**",
+      "expected": [
+        {
+          "type": "bold",
+          "children": [
+            {
+              "type": "mention",
+              "userId": "u1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "mention_underscore_id",
+      "input": "_a <@u_1> b_",
+      "expected": [
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "a "
+            },
+            {
+              "type": "mention",
+              "userId": "u_1"
+            },
+            {
+              "type": "text",
+              "text": " b"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "raw_html_is_text",
+      "input": "<b>x</b> <script>a</script>",
+      "expected": [
+        {
+          "type": "text",
+          "text": "<b>x</b> <script>a</script>"
+        }
+      ]
+    },
+    {
+      "name": "underline",
+      "input": "__u__ and ___v___",
+      "expected": [
+        {
+          "type": "underline",
+          "children": [
+            {
+              "type": "text",
+              "text": "u"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " and "
+        },
+        {
+          "type": "underline",
+          "children": [
+            {
+              "type": "italic",
+              "children": [
+                {
+                  "type": "text",
+                  "text": "v"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "double_underscore_in_word",
+      "input": "a__b__c",
+      "expected": [
+        {
+          "type": "text",
+          "text": "a__b__c"
+        }
+      ]
+    },
+    {
+      "name": "strike",
+      "input": "~~gone~~",
+      "expected": [
+        {
+          "type": "strike",
+          "children": [
+            {
+              "type": "text",
+              "text": "gone"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "highlight",
+      "input": "==hi==",
+      "expected": [
+        {
+          "type": "highlight",
+          "children": [
+            {
+              "type": "text",
+              "text": "hi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "inline_code_literal",
+      "input": "`**not bold**` after",
+      "expected": [
+        {
+          "type": "code",
+          "text": "**not bold**"
+        },
+        {
+          "type": "text",
+          "text": " after"
+        }
+      ]
+    },
+    {
+      "name": "code_hides_closer",
+      "input": "**a `b**` c**",
+      "expected": [
+        {
+          "type": "bold",
+          "children": [
+            {
+              "type": "text",
+              "text": "a "
+            },
+            {
+              "type": "code",
+              "text": "b**"
+            },
+            {
+              "type": "text",
+              "text": " c"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unclosed_backtick",
+      "input": "a `b",
+      "expected": [
+        {
+          "type": "text",
+          "text": "a `b"
+        }
+      ]
+    },
+    {
+      "name": "backslash_escape",
+      "input": "\\*not italic\\* \\_x\\_",
+      "expected": [
+        {
+          "type": "text",
+          "text": "*not italic* _x_"
+        }
+      ]
+    },
+    {
+      "name": "escaped_closer",
+      "input": "*a \\* b*",
+      "expected": [
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "a * b"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "markdown_link",
+      "input": "[site](https://example.com)",
+      "expected": [
+        {
+          "type": "link",
+          "href": "https://example.com",
+          "text": "site"
+        }
+      ]
+    },
+    {
+      "name": "markdown_link_parens",
+      "input": "[w](https://a.com/x_(y))",
+      "expected": [
+        {
+          "type": "link",
+          "href": "https://a.com/x_(y)",
+          "text": "w"
+        }
+      ]
+    },
+    {
+      "name": "markdown_link_unsafe",
+      "input": "[bad](javascript:alert(1)) [e]()",
+      "expected": [
+        {
+          "type": "text",
+          "text": "[bad](javascript:alert(1)) [e]()"
+        }
+      ]
+    },
+    {
+      "name": "markdown_link_text_no_emphasis",
+      "input": "[**b**](https://a.com)",
+      "expected": [
+        {
+          "type": "link",
+          "href": "https://a.com",
+          "text": "**b**"
+        }
+      ]
+    },
+    {
+      "name": "link_and_mention",
+      "input": "<@u1> see https://a.com",
+      "expected": [
+        {
+          "type": "mention",
+          "userId": "u1"
+        },
+        {
+          "type": "text",
+          "text": " see "
+        },
+        {
+          "type": "link",
+          "href": "https://a.com",
+          "text": "https://a.com"
+        }
+      ]
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "expected": []
+    },
+    {
+      "name": "spaces_only",
+      "input": "   ",
+      "expected": [
+        {
+          "type": "text",
+          "text": "   "
+        }
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "name": "paragraph_lines",
+      "input": "line one\nline two",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "line one"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": "line two"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "paragraph_crlf",
+      "input": "a\r\nb\rc",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "a"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": "b"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": "c"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fence",
+      "input": "```ts\nconst x = **1**;\n```",
+      "expected": [
+        {
+          "type": "code",
+          "lang": "ts",
+          "text": "const x = **1**;"
+        }
+      ]
+    },
+    {
+      "name": "fence_no_lang",
+      "input": "```\nplain\n```",
+      "expected": [
+        {
+          "type": "code",
+          "lang": "",
+          "text": "plain"
+        }
+      ]
+    },
+    {
+      "name": "fence_unclosed",
+      "input": "```\nrun\nto end",
+      "expected": [
+        {
+          "type": "code",
+          "lang": "",
+          "text": "run\nto end"
+        }
+      ]
+    },
+    {
+      "name": "fence_blank_lines_indent",
+      "input": "```\n  a\n\n    b\n```",
+      "expected": [
+        {
+          "type": "code",
+          "lang": "",
+          "text": "  a\n\n    b"
+        }
+      ]
+    },
+    {
+      "name": "fence_tabs",
+      "input": "```\n\tx\n```",
+      "expected": [
+        {
+          "type": "code",
+          "lang": "",
+          "text": "\tx"
+        }
+      ]
+    },
+    {
+      "name": "quote_nested",
+      "input": "> a\n> > b\n> - c",
+      "expected": [
+        {
+          "type": "quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ]
+            },
+            {
+              "type": "quote",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "lines": [
+                    [
+                      {
+                        "type": "text",
+                        "text": "b"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "list",
+              "ordered": false,
+              "start": 1,
+              "items": [
+                {
+                  "lines": [
+                    [
+                      {
+                        "type": "text",
+                        "text": "c"
+                      }
+                    ]
+                  ],
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "quote_plain",
+      "input": "> hello\n> world",
+      "expected": [
+        {
+          "type": "quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "hello"
+                  }
+                ],
+                [
+                  {
+                    "type": "text",
+                    "text": "world"
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ul",
+      "input": "- one\n- two\n* three",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "one"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "two"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "three"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ul_plus",
+      "input": "+ a\n+ b",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ol_start",
+      "input": "3. x\n4. y",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 3,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "x"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "y"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ol_paren",
+      "input": "1) a\n2) b",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "list_after_paragraph",
+      "input": "intro\n- a\n- b",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "intro"
+              }
+            ]
+          ]
+        },
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nested_mixed",
+      "input": "- a\n  1. b\n  2. c\n- d",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": true,
+                  "start": 1,
+                  "items": [
+                    {
+                      "lines": [
+                        [
+                          {
+                            "type": "text",
+                            "text": "b"
+                          }
+                        ]
+                      ],
+                      "children": []
+                    },
+                    {
+                      "lines": [
+                        [
+                          {
+                            "type": "text",
+                            "text": "c"
+                          }
+                        ]
+                      ],
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "d"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nested_start",
+      "input": "1. a\n   5. b\n   6. c",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": true,
+                  "start": 5,
+                  "items": [
+                    {
+                      "lines": [
+                        [
+                          {
+                            "type": "text",
+                            "text": "b"
+                          }
+                        ]
+                      ],
+                      "children": []
+                    },
+                    {
+                      "lines": [
+                        [
+                          {
+                            "type": "text",
+                            "text": "c"
+                          }
+                        ]
+                      ],
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "shallower_closes_nested",
+      "input": "- a\n  - b\n - c",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "start": 1,
+                  "items": [
+                    {
+                      "lines": [
+                        [
+                          {
+                            "type": "text",
+                            "text": "b"
+                          }
+                        ]
+                      ],
+                      "children": []
+                    },
+                    {
+                      "lines": [
+                        [
+                          {
+                            "type": "text",
+                            "text": "c"
+                          }
+                        ]
+                      ],
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "marker_kind_new_list",
+      "input": "- a\n* b",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "blank_between_items",
+      "input": "- a\n\n- b",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "continuation_joins",
+      "input": "- a\n  more",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ],
+                [
+                  {
+                    "type": "text",
+                    "text": "more"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "item_with_code",
+      "input": "- item\n  ```\n  code\n  ```",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "item"
+                  }
+                ]
+              ],
+              "children": [
+                {
+                  "type": "code",
+                  "lang": "",
+                  "text": "code"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "item_inline_markup",
+      "input": "- **bold** and <@u1>",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "bold",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "bold"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " and "
+                  },
+                  {
+                    "type": "mention",
+                    "userId": "u1"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unsupported_literal",
+      "input": "# heading\n|table|\n---",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "# heading"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": "|table|"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": "---"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dash_without_space",
+      "input": "-text\n1.x",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "-text"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": "1.x"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "crlf_list",
+      "input": "- a\r\n- b",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "mixed_document",
+      "input": "Title line\n\n> q **b**\n\n```js\nx\n```\n\n1. one\n2. two",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "Title line"
+              }
+            ]
+          ]
+        },
+        {
+          "type": "quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "q "
+                  },
+                  {
+                    "type": "bold",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "b"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code",
+          "lang": "js",
+          "text": "x"
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "one"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "two"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "mentionsToText": [
+    {
+      "name": "mentions_to_text",
+      "body": "hi <@u1> <@ghost>",
+      "names": {
+        "u1": "たろう"
+      },
+      "expected": "hi @たろう @ghost"
+    }
+  ],
+  "extractMentions": [
+    {
+      "name": "extract",
+      "body": "<@a> x <@b_1> <@bad.id> <@a>",
+      "expected": [
+        "a",
+        "b_1",
+        "a"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "note": "Characterization of app/src/lib/mentions.ts (bodyToDraft, draftToBody) at step 8 V0.",
+  "cases": [
+    {
+      "name": "mention_known",
+      "users": {
+        "u1": "たろう",
+        "u2": "Bob"
+      },
+      "body": "hi <@u1> and <@u2>!",
+      "draft": "hi @たろう and @Bob!",
+      "draftMap": [
+        [
+          "たろう",
+          "u1"
+        ],
+        [
+          "Bob",
+          "u2"
+        ]
+      ],
+      "roundTrip": "hi <@u1> and <@u2>!"
+    },
+    {
+      "name": "mention_unknown_kept",
+      "users": {},
+      "body": "<@ghost> hi",
+      "draft": "<@ghost> hi",
+      "draftMap": [],
+      "roundTrip": "<@ghost> hi"
+    },
+    {
+      "name": "mention_bad_chars_kept",
+      "users": {
+        "a": "A"
+      },
+      "body": "<@a.b> <@> x",
+      "draft": "<@a.b> <@> x",
+      "draftMap": [],
+      "roundTrip": "<@a.b> <@> x"
+    },
+    {
+      "name": "no_mention",
+      "users": {},
+      "body": "plain text",
+      "draft": "plain text",
+      "draftMap": [],
+      "roundTrip": "plain text"
+    },
+    {
+      "name": "mention_multiple_same",
+      "users": {
+        "u1": "A"
+      },
+      "body": "<@u1><@u1>",
+      "draft": "@A@A",
+      "draftMap": [
+        [
+          "A",
+          "u1"
+        ]
+      ],
+      "roundTrip": "<@u1><@u1>"
+    }
+  ]
+}

@@ -1,0 +1,190 @@
+{
+  "schema": 1,
+  "note": "Characterization of app/src/lib/messageRows.ts isContinuation without thread cases (the thread clause is removed in V2: threads are abolished). GROUP_MS = 300000.",
+  "groupMs": 300000,
+  "cases": [
+    {
+      "name": "same_person_within_5min",
+      "prev": {
+        "author_id": "a",
+        "created_at": 1000000,
+        "thread": null,
+        "bot": null
+      },
+      "cur": {
+        "author_id": "a",
+        "created_at": 1001000,
+        "thread": null,
+        "bot": null
+      },
+      "newDay": false,
+      "expected": true
+    },
+    {
+      "name": "no_previous",
+      "prev": null,
+      "cur": {
+        "author_id": "a",
+        "created_at": 1000000,
+        "thread": null,
+        "bot": null
+      },
+      "newDay": false,
+      "expected": false
+    },
+    {
+      "name": "different_author",
+      "prev": {
+        "author_id": "a",
+        "created_at": 1000000,
+        "thread": null,
+        "bot": null
+      },
+      "cur": {
+        "author_id": "b",
+        "created_at": 1001000,
+        "thread": null,
+        "bot": null
+      },
+      "newDay": false,
+      "expected": false
+    },
+    {
+      "name": "just_under_5min",
+      "prev": {
+        "author_id": "a",
+        "created_at": 1000000,
+        "thread": null,
+        "bot": null
+      },
+      "cur": {
+        "author_id": "a",
+        "created_at": 1299999,
+        "thread": null,
+        "bot": null
+      },
+      "newDay": false,
+      "expected": true
+    },
+    {
+      "name": "exactly_5min",
+      "prev": {
+        "author_id": "a",
+        "created_at": 1000000,
+        "thread": null,
+        "bot": null
+      },
+      "cur": {
+        "author_id": "a",
+        "created_at": 1300000,
+        "thread": null,
+        "bot": null
+      },
+      "newDay": false,
+      "expected": false
+    },
+    {
+      "name": "new_day",
+      "prev": {
+        "author_id": "a",
+        "created_at": 1000000,
+        "thread": null,
+        "bot": null
+      },
+      "cur": {
+        "author_id": "a",
+        "created_at": 1001000,
+        "thread": null,
+        "bot": null
+      },
+      "newDay": true,
+      "expected": false
+    },
+    {
+      "name": "bot_same_plugin_same_name",
+      "prev": {
+        "author_id": "a",
+        "created_at": 1000000,
+        "thread": null,
+        "bot": {
+          "plugin": "p",
+          "name": "n"
+        }
+      },
+      "cur": {
+        "author_id": "a",
+        "created_at": 1001000,
+        "thread": null,
+        "bot": {
+          "plugin": "p",
+          "name": "n"
+        }
+      },
+      "newDay": false,
+      "expected": true
+    },
+    {
+      "name": "bot_different_plugin",
+      "prev": {
+        "author_id": "a",
+        "created_at": 1000000,
+        "thread": null,
+        "bot": {
+          "plugin": "p",
+          "name": "n"
+        }
+      },
+      "cur": {
+        "author_id": "a",
+        "created_at": 1001000,
+        "thread": null,
+        "bot": {
+          "plugin": "q",
+          "name": "n"
+        }
+      },
+      "newDay": false,
+      "expected": false
+    },
+    {
+      "name": "bot_then_human_same_author_id",
+      "prev": {
+        "author_id": "a",
+        "created_at": 1000000,
+        "thread": null,
+        "bot": {
+          "plugin": "p",
+          "name": "n"
+        }
+      },
+      "cur": {
+        "author_id": "a",
+        "created_at": 1001000,
+        "thread": null,
+        "bot": null
+      },
+      "newDay": false,
+      "expected": false
+    },
+    {
+      "name": "human_then_bot_same_author_id",
+      "prev": {
+        "author_id": "a",
+        "created_at": 1000000,
+        "thread": null,
+        "bot": null
+      },
+      "cur": {
+        "author_id": "a",
+        "created_at": 1001000,
+        "thread": null,
+        "bot": {
+          "plugin": "p",
+          "name": "n"
+        }
+      },
+      "newDay": false,
+      "expected": false
+    }
+  ]
+}
