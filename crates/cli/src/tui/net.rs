@@ -415,13 +415,7 @@ fn to_net_event(item: WatchItem) -> Option<NetEvent> {
                 client_id,
             },
             ServerEvent::MessageUpdated { message } => NetEvent::Updated(Box::new(message)),
-            ServerEvent::MessageDeleted {
-                message_id,
-                thread_id,
-            } => NetEvent::Deleted {
-                message_id,
-                thread_id,
-            },
+            ServerEvent::MessageDeleted { message_id, .. } => NetEvent::Deleted { message_id },
             ServerEvent::ReactionUpdated {
                 message_id,
                 reactions,

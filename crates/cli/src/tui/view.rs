@@ -277,9 +277,9 @@ pub fn plan(area: Rect, app: &mut App) {
     app.placements = placements;
 }
 
-/// 下部のナビゲーション。Chat だけが使え、未実装の Threads / Settings は選べない（無効表示）。
+/// 下部のナビゲーション。Chat だけが使え、未実装の Settings は選べない（無効表示）。
 fn navbar_line(width: u16) -> Line<'static> {
-    let cell = usize::from(width) / 3;
+    let cell = usize::from(width) / 2;
     let item = |label: &str, style: Style| {
         let pad = cell.saturating_sub(sanitize::display_width(label));
         let left = pad / 2;
@@ -294,7 +294,6 @@ fn navbar_line(width: u16) -> Line<'static> {
             "Chat",
             Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED),
         ),
-        item("Threads", disabled),
         item("Settings", disabled),
     ])
 }
@@ -487,7 +486,7 @@ mod tests {
         app.messages.push(message("m1", "u2", "こんにちは"));
         let screen = render(&mut app, 60, 12).join("\n");
         assert!(
-            screen.contains("Chat") && screen.contains("Threads"),
+            screen.contains("Chat") && screen.contains("Settings"),
             "{screen}"
         );
         assert!(screen.contains("Bob"), "{screen}");

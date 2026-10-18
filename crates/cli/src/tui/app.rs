@@ -82,7 +82,6 @@ pub enum NetEvent {
     Updated(Box<Message>),
     Deleted {
         message_id: String,
-        thread_id: Option<String>,
     },
     Reactions {
         message_id: String,
@@ -564,28 +563,18 @@ impl App {
                 };
             }
             NetEvent::Created { message, client_id } => {
-                if message.thread_id.is_some() {
-                    return;
-                }
                 if let Some(id) = &client_id {
                     self.resolve_sent(id, effects);
                 }
                 self.insert_live(*message);
             }
             NetEvent::Updated(message) => {
-                if message.thread_id.is_none()
-                    && let Some(slot) = self.messages.iter_mut().find(|m| m.id == message.id)
-                {
+                if let Some(slot) = self.messages.iter_mut().find(|m| m.id == message.id) {
                     *slot = *message;
                 }
             }
-            NetEvent::Deleted {
-                message_id,
-                thread_id,
-            } => {
-                if thread_id.is_none() {
-                    self.messages.retain(|m| m.id != message_id);
-                }
+            NetEvent::Deleted { message_id } => {
+                self.messages.retain(|m| m.id != message_id);
             }
             NetEvent::Reactions {
                 message_id,
@@ -734,7 +723,6 @@ impl App {
     /// 取得したページを既存のメッセージへ重複なく取り込む。
     /// `prune` なら、取得範囲内にあるのにサーバーに無いもの（切断中に削除された）を取り除く。
     fn merge_page(&mut self, mut page: Vec<Message>, prune: bool) {
-        page.retain(|m| m.thread_id.is_none());
         if page.is_empty() {
             return;
         }
@@ -861,21 +849,6 @@ mod tests {
     }
 
     #[test]
-    fn thread_messages_are_not_shown_in_the_main_timeline() {
-        let mut app = make();
-        let mut m = msg("t", 1, "x");
-        m.thread_id = Some("root".into());
-        net(
-            &mut app,
-            NetEvent::Created {
-                message: Box::new(m),
-                client_id: None,
-            },
-        );
-        assert!(app.messages.is_empty());
-    }
-
-    #[test]
     fn updates_deletes_and_reactions_apply_by_id() {
         let mut app = make();
         net(
@@ -902,7 +875,6 @@ mod tests {
             &mut app,
             NetEvent::Deleted {
                 message_id: "a".into(),
-                thread_id: None,
             },
         );
         assert!(app.messages.is_empty());

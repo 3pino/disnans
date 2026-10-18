@@ -58,9 +58,6 @@ pub fn human_messages(messages: &[Message], users: &[User]) -> String {
         if let Some(reply_id) = &message.reply_to {
             line.push_str(&format!(" [返信: {}]", escape_human(reply_id)));
         }
-        if message.thread.is_some() {
-            line.push_str(" [スレッド]");
-        }
         if let Some(card) = &message.card {
             line.push_str(&format!(
                 " [カード: {} — {}]",

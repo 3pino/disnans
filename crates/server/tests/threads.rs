@@ -67,7 +67,7 @@ async fn reply_carries_preview_and_notifies_target() {
     else {
         unreachable!()
     };
-    assert_eq!(title, "bob さんが返信");
+    assert_eq!(title, "bob replied to you");
 
     // 履歴にも返信先の要約が入る
     let list = server.messages("").await;

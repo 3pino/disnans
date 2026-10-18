@@ -219,13 +219,6 @@ pub fn message_rows(
     if !reactions.is_empty() {
         push(&mut content, RowKind::Meta, &reactions.join("  "));
     }
-    if let Some(thread) = &message.thread {
-        push(
-            &mut content,
-            RowKind::Meta,
-            &format!("[スレッド: 返信 {} 件]", thread.reply_count),
-        );
-    }
     if message.edited_at.is_some() {
         push(&mut content, RowKind::Meta, "(編集済み)");
     }

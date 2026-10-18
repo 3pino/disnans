@@ -260,7 +260,7 @@ async fn threads_cannot_nest() {
         } => {
             assert!(!sample);
             assert!(!replayed);
-            assert_eq!(title, "bob さんがスレッドに返信");
+            assert_eq!(title, "bob replied to you");
             assert_eq!(body, "返信");
             assert_eq!(message_id.as_deref(), Some(reply.id.as_str()));
             assert_eq!(thread_id.as_deref(), Some(root.id.as_str()));
@@ -428,7 +428,7 @@ async fn mention_notifies_the_target_not_the_author() {
         let ServerEvent::Notify { title, body, .. } = event else {
             unreachable!()
         };
-        assert_eq!(title, "alice さんからのメンション");
+        assert_eq!(title, "alice mentioned you");
         assert_eq!(body, "@bob 見て");
     }
     alice.assert_silent(Duration::from_millis(200)).await;

@@ -9,34 +9,27 @@ use crate::output;
 /// 保存済みの履歴を復元する出力ではなく、接続中に届いたものだけ。
 pub fn event_line(generation: u64, event: &ServerEvent, json_mode: bool) -> Option<String> {
     match event {
-        ServerEvent::MessageCreated { message, .. } if message.thread_id.is_none() => {
-            Some(if json_mode {
-                json_line(
-                    json!({"type": "message.created", "generation": generation, "message": message}),
-                )
-            } else {
-                format!(
-                    "新着 {}",
-                    output::human_messages(std::slice::from_ref(message), &[])
-                )
-            })
-        }
-        ServerEvent::MessageUpdated { message } if message.thread_id.is_none() => {
-            Some(if json_mode {
-                json_line(
-                    json!({"type": "message.updated", "generation": generation, "message": message}),
-                )
-            } else {
-                format!(
-                    "更新 {}",
-                    output::human_messages(std::slice::from_ref(message), &[])
-                )
-            })
-        }
-        ServerEvent::MessageDeleted {
-            message_id,
-            thread_id: None,
-        } => Some(if json_mode {
+        ServerEvent::MessageCreated { message, .. } => Some(if json_mode {
+            json_line(
+                json!({"type": "message.created", "generation": generation, "message": message}),
+            )
+        } else {
+            format!(
+                "新着 {}",
+                output::human_messages(std::slice::from_ref(message), &[])
+            )
+        }),
+        ServerEvent::MessageUpdated { message } => Some(if json_mode {
+            json_line(
+                json!({"type": "message.updated", "generation": generation, "message": message}),
+            )
+        } else {
+            format!(
+                "更新 {}",
+                output::human_messages(std::slice::from_ref(message), &[])
+            )
+        }),
+        ServerEvent::MessageDeleted { message_id, .. } => Some(if json_mode {
             json_line(
                 json!({"type": "message.deleted", "generation": generation, "message_id": message_id}),
             )
@@ -113,11 +106,6 @@ mod tests {
         assert_eq!(value["generation"], 3);
         assert_eq!(value["message"]["body"], "a\nb\u{1b}\u{202e}");
 
-        let thread = ServerEvent::MessageCreated {
-            client_id: None,
-            message: message(Some("t"), "x"),
-        };
-        assert!(event_line(1, &thread, true).is_none());
         assert!(event_line(1, &ServerEvent::Pong, true).is_none());
         let deleted = ServerEvent::MessageDeleted {
             message_id: "m1".into(),
@@ -128,11 +116,12 @@ mod tests {
             value,
             json!({"type": "message.deleted", "generation": 1, "message_id": "m1"})
         );
-        let thread_deleted = ServerEvent::MessageDeleted {
+        // 廃止されたスレッドの thread_id が付いて届いても無視して同じ出力にする。
+        let legacy = ServerEvent::MessageDeleted {
             message_id: "m1".into(),
             thread_id: Some("t".into()),
         };
-        assert!(event_line(1, &thread_deleted, true).is_none());
+        assert!(event_line(1, &legacy, true).is_some());
     }
 
     #[test]

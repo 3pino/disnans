@@ -187,7 +187,7 @@ pub enum Sender<'a> {
     /// ふつうの投稿。本人には通知しない。
     User,
     /// プラグインのボットとしての投稿（通知を送る指定があったとき）。文言はボットの名前で作り、
-    /// 投稿した本人にも「{名前} からのメッセージ」を送る（通常の宛先に入っていればそちらを使う）。
+    /// 投稿した本人にもボットの名前で通知する（通常の宛先に入っていればそちらを使う）。
     Bot(&'a str),
 }
 
@@ -219,7 +219,7 @@ pub fn plan(
                 .unwrap_or("だれか"),
             None,
         ),
-        Sender::Bot(name) => (name, Some(format!("{name} からのメッセージ"))),
+        Sender::Bot(name) => (name, Some(name.to_owned())),
     };
     let body = preview(message, &names);
 
@@ -244,24 +244,24 @@ pub fn plan(
 
     for id in parse_mentions(&message.body) {
         if names.contains_key(id) && sent.insert(id) {
-            push(id, format!("{author} さんからのメンション"), false);
+            push(id, format!("{author} mentioned you"), false);
         }
     }
     if let Some(id) = reply_author
         && names.contains_key(id)
         && sent.insert(id)
     {
-        push(id, format!("{author} さんが返信"), false);
+        push(id, format!("{author} replied to you"), false);
     }
     if message.thread_id.is_some() {
         for id in participants {
             if sent.insert(id.as_str()) {
-                push(id, format!("{author} さんがスレッドに返信"), false);
+                push(id, format!("{author} replied to you"), false);
             }
         }
     }
     // メインのチャットの投稿は、投稿者以外の全員に通知する（メンションや返信に当たる人は、上で優先して送り済み）。
-    // ボットの投稿も同じく全員に送る。ただし投稿した本人は、下の「{名前} からのメッセージ」を1件だけ受け取る。
+    // ボットの投稿も同じく全員に送る。ただし投稿した本人は、下の本人宛ての通知を1件だけ受け取る。
     // この通知は再送の対象にしない
     if message.thread_id.is_none() {
         for u in users {
@@ -269,7 +269,7 @@ pub fn plan(
                 continue;
             }
             if sent.insert(u.id.as_str()) {
-                push(&u.id, format!("{author} さんのメッセージ"), true);
+                push(&u.id, author.to_owned(), true);
             }
         }
     }
@@ -366,10 +366,7 @@ mod tests {
             .collect();
         assert_eq!(
             targets,
-            vec![
-                ("B", "alice さんからのメンション"),
-                ("C", "alice さんがスレッドに返信")
-            ]
+            vec![("B", "alice mentioned you"), ("C", "alice replied to you")]
         );
         assert_eq!(plan[0].1.body, "@bob @alice <@ZZZ> 見て");
         assert_eq!(plan[0].1.thread_id.as_deref(), Some("ROOT"));
@@ -379,16 +376,13 @@ mod tests {
     fn notifies_reply_target_unless_self_or_already_notified() {
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
         let msg = message("A", None, "了解");
-        // メインチャットなので、返信先（B）のほかに C にも「さんのメッセージ」が届く
+        // メインチャットなので、返信先（B）のほかに C にも一般の通知が届く
         let p = plan(&msg, &users, &[], Some("B"), Sender::User);
         let targets: Vec<_> = p
             .iter()
             .map(|(u, n)| (u.as_str(), n.title.as_str()))
             .collect();
-        assert_eq!(
-            targets,
-            vec![("B", "alice さんが返信"), ("C", "alice さんのメッセージ")]
-        );
+        assert_eq!(targets, vec![("B", "alice replied to you"), ("C", "alice")]);
         // 自分への返信でも、本人には送らない（ほかの人には届く）
         let p = plan(&msg, &users, &[], Some("A"), Sender::User);
         assert!(p.iter().all(|(u, _)| u != "A"));
@@ -397,13 +391,13 @@ mod tests {
         let msg = message("A", None, "<@B> 了解");
         let p = plan(&msg, &users, &[], Some("B"), Sender::User);
         assert_eq!(p.len(), 2);
-        assert_eq!(p[0].1.title, "alice さんからのメンション");
-        assert_eq!(p[1].1.title, "alice さんのメッセージ");
+        assert_eq!(p[0].1.title, "alice mentioned you");
+        assert_eq!(p[1].1.title, "alice");
     }
 
     #[test]
     fn bot_main_chat_post_reaches_everyone_and_the_poster_once() {
-        // ボットの投稿（notify:true）は全員に届く。投稿した本人には「{名前} からのメッセージ」を1件だけ送る
+        // ボットの投稿（notify:true）は全員に届く。投稿した本人にはボットの名前で1件だけ送る
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
         let msg = message("A", None, "hello");
         let plan = plan(&msg, &users, &[], None, Sender::Bot("ダイス"));
@@ -413,11 +407,7 @@ mod tests {
             .collect();
         assert_eq!(
             targets,
-            vec![
-                ("B", "ダイス さんのメッセージ"),
-                ("C", "ダイス さんのメッセージ"),
-                ("A", "ダイス からのメッセージ"),
-            ]
+            vec![("B", "ダイス"), ("C", "ダイス"), ("A", "ダイス"),]
         );
         assert!(plan.iter().all(|(_, n)| n.body == "hello"));
         assert_eq!(plan.iter().filter(|(_, n)| n.general).count(), 2);
@@ -436,9 +426,9 @@ mod tests {
         assert_eq!(
             targets,
             vec![
-                ("B", "ダイス さんからのメンション"),
-                ("C", "ダイス さんがスレッドに返信"),
-                ("A", "ダイス からのメッセージ"),
+                ("B", "ダイス mentioned you"),
+                ("C", "ダイス replied to you"),
+                ("A", "ダイス"),
             ]
         );
     }
@@ -449,7 +439,7 @@ mod tests {
         let msg = message("A", None, "<@A> 自分宛て");
         let plan = plan(&msg, &users, &[], None, Sender::Bot("ダイス"));
         assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].1.title, "ダイス さんからのメンション");
+        assert_eq!(plan[0].1.title, "ダイス mentioned you");
     }
 
     #[test]
@@ -463,10 +453,7 @@ mod tests {
             .collect();
         assert_eq!(
             targets,
-            vec![
-                ("B", "alice さんのメッセージ", "hello"),
-                ("C", "alice さんのメッセージ", "hello"),
-            ]
+            vec![("B", "alice", "hello"), ("C", "alice", "hello"),]
         );
         // メインチャットでは thread_id を持たない。一般の通知は再送の対象外（general）
         assert!(plan.iter().all(|(_, n)| n.thread_id.is_none() && n.general));
@@ -481,13 +468,7 @@ mod tests {
             .iter()
             .map(|(u, n)| (u.as_str(), n.title.as_str()))
             .collect();
-        assert_eq!(
-            targets,
-            vec![
-                ("C", "alice さんからのメンション"),
-                ("B", "alice さんのメッセージ"),
-            ]
-        );
+        assert_eq!(targets, vec![("C", "alice mentioned you"), ("B", "alice"),]);
         // メンションは再送の対象、一般の通知は対象外
         assert!(!plan[0].1.general);
         assert!(plan[1].1.general);

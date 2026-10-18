@@ -850,19 +850,19 @@ async fn bot_notify_is_opt_in_and_reaches_the_poster() {
     .unwrap();
     let loud: Message = res.json().await.unwrap();
 
-    // 「静かに」の通知は一度も届かない。投稿した本人には「ダイス からのメッセージ」が届く
+    // 「静かに」の通知は一度も届かない。投稿した本人にはボットの名前で届く
     let ServerEvent::Notify {
         title,
         body,
         message_id,
         ..
     } = alice
-        .recv_until(|e| matches!(e, ServerEvent::Notify { title, .. } if title == "ダイス からのメッセージ"))
+        .recv_until(|e| matches!(e, ServerEvent::Notify { title, .. } if title == "ダイス"))
         .await
     else {
         unreachable!()
     };
-    assert_eq!(title, "ダイス からのメッセージ");
+    assert_eq!(title, "ダイス");
     assert_eq!(body, "@bob 見て");
     assert_eq!(message_id.as_deref(), Some(loud.id.as_str()));
 
@@ -874,6 +874,6 @@ async fn bot_notify_is_opt_in_and_reaches_the_poster() {
     else {
         unreachable!()
     };
-    assert_eq!(title, "ダイス さんからのメンション");
+    assert_eq!(title, "ダイス mentioned you");
     assert_eq!(message_id.as_deref(), Some(loud.id.as_str()));
 }
