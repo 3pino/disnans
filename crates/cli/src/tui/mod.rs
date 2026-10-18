@@ -1,4 +1,4 @@
-//! `disnans tui`: メインチャットを読んで送る端末画面。
+//! `disnans tui`: メインチャットを読んで送るターミナル画面。
 
 mod app;
 mod commands;

@@ -24,7 +24,7 @@
   --radius-sm: 8px;
 }
 
-/* ダーク（端末の設定に合わせる「自動」のとき） */
+/* ダーク（デバイスの設定に合わせる「自動」のとき） */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --bg: oklch(0.18 0.014 350);

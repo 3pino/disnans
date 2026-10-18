@@ -1,4 +1,4 @@
-//! 通信・端末・下書き保存をつなぐイベントループ。画面の状態は `app` が持つ。
+//! 通信・ターミナル・下書き保存をつなぐイベントループ。画面の状態は `app` が持つ。
 
 use std::io::{self, IsTerminal, Write};
 use std::sync::Arc;
@@ -33,7 +33,7 @@ const DRAFT_DEBOUNCE: Duration = Duration::from_millis(500);
 pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliError> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(CliError::Usage(
-            "tui は端末（TTY）で実行してください。パイプやリダイレクトでは使えません".into(),
+            "tui はターミナル（TTY）で実行してください。パイプやリダイレクトでは使えません".into(),
         ));
     }
     let ack_timeout = live::ack_timeout()?;
@@ -274,7 +274,7 @@ async fn sleep_until(at: Option<Instant>) {
     }
 }
 
-/// 端末のイベントは専用スレッドで読む（終了時は `stop` で止める）。
+/// ターミナルのイベントは専用スレッドで読む（終了時は `stop` で止める）。
 fn spawn_terminal_reader(tx: UnboundedSender<event::Event>, stop: Arc<AtomicBool>) {
     std::thread::spawn(move || {
         while !stop.load(Ordering::Relaxed) {
@@ -294,7 +294,7 @@ fn spawn_terminal_reader(tx: UnboundedSender<event::Event>, stop: Arc<AtomicBool
     });
 }
 
-/// 1セルのピクセル数。取れない端末（Windows など）では一般的な 8x16 とみなす。
+/// 1セルのピクセル数。取れないターミナル（Windows など）では一般的な 8x16 とみなす。
 fn cell_pixels() -> (u16, u16) {
     match crossterm::terminal::window_size() {
         Ok(s) if s.columns > 0 && s.rows > 0 && s.width > 0 && s.height > 0 => {

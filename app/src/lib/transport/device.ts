@@ -1,18 +1,18 @@
 import type { BridgeContext, Invoke } from './types';
 import { toBridgeError } from './tauri';
 
-/** 端末の設定の結果。`saved` が false は「まだ設定が無い」（既定の値を返す） */
+/** デバイスの設定の結果。`saved` が false は「まだ設定が無い」（既定の値を返す） */
 export type DeviceView = { prefs: Record<string, unknown>; updatedAt: number | null; saved: boolean };
 
-/** 端末（この端末の ID・登録・設定）の口。Tauri（Rust の api_device_*）だけ */
+/** デバイス（このデバイスの ID・登録・設定）の口。Tauri（Rust の api_device_*）だけ */
 export type DeviceApi = {
-  /** この端末の ID（Rust の LocalStore が決める。無ければ作る） */
+  /** このデバイスの ID（Rust の LocalStore が決める。無ければ作る） */
   id(): Promise<string>;
-  /** 端末の登録（初回は作る。名前の変更も同じ） */
+  /** デバイスの登録（初回は作る。名前の変更も同じ） */
   register(id: string, name: string): Promise<void>;
-  /** 端末の設定を読む（未登録・設定なしは saved: false と既定値） */
+  /** デバイスの設定を読む（未登録・設定なしは saved: false と既定値） */
   read(id: string): Promise<DeviceView>;
-  /** 端末の設定をまるごと書く（Rust で正規化したものが返る） */
+  /** デバイスの設定をまるごと書く（Rust で正規化したものが返る） */
   write(id: string, body: Record<string, unknown>): Promise<DeviceView>;
 };
 

@@ -65,7 +65,7 @@ export interface HostServices {
   /** 開いているパネルを閉じる（そのプラグインの view が開いていれば） */
   closePanel(pluginId: string): void;
   toast(text: string, kind?: 'info' | 'error'): void;
-  /** 端末に保存する（lib/storage.ts） */
+  /** デバイスに保存する（lib/storage.ts） */
   storage: {
     get(key: string): string | null;
     set(key: string, value: string | null): void;

@@ -1,15 +1,15 @@
-//! 端末の事実（OS の種類など）と、その端末での方針（capabilities）を WebView に渡す（ステップ7）。
+//! デバイスの事実（OS の種類など）と、そのデバイスでの方針（capabilities）を WebView に渡す（ステップ7）。
 //!
 //! 値は `window.__DISNANS_PLATFORM__` に、ページの読込より前に同期で入る（`js_init_script`）。
 //! TS の `capabilities()`（app/src/lib/platform.ts）がこれを読む。判定は cfg! で決まり、UA 文字列は使わない。
 //! 値が無い・壊れている項目は TS が従来どおり推測する（UA 側。安全側）。
 //!
 //! 方針（capabilities）の表は disnans-client-core（`platform.rs`）が 1 か所で持つ（ステップ8・V1）。
-//! ここは、Tauri の端末の事実（cfg）を集めて渡すだけ。
+//! ここは、Tauri のデバイスの事実（cfg）を集めて渡すだけ。
 
 use disnans_client_core::{PlatformInfo, Surface, host_os};
 
-/// 今のビルドの端末の事実と方針（Tauri の環境）
+/// 今のビルドのデバイスの事実と方針（Tauri の環境）
 pub fn info() -> PlatformInfo {
     disnans_client_core::info_for(
         Surface::Tauri,

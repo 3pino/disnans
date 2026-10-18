@@ -12,7 +12,7 @@ use tempfile::NamedTempFile;
 use crate::{ServerUrl, platform::Surface};
 
 const STORAGE_SCHEMA: u32 = 1;
-/// 端末 ID の保存先（設定ディレクトリの中。surface ごとに 1 つ）
+/// デバイス ID の保存先（設定ディレクトリの中。surface ごとに 1 つ）
 const DEVICES_FILE: &str = "devices.json";
 
 #[derive(Debug)]
@@ -21,7 +21,7 @@ pub enum StoreError {
     Json(serde_json::Error),
     InvalidUrl(crate::UrlError),
     UnsupportedSchema(u32),
-    /// 保存された端末 ID が、サーバーの決まり（1〜64 文字の英数字とハイフン）に合わない
+    /// 保存されたデバイス ID が、サーバーの決まり（1〜64 文字の英数字とハイフン）に合わない
     InvalidDeviceId,
 }
 impl std::fmt::Display for StoreError {
@@ -84,7 +84,7 @@ struct ConfigFile {
 #[serde(deny_unknown_fields)]
 struct DevicesFile {
     schema_version: u32,
-    /// surface（`tauri` など）→ 端末 ID
+    /// surface（`tauri` など）→ デバイス ID
     ids: BTreeMap<String, String>,
 }
 
@@ -230,7 +230,7 @@ impl LocalStore {
         Ok(true)
     }
 
-    /// この端末の、surface ごとの端末 ID。無ければ ULID を作って保存し、それを返す。
+    /// このデバイスの、surface ごとのデバイス ID。無ければ ULID を作って保存し、それを返す。
     /// 壊れたファイルや不正な ID は直さずエラーにする（黙って別の ID に替えない）。
     pub fn device_id(&self, surface: Surface) -> Result<String, StoreError> {
         let path = self.config_dir.join(DEVICES_FILE);
@@ -298,7 +298,7 @@ fn check_schema(version: u32) -> Result<(), StoreError> {
     }
 }
 
-/// 端末 ID の形（サーバーの `check_device_id` と同じ）: 1〜64 文字の英数字とハイフン
+/// デバイス ID の形（サーバーの `check_device_id` と同じ）: 1〜64 文字の英数字とハイフン
 pub fn is_valid_device_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }

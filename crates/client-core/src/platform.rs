@@ -1,6 +1,6 @@
-//! 端末の事実（環境の種類・OS など）と、その環境での方針（capabilities）（ステップ8・V1）。
+//! デバイスの事実（環境の種類・OS など）と、その環境での方針（capabilities）（ステップ8・V1）。
 //!
-//! 方針は `capabilities_for` の 1 か所で決める。GUI（Tauri の WebView）と、TUI・CLI（端末）が同じ表を使う。
+//! 方針は `capabilities_for` の 1 か所で決める。GUI（Tauri の WebView）と、TUI・CLI（ターミナル）が同じ表を使う。
 //! 環境（surface）は `tauri`・`tui`・`cli` の 3 つ。`tauri` の値は、従来の app/src-tauri/src/platform.rs の表と同じ。
 //! 描画や文字の幅には依存しない（ここは判断だけを返す）。
 
@@ -12,13 +12,13 @@ use serde::Serialize;
 pub enum Surface {
     /// デスクトップ・Android の Tauri（WebView の GUI）
     Tauri,
-    /// `disnans tui`（端末の全画面）
+    /// `disnans tui`（ターミナルの全画面）
     Tui,
     /// 通常のコマンド（`disnans send` など）
     Cli,
 }
 
-/// 端末の事実と方針。JSON の形は TS の InjectedPlatform と揃える（camelCase）。
+/// デバイスの事実と方針。JSON の形は TS の InjectedPlatform と揃える（camelCase）。
 /// `surface` と `capabilities.tui` は TS が読まない項目（読んでも無視される）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,7 +26,7 @@ pub struct PlatformInfo {
     pub surface: Surface,
     /// "windows" | "linux" | "macos" | "android" | "ios" | "other"
     pub os: &'static str,
-    /// デスクトップ（Tauri なら windows・linux・macos。TUI・CLI は端末なので true）
+    /// デスクトップ（Tauri なら windows・linux・macos。TUI・CLI はターミナルなので true）
     pub desktop: bool,
     /// Android の Tauri か
     pub android: bool,
@@ -46,7 +46,7 @@ pub struct Capabilities {
     pub rust_chat: &'static str,
     /// 本体の渡し方: "raw"（バイト列）・"base64"（Android の WebView）
     pub body_mode: &'static str,
-    /// 通知の出し方: "android"（常駐サービス）・"desktop"（公式の通知）・"bell"（TUI。端末のベル＋画面内表示）・"none"（CLI）
+    /// 通知の出し方: "android"（常駐サービス）・"desktop"（公式の通知）・"bell"（TUI。ターミナルのベル＋画面内表示）・"none"（CLI）
     pub notify_backend: &'static str,
     /// アップデートの経路: "desktop"・"android"・"cli"（CLI・TUI の self-update）・None（対象外）
     pub updater: Option<&'static str>,
@@ -79,7 +79,7 @@ pub fn host_os() -> &'static str {
     }
 }
 
-/// 端末の事実を組み立てる。`desktop` と `android` は呼び出し側が決める（Tauri の cfg は app 側にあるため）。
+/// デバイスの事実を組み立てる。`desktop` と `android` は呼び出し側が決める（Tauri の cfg は app 側にあるため）。
 pub fn info_for(surface: Surface, os: &'static str, desktop: bool, android: bool) -> PlatformInfo {
     PlatformInfo {
         surface,
@@ -90,12 +90,12 @@ pub fn info_for(surface: Surface, os: &'static str, desktop: bool, android: bool
     }
 }
 
-/// `disnans tui` / `disnans` コマンドの環境（この OS の端末）
+/// `disnans tui` / `disnans` コマンドの環境（この OS のターミナル）
 pub fn terminal_info(surface: Surface) -> PlatformInfo {
     info_for(surface, host_os(), true, false)
 }
 
-/// 端末の事実から方針を決める（この 1 か所だけ）。
+/// デバイスの事実から方針を決める（この 1 か所だけ）。
 /// `Surface::Tauri` の行は、従来の app/src-tauri/src/platform.rs の表と同じ結果になる。
 pub fn capabilities_for(surface: Surface, os: &str, desktop: bool, android: bool) -> Capabilities {
     match surface {
@@ -130,7 +130,7 @@ fn tauri_capabilities(os: &str, desktop: bool, android: bool) -> Capabilities {
     }
 }
 
-/// 端末（TUI・CLI）の方針。どちらも LocalStore と Rust の REST・チャットを使う。違いは TUI の通知（ベル）と tui の印だけ
+/// ターミナル（TUI・CLI）の方針。どちらも LocalStore と Rust の REST・チャットを使う。違いは TUI の通知（ベル）と tui の印だけ
 fn terminal_capabilities(tui: bool) -> Capabilities {
     Capabilities {
         shared_storage: true,
@@ -257,7 +257,7 @@ mod tests {
         assert_eq!(expected_tui, tui);
     }
 
-    /// この OS の端末の判定は、表と一致する（CI の各 OS で走る）
+    /// この OS のデバイスの判定は、表と一致する（CI の各 OS で走る）
     #[test]
     fn this_host_terminal_reports_the_matching_row() {
         let info = terminal_info(Surface::Tui);

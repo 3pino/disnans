@@ -1,7 +1,7 @@
 import { prefs } from './prefs.svelte';
 import { DEFAULT_NAV_ITEMS, setNavLabel } from '../navBar';
 
-// ナビゲーションバーの項目と表示名（ユーザーごと。prefs に入れ、同じアカウントの端末で共有する）
+// ナビゲーションバーの項目と表示名（ユーザーごと。prefs に入れ、同じアカウントのデバイスで共有する）
 // 読むときはリアクティブ（prefs の値）。変えるときは prefs に保存する
 
 class NavBarStore {

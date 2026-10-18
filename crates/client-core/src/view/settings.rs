@@ -2,8 +2,8 @@
 //!
 //! 保存先の分類（docs/PLAN_SERVER_SETTINGS.md）:
 //! - `User`: ユーザー共通。サーバーの `/api/me/prefs` に置く（この表は値の形と既定を決めるだけ）。
-//! - `Device`: 端末ごと。サーバーの `/api/me/devices/{id}/prefs` に置く（`normalize_device_prefs` で正規化する）。
-//! - `Local`: この端末だけ。サーバーには送らない（接続先・開発用の値・更新の確認など）。
+//! - `Device`: デバイスごと。サーバーの `/api/me/devices/{id}/prefs` に置く（`normalize_device_prefs` で正規化する）。
+//! - `Local`: このデバイスだけ。サーバーには送らない（接続先・開発用の値・更新の確認など）。
 //!
 //! GUI の既存の保存先（localStorage のキー）の移行は GUI 側の作業。ここのキーは、サーバーに置く JSON の項目名。
 //! 既定値は、GUI が今使っている値と同じにする（`DEFAULT_CALL_SETTINGS` など。変えるときは理由を残す）。
@@ -220,7 +220,7 @@ pub const DEFINITIONS: &[Def] = &[
         },
         default: DefaultValue::Text("list"),
     },
-    // ---- 端末ごと（サーバーの端末の prefs）----
+    // ---- デバイスごと（サーバーのデバイスの prefs）----
     Def {
         key: "inputId",
         scope: Scope::Device,
@@ -269,7 +269,7 @@ pub const DEFINITIONS: &[Def] = &[
         kind: Kind::NullableText,
         default: DefaultValue::Null,
     },
-    // ---- この端末だけ（サーバーに送らない。キーは移行の目印として一覧に置く）----
+    // ---- このデバイスだけ（サーバーに送らない。キーは移行の目印として一覧に置く）----
     Def {
         key: "server",
         scope: Scope::Local,
@@ -299,12 +299,12 @@ pub const DEFINITIONS: &[Def] = &[
     },
 ];
 
-/// 端末ごとの項目（`/api/me/devices/{id}/prefs` の中身）
+/// デバイスごとの項目（`/api/me/devices/{id}/prefs` の中身）
 pub fn device_definitions() -> impl Iterator<Item = &'static Def> {
     DEFINITIONS.iter().filter(|d| d.scope == Scope::Device)
 }
 
-/// 既定値の端末ごとの設定（オブジェクト）
+/// 既定値のデバイスごとの設定（オブジェクト）
 pub fn device_defaults() -> Value {
     Value::Object(
         device_definitions()
@@ -473,7 +473,7 @@ fn composer_menu(raw: &Value) -> Value {
     serde_json::json!({"order": strings("order"), "hidden": strings("hidden")})
 }
 
-/// 端末ごとの設定を正規化する。項目の型が合わないものは既定値に、足りないものは既定値で埋める。
+/// デバイスごとの設定を正規化する。項目の型が合わないものは既定値に、足りないものは既定値で埋める。
 /// 定義に無いキーは、新しい版が書いたものかもしれないので、そのまま残す（消さない）。
 /// オブジェクトでない値は、すべて既定値にする。
 pub fn normalize_device_prefs(raw: &Value) -> Value {
@@ -583,7 +583,7 @@ mod tests {
         assert_eq!(def("inputId").scope, Scope::Device);
         assert_eq!(def("orientation").scope, Scope::Device);
         assert_eq!(def("server").scope, Scope::Local);
-        // 入力機器・出力先は端末ごと（ユーザー共通にしてはいけない）
+        // 入力機器・出力先はデバイスごと（ユーザー共通にしてはいけない）
         assert_ne!(def("inputId").scope, Scope::User);
         assert_ne!(def("output").scope, Scope::User);
     }

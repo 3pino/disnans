@@ -124,7 +124,7 @@ export const COLOR_MODES = Object.freeze({ full: 'フルカラー', c256: '256 �
 const PROBE_EVERY = 30;
 
 /**
- * 設定（その端末にだけ保存する）。
+ * 設定（そのデバイスにだけ保存する）。
  * @typedef {object} ShareSettings
  * @property {number} fps         1 秒あたりのフレーム数の上限
  * @property {string} quality     QUALITY_PRESETS のキー

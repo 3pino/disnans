@@ -47,7 +47,7 @@ pub trait Notifier: Send + Sync {
     /// 1人のユーザーに通知を送る。時間のかかる送り方をする実装は、中でタスクを起こすこと。
     fn notify(&self, user_id: &str, notification: &Notification);
 
-    /// 1人のユーザーの、1つの端末（IP アドレス）だけに通知を送る（サンプル通知用）。
+    /// 1人のユーザーの、1つのデバイス（IP アドレス）だけに通知を送る（サンプル通知用）。
     fn notify_device(&self, user_id: &str, ip: IpAddr, notification: &Notification);
 
     /// 接続し直したユーザーに再送する、直近の通知（古い順）。既読かどうかは呼び出し側で確かめる。

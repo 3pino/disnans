@@ -24,7 +24,7 @@
   /** 開けないときの説明 */
   const unavailable = $derived.by(() => {
     if (view) return null;
-    if (!pluginHost.isEnabled(card.plugin)) return 'この端末ではオフになっているため開けません';
+    if (!pluginHost.isEnabled(card.plugin)) return 'このデバイスではオフになっているため開けません';
     if (!pluginHost.runtime(card.plugin)) return `プラグイン「${card.plugin}」がないため開けません`;
     return null;
   });

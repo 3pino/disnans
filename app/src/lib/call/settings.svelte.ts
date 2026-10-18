@@ -3,13 +3,13 @@ import { deviceSettings } from '../stores/deviceSettings.svelte';
 import { DEFAULT_CALL_SETTINGS, parseCallSettings, type CallSettingsData } from './pure';
 import { CALL_DEVICE_KEYS, CALL_USER_KEYS } from '../settingsModel';
 
-// 通話の設定。機器によらない項目はユーザーごと（prefs）、入力・出力の機器は端末ごと（deviceSettings）に保存する
+// 通話の設定。機器によらない項目はユーザーごと（prefs）、入力・出力の機器はデバイスごと（deviceSettings）に保存する
 
 /** 通話の設定の保存先（本体では prefs と deviceSettings。テストでは手元の値に差し替える） */
 export type CallSettingsSource = {
   /** ユーザーごとの値（機器の項目は含まない） */
   user(): Partial<CallSettingsData>;
-  /** この端末の機器の値 */
+  /** このデバイスの機器の値 */
   device(): { inputId: string; output: unknown };
   setUser(patch: Partial<CallSettingsData>): void;
   setDevice(key: (typeof CALL_DEVICE_KEYS)[number], value: unknown): void;

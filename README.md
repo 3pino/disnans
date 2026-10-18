@@ -17,9 +17,9 @@
 
 ### 2. アプリを入れる
 
-[最新のリリース](https://github.com/3pino/disnans/releases/latest)から、端末に合ったファイルをダウンロードします。
+[最新のリリース](https://github.com/3pino/disnans/releases/latest)から、デバイスに合ったファイルをダウンロードします。
 
-| 端末 | ファイル | 入れ方 |
+| デバイス | ファイル | 入れ方 |
 |---|---|---|
 | Android | `disnans_*_android-arm64.apk` | ダウンロードした APK を開く。「この提供元のアプリを許可」の確認が出たら許可する |
 | Windows | `disnans_*_x64-setup.exe` | 実行してインストールする。「Windows によって PC が保護されました」と出たら「詳細情報」→「実行」 |
@@ -62,7 +62,7 @@ scripts/log-linux.sh /path/to/disnans.AppImage    # AppImage の場合
 
 GTK・GStreamer・Rust のログを `${XDG_STATE_HOME:-$HOME/.local/state}/disnans/logs/` に保存して起動します（保存先は起動時に表示）。ターミナルを閉じても記録は続き、ファイルはその利用者だけが読める権限で作ります。JavaScript の Console はこのログに保存されません。普段の起動設定は変わりません。
 
-`DISNANS_LOG_DIR` で保存先、`GST_DEBUG` で詳細度（既定は `3`）を指定できます。ログは自動で削除しないので、不要なものは手動で整理してください。共有前に端末名・パスなどの個人情報を確認してください。
+`DISNANS_LOG_DIR` で保存先、`GST_DEBUG` で詳細度（既定は `3`）を指定できます。ログは自動で削除しないので、不要なものは手動で整理してください。共有前にマシン名・パスなどの個人情報を確認してください。
 
 ### アップデート
 
@@ -78,12 +78,12 @@ DISNANS_BIND=<Tailscale の IP>:8080 DISNANS_DATA_DIR=/var/lib/disnans ./target/
 ```
 
 - Tailscale の IP は `tailscale ip -4` で確認できます
-- 友達を招待するには、Tailscale の管理画面でサーバー端末を[ノード共有](https://tailscale.com/kb/1084/sharing)します。友達は自分の無料アカウントのままで接続できます
+- 友達を招待するには、Tailscale の管理画面でサーバー機を[ノード共有](https://tailscale.com/kb/1084/sharing)します。友達は自分の無料アカウントのままで接続できます
 - 環境変数や注意点は [crates/server/README.md](crates/server/README.md) を参照してください
 
   1. 管理画面（login.tailscale.com）の Machines で、server の「…」メニューから Share… を選びます。
   2. 招待リンクを作るか、友だちのメールアドレスに送ります。
-  3. 友だちは自分の Tailscale アカウントで招待を受けます。その人がそのアカウントでログインしている端末なら、どれからでも サーバーPC が見えるようになります。
+  3. 友だちは自分の Tailscale アカウントで招待を受けます。その人がそのアカウントでログインしているデバイスなら、どれからでも サーバーPC が見えるようになります。
   4. 友だちはアプリで、 サーバーPC を入力します。サーバーは Tailscale のアカウントで相手を見分けるので、共有で入った人も今までどおりログインできます。
   5. Access Controls の設定を書き換えます。
     ```jsonc

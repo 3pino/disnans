@@ -52,7 +52,7 @@ export type CallDeps = {
   hold(opts: Disnans.BackgroundOptions): Promise<Disnans.BackgroundHandle>;
   audio: Disnans.Audio;
   settings: CallSettings;
-  /** この端末の種類（smartphone / tablet / laptop / monitor） */
+  /** このデバイスの種類（smartphone / tablet / laptop / monitor） */
   deviceKind(): string;
   /** 通話の設定画面を開く */
   openSettings(): void;
@@ -559,7 +559,7 @@ export class CallStore {
         const name = errName(e);
         console.error('[call] マイクを開けませんでした', e);
         if (name === 'NotAllowedError' || name === 'SecurityError') {
-          this.deps.toast(`マイクの使用が許可されていません（${name}）。端末の設定で許可してください`, 'error');
+          this.deps.toast(`マイクの使用が許可されていません（${name}）。デバイスの設定で許可してください`, 'error');
         } else if (name === 'NotFoundError') {
           this.deps.toast('マイクが見つかりません', 'error');
         } else {
@@ -1073,7 +1073,7 @@ export class CallStore {
         e.relay = { gain, meter: makeMeter(analyser), st: { next: 0 }, limiter: null };
         this.applyEntryAudio(e);
       }
-      // 大きすぎる音を上限で抑える（音量の設定より前。端末の音量ではなく、受け取った音の大きさで決める）
+      // 大きすぎる音を上限で抑える（音量の設定より前。デバイスの音量ではなく、受け取った音の大きさで決める）
       let samples = int16ToFloat(pcm);
       if (db !== null) {
         e.relay.limiter ??= new PeakLimiter(RELAY_RATE, db);

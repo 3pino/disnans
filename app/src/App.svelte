@@ -46,11 +46,11 @@
     void initializeDesktopStorage().then((serverUrl) => {
       applyServerUrl(serverUrl);
       if (didInitializeWithLegacyFallback()) {
-        ui.toast('共有ストレージを読み込めません。端末内の設定で起動しました。接続先や下書きの変更は他のクライアントへ共有されません。', 'error', undefined, 12_000);
+        ui.toast('共有ストレージを読み込めません。デバイス内の設定で起動しました。接続先や下書きの変更は他のクライアントへ共有されません。', 'error', undefined, 12_000);
       }
     }).catch((error) => {
       console.error('共有ストレージを初期化できませんでした', error);
-      ui.toast('共有ストレージを初期化できません。端末内の設定で起動しました。接続先や下書きの変更は他のクライアントへ共有されません。', 'error', undefined, 12_000);
+      ui.toast('共有ストレージを初期化できません。デバイス内の設定で起動しました。接続先や下書きの変更は他のクライアントへ共有されません。', 'error', undefined, 12_000);
       // IPC未統合/障害時は既存localStorage設定で起動する（保存結果は各hostで通知）。
       applyServerUrl(getServerUrl());
     }).finally(() => {

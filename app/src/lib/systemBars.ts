@@ -42,7 +42,7 @@ export async function setImmersive(on: boolean): Promise<boolean> {
 
 /**
  * Android の画面の向き。`portrait` は自動回転が ON でも縦に固定し、`user` はシステムの設定に従う。
- * 選んだ値は端末に保存され、次の起動では WebView の読み込みの前に使われる。
+ * 選んだ値はデバイスに保存され、次の起動では WebView の読み込みの前に使われる。
  * デスクトップやブラウザでは何もせず false
  */
 export async function setScreenOrientation(mode: 'portrait' | 'user'): Promise<boolean> {

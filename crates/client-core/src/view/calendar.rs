@@ -19,7 +19,7 @@ impl Day {
     }
 }
 
-/// 時刻（Unix ミリ秒）を、利用者の暦の日に変える。タイムゾーンは実装が持つ（UTC・端末の設定など）
+/// 時刻（Unix ミリ秒）を、利用者の暦の日に変える。タイムゾーンは実装が持つ（UTC・デバイスの設定など）
 pub trait Calendar {
     fn day_of(&self, timestamp_ms: i64) -> Day;
 }

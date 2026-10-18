@@ -35,10 +35,55 @@ pub enum Command {
     Unreact(ReactArgs),
     /// メインチャットの新着・編集・削除を1行ずつ表示し続ける。
     Watch(JsonOption),
-    /// メインチャットを読み書きする端末画面（TUI）を開く。
+    /// メインチャットを読み書きするターミナル画面（TUI）を開く。
     Tui,
+    /// プラグイン・テーマを配布・一覧・削除する。
+    #[command(subcommand)]
+    Plugin(PluginAction),
     /// 新しいバージョンを確認し、あれば更新する（GitHub Releases）。
     Update(UpdateArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PluginAction {
+    /// ディレクトリのプラグイン・テーマを配布（同じ id なら更新）する。
+    Publish(PluginPublishArgs),
+    /// 自分に見えるプラグイン・テーマの一覧。
+    List(JsonOption),
+    /// プラグイン・テーマを削除する。
+    Remove(PluginRemoveArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PluginPublishArgs {
+    /// manifest.json などがあるディレクトリ。
+    pub dir: std::path::PathBuf,
+
+    /// 自分だけのものとして配布する。
+    #[arg(long, conflicts_with = "public")]
+    pub private: bool,
+
+    /// みんなに配布する。`--private` も指定しなければ、既存の公開状態を保つ（新規は public）。
+    #[arg(long)]
+    pub public: bool,
+
+    /// manifest の id / version を表示するだけで、配布しない。
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// 結果を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PluginRemoveArgs {
+    /// 削除するプラグイン・テーマの id。
+    pub id: String,
+
+    /// 結果を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]

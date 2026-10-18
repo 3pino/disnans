@@ -61,7 +61,7 @@ pub async fn get_prefs(
     Ok(Json(value))
 }
 
-/// 自分の設定をまるごと置き換え、自分のすべての接続（ほかの端末）に `prefs.updated` を送る。
+/// 自分の設定をまるごと置き換え、自分のすべての接続（ほかのデバイス）に `prefs.updated` を送る。
 pub async fn put_prefs(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,

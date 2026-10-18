@@ -20,7 +20,7 @@ pub enum RowKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row {
     pub kind: RowKind,
-    /// 端末へそのまま出せる文字だけ（制御文字・双方向制御はエスケープ済み）。
+    /// ターミナルへそのまま出せる文字だけ（制御文字・双方向制御はエスケープ済み）。
     pub text: String,
     /// `text` の中の装飾の範囲（バイト位置。Markdown の強調・コードなど）。
     pub decos: Vec<(usize, usize, Deco)>,
@@ -32,7 +32,7 @@ pub struct Row {
     pub accent: u8,
     /// 投稿者の ID（アバターの平均色を引く）。
     pub author_id: String,
-    /// 先頭行だけ: アバター画像の取得先（`/api/avatars/…`）。画像を出せる端末のときだけ。
+    /// 先頭行だけ: アバター画像の取得先（`/api/avatars/…`）。画像を出せるターミナルのときだけ。
     pub avatar: Option<String>,
     /// 画像（添付サムネイル）を出すための予約行。
     pub image: Option<ImageSlot>,
@@ -389,7 +389,7 @@ pub fn is_external_avatar(url: &str) -> bool {
         && !url.bytes().any(|b| b.is_ascii_control() || b == b' ')
 }
 
-/// 画像を出す桁・行数。端末のセルの縦横比（`cell` はピクセル）で、元の比率に近づける。
+/// 画像を出す桁・行数。ターミナルのセルの縦横比（`cell` はピクセル）で、元の比率に近づける。
 fn image_cells(w: u32, h: u32, inner: usize, cell: (u16, u16)) -> (usize, usize) {
     let (cw, ch) = (u64::from(cell.0.max(1)), u64::from(cell.1.max(1)));
     let (w, h) = (u64::from(w), u64::from(h));

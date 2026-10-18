@@ -1,15 +1,15 @@
 # disnans-client-core
 
-GUI（Tauri）・CLI・TUI が共有するクライアント側の部品。URL の解釈、REST、WebSocket（feature `ws`）、共通ファイル（設定・下書き）、端末の方針、表示データ（`view`）を持つ。
+GUI（Tauri）・CLI・TUI が共有するクライアント側の部品。URL の解釈、REST、WebSocket（feature `ws`）、共通ファイル（設定・下書き）、デバイスの方針、表示データ（`view`）を持つ。
 
 ## 境界（何がどこにあるか）
 
 - `crates/shared`: サーバーとの型（ts-rs で TypeScript の型も作る）。
-- `crates/client-core`（このクレート）: 通信・保存・端末の方針（`platform`）・表示データ（`view`: 行の並び、同じ人の続き、Markdown の木、メンションの取り出し）。描画・文字の幅・色は持たない。
-- `crates/cli`: CLI と TUI。core を直接使い、TUI は `view` の行を端末の幅で描く。
-- `app/src-tauri`: Tauri の薄い橋（invoke の受け口、チャットの橋、共通ファイルの橋、端末の情報の注入）。方針は core に置き、橋は呼ぶだけ。
+- `crates/client-core`（このクレート）: 通信・保存・デバイスの方針（`platform`）・表示データ（`view`: 行の並び、同じ人の続き、Markdown の木、メンションの取り出し）。描画・文字の幅・色は持たない。
+- `crates/cli`: CLI と TUI。core を直接使い、TUI は `view` の行をターミナルの幅で描く。
+- `app/src-tauri`: Tauri の薄い橋（invoke の受け口、チャットの橋、共通ファイルの橋、デバイスの情報の注入）。方針は core に置き、橋は呼ぶだけ。
 - `app`（Svelte / TypeScript）: 画面、状態、Android の通知サービス（`notifier` プラグイン）。Tauri（Windows・Linux・Android）のチャットは Rust の接続を使う。ブラウザー開発版は TypeScript の WebSocket のまま。GUI の Markdown と表示は、まだ TypeScript の実装を使っている（[表示データの切り替え](../../docs/PLAN_SHARED_VIEW.md)）。
-- 端末ごとの方針（`platform::capabilities_for`）は core に一つだけ置く。Tauri・TUI・CLI の値はここから決まる。
+- デバイスごとの方針（`platform::capabilities_for`）は core に一つだけ置く。Tauri・TUI・CLI の値はここから決まる。
 - スレッドは廃止済み。core に thread の型・API はない。
 
 ## 通信の基本

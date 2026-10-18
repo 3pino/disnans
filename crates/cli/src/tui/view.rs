@@ -1,4 +1,4 @@
-//! ratatui での描画。端末へ渡す文字列はすべてエスケープ済みのものだけを使う。
+//! ratatui での描画。ターミナルへ渡す文字列はすべてエスケープ済みのものだけを使う。
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -176,7 +176,7 @@ fn regions(area: Rect, app: &App) -> Regions {
     }
 }
 
-/// 履歴領域の大きさ（桁・行）。端末サイズの変化のたびに `App` へ伝える。
+/// 履歴領域の大きさ（桁・行）。ターミナルサイズの変化のたびに `App` へ伝える。
 pub fn history_size(area: Rect, app: &App) -> (usize, usize) {
     let r = regions(area, app);
     (usize::from(r.history.width), usize::from(r.history.height))
@@ -208,7 +208,7 @@ fn blank_first_cells(text: &str, cells: usize) -> String {
     out
 }
 
-/// Markdown の装飾を端末の修飾・色にする。
+/// Markdown の装飾をターミナルの修飾・色にする。
 fn deco_style(deco: Deco, base: Style) -> Style {
     let mut style = base;
     if deco.has(Deco::BOLD) {

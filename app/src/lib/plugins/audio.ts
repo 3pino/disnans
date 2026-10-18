@@ -94,7 +94,7 @@ export async function listInputs(): Promise<Input[]> {
   return describeDevices(await enumerate(), 'audioinput', '入力');
 }
 
-/** 音を出す要素（または AudioContext）を登録する。デスクトップでは選んだ出力先に出す。Android では何もしない（端末全体の経路が切り替わる） */
+/** 音を出す要素（または AudioContext）を登録する。デスクトップでは選んだ出力先に出す。Android では何もしない（デバイス全体の経路が切り替わる） */
 export function attach(el: HTMLMediaElement | AudioContext): Disnans.Cleanup {
   if (useNative() || !webSupportsSink()) return () => {};
   const target = el as SinkElement;

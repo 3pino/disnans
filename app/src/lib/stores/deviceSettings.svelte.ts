@@ -6,12 +6,12 @@ import { tauriInvoke } from '../transport/tauri';
 import { normalizeOrientationMode, type OrientationMode } from '../orientation';
 import { DEVICE_DEFAULTS, legacyDeviceValues, normalizeDevicePrefs, reportSettingsError, type Raw } from '../settingsModel';
 
-/** 端末ごとの設定の起動時キャッシュ（サーバーの値を受けるたびに書き直す。起動直後に使える） */
+/** デバイスごとの設定の起動時キャッシュ（サーバーの値を受けるたびに書き直す。起動直後に使える） */
 export const DEVICE_CACHE_KEY = 'disnans.devicePrefs';
-/** この端末の名前（この端末だけ。登録のときに送る） */
+/** このデバイスの名前（このデバイスだけ。登録のときに送る） */
 export const DEVICE_NAME_KEY = 'disnans.deviceName';
 
-/** 端末の名前の既定（OS の名前。ホスト名は取れないので付けない。後で変えられる） */
+/** デバイスの名前の既定（OS の名前。ホスト名は取れないので付けない。後で変えられる） */
 export function defaultDeviceName(os: string): string {
   switch (os) {
     case 'windows':
@@ -25,7 +25,7 @@ export function defaultDeviceName(os: string): string {
     case 'ios':
       return 'iOS';
     default:
-      return 'この端末';
+      return 'このデバイス';
   }
 }
 
@@ -38,9 +38,9 @@ export type DeviceDeps = {
 };
 
 /**
- * 端末ごとの設定（`/api/me/devices/{id}/prefs`）。この端末の ID で読み書きする。
- * 起動時に端末を登録し、設定を読む。値が無いときは、以前の localStorage の値を一度だけ取り込む（サーバーに無いときだけ）。
- * ほかの端末の変更はイベントで届かないので、起動時と設定画面を開いたとき（refresh）に読み直す。
+ * デバイスごとの設定（`/api/me/devices/{id}/prefs`）。このデバイスの ID で読み書きする。
+ * 起動時にデバイスを登録し、設定を読む。値が無いときは、以前の localStorage の値を一度だけ取り込む（サーバーに無いときだけ）。
+ * ほかのデバイスの変更はイベントで届かないので、起動時と設定画面を開いたとき（refresh）に読み直す。
  * 書き込みは順番に送り、キャッシュ（localStorage）にも残す。
  */
 export class DeviceSettings {
@@ -99,7 +99,7 @@ export class DeviceSettings {
     return () => this.listeners.delete(fn);
   }
 
-  /** この端末の名前（保存したもの。なければ OS の名前） */
+  /** このデバイスの名前（保存したもの。なければ OS の名前） */
   deviceName(): string {
     const saved = this.deps.get(DEVICE_NAME_KEY)?.trim();
     return saved ? saved : this.deps.defaultName();
@@ -112,7 +112,7 @@ export class DeviceSettings {
     this.commit(normalizeDevicePrefs({ ...this.raw, [key]: value }));
   }
 
-  /** この端末の名前を変える（登録し直す）。空なら OS の名前に戻す */
+  /** このデバイスの名前を変える（登録し直す）。空なら OS の名前に戻す */
   async renameDevice(name: string): Promise<void> {
     const trimmed = name.trim();
     this.deps.set(DEVICE_NAME_KEY, trimmed === '' ? null : trimmed);
@@ -120,13 +120,13 @@ export class DeviceSettings {
     try {
       await this.deps.api.register(this.id, this.deviceName());
     } catch (e) {
-      reportSettingsError(`端末の名前を保存できませんでした: ${errorText(e)}`);
+      reportSettingsError(`デバイスの名前を保存できませんでした: ${errorText(e)}`);
     }
   }
 
   // ---- 読み込み ----
 
-  /** 起動のあとに1回呼ぶ。端末を登録し、設定を読む（無ければ、いまの値を送って作る） */
+  /** 起動のあとに1回呼ぶ。デバイスを登録し、設定を読む（無ければ、いまの値を送って作る） */
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
@@ -143,7 +143,7 @@ export class DeviceSettings {
       if (view.saved) this.apply(view.prefs);
       else this.commit(this.raw);
     } catch (e) {
-      reportSettingsError(`端末の設定を読めませんでした: ${errorText(e)}`);
+      reportSettingsError(`デバイスの設定を読めませんでした: ${errorText(e)}`);
     } finally {
       this.ready = true;
     }
@@ -157,7 +157,7 @@ export class DeviceSettings {
       const view = await api.read(this.id);
       if (this.pending === 0 && view.saved) this.apply(view.prefs);
     } catch (e) {
-      reportSettingsError(`端末の設定を読めませんでした: ${errorText(e)}`);
+      reportSettingsError(`デバイスの設定を読めませんでした: ${errorText(e)}`);
     }
   }
 
@@ -187,7 +187,7 @@ export class DeviceSettings {
         const view = await api.write(id, body);
         if (this.pending === 1 && this.raw === body) this.apply(view.prefs);
       } catch (e) {
-        reportSettingsError(`端末の設定を保存できませんでした: ${errorText(e)}`);
+        reportSettingsError(`デバイスの設定を保存できませんでした: ${errorText(e)}`);
       } finally {
         this.pending--;
       }
@@ -199,7 +199,7 @@ export class DeviceSettings {
       try {
         fn();
       } catch (e) {
-        console.error('端末の設定の購読で例外', e);
+        console.error('デバイスの設定の購読で例外', e);
       }
     }
   }

@@ -41,7 +41,7 @@ cargo test -p disnans-server
 
 ## 本番（Tailscale）
 
-1. サーバー端末で Tailscale を動かし、参加者にノード共有する（これが招待になる）
+1. サーバー機で Tailscale を動かし、参加者にノード共有する（これが招待になる）
 2. Tailscale の IP で待ち受けて起動する
 
    ```sh

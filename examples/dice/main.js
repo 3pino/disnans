@@ -81,7 +81,7 @@ const DIE_SVG = [
 /** @typedef {Disnans.Session<DiceState>} DiceSession */
 
 /**
- * 設定（その端末にだけ保存する。loadData / saveData）。
+ * 設定（そのデバイスにだけ保存する。loadData / saveData）。
  * @typedef {object} DiceSettings
  * @property {string} defaultSpec        `/dice` だけで送ったとき・ショートカットのサイコロ
  * @property {boolean} confirmBeforeRoll [振る] を押したときに確認する
@@ -294,7 +294,7 @@ export default class DicePlugin extends Plugin {
     // 危ない操作は danger のボタンにして、ui.confirm で確かめる
     ui.setting(containerEl, {
       name: '設定を初期値に戻す',
-      description: 'この端末のダイスの設定を、すべて最初の状態に戻す',
+      description: 'このデバイスのダイスの設定を、すべて最初の状態に戻す',
       icon: 'rotate-ccw',
       control: ui.button({
         text: '初期値に戻す',

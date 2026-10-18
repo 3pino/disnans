@@ -22,15 +22,15 @@ impl std::fmt::Display for BodyError {
             Self::Empty => f.write_str("本文が空です"),
             Self::TooLong => write!(f, "本文は {MAX_BODY_CHARS} 文字までです"),
             Self::InvalidUtf8 => f.write_str("標準入力が UTF-8 ではありません"),
-            Self::TerminalStdin => {
-                f.write_str("--stdin の入力が端末です。パイプかリダイレクトで本文を渡してください")
-            }
+            Self::TerminalStdin => f.write_str(
+                "--stdin の入力がターミナルです。パイプかリダイレクトで本文を渡してください",
+            ),
             Self::Io(e) => write!(f, "標準入力を読めませんでした: {e}"),
         }
     }
 }
 
-/// 標準入力の本文。端末は待たずに拒否し、EOF まで読む。末尾の改行は1個だけ取り除く。
+/// 標準入力の本文。ターミナルは待たずに拒否し、EOF まで読む。末尾の改行は1個だけ取り除く。
 pub fn read_stdin_body(mut input: impl Read, is_terminal: bool) -> Result<String, BodyError> {
     if is_terminal {
         return Err(BodyError::TerminalStdin);
@@ -84,7 +84,7 @@ mod tests {
         struct Fail;
         impl Read for Fail {
             fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
-                panic!("端末の標準入力を読んではいけない");
+                panic!("ターミナルの標準入力を読んではいけない");
             }
         }
         assert_eq!(read_stdin_body(Fail, true), Err(BodyError::TerminalStdin));

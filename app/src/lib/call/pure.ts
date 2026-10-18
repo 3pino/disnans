@@ -45,7 +45,7 @@ export const OUTPUTS_REFRESH_TICKS = 50;
 
 export type SavedOutput = { id: string; kind: string; label: string };
 
-/** 通話の設定。端末ごとに保存する（同期されない） */
+/** 通話の設定。デバイスごとに保存する（同期されない） */
 export type CallSettingsData = {
   joinMuted: boolean;
   /** マイクの音量。1 が等倍 */
@@ -147,7 +147,7 @@ export function statusBadges(status: Pick<CallStatus, 'muted' | 'deafened'>, loc
   return out;
 }
 
-/** 端末の種類の文字（サーバーからの任意の文字列）を、知っている種類だけにする */
+/** デバイスの種類の文字（サーバーからの任意の文字列）を、知っている種類だけにする */
 export function normalizeDevice(v: unknown): 'smartphone' | 'tablet' | 'laptop' | 'monitor' | null {
   return v === 'smartphone' || v === 'tablet' || v === 'laptop' || v === 'monitor' ? v : null;
 }

@@ -31,7 +31,7 @@ const CONTROL_BACKLOG: usize = QUEUE_SIZE / 2;
 
 struct Conn {
     user_id: String,
-    /// 接続元の IP アドレス。Tailscale では端末ごとに決まるので、端末の識別に使う。
+    /// 接続元の IP アドレス。Tailscale ではデバイスごとに決まるので、デバイスの識別に使う。
     ip: IpAddr,
     tx: mpsc::Sender<Utf8Bytes>,
 }
@@ -102,7 +102,7 @@ impl Hub {
         self.deliver(event, |_, c| c.user_id == user_id);
     }
 
-    /// そのユーザーの、指定した端末（IP アドレス）からの接続だけに送る。
+    /// そのユーザーの、指定したデバイス（IP アドレス）からの接続だけに送る。
     pub fn send_to_device(&self, user_id: &str, ip: IpAddr, event: &ServerEvent) {
         self.deliver(event, |_, c| c.user_id == user_id && c.ip == ip);
     }

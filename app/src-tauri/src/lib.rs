@@ -5,7 +5,7 @@ fn open_devtools(window: tauri::WebviewWindow) {
     window.open_devtools();
 }
 
-// 端末の事実（OS の種類）を WebView に渡す。window.__DISNANS_PLATFORM__（ステップ7）
+// デバイスの事実（OS の種類）を WebView に渡す。window.__DISNANS_PLATFORM__（ステップ7）
 mod platform;
 
 #[cfg(desktop)]
@@ -126,7 +126,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 }
 
 /// Android の証明書: rustls-native-certs は openssl-probe の既定の場所（/etc/ssl）しか見ないので、
-/// Android では空になる（webpki は残るので接続は通るが、端末の CA は使えない）。
+/// Android では空になる（webpki は残るので接続は通るが、デバイスの CA は使えない）。
 /// Android のシステム CA は OpenSSL と同じ形（<hash>.0 の PEM）の dir なので、SSL_CERT_DIR で指す。
 /// 利用者が入れた CA（/data の cacerts-added）は含まれない。
 ///

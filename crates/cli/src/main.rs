@@ -1,6 +1,7 @@
 mod args;
 mod live;
 mod output;
+mod plugin;
 mod send;
 mod timefmt;
 mod tui;
@@ -13,7 +14,8 @@ use std::process::ExitCode;
 use args::{Cli, Command, ConfigAction};
 use clap::Parser;
 use disnans_client_core::{
-    ClientError, LocalStore, MessagesQuery, RestClient, ServerUrl, StoreError, UrlError, WsError,
+    ClientError, LocalStore, MessagesQuery, ReadFailure, RestClient, ServerUrl, StoreError,
+    UrlError, WsError,
 };
 
 #[derive(Debug)]
@@ -22,6 +24,8 @@ enum CliError {
     Store(StoreError),
     Url(UrlError),
     Client(ClientError),
+    /// プラグイン API の失敗（`unknown_outcome` は 4、通信失敗は 3、それ以外は 1）。
+    Plugin(ReadFailure),
     Ws(WsError),
     Body(send::BodyError),
     /// サーバーが確実に未保存と示した拒否（終了コード1）。
@@ -64,6 +68,12 @@ impl CliError {
             Self::Ws(WsError::Connect(_) | WsError::Timeout) => 3,
             Self::Body(send::BodyError::Io(_)) => 1,
             Self::Body(_) => 2,
+            Self::Plugin(f) => match f.code.as_str() {
+                "unknown_outcome" => 4,
+                "network" | "timeout" => 3,
+                "invalid_request" => 2,
+                _ => 1,
+            },
             Self::SendUnknown { .. } | Self::ReactUnknown(_) => 4,
             Self::Interrupted => 130,
             _ => 1,
@@ -78,6 +88,7 @@ impl std::fmt::Display for CliError {
             Self::Store(e) => write!(f, "{e}"),
             Self::Url(e) => write!(f, "{e}"),
             Self::Client(e) => write!(f, "{e}"),
+            Self::Plugin(e) => write!(f, "{} ({}): {}", e.code, e.status.unwrap_or(0), e.message),
             Self::Ws(e) => write!(f, "{e}"),
             Self::Body(e) => write!(f, "{e}"),
             Self::SendRejected {
@@ -248,6 +259,10 @@ async fn run(cli: Cli) -> Result<String, CliError> {
         Command::Unreact(args) => {
             let server = resolve_server(cli.server.as_deref(), saved_server)?;
             live::react(server, cli.dev_user, args, false).await
+        }
+        Command::Plugin(action) => {
+            let server = resolve_server(cli.server.as_deref(), saved_server)?;
+            plugin::run(server, cli.dev_user.as_deref(), action).await
         }
         Command::Update(args) => update::run(args).await,
         // `watch` と `tui` は出力を逐次書くため `main` が直接扱う。

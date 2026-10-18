@@ -106,7 +106,7 @@ pub struct PluginPostMessage {
 pub enum PluginKind {
     /// `main.js` で動くプラグイン。
     Plugin,
-    /// `theme.css` だけのテーマ（JS なし）。端末ごとに1つ選んで適用する。
+    /// `theme.css` だけのテーマ（JS なし）。デバイスごとに1つ選んで適用する。
     Theme,
 }
 
@@ -232,7 +232,7 @@ pub struct ReadMarker {
     pub unread_count: u32,
 }
 
-/// 端末の一覧の1件（`GET /api/me/devices`）。端末 ID はクライアントが決める。
+/// デバイスの一覧の1件（`GET /api/me/devices`）。デバイス ID はクライアントが決める。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DeviceInfo {
@@ -241,18 +241,18 @@ pub struct DeviceInfo {
     pub created_at: Timestamp,
     /// 最後に設定を読み書きした時刻。
     pub last_seen_at: Timestamp,
-    /// 端末の設定が保存されているか。
+    /// デバイスの設定が保存されているか。
     pub has_prefs: bool,
 }
 
-/// `PUT /api/me/devices/{device_id}`（端末の登録と名前の変更）
+/// `PUT /api/me/devices/{device_id}`（デバイスの登録と名前の変更）
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PutDevice {
     pub name: String,
 }
 
-/// 端末ごとの設定（`GET/PUT /api/me/devices/{device_id}/prefs`）。
+/// デバイスごとの設定（`GET/PUT /api/me/devices/{device_id}/prefs`）。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DevicePrefs {
@@ -300,7 +300,7 @@ pub struct CallStatus {
     pub muted: bool,
     /// スピーカーミュート（相手の声を消している）。
     pub deafened: bool,
-    /// 端末の種類（smartphone / tablet / laptop / monitor）。
+    /// デバイスの種類（smartphone / tablet / laptop / monitor）。
     #[serde(default)]
     pub device: Option<String>,
 }
@@ -438,7 +438,7 @@ pub enum ServerEvent {
     /// セッションの state（とカード）が更新された。
     #[serde(rename = "session.updated")]
     SessionUpdated { session: Session },
-    /// セッションを開いている人の一覧（同じ人の複数の端末は1人）。そのセッションを開いている接続にだけ、変わるたびに送る。
+    /// セッションを開いている人の一覧（同じ人の複数のデバイスは1人）。そのセッションを開いている接続にだけ、変わるたびに送る。
     #[serde(rename = "session.presence")]
     SessionPresence { session_id: Id, user_ids: Vec<Id> },
     /// `session.emit` の中継。
@@ -481,7 +481,7 @@ pub enum ServerEvent {
         #[ts(type = "Record<string, unknown>")]
         prefs: serde_json::Value,
     },
-    /// 自分の既読の位置が変わった（別の端末で読んだときも）。自分のすべての接続に送る。
+    /// 自分の既読の位置が変わった（別のデバイスで読んだときも）。自分のすべての接続に送る。
     #[serde(rename = "read.updated")]
     ReadUpdated { marker: ReadMarker },
     #[serde(rename = "error")]

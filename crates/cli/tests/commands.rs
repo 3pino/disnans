@@ -346,3 +346,64 @@ fn run_command(mut command: Command, args: &[impl std::fmt::Debug]) -> Output {
         }
     })
 }
+
+#[tokio::test]
+async fn plugin_publish_list_and_remove_keep_visibility_and_report_errors() {
+    let server = TestServer::start(false).await;
+    let client = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("manifest.json"),
+        r#"{"id":"dice","version":"1.0.0","name":"Dice"}"#,
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("main.js"), "export default {};").unwrap();
+    let path = dir.path().to_str().unwrap().to_owned();
+    let run = |extra: Vec<&str>| {
+        let args = cli_args(&server, &extra);
+        run_cli_async(client.path().to_owned(), args)
+    };
+
+    // --dry-run は送らない。
+    let dry =
+        assert_success_json(&run(vec!["plugin", "publish", &path, "--dry-run", "--json"]).await);
+    assert_eq!(
+        (
+            dry["id"].as_str(),
+            dry["version"].as_str(),
+            dry["published"].as_bool()
+        ),
+        (Some("dice"), Some("1.0.0"), Some(false))
+    );
+    let list = assert_success_json(&run(vec!["plugin", "list", "--json"]).await);
+    assert!(list.as_array().unwrap().is_empty());
+
+    // 新規は private 指定で配布し、指定なしで更新しても private のまま。
+    let first =
+        assert_success_json(&run(vec!["plugin", "publish", &path, "--private", "--json"]).await);
+    assert_eq!(first["visibility"], "private");
+    std::fs::write(
+        dir.path().join("manifest.json"),
+        r#"{"id":"dice","version":"1.1.0","name":"Dice"}"#,
+    )
+    .unwrap();
+    let second = assert_success_json(&run(vec!["plugin", "publish", &path, "--json"]).await);
+    assert_eq!(second["visibility"], "private");
+    let list = assert_success_json(&run(vec!["plugin", "list", "--json"]).await);
+    assert_eq!(list[0]["version"], "1.1.0");
+    assert_eq!(list[0]["visibility"], "private");
+
+    // main.js が無ければ接続前に使い方の誤り(2)。
+    std::fs::remove_file(dir.path().join("main.js")).unwrap();
+    let missing = run(vec!["plugin", "publish", &path]).await;
+    assert_eq!(missing.status.code(), Some(2));
+    assert!(missing.stdout.is_empty());
+
+    let removed = assert_success_json(&run(vec!["plugin", "remove", "dice", "--json"]).await);
+    assert_eq!(removed["removed"], true);
+    let again = run(vec!["plugin", "remove", "dice"]).await;
+    assert_eq!(again.status.code(), Some(1));
+    assert!(again.stdout.is_empty());
+
+    server.stop().await;
+}

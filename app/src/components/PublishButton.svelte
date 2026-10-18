@@ -45,13 +45,13 @@
       <MenuItem class="publish-button-public" icon={Users} onclick={() => pick('public')}>
         <span class="publish-button-item">
           <span>みんなに配布</span>
-          <span class="muted publish-button-detail">全員の端末で使えます</span>
+          <span class="muted publish-button-detail">全員のデバイスで使えます</span>
         </span>
       </MenuItem>
       <MenuItem class="publish-button-private" icon={Lock} onclick={() => pick('private')}>
         <span class="publish-button-item">
           <span>自分だけに配布</span>
-          <span class="muted publish-button-detail">自分の端末（スマホも）でだけ使えます</span>
+          <span class="muted publish-button-detail">自分のデバイス（スマホも）でだけ使えます</span>
         </span>
       </MenuItem>
       {#if onunpublish}

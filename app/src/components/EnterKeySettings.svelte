@@ -6,7 +6,7 @@
   import { prefs } from '../lib/stores/prefs.svelte';
 
   // 設定の「操作」→「入力欄のキー」。Enter の組み合わせごとの動作を決める。
-  // サーバーに保存し、同じユーザーの端末で共有する（lib/stores/prefs.svelte.ts）
+  // サーバーに保存し、同じユーザーのデバイスで共有する（lib/stores/prefs.svelte.ts）
 
   const enterOptions: { value: EnterAction; label: string }[] = [
     { value: 'send', label: '送信' },
@@ -29,7 +29,7 @@
       {/snippet}
     </SettingRow>
   {/each}
-  <p class="muted enter-key-settings-note">メッセージの編集では「送信」が保存になります。この設定はほかの端末とも共有されます</p>
+  <p class="muted enter-key-settings-note">メッセージの編集では「送信」が保存になります。この設定はほかのデバイスとも共有されます</p>
 </Section>
 
 <style>

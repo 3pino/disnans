@@ -129,7 +129,7 @@
     const identity = JSON.stringify([target.serverUrl, target.userId, target.place]);
     void saveDraftAt(target, body, desktopShared ?? undefined).then((result) => {
       if (result.status === 'legacy-fallback') {
-        warnDraftSave(identity, '下書きは端末内だけに保存され、共有ファイルには保存されていません。');
+        warnDraftSave(identity, '下書きはデバイス内だけに保存され、共有ファイルには保存されていません。');
       } else if (result.status === 'superseded') {
         warnDraftSave(identity, '下書きが別のクライアントで更新されました。入力中の文章はそのまま残しています。');
       }

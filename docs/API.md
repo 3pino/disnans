@@ -28,26 +28,26 @@
 | PUT | `/api/me/read` | 既読の位置を進める（body: `MarkRead`） | `ReadMarker` |
 | GET | `/api/me/prefs` | 自分の設定（ホットキー・Enter キーの動作など。まだなければ `{}`） | JSON オブジェクト |
 | PUT | `/api/me/prefs` | 自分の設定をまるごと置き換える（body: JSON オブジェクト） | JSON オブジェクト |
-| GET | `/api/me/devices` | 自分の端末の一覧（`device_id`, `name`, `created_at`, `last_seen_at`, `has_prefs`。新しい順） | `[DeviceInfo]` |
-| PUT | `/api/me/devices/{device_id}` | 端末を登録する・名前を変える（body: `{ "name": "…" }`）。上限 50 台（超えると `409 too_many_devices`） | `DeviceInfo` |
-| DELETE | `/api/me/devices/{device_id}` | 端末と、その設定を消す | `204`（なければ `404`） |
-| GET | `/api/me/devices/{device_id}/prefs` | この端末の設定。未保存・端末がなければ `404` | `{ "prefs": {…}, "updated_at": n }` |
-| PUT | `/api/me/devices/{device_id}/prefs` | この端末の設定をまるごと置き換える（body: `{ "prefs": {…} }`）。端末を登録していなければ `404` | `{ "prefs": {…}, "updated_at": n }` |
+| GET | `/api/me/devices` | 自分のデバイスの一覧（`device_id`, `name`, `created_at`, `last_seen_at`, `has_prefs`。新しい順） | `[DeviceInfo]` |
+| PUT | `/api/me/devices/{device_id}` | デバイスを登録する・名前を変える（body: `{ "name": "…" }`）。上限 50 台（超えると `409 too_many_devices`） | `DeviceInfo` |
+| DELETE | `/api/me/devices/{device_id}` | デバイスと、その設定を消す | `204`（なければ `404`） |
+| GET | `/api/me/devices/{device_id}/prefs` | このデバイスの設定。未保存・デバイスがなければ `404` | `{ "prefs": {…}, "updated_at": n }` |
+| PUT | `/api/me/devices/{device_id}/prefs` | このデバイスの設定をまるごと置き換える（body: `{ "prefs": {…} }`）。デバイスを登録していなければ `404` | `{ "prefs": {…}, "updated_at": n }` |
 
-端末 ID はクライアントが作る（1〜64 文字、英数字とハイフン。認証ではなく、自分の端末だけに使う）。端末の一覧・設定の変更は他の端末にイベントで知らせない。設定の大きさは `/api/me/prefs` と同じ上限（64 KB）。
+デバイス ID はクライアントが作る（1〜64 文字、英数字とハイフン。認証ではなく、自分のデバイスだけに使う）。デバイスの一覧・設定の変更は他のデバイスにイベントで知らせない。設定の大きさは `/api/me/prefs` と同じ上限（64 KB）。
 | GET | `/api/users` | メンバー一覧 | `User[]` |
 | GET | `/api/avatars/{id}` | 自分で設定したアバターの画像（WebP） | バイナリ |
 | GET | `/api/messages?before=&limit=` | メッセージ履歴 | `Message[]` |
 | POST | `/api/files` | ファイルのアップロード（multipart、フィールド名 `file`） | `Attachment` |
 | GET | `/api/files/{id}` | ファイル本体 | バイナリ |
 | GET | `/api/files/{id}/thumb` | サムネイル（WebP） | バイナリ |
-| POST | `/api/notify/sample` | 自分にサンプルの `notify` を送る（通知の動作確認用）。送り先は、リクエストと同じ IP アドレス（端末）からの接続だけ | `204` |
+| POST | `/api/notify/sample` | 自分にサンプルの `notify` を送る（通知の動作確認用）。送り先は、リクエストと同じ IP アドレス（デバイス）からの接続だけ | `204` |
 | GET | `/api/plugins` | 自分に見えるプラグイン・テーマの一覧（みんなのものと自分だけのもの。ID 順） | `PluginInfo[]` |
 | POST | `/api/plugins` | プラグイン・テーマの配布・更新（multipart、フィールド名 `file` を複数、`visibility`） | `PluginInfo` |
 | DELETE | `/api/plugins/{id}` | プラグイン・テーマの削除 | `204` |
 | GET | `/api/plugins/{id}/files/{name}` | 配布されたファイル（`manifest.json` / `main.js` / `styles.css` / `theme.css` / `icon.svg`） | ファイル本体 |
 | POST | `/api/plugins/{id}/notify` | プラグインから通知を送る（body: `PluginNotify`） | `204` |
-| POST | `/api/plugins/{id}/messages` | プラグインがボットとしてメッセージを投稿する（body: `PluginPostMessage` = `{ body, name?, notify? }`）。`author_id` は呼び出した人で、`bot: { plugin, name }` が付く。`name` は前後の空白を除いて40文字まで（省略するとプラグインの名前）。本文の検査は通常のメッセージと同じ。プラグインがない（見えない）と `404`。配信は通常の投稿と同じ（`message.created`）。通知は `notify: true` のときだけ送る（v6。省略は `false` で、通知は一切送らない）。`true` なら通常の宛先（メンション・スレッドの参加者）に加えて投稿した本人にも送り、文言はボットの名前で作る（`{名前} からのメッセージ`、`{名前} さんからのメンション` など）。ボットのメッセージの編集は `bot_not_editable` | `Message` |
+| POST | `/api/plugins/{id}/messages` | プラグインがボットとしてメッセージを投稿する（body: `PluginPostMessage` = `{ body, name?, notify? }`）。`author_id` は呼び出した人で、`bot: { plugin, name }` が付く。`name` は前後の空白を除いて40文字まで（省略するとプラグインの名前）。本文の検査は通常のメッセージと同じ。プラグインがない（見えない）と `404`。配信は通常の投稿と同じ（`message.created`）。通知は `notify: true` のときだけ送る（v6。省略は `false` で、通知は一切送らない）。`true` なら通常の宛先（メンション・返信）と、投稿が届く全員に送り、タイトルはボットの名前で作る（投稿した本人にもボットの名前で1件送る。メンションは `{ボットの名前} mentioned you`、返信は `{ボットの名前} replied to you`）。ボットのメッセージの編集は `bot_not_editable` | `Message` |
 | POST | `/api/sessions` | セッションを作り、カードを流す（body: `CreateSession` = `{ plugin, state, card }`） | `Session` |
 | GET | `/api/sessions/{id}` | セッション1件 | `Session` |
 | PUT | `/api/sessions/{id}` | セッションの更新（body: `UpdateSession`） | `Session` |
@@ -63,10 +63,10 @@
 - Tailscale のプロフィール画像は、ログインのたびに最新の URL を覚えておく。自分で設定しているあいだは表示に使わない（`user.updated` も流さない）。削除するとその最新の URL に戻る
 
 ### 設定（prefs）
-- ユーザーごとに1つの JSON オブジェクトを保存し、同じユーザーの端末どうしで共有する。中身はクライアントが決める（サーバーは形と大きさだけを確かめる）
+- ユーザーごとに1つの JSON オブジェクトを保存し、同じユーザーのデバイスどうしで共有する。中身はクライアントが決める（サーバーは形と大きさだけを確かめる）
   - いまの中身: `hotkeys`（コマンド ID → `"Mod+Shift+D"` 形式のホットキーの配列。空の配列は「なし」、項目がなければ既定。古い1つだけの文字列も読める）、`slashNames`（コマンド ID → スラッシュコマンドの別名。項目がなければ元の名前）、`enterKeys`（`enter` / `shift` / `ctrl` / `alt` → `"send"` / `"newline"` / `"none"`）
 - オブジェクトでなければ `400 invalid_prefs`、JSON にして 64 KB を超えたら `413 prefs_too_large`
-- 保存したら、そのユーザーのすべての接続に `prefs.updated` を送る（保存した端末にも届く）
+- 保存したら、そのユーザーのすべての接続に `prefs.updated` を送る（保存したデバイスにも届く）
 
 ### メッセージ履歴
 - メインチャットの履歴だけを返す。`thread_id` は廃止した（付けても無視する）
@@ -87,7 +87,7 @@
 - マイグレーション 0008 を当てた時点のメッセージは、全員について既読にする
 - `PUT` は位置を進めるだけで、戻さない（古い ID なら何もせず、いまの位置を返す）
   - `message_id` が ULID の形でなければ `400 invalid_message_id`
-  - 位置が進んだら、自分のすべての接続（送った端末を含む）に `read.updated` を送る
+  - 位置が進んだら、自分のすべての接続（送ったデバイスを含む）に `read.updated` を送る
 - マイグレーション 0012 でスレッドを廃止した。スレッドの既読の位置は消し、メインチャットの位置は残す
 
 ### 返信
@@ -166,7 +166,7 @@
 - 古いクライアントの `message.send` に付いている `thread_id` / `start_thread` は無視し、メインチャットに入れる。`thread.create` は知らない形として `invalid_event` で断る
 - プラグインの配布・更新・削除（`plugin.updated` / `plugin.removed`）と、セッションの更新（`session.updated`）は全員に配信する（自分だけのプラグイン・テーマのイベントは持ち主にだけ）
 - セッションを開いている人（プレゼンス）。メモリだけで持ち、保存しない
-  - `session.open { session_id }` で開く、`session.close { session_id }` で閉じる。接続が切れたときは自動で閉じる。同じ人の複数の端末は1人として数える
+  - `session.open { session_id }` で開く、`session.close { session_id }` で閉じる。接続が切れたときは自動で閉じる。同じ人の複数のデバイスは1人として数える
   - 開いたら、そのセッションを開いている接続（開いたばかりの接続を含む）全員に `session.presence { session_id, user_ids }` を送る。`user_ids` は開いている人のユーザー ID（重複なし・並びは ID 順）。開いた直後の一覧も同じイベントで返る。閉じた・切れたときも、残っている人の接続に送る（閉じた接続には送らない）
   - 送り先はそのセッションを開いている接続だけ。`session_id` が存在しなければ `not_found`
 - `session.emit` は保存せず、送信した接続以外の全員（同じユーザーの別の接続を含む）に `session.event` として中継する。`from` は送信者のユーザー ID

@@ -447,7 +447,7 @@ describe('参加と音声', () => {
     expect(a.sent).toHaveLength(0);
   });
 
-  it('ミュート・スピーカーミュート・端末の種類は参加者に共有される', async () => {
+  it('ミュート・スピーカーミュート・デバイスの種類は参加者に共有される', async () => {
     const a = makeClient('u1', { device: 'smartphone' });
     const b = makeClient('u2');
     await connect(a, b);
@@ -774,12 +774,12 @@ describe('参加と音声', () => {
     server.handle = (c, ev) => {
       if (ev.type !== 'call.join') return realHandle(c, ev);
       c.sent.push(ev);
-      c.store.onServerEvent({ type: 'error', code: 'invalid_status', message: '端末の種類が長すぎます' } as never);
+      c.store.onServerEvent({ type: 'error', code: 'invalid_status', message: 'デバイスの種類が長すぎます' } as never);
     };
     await a.store.join();
     await flush();
     expect(a.store.joined).toBe(false);
-    expect(a.toast).toHaveBeenCalledWith('通話に入れませんでした（端末の種類が長すぎます）', 'error');
+    expect(a.toast).toHaveBeenCalledWith('通話に入れませんでした（デバイスの種類が長すぎます）', 'error');
     server.handle = realHandle;
   });
 

@@ -7,7 +7,7 @@
   import Menu from './ui/Menu.svelte';
   import { DEVICE_KIND_LABELS, DEVICE_KINDS, deviceKind, type DeviceKind } from '../lib/deviceKind.svelte';
 
-  // プロフィールのカードの右に置く「この端末の種類」。この端末だけの設定（サーバーの端末の設定に保存）。
+  // プロフィールのカードの右に置く「このデバイスの種類」。このデバイスだけの設定（サーバーのデバイスの設定に保存）。
   // 今の種類のアイコンを押すと、種類のアイコンが並んだポップアップが開き、選ぶと閉じる（リアクションの絵文字と同じ形式）
   const icons: Record<DeviceKind, typeof Smartphone> = { smartphone: Smartphone, tablet: Tablet, laptop: Laptop, monitor: Monitor };
 
@@ -34,8 +34,8 @@
 <div class="device-kind">
   <IconButton
     class="device-kind-button"
-    label="この端末の種類: {DEVICE_KIND_LABELS[deviceKind.value]}"
-    title="この端末の種類: {DEVICE_KIND_LABELS[deviceKind.value]}"
+    label="このデバイスの種類: {DEVICE_KIND_LABELS[deviceKind.value]}"
+    title="このデバイスの種類: {DEVICE_KIND_LABELS[deviceKind.value]}"
     active={open}
     aria-expanded={open}
     onclick={() => (open = !open)}
@@ -43,7 +43,7 @@
     <CurrentIcon size={20} />
   </IconButton>
   {#if open}
-    <Menu class="device-kind-menu" label="この端末の種類" onclose={() => (open = false)}>
+    <Menu class="device-kind-menu" label="このデバイスの種類" onclose={() => (open = false)}>
       {#each DEVICE_KINDS as k (k)}
         {@const Icon = icons[k]}
         <button

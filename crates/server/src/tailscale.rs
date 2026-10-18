@@ -20,7 +20,7 @@ use serde::Deserialize;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 
-/// whois の結果を覚えておく時間。同じ端末（IP）からのリクエストのたびに問い合わせないようにする。
+/// whois の結果を覚えておく時間。同じデバイス（IP）からのリクエストのたびに問い合わせないようにする。
 const CACHE_TTL: Duration = Duration::from_secs(60);
 const TIMEOUT: Duration = Duration::from_secs(5);
 

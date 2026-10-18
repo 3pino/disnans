@@ -27,7 +27,7 @@
 
   const deviceIcons = { smartphone: Smartphone, tablet: Tablet, laptop: Laptop, monitor: Monitor };
   const badgeIcons: Record<StatusBadge, typeof Mic> = { muted: MicOff, deafened: HeadphoneOff, 'local-muted': VolumeX };
-  const badgeLabels: Record<StatusBadge, string> = { muted: 'ミュート中', deafened: 'スピーカーミュート中', 'local-muted': 'この端末では消音中' };
+  const badgeLabels: Record<StatusBadge, string> = { muted: 'ミュート中', deafened: 'スピーカーミュート中', 'local-muted': 'このデバイスでは消音中' };
 
   const people = $derived(call.participants);
 
@@ -194,7 +194,7 @@
     background: var(--surface-2);
     color: var(--text);
   }
-  /* 右下: 端末の種類 */
+  /* 右下: デバイスの種類 */
   .call-badge-device {
     position: absolute;
     right: -4px;

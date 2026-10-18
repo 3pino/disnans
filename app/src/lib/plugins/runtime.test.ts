@@ -334,7 +334,7 @@ describe('PluginRuntime', () => {
     expect(f.slash.size).toBe(0);
   });
 
-  it('loadData / saveData は JSON で端末に保存する', async () => {
+  it('loadData / saveData は JSON でデバイスに保存する', async () => {
     const f = fakeServices();
     let plugin: PluginBase | null = null;
     class P extends PluginBase {

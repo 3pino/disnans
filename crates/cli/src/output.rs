@@ -1,6 +1,6 @@
 use disnans_shared::{Message, User};
 
-/// サーバー由来の文字列を端末にそのまま渡さない。改行も1行内の可視表現にする。
+/// サーバー由来の文字列をターミナルにそのまま渡さない。改行も1行内の可視表現にする。
 /// JSON 出力には使わず、serde_json に元データを渡す。
 pub fn escape_human(input: &str) -> String {
     let mut safe = String::with_capacity(input.len());

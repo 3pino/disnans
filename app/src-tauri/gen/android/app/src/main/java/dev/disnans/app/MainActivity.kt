@@ -12,7 +12,7 @@ class MainActivity : TauriActivity() {
   }
 
   /**
-   * 端末で選んだ画面の向きを、WebView の読み込みの前に適用する（notifier プラグインの set_orientation が保存した値）。
+   * このデバイスで選んだ画面の向きを、WebView の読み込みの前に適用する（notifier プラグインの set_orientation が保存した値）。
    * 保存がなければ manifest のまま。キーは notifier プラグインの Prefs と同じ。
    */
   private fun applySavedOrientation() {

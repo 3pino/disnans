@@ -178,7 +178,7 @@ declare global {
       connected: boolean;
       /** いましゃべっている */
       speaking: boolean;
-      /** 端末の種類（`smartphone` `tablet` `laptop` `monitor`。不明なら null） */
+      /** デバイスの種類（`smartphone` `tablet` `laptop` `monitor`。不明なら null） */
       device: string | null;
     };
 
@@ -274,7 +274,7 @@ declare global {
 
     /** 音の出力先（API v5） */
     type AudioOutput = {
-      /** `audio.setOutput` に渡す ID（端末ごとに違う。保存するなら kind と label も覚えておくとよい） */
+      /** `audio.setOutput` に渡す ID（デバイスごとに違う。保存するなら kind と label も覚えておくとよい） */
       id: string;
       /** 表示用の名前（「受話口」「スピーカー」「イヤホン（…）」「Bluetooth（…）」など） */
       label: string;
@@ -289,7 +289,7 @@ declare global {
 
     /**
      * 音の入出力の選択（API v5）。使えない環境では一覧が空になる。
-     * - Android: 出力先は端末全体（通話中のみ）。受話口・スピーカー・有線イヤホン・Bluetooth から選べる。入力は選べない（空）
+     * - Android: 出力先はデバイス全体（通話中のみ）。受話口・スピーカー・有線イヤホン・Bluetooth から選べる。入力は選べない（空）
      * - デスクトップ・ブラウザー: `setSinkId` が使えれば、`attach` した要素の出力先を切り替える。入力は `getUserMedia({ audio: { deviceId } })` に渡す
      */
     interface Audio {
@@ -407,9 +407,9 @@ declare global {
       /** setInterval を登録し、外すときに自動で止める（`window.setInterval` の戻り値を渡す） */
       registerInterval(id: number): number;
 
-      /** その端末に保存したプラグインのデータを読む（なければ null） */
+      /** そのデバイスに保存したプラグインのデータを読む（なければ null） */
       loadData<T = unknown>(): Promise<T | null>;
-      /** その端末にプラグインのデータを保存する（JSON にできる値） */
+      /** そのデバイスにプラグインのデータを保存する（JSON にできる値） */
       saveData(data: unknown): Promise<void>;
 
       /** 通知を送る。session を渡すと、通知から開いたときにそのカードの場所を開く */
@@ -419,14 +419,14 @@ declare global {
        * このプラグインの名前（`name` で変えられる）のボットとして、チャットにメッセージを投稿する（API v5）。
        * 投稿した人（author）は自分のままで、メッセージに bot の印が付く。投稿先はメインチャット。
        * 本文は普通のメッセージと同じ制限（空でなく 10,000 文字まで）。`name` は前後の空白を除いて 40 文字まで。
-       * `notify: true` なら、メンションされた人・スレッドの参加者に加えて、投稿した本人にも通知する（API v6）。
+       * `notify: true` なら、メンションされた人・返信先の人に加えて、投稿が届く全員に通知する（投稿した本人にもボットの名前で1件）（API v6）。
        * 通知の文言はボットの名前で作る。省略（`false`）すると通知は送らない
        */
       /** 失敗が code 'unknown_outcome' のときは送信済みかどうか分からない。再送は plugin が判断する（二重投稿に注意） */
       postMessage(opts: { body: string; name?: string; notify?: boolean }): Promise<void>;
 
       /**
-       * このプラグインの一時的なイベントを、いまつながっているほかの人（と自分の別の端末）に送る（API v3）。
+       * このプラグインの一時的なイベントを、いまつながっているほかの人（と自分の別のデバイス）に送る（API v3）。
        * セッションには紐づかず、保存もしない。自分には届かない。届くのはオンラインの人だけで、遅れて来た人には届かない。
        * 宛先は選べず全員に届くので、宛先が要るときは payload に入れて受け取る側で見分ける。payload は 64 KB まで
        */

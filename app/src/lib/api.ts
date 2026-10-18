@@ -29,7 +29,7 @@ export const api = {
   setAvatar: (file: Blob, fileName = 'avatar'): Promise<User> => writes.write.setAvatar(file, fileName),
   /** 自分で設定したアバターを消し、Tailscale のプロフィール画像に戻す */
   clearAvatar: () => writes.write.clearAvatar(),
-  /** 自分の設定（端末をまたいで共有する。中身はクライアントが決める JSON オブジェクト） */
+  /** 自分の設定（デバイスをまたいで共有する。中身はクライアントが決める JSON オブジェクト） */
   prefs: () => reads.prefs(),
   setPrefs: (prefs: Record<string, unknown>) => writes.write.setPrefs(prefs),
   users: () => reads.users(),

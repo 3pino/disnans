@@ -4,11 +4,11 @@ import { setScreenOrientation } from '../systemBars';
 import { ui } from './ui.svelte';
 
 /**
- * Android の画面の向き。設定（端末ごと）と、全画面のメディアを見ているかで、ネイティブの向きの固定を決めて渡す。
+ * Android の画面の向き。設定（デバイスごと）と、全画面のメディアを見ているかで、ネイティブの向きの固定を決めて渡す。
  * 全画面の検知: 写真の全画面（ui.lightbox）と、プラグインの没入モード（ui.setImmersive が成功したとき）。
  */
 class Orientation {
-  /** 画面の向きの設定（この端末だけ。deviceSettings の値） */
+  /** 画面の向きの設定（このデバイスだけ。deviceSettings の値） */
   get mode(): OrientationMode {
     return deviceSettings.orientation;
   }

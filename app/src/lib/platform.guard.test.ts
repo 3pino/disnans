@@ -1,4 +1,4 @@
-// ステップ7・P4: 端末の判定（UA・platform の文字列・Tauri の内部・Rust の注入値）を読んでよいのは platform.ts だけ。
+// ステップ7・P4: デバイスの判定（UA・platform の文字列・Tauri の内部・Rust の注入値）を読んでよいのは platform.ts だけ。
 // 他の場所で直接読むと、Rust の値を優先する仕組みをすり抜けるので、ここで止める。
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -30,7 +30,7 @@ const FORBIDDEN: Array<{ label: string; pattern: RegExp }> = [
   { label: 'Rust の注入値', pattern: /__DISNANS_PLATFORM__/ },
 ];
 
-describe('端末の判定は platform.ts だけで読む（P4）', () => {
+describe('デバイスの判定は platform.ts だけで読む（P4）', () => {
   const files = sourceFiles(SRC).filter((f) => f !== ALLOWED);
 
   it('ソースを見つけている（検査が空振りしていない）', () => {

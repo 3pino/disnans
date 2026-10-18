@@ -145,7 +145,7 @@ async fn same_user_on_two_devices_counts_once() {
         .await;
     assert_eq!(presence_of(&mut bob, sid).await, both);
 
-    // 片方の端末を閉じても、もう片方が開いているあいだは残る
+    // 片方のデバイスを閉じても、もう片方が開いているあいだは残る
     alice
         .send(ClientEvent::SessionClose {
             session_id: sid.into(),

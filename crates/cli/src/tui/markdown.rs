@@ -1,4 +1,4 @@
-//! Markdown の木（core の `view::markdown`）を、端末の装飾つきの文字（セル）の行にする。
+//! Markdown の木（core の `view::markdown`）を、ターミナルの装飾つきの文字（セル）の行にする。
 //!
 //! 描画（色・修飾）は `view.rs` が `Deco` から決める。ここは文字と装飾の種類だけを扱う。
 //! サーバー由来の文字列はすべて `sanitize::escape_text` を通してから出す。

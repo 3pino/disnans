@@ -11,8 +11,8 @@ use crate::state::SharedState;
 
 /// 自分にサンプルの通知を送る（通知が届くかの確認用）。
 ///
-/// 送るのは、ボタンを押した端末（リクエストと同じ IP アドレスからの接続）だけ。
-/// Android では WebView と通知用の常駐サービスの両方が、同じ端末からつないでいる。
+/// 送るのは、ボタンを押したデバイス（リクエストと同じ IP アドレスからの接続）だけ。
+/// Android では WebView と通知用の常駐サービスの両方が、同じデバイスからつないでいる。
 pub async fn sample(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,

@@ -1,6 +1,6 @@
 import { moveItem } from './sortable';
 
-// ナビゲーションバーに出すコマンドの並び（端末ごと。lib/stores/navBar.svelte.ts に保存する）
+// ナビゲーションバーに出すコマンドの並び（デバイスごと。lib/stores/navBar.svelte.ts に保存する）
 // 項目は本体・プラグインのコマンドの ID（app:open-chat など）。登録されていないもの（外したプラグインなど）は出さないが、並びには残す
 
 export const NAV_CHAT_ID = 'app:open-chat';

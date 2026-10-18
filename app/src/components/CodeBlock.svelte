@@ -5,7 +5,7 @@
   import { ui } from '../lib/stores/ui.svelte';
 
   // 本文のコードブロック。右上にコピーのボタンを出す
-  // （マウスでは重ねたときだけ。タッチの端末ではいつも薄く出す）
+  // （マウスでは重ねたときだけ。タッチ操作のデバイスではいつも薄く出す）
   let { text, lang }: { text: string; lang: string } = $props();
 
   let copied = $state(false);
@@ -67,7 +67,7 @@
   .code-block-copy:focus-visible {
     opacity: 1;
   }
-  /* タッチの端末は重ねられないので、いつも薄く出しておく */
+  /* タッチ操作のデバイスは重ねられないので、いつも薄く出しておく */
   @media (hover: none) {
     .code-block .code-block-copy {
       opacity: 0.7;

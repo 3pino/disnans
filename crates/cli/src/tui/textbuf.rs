@@ -142,7 +142,7 @@ impl TextBuf {
     }
 
     /// 表示幅 `width` 桁で折り返した行と、カーソルの（行, 桁）。
-    /// 返す文字列は端末に渡す前にエスケープ済み。
+    /// 返す文字列はターミナルに渡す前にエスケープ済み。
     pub fn layout(&self, width: usize) -> (Vec<String>, (usize, usize)) {
         let width = width.max(1);
         let (cursor_row, cursor_col) = self.cursor_position();

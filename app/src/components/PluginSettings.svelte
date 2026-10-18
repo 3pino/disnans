@@ -205,7 +205,7 @@
         <Button type="submit" disabled={devDir.trim() === pluginHost.devDir}><FolderOpen size={15} />設定</Button>
       </div>
       <p class="muted plugin-settings-small">
-        フォルダの中のサブフォルダ（manifest.json と main.js、テーマなら theme.css）を、この端末でだけ読み込みます。保存すると自動で読み込み直します。
+        フォルダの中のサブフォルダ（manifest.json と main.js、テーマなら theme.css）を、このデバイスでだけ読み込みます。保存すると自動で読み込み直します。
       </p>
       {#if pluginHost.devError}
         <StatusLine kind="error" icon={CircleAlert}>{pluginHost.devError}</StatusLine>

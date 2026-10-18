@@ -44,8 +44,8 @@ describe('legacyUserValues（以前の localStorage からユーザーごとの�
   });
 });
 
-describe('legacyDeviceValues（以前の localStorage から端末ごとの値）', () => {
-  it('ナビバーを隠す（"1" を真偽値に）・向き・端末の種類・プラグイン', () => {
+describe('legacyDeviceValues（以前の localStorage からデバイスごとの値）', () => {
+  it('ナビバーを隠す（"1" を真偽値に）・向き・デバイスの種類・プラグイン', () => {
     const v = legacyDeviceValues(
       store({
         [LEGACY.hideNavigationBar]: '1',
@@ -69,7 +69,7 @@ describe('legacyDeviceValues（以前の localStorage から端末ごとの値�
     expect(v).toEqual({ hideNavigationBar: false });
   });
 
-  it('通話の機器（入力・出力）は端末ごと', () => {
+  it('通話の機器（入力・出力）はデバイスごと', () => {
     const v = legacyDeviceValues(store({ [LEGACY.call]: JSON.stringify({ inputId: 'mic1', output: { id: 'o', kind: 'speaker', label: 'S' } }) }));
     expect(v).toEqual({ inputId: 'mic1', output: { id: 'o', kind: 'speaker', label: 'S' } });
   });
@@ -103,7 +103,7 @@ describe('normalizeTheme', () => {
 // ---- 既定値が Rust の定義（tests/fixtures/prefs/defaults.json）と同じか ----
 // 既定値の固定は fixture が正（Rust の defaults_match_the_fixture も同じファイルを読む）。
 // TS の既定（ここの DEVICE_DEFAULTS・各モジュールの DEFAULT_*）が、その値と一致することを確かめる。
-// 区分（ユーザー共通・端末ごと・ローカル）は fixture に無いので、下の表で TS 側の区分と合わせる。
+// 区分（ユーザー共通・デバイスごと・ローカル）は fixture に無いので、下の表で TS 側の区分と合わせる。
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -149,7 +149,7 @@ const SCOPE_OF: Record<string, 'user' | 'device' | 'local'> = {
   updateNotifiedVersion: 'local',
 };
 
-/** TS 側の既定（同じ値を読む先）。ユーザー共通・端末ごと */
+/** TS 側の既定（同じ値を読む先）。ユーザー共通・デバイスごと */
 const TS_DEFAULTS: Record<string, unknown> = {
   theme: 'system',
   customTheme: null,

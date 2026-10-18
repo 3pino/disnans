@@ -30,7 +30,7 @@
   import { prefs } from '../lib/stores/prefs.svelte';
 
   // 設定の「操作」→「ホットキー」（デスクトップのみ）。コマンドごとのホットキーを複数決め、
-  // スラッシュコマンドの名前（別名）も変えられる。保存はサーバーに置き（lib/stores/prefs.svelte.ts）、同じユーザーの端末で共有する
+  // スラッシュコマンドの名前（別名）も変えられる。保存はサーバーに置き（lib/stores/prefs.svelte.ts）、同じユーザーのデバイスで共有する
 
   /** 本体のもの → プラグインのもの、それぞれ名前順 */
   const commands = $derived(filterCommands(commandList(), ''));
@@ -129,7 +129,7 @@
 
 <Section title="ホットキー" class="hotkey-settings">
   <p class="muted hotkey-settings-note">
-    ＋ を押してから、追加したいキーを押します（Esc で取り消し）。キーの右の × で外せます。{#if paletteHotkey}コマンドパレット（{paletteHotkey}）からも実行できます。{/if}この設定はほかの端末とも共有されます
+    ＋ を押してから、追加したいキーを押します（Esc で取り消し）。キーの右の × で外せます。{#if paletteHotkey}コマンドパレット（{paletteHotkey}）からも実行できます。{/if}この設定はほかのデバイスとも共有されます
   </p>
   {#each commands as c (c.id)}
     {@const hotkeys = effectiveHotkeys(c, prefs.hotkeys)}

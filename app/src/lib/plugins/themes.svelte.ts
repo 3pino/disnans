@@ -1,4 +1,4 @@
-// テーマ（docs/THEMES.md）: theme.css だけのパッケージ。端末ごとに1つ選び、本体の CSS のあとに <style> で入れる。
+// テーマ（docs/THEMES.md）: theme.css だけのパッケージ。デバイスごとに1つ選び、本体の CSS のあとに <style> で入れる。
 // 一覧（配布済み・開発用フォルダ）は PluginHost が持ち、変わるたびに sync() を呼ぶ。
 
 import { api } from '../api';

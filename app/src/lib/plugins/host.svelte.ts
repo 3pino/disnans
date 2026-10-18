@@ -85,7 +85,7 @@ export type PluginEntry = {
   server: PluginInfo | null;
   /** 開発用フォルダのもの（あれば、こちらを使う） */
   dev: DevPlugin | null;
-  /** この端末でオンか */
+  /** このデバイスでオンか */
   enabled: boolean;
   /** 今動いているか */
   loaded: boolean;
@@ -110,7 +110,7 @@ export type ThemeEntry = {
   manifest: Manifest | null;
   server: PluginInfo | null;
   dev: DevPlugin | null;
-  /** この端末で選んでいるか */
+  /** このデバイスで選んでいるか */
   selected: boolean;
   /** いま適用しているか */
   applied: boolean;
@@ -148,7 +148,7 @@ async function importModule(id: string, code: string): Promise<{ default?: unkno
 
 /**
  * プラグインのホスト。配布済み（サーバー）と開発中（開発用フォルダ）のプラグインを読み込み・外す。
- * 端末ごとのオンオフと、読み込みのエラーもここで持つ。
+ * デバイスごとのオンオフと、読み込みのエラーもここで持つ。
  */
 class PluginHost {
   /** 配布済みのもの（サーバーの一覧） */
@@ -156,12 +156,12 @@ class PluginHost {
   serverError = $state<string | null>(null);
   /** 開発用フォルダのもの */
   dev = $state<DevPlugin[]>([]);
-  /** 開発用フォルダ（この端末の設定 deviceSettings.pluginsDevDir） */
+  /** 開発用フォルダ（このデバイスの設定 deviceSettings.pluginsDevDir） */
   get devDir(): string {
     return deviceSettings.pluginsDevDir ?? '';
   }
   devError = $state<string | null>(null);
-  /** この端末でオフにしたもの（この端末の設定 deviceSettings.pluginsDisabled） */
+  /** このデバイスでオフにしたもの（このデバイスの設定 deviceSettings.pluginsDisabled） */
   get disabled(): string[] {
     return deviceSettings.pluginsDisabled;
   }
@@ -267,7 +267,7 @@ class PluginHost {
 
     // ホットキー（addCommand）は lib/commandHost.svelte.ts がまとめて受け付ける
     client.subscribe((ev) => this.onEvent(ev));
-    // 端末の設定（オフの一覧）と、テーマ（prefs）が変わったら、読み込みを合わせ直す（サーバーの値が後から届くため）
+    // デバイスの設定（オフの一覧）と、テーマ（prefs）が変わったら、読み込みを合わせ直す（サーバーの値が後から届くため）
     deviceSettings.subscribe(() => void this.reconcile());
     prefs.subscribe(() => void this.reconcile());
     // すでに hello を受け取っていたら（HMR など）そのまま始める

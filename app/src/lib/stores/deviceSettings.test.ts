@@ -46,7 +46,7 @@ describe('defaultDeviceName', () => {
     expect(defaultDeviceName('windows')).toBe('Windows');
     expect(defaultDeviceName('linux')).toBe('Linux');
     expect(defaultDeviceName('android')).toBe('Android');
-    expect(defaultDeviceName('')).toBe('この端末');
+    expect(defaultDeviceName('')).toBe('このデバイス');
   });
 });
 
@@ -68,7 +68,7 @@ describe('DeviceSettings（ブラウザ版: localStorage だけ）', () => {
     expect(new DeviceSettings(deps({ local }).d).orientation).toBe('portrait');
   });
 
-  it('start は端末を使わずに ready になる', async () => {
+  it('start はデバイスを使わずに ready になる', async () => {
     const s = new DeviceSettings(deps().d);
     await s.start();
     expect(s.ready).toBe(true);
@@ -86,7 +86,7 @@ describe('DeviceSettings（ブラウザ版: localStorage だけ）', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  it('端末の名前は保存したものが優先、無ければ既定', async () => {
+  it('デバイスの名前は保存したものが優先、無ければ既定', async () => {
     const local = memory();
     const s = new DeviceSettings(deps({ local }).d);
     expect(s.deviceName()).toBe('Linux');
@@ -98,7 +98,7 @@ describe('DeviceSettings（ブラウザ版: localStorage だけ）', () => {
   });
 });
 
-describe('DeviceSettings（Tauri: サーバーの端末の設定）', () => {
+describe('DeviceSettings（Tauri: サーバーのデバイスの設定）', () => {
   it('登録して読む。サーバーに設定があれば、それを使う', async () => {
     const { api } = fakeApi({ prefs: { deviceKind: 'monitor', orientation: 'media' } });
     const s = new DeviceSettings(deps({ api }).d);
@@ -139,7 +139,7 @@ describe('DeviceSettings（Tauri: サーバーの端末の設定）', () => {
     await s.start();
     s.set('deviceKind', 'tablet');
     await vi.waitFor(() => expect(reported.length).toBe(1));
-    expect(reported[0]).toContain('端末の設定を保存できませんでした');
+    expect(reported[0]).toContain('デバイスの設定を保存できませんでした');
     expect(s.deviceKind).toBe('tablet');
     setSettingsErrorHandler((t) => console.error(t));
   });
@@ -152,7 +152,7 @@ describe('DeviceSettings（Tauri: サーバーの端末の設定）', () => {
     const s = new DeviceSettings(deps({ api }).d);
     await s.start();
     expect(s.ready).toBe(true);
-    expect(reported[0]).toContain('端末の設定を読めませんでした');
+    expect(reported[0]).toContain('デバイスの設定を読めませんでした');
     setSettingsErrorHandler((t) => console.error(t));
   });
 

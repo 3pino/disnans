@@ -65,10 +65,10 @@
 
   onMount(() => {
     void updater.loadVersion();
-    // 端末ごとの設定は、ほかの端末の変更がイベントで届かないので、開くたびに読み直す
+    // デバイスごとの設定は、ほかのデバイスの変更がイベントで届かないので、開くたびに読み直す
     void deviceSettings.refresh();
     if (notifications.backend !== 'android') return;
-    // 接続の状態や、端末の設定画面から戻ったときの変化を反映する
+    // 接続の状態や、デバイスの設定画面から戻ったときの変化を反映する
     void notifications.refresh();
     const timer = setInterval(() => void notifications.refresh(), 3000);
     const onVisible = () => {
@@ -322,7 +322,7 @@
               <div class="muted settings-small-text settings-profile-login-name">{client.me.login_name}</div>
             </div>
           {/if}
-          <!-- この端末の種類は、プロフィールのカードの右に並べる -->
+          <!-- このデバイスの種類は、プロフィールのカードの右に並べる -->
           <DeviceKindSettings />
         </div>
       </Section>

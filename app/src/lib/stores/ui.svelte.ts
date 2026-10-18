@@ -39,7 +39,7 @@ class Ui {
   get theme(): ThemePref {
     return prefs.theme;
   }
-  /** Android のナビゲーションバーを隠す（その端末だけ。deviceSettings の値） */
+  /** Android のナビゲーションバーを隠す（そのデバイスだけ。deviceSettings の値） */
   get hideNavigationBar(): boolean {
     return deviceSettings.hideNavigationBar;
   }
@@ -88,7 +88,7 @@ class Ui {
     });
   }
 
-  /** ナビゲーションバーを隠すかを、この端末に保存する（テーマは prefs.setTheme） */
+  /** ナビゲーションバーを隠すかを、このデバイスに保存する（テーマは prefs.setTheme） */
   setHideNavigationBar(hidden: boolean): void {
     deviceSettings.set('hideNavigationBar', hidden);
   }

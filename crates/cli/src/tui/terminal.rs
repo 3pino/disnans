@@ -1,4 +1,4 @@
-//! 端末の準備と、終了・異常終了時の確実な復元。
+//! ターミナルの準備と、終了・異常終了時の確実な復元。
 
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -53,7 +53,7 @@ impl TermOps for RealOps {
     }
 }
 
-/// 端末が有効化済みで、まだ戻していない間 true。
+/// ターミナルが有効化済みで、まだ戻していない間 true。
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static KEYBOARD_FLAGS: AtomicBool = AtomicBool::new(false);
 
@@ -77,7 +77,7 @@ impl TerminalGuard {
         ACTIVE.store(true, Ordering::SeqCst);
         let result = (|| {
             execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
-            // 対応端末では修飾付き Enter を区別できる。Windows のコンソールは元から区別できる。
+            // 対応ターミナルでは修飾付き Enter を区別できる。Windows のコンソールは元から区別できる。
             let mut enhanced = cfg!(windows);
             if supports_keyboard_enhancement().unwrap_or(false)
                 && execute!(
@@ -109,7 +109,7 @@ impl Drop for TerminalGuard {
     }
 }
 
-/// panic の前に端末を戻し、元のフックでメッセージを出す。
+/// panic の前にターミナルを戻し、元のフックでメッセージを出す。
 fn install_panic_hook() {
     static INSTALLED: AtomicBool = AtomicBool::new(false);
     if INSTALLED.swap(true, Ordering::SeqCst) {

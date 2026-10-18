@@ -39,7 +39,7 @@ pub fn router(state: SharedState) -> Router {
                 .put(users::put_prefs)
                 .layer(DefaultBodyLimit::max(users::MAX_PREFS_BYTES * 2)),
         )
-        // 端末ごとの設定（上限は設定の大きさに、少し余裕を足したもの）
+        // デバイスごとの設定（上限は設定の大きさに、少し余裕を足したもの）
         .route("/me/devices", get(devices::list))
         .route(
             "/me/devices/{device_id}",

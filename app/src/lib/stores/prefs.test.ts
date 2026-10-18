@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 describe('Prefs（ユーザーごとの設定）', () => {
-  it('サーバーに無い項目だけ、以前の端末の値を一度取り込む（ある値は上書きしない）', async () => {
+  it('サーバーに無い項目だけ、以前のデバイスの値を一度取り込む（ある値は上書きしない）', async () => {
     localStorage.setItem('disnans.theme', 'dark');
     localStorage.setItem('disnans.navBarItems', JSON.stringify(['chat', 'settings', 'app:open-settings']));
     apiMock.prefs.mockResolvedValue({ ...BASE, theme: 'light' });
@@ -36,7 +36,7 @@ describe('Prefs（ユーザーごとの設定）', () => {
     expect(p.theme).toBe('light');
   });
 
-  it('サーバーに値があれば、以前の端末の値は使わない（保存もしない）', async () => {
+  it('サーバーに値があれば、以前のデバイスの値は使わない（保存もしない）', async () => {
     localStorage.setItem('disnans.theme', 'dark');
     apiMock.prefs.mockResolvedValue({ ...BASE, theme: 'light', joinMuted: true });
     const p = new Prefs();

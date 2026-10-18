@@ -70,7 +70,7 @@ export async function loadDraftAt(location: DraftLocation, shared?: SharedStorag
   const latest = latestSharedDrafts.get(id);
   if (latest && latest.version !== readVersion) return latest.value ?? '';
   if (result.status === 'legacy-fallback' && result.value === null) {
-    throw new Error('共有下書きを読み込めず、復元できる端末内の下書きもありません');
+    throw new Error('共有下書きを読み込めず、復元できるデバイス内の下書きもありません');
   }
   return result.value ?? '';
 }

@@ -44,7 +44,7 @@
     const priv = e.server?.visibility === 'private';
     const ok = await ui.confirm({
       title: `「${nameOf(e)}」の配布を取り消しますか？`,
-      body: `${priv ? 'あなたのすべての端末' : '全員のクライアント'}から外れます。手元の開発用フォルダは残るので、あとで配布し直せます。`,
+      body: `${priv ? 'あなたのすべてのデバイス' : '全員のクライアント'}から外れます。手元の開発用フォルダは残るので、あとで配布し直せます。`,
       okLabel: '配布しない',
       danger: true,
     });
@@ -64,7 +64,7 @@
     const priv = e.server?.visibility === 'private';
     const ok = await ui.confirm({
       title: `プラグイン「${nameOf(e)}」を削除しますか？`,
-      body: `${priv ? 'あなたのすべての端末' : '全員のクライアント'}から外れます。セッションとカードは残り、同じ ID で配布し直せばまた開けます。`,
+      body: `${priv ? 'あなたのすべてのデバイス' : '全員のクライアント'}から外れます。セッションとカードは残り、同じ ID で配布し直せばまた開けます。`,
       okLabel: '削除',
       danger: true,
     });

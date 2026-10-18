@@ -88,7 +88,7 @@ pub enum Action {
     Ignore,
 }
 
-/// 端末がキー修飾を区別して送れるかと、サーバー設定をまとめたもの。
+/// ターミナルがキー修飾を区別して送れるかと、サーバー設定をまとめたもの。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Keymap {
     pub enter_keys: EnterKeys,
@@ -118,7 +118,7 @@ impl Keymap {
             KeyCode::Enter => self.enter(ctrl || sup, alt, shift),
             KeyCode::Char(c) if ctrl && !alt => match c.to_ascii_lowercase() {
                 'q' | 'c' => Action::Quit,
-                // 端末や設定に関わらず送れる・改行できる固定のキー。
+                // ターミナルや設定に関わらず送れる・改行できる固定のキー。
                 's' => Action::Send,
                 'j' => Action::Newline,
                 'r' => Action::Refetch,
@@ -167,7 +167,7 @@ impl Keymap {
         }
     }
 
-    /// 入力欄の下に出すキーの案内。端末が区別できない組み合わせは載せない。
+    /// 入力欄の下に出すキーの案内。ターミナルが区別できない組み合わせは載せない。
     pub fn hint(&self) -> String {
         let keys = &self.enter_keys;
         let mut combos = vec![("Enter", keys.enter), ("Alt+Enter", keys.alt)];

@@ -1,6 +1,6 @@
-//! 端末の画像表示（Kitty graphics / iTerm2 inline images）。
+//! ターミナルの画像表示（Kitty graphics / iTerm2 inline images）。
 //! 文字の描画（ratatui）とは別に、画面へ載せ終わった後で画像だけを重ねる。
-//! 切り抜きは画像を切り出し直して送る（端末側の状態を持たない）。
+//! 切り抜きは画像を切り出し直して送る（ターミナル側の状態を持たない）。
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -141,7 +141,7 @@ impl Graphics {
         self.last = next.to_vec();
     }
 
-    /// 終了時に画像を消す（Kitty は端末側に残るため）。
+    /// 終了時に画像を消す（Kitty はターミナル側に残るため）。
     pub fn cleanup(&self, out: &mut Vec<u8>) {
         if self.protocol == Protocol::Kitty {
             out.extend_from_slice(b"\x1b_Ga=d,d=A,q=2\x1b\\");

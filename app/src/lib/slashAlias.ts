@@ -2,7 +2,7 @@ import { SLASH_NAME_RE } from './slashCommands.svelte';
 
 // スラッシュコマンドの別名（利用者が決める `/名前`）。コマンド ID → 別名。
 // 別名を付けると、そのコマンドは元の名前では呼べず、別名で呼ぶ（補完・入力もすべて別名）。元の名前に戻すと別名を消す。
-// 保存は prefs の slashNames（サーバーに置き、同じユーザーの端末で共有する）
+// 保存は prefs の slashNames（サーバーに置き、同じユーザーのデバイスで共有する）
 
 export type SlashAliases = Record<string, string>;
 

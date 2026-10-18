@@ -7,7 +7,7 @@ import type { ReadMarker } from '../protocol/ReadMarker';
  * 未読の管理。
  *
  * メインチャットの「ここまで読んだ位置」（メッセージ ID）と未読数を持つ（スレッドは廃止した）。
- * 位置はサーバーに保存し、同じユーザーの端末どうしで共有する（`GET/PUT /api/me/read`、`read.updated`）。
+ * 位置はサーバーに保存し、同じユーザーのデバイスどうしで共有する（`GET/PUT /api/me/read`、`read.updated`）。
  * ID（ULID）は作成順に並ぶので、文字列の大小で前後を比べる。
  * サーバーから来る `thread_id` は無視する（すべてメインチャットとして扱う）。
  */
@@ -75,7 +75,7 @@ export class Unread {
     this.loaded = true;
   }
 
-  /** `read.updated`（自分の別の端末、またはこの端末で送った既読）。手元より進んでいるときだけ使う */
+  /** `read.updated`（自分の別のデバイス、またはこのデバイスで送った既読）。手元より進んでいるときだけ使う */
   applyRemote(m: ReadMarker): void {
     if (this.cursor !== undefined && m.last_read_id < this.cursor) return;
     // 手元でもっと先まで読んでいて、まだ送っていなければ、その結果を待つ

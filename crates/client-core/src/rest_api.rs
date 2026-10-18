@@ -477,12 +477,12 @@ impl RestClient {
         .await
     }
 
-    /// 自分の端末の一覧（`GET /api/me/devices`）
+    /// 自分のデバイスの一覧（`GET /api/me/devices`）
     pub async fn list_devices(&self) -> Result<Value, ReadFailure> {
         self.get_value("/api/me/devices").await
     }
 
-    /// 端末を登録する、または名前を変える（`PUT /api/me/devices/{id}`）。冪等。
+    /// デバイスを登録する、または名前を変える（`PUT /api/me/devices/{id}`）。冪等。
     pub async fn put_device(&self, id: &str, name: &str) -> Result<Value, ReadFailure> {
         let path = with_id("/api/me/devices/", id, "");
         send_write(
@@ -493,19 +493,19 @@ impl RestClient {
         .await
     }
 
-    /// 端末とその設定を消す（`DELETE /api/me/devices/{id}`）
+    /// デバイスとその設定を消す（`DELETE /api/me/devices/{id}`）
     pub async fn delete_device(&self, id: &str) -> Result<Value, ReadFailure> {
         let path = with_id("/api/me/devices/", id, "");
         send_write(self.write_request(reqwest::Method::DELETE, &path), true).await
     }
 
-    /// この端末の設定（`GET /api/me/devices/{id}/prefs`）。設定が無ければ 404
+    /// このデバイスの設定（`GET /api/me/devices/{id}/prefs`）。設定が無ければ 404
     pub async fn get_device_prefs(&self, id: &str) -> Result<Value, ReadFailure> {
         self.get_value(&with_id("/api/me/devices/", id, "/prefs"))
             .await
     }
 
-    /// この端末の設定をまるごと置き換える（`PUT /api/me/devices/{id}/prefs`）。端末が未登録なら 404
+    /// このデバイスの設定をまるごと置き換える（`PUT /api/me/devices/{id}/prefs`）。デバイスが未登録なら 404
     pub async fn put_device_prefs(&self, id: &str, prefs: &Value) -> Result<Value, ReadFailure> {
         let path = with_id("/api/me/devices/", id, "/prefs");
         send_write(

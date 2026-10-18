@@ -2,8 +2,8 @@
  * 設定の保存先の決まり（docs/PLAN_SERVER_SETTINGS.md・crates/client-core/src/view/settings.rs と合わせる）。
  *
  * - ユーザー共通（`/api/me/prefs`）: テーマ・選んだテーマ・ナビゲーションバーの項目と表示名・通話の機器によらない設定
- * - 端末ごと（`/api/me/devices/{id}/prefs`）: 通話の入力・出力の機器・端末の種類・ナビバーを隠す・画面の向き・プラグインの無効化・開発フォルダ
- * - ローカル（この端末だけ）: 接続先・開発用ユーザー・更新の確認・開発用のフラグ・下書き（ここには入れない）
+ * - デバイスごと（`/api/me/devices/{id}/prefs`）: 通話の入力・出力の機器・デバイスの種類・ナビバーを隠す・画面の向き・プラグインの無効化・開発フォルダ
+ * - ローカル（このデバイスだけ）: 接続先・開発用ユーザー・更新の確認・開発用のフラグ・下書き（ここには入れない）
  *
  * このファイルは純粋な部品だけ（読み書きは stores/prefs・stores/deviceSettings）。
  * 以前の localStorage の値は、サーバーに無いときだけ一度取り込む（legacy*Values）。
@@ -22,13 +22,13 @@ export type ThemeChoice = (typeof THEME_CHOICES)[number];
 export const USER_KEYS = ['theme', 'customTheme', 'navBarItems', 'navBarLabels', 'joinMuted', 'micVolume', 'outVolume', 'limiter', 'limitDb'] as const;
 /** 通話の設定のうち、ユーザー共通のもの */
 export const CALL_USER_KEYS = ['joinMuted', 'micVolume', 'outVolume', 'limiter', 'limitDb'] as const;
-/** 通話の設定のうち、端末ごとのもの */
+/** 通話の設定のうち、デバイスごとのもの */
 export const CALL_DEVICE_KEYS = ['inputId', 'output'] as const;
 
-/** 端末ごとの項目（サーバーの端末の prefs のキー） */
+/** デバイスごとの項目（サーバーのデバイスの prefs のキー） */
 export const DEVICE_KEYS = ['inputId', 'output', 'deviceKind', 'hideNavigationBar', 'orientation', 'pluginsDisabled', 'pluginsDevDir'] as const;
 
-/** 端末の既定値（crates/client-core/src/view/settings.rs の DEFINITIONS と同じ） */
+/** デバイスの既定値（crates/client-core/src/view/settings.rs の DEFINITIONS と同じ） */
 export const DEVICE_DEFAULTS: Readonly<Raw> = Object.freeze({
   inputId: '',
   output: null,
@@ -54,7 +54,7 @@ export const LEGACY = {
   pluginsDevDir: 'disnans.plugins.devDir',
 } as const;
 
-/** 端末の種類（deviceKind.svelte.ts と同じ一覧） */
+/** デバイスの種類（deviceKind.svelte.ts と同じ一覧） */
 const DEVICE_KIND_LIST = ['smartphone', 'tablet', 'laptop', 'monitor'];
 
 export type LegacyRead = (key: string) => string | null;
@@ -102,7 +102,7 @@ export function legacyUserValues(read: LegacyRead): Raw {
   return out;
 }
 
-/** 以前の localStorage から、端末ごとの値を読む（あったものだけ） */
+/** 以前の localStorage から、デバイスごとの値を読む（あったものだけ） */
 export function legacyDeviceValues(read: LegacyRead): Raw {
   const out: Raw = {};
   const hide = read(LEGACY.hideNavigationBar);
@@ -123,7 +123,7 @@ export function legacyDeviceValues(read: LegacyRead): Raw {
   return out;
 }
 
-/** 端末の設定を型に合わせる（キャッシュから読んだものに使う。サーバーの正規化と同じ形にそろえる） */
+/** デバイスの設定を型に合わせる（キャッシュから読んだものに使う。サーバーの正規化と同じ形にそろえる） */
 export function normalizeDevicePrefs(raw: unknown): Raw {
   const o = isObject(raw) ? raw : {};
   const kind = o.deviceKind;

@@ -1,10 +1,10 @@
-// 端末の判定（ステップ7）。
-// Tauri では Rust が `window.__DISNANS_PLATFORM__`（app/src-tauri/src/platform.rs）に端末の事実と方針（capabilities）を入れる。
+// デバイスの判定（ステップ7）。
+// Tauri では Rust が `window.__DISNANS_PLATFORM__`（app/src-tauri/src/platform.rs）にデバイスの事実と方針（capabilities）を入れる。
 // 値が正しい形で有れば、それを使う（UA 文字列を見ない）。無い・壊れている項目は、従来どおり UA などから推測する（安全側）。
 // ブラウザー（Tauri でない）は Rust が無いので、常に推測する。
 // ここに判定を集める。呼び出し側は capabilities() か、個別の関数（isTauri など）を使う。
 
-/** Rust が入れる端末の事実（JSON は camelCase。platform.rs の PlatformInfo と揃える） */
+/** Rust が入れるデバイスの事実（JSON は camelCase。platform.rs の PlatformInfo と揃える） */
 export type InjectedPlatform = {
   /** "windows" | "linux" | "macos" | "android" | "ios" | "other" */
   os: string;
@@ -16,7 +16,7 @@ export type InjectedPlatform = {
   capabilities: Record<string, unknown> | null;
 };
 
-/** この端末での方針（Rust の capabilities と同じ名前・同じ値。platform.rs の capabilities_for） */
+/** このデバイスでの方針（Rust の capabilities と同じ名前・同じ値。platform.rs の capabilities_for） */
 export type Capabilities = {
   /** 共有の設定と下書き（client_storage）を Rust で持つ（Windows・Linux の Tauri と、Android） */
   sharedStorage: boolean;
@@ -42,7 +42,7 @@ export type Capabilities = {
 
 type WithInjected = { __DISNANS_PLATFORM__?: unknown };
 
-/** Rust が入れた端末の事実。無い・形が違うときは null（呼び出し側は推測する） */
+/** Rust が入れたデバイスの事実。無い・形が違うときは null（呼び出し側は推測する） */
 export function injectedPlatform(): InjectedPlatform | null {
   if (typeof window === 'undefined') return null;
   const raw = (window as unknown as WithInjected).__DISNANS_PLATFORM__;
@@ -54,7 +54,7 @@ export function injectedPlatform(): InjectedPlatform | null {
 }
 
 /** Tauri の中か（WebView の内部オブジェクトの有無） */
-/** この端末の OS の名前（windows・linux・macos・android・ios。分からなければ空）。Rust の値が正しければそれ、無ければ UA から */
+/** このデバイスの OS の名前（windows・linux・macos・android・ios。分からなければ空）。Rust の値が正しければそれ、無ければ UA から */
 export function osName(): string {
   const os = injectedPlatform()?.os;
   if (os && os !== 'other') return os;
@@ -85,7 +85,7 @@ export function isLinuxDesktop(): boolean {
   return typeof navigator !== 'undefined' && /linux/i.test(navigator.userAgent);
 }
 
-/** UA と platform の文字列から、shared-file storage を使う端末か（Windows か Linux で、Android でない） */
+/** UA と platform の文字列から、shared-file storage を使うデバイスか（Windows か Linux で、Android でない） */
 export function supportsDesktopStoragePlatform(userAgent: string, platform = ''): boolean {
   const agent = `${userAgent} ${platform}`;
   return /windows|linux/i.test(agent) && !/android/i.test(agent);
@@ -142,8 +142,8 @@ function inferred(): Capabilities {
 }
 
 /**
- * この端末での方針。項目ごとに、Rust の値（正しい形のとき）を使い、無ければ推測に戻す。
- * 呼ぶたびに読む（軽い）。端末の値は起動の間に変わらない前提。
+ * このデバイスでの方針。項目ごとに、Rust の値（正しい形のとき）を使い、無ければ推測に戻す。
+ * 呼ぶたびに読む（軽い）。デバイスの値は起動の間に変わらない前提。
  */
 export function capabilities(): Capabilities {
   const raw = injectedPlatform()?.capabilities ?? null;

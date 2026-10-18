@@ -13,6 +13,6 @@ muted: boolean,
  */
 deafened: boolean, 
 /**
- * 端末の種類（smartphone / tablet / laptop / monitor）。
+ * デバイスの種類（smartphone / tablet / laptop / monitor）。
  */
 device: string | null, };

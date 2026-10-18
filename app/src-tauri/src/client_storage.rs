@@ -143,7 +143,7 @@ pub struct WriteArgs {
     pub value: JsonValue,
 }
 
-/// この端末（Tauri の surface）の端末 ID。無ければ ULID を作って保存する。
+/// このデバイス（Tauri の surface）のデバイス ID。無ければ ULID を作って保存する。
 #[tauri::command]
 pub async fn client_device_id() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {

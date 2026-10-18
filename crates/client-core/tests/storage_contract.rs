@@ -268,7 +268,7 @@ fn device_id_is_created_once_per_surface_and_survives_reopen() {
     assert_eq!(tauri.len(), 26, "ULID");
     assert_ne!(tauri, tui, "each surface has its own device");
 
-    // 開き直しても同じ ID（再起動で端末が増えない）
+    // 開き直しても同じ ID（再起動でデバイスが増えない）
     let reopened = LocalStore::open_at(temp.path()).unwrap();
     assert_eq!(reopened.device_id(Surface::Tauri).unwrap(), tauri);
     assert_eq!(reopened.device_id(Surface::Tui).unwrap(), tui);

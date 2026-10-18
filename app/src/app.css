@@ -238,7 +238,7 @@ a {
   color: var(--text-muted);
   flex: none;
 }
-/* タッチ端末では、押したあとも :hover が残って明るいままになるので、ホバーできる環境だけにする */
+/* タッチ操作のデバイスでは、押したあとも :hover が残って明るいままになるので、ホバーできる環境だけにする */
 @media (hover: hover) {
   .icon-btn:hover {
     background: var(--hover);

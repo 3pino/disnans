@@ -1,4 +1,4 @@
-//! 端末ごとの設定（`/api/me/devices`）の結合テスト。
+//! デバイスごとの設定（`/api/me/devices`）の結合テスト。
 
 mod common;
 
@@ -116,7 +116,7 @@ async fn other_users_devices_are_invisible() {
     register(&server, ALICE, "pc-1", "alice の pc").await;
     save(&server, ALICE, "pc-1", json!({ "a": 1 })).await;
 
-    // bob は alice の端末を一覧でも、設定でも、消すのでも見えない
+    // bob は alice のデバイスを一覧でも、設定でも、消すのでも見えない
     let list: Vec<DeviceInfo> = server.get_json(BOB, "/api/me/devices").await;
     assert!(list.is_empty());
     let res = server
@@ -173,7 +173,7 @@ async fn deleting_a_device_removes_its_prefs_and_later_access_is_404() {
 async fn invalid_ids_names_and_prefs_are_refused() {
     let server = TestServer::start().await;
 
-    // 端末 ID は 1〜64 文字の英数字とハイフン
+    // デバイス ID は 1〜64 文字の英数字とハイフン
     for bad in ["a_b", "%20x", &"x".repeat(65)] {
         let res = server
             .put_json(
@@ -239,7 +239,7 @@ async fn a_user_has_at_most_fifty_devices() {
         .unwrap();
     assert_eq!(error_code(res).await, (409, "too_many_devices".into()));
 
-    // 既にある端末の名前は変えられる。他人の上限は別
+    // 既にあるデバイスの名前は変えられる。他人の上限は別
     register(&server, ALICE, "d0", "renamed").await;
     register(&server, BOB, "d50", "bob").await;
 

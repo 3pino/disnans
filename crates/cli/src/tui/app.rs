@@ -1,4 +1,4 @@
-//! TUI の状態と更新（通信・端末に依存しない）。`update` は状態を変え、実行すべき `Effect` を返す。
+//! TUI の状態と更新（通信・ターミナルに依存しない）。`update` は状態を変え、実行すべき `Effect` を返す。
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -137,7 +137,7 @@ pub enum Effect {
         before: String,
     },
     Refetch,
-    /// 端末のベルを鳴らす（通知）。
+    /// ターミナルのベルを鳴らす（通知）。
     Bell,
     /// 入力の変化。呼び出し側がまとめて（遅らせて）保存してよい。
     SaveDraft(Option<String>),
@@ -180,7 +180,7 @@ pub enum Focus {
 
 pub struct App {
     pub focus: Focus,
-    /// 画像を出せる端末のときのセルの大きさ（ピクセル）。`None` なら画像は使わない。
+    /// 画像を出せるターミナルのときのセルの大きさ（ピクセル）。`None` なら画像は使わない。
     pub gfx: Option<(u16, u16)>,
     /// 画像（キーは取得先のパス）。
     pub images: HashMap<String, ImageState>,
@@ -293,7 +293,7 @@ impl App {
         self.scroll = self.scroll.min(self.max_scroll());
     }
 
-    /// 画像を使う（端末が対応している）。`cell` は 1 セルのピクセル数。
+    /// 画像を使う（ターミナルが対応している）。`cell` は 1 セルのピクセル数。
     pub fn enable_images(&mut self, cell: (u16, u16)) {
         self.gfx = Some((cell.0.max(1), cell.1.max(1)));
     }

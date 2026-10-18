@@ -24,7 +24,7 @@ async fn prefs_are_saved_per_user_and_pushed_to_own_devices() {
     let prefs: Value = server.get_json(ALICE, "/api/me/prefs").await;
     assert_eq!(prefs, json!({}));
 
-    // 自分の別の端末と、ほかの人（先に作っておき、ユーザーが増えた知らせを読み飛ばす）
+    // 自分の別のデバイスと、ほかの人（先に作っておき、ユーザーが増えた知らせを読み飛ばす）
     let _: Value = server.get_json(BOB, "/api/me/prefs").await;
     let mut alice_pc = server.ws(ALICE).await;
     let mut bob = server.ws(BOB).await;

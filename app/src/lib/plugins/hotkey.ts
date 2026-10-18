@@ -101,7 +101,7 @@ const IGNORED_KEYS = new Set(['control', 'shift', 'alt', 'meta', 'os', 'altgraph
 
 /**
  * 押したキーを "Mod+Shift+D" 形式にする（ホットキーの記録に使う）。修飾キーだけのときは null。
- * 端末をまたいで使えるように、Ctrl（macOS では Cmd）は Mod にする
+ * デバイスをまたいで使えるように、Ctrl（macOS では Cmd）は Mod にする
  */
 export function hotkeyFromEvent(e: KeyboardEvent, mac = isMac()): string | null {
   if (IGNORED_KEYS.has(e.key.toLowerCase())) return null;

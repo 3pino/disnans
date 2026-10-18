@@ -1,8 +1,8 @@
-//! devices / device_prefs テーブル（端末の一覧と、端末ごとの設定）。
+//! devices / device_prefs テーブル（デバイスの一覧と、デバイスごとの設定）。
 
 use sqlx::{SqliteConnection, SqlitePool};
 
-/// 端末 1 件（一覧の行）。
+/// デバイス 1 件（一覧の行）。
 #[derive(sqlx::FromRow)]
 pub struct DeviceRow {
     pub device_id: String,
@@ -12,7 +12,7 @@ pub struct DeviceRow {
     pub has_prefs: bool,
 }
 
-/// 自分の端末の一覧（新しい順）。
+/// 自分のデバイスの一覧（新しい順）。
 pub async fn list(pool: &SqlitePool, user_id: &str) -> sqlx::Result<Vec<DeviceRow>> {
     sqlx::query_as(
         "SELECT d.device_id, d.name, d.created_at, d.last_seen_at,
@@ -26,7 +26,7 @@ pub async fn list(pool: &SqlitePool, user_id: &str) -> sqlx::Result<Vec<DeviceRo
     .await
 }
 
-/// 端末の数。
+/// デバイスの数。
 pub async fn count(pool: &SqlitePool, user_id: &str) -> sqlx::Result<i64> {
     sqlx::query_scalar("SELECT COUNT(*) FROM devices WHERE user_id = ?")
         .bind(user_id)
@@ -52,7 +52,7 @@ pub async fn get(
     .await
 }
 
-/// 端末を作る（なければ）、名前を変える。`last_seen_at` も今に更新する。
+/// デバイスを作る（なければ）、名前を変える。`last_seen_at` も今に更新する。
 pub async fn upsert(
     conn: &mut SqliteConnection,
     user_id: &str,
@@ -75,7 +75,7 @@ pub async fn upsert(
     Ok(())
 }
 
-/// 端末を消す（設定も一緒に消える）。消したら `true`。
+/// デバイスを消す（設定も一緒に消える）。消したら `true`。
 pub async fn delete(pool: &SqlitePool, user_id: &str, device_id: &str) -> sqlx::Result<bool> {
     let res = sqlx::query("DELETE FROM devices WHERE user_id = ? AND device_id = ?")
         .bind(user_id)
@@ -85,7 +85,7 @@ pub async fn delete(pool: &SqlitePool, user_id: &str, device_id: &str) -> sqlx::
     Ok(res.rows_affected() > 0)
 }
 
-/// 端末の設定（JSON 文字列と更新時刻）。なければ `None`。
+/// デバイスの設定（JSON 文字列と更新時刻）。なければ `None`。
 pub async fn prefs_get(
     pool: &SqlitePool,
     user_id: &str,
@@ -98,7 +98,7 @@ pub async fn prefs_get(
         .await
 }
 
-/// 設定をまるごと置き換える。端末が登録されていなければ何もせず `false`。
+/// 設定をまるごと置き換える。デバイスが登録されていなければ何もせず `false`。
 pub async fn prefs_set(
     pool: &SqlitePool,
     user_id: &str,

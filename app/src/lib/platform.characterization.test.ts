@@ -1,4 +1,4 @@
-// ステップ7 P0: 端末分岐の特徴付けテスト。
+// ステップ7 P0: デバイス分岐の特徴付けテスト。
 // いまの判定（UA・Tauri の有無）の結果を、環境の組み合わせごとに固定する。
 // この表が P1・P2 の前後で変わらないことが、挙動を変えていないことの確認になる（変えるなら表を直す前に理由を書く）。
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -110,7 +110,7 @@ function assertRow(env: Env, row: Row): void {
     expect(chatT !== null ? 'rust' : 'js').toBe(row.chat);
 }
 
-describe('端末判定の特徴付け（現在の挙動を固定）', () => {
+describe('デバイス判定の特徴付け（現在の挙動を固定）', () => {
   it.each(EXPECTED.map((row) => [row.env, row] as const))('UA のみ（Rust の値なし）: %s', (name, row) => {
     const env = ENVS.find((e) => e.name === name);
     if (!env) throw new Error(`環境が無い: ${name}`);

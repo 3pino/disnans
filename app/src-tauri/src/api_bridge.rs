@@ -579,9 +579,9 @@ pub async fn api_create_plugin(request: Request<'_>) -> Result<Value, ReadFailur
     create_plugin(&args, &data).await
 }
 
-// ---- 端末（ステップ8・V5）: /api/me/devices。端末 ID は client_device_id（LocalStore）が決める ----
+// ---- デバイス（ステップ8・V5）: /api/me/devices。デバイス ID は client_device_id（LocalStore）が決める ----
 
-/// 端末の登録・名前の変更（PUT /api/me/devices/{id}）
+/// デバイスの登録・名前の変更（PUT /api/me/devices/{id}）
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeviceRegisterArgs {
@@ -592,7 +592,7 @@ pub struct DeviceRegisterArgs {
     pub name: String,
 }
 
-/// 端末の設定の結果。`saved` が false は「まだ設定が無い」（または端末が未登録）。`prefs` は正規化済み。
+/// デバイスの設定の結果。`saved` が false は「まだ設定が無い」（またはデバイスが未登録）。`prefs` は正規化済み。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevicePrefsView {
@@ -617,7 +617,7 @@ pub async fn device_register(args: &DeviceRegisterArgs) -> Result<Value, ReadFai
         .await
 }
 
-/// この端末の設定を読む。設定が無い（404）ときは既定の値を `saved: false` で返す。
+/// このデバイスの設定を読む。設定が無い（404）ときは既定の値を `saved: false` で返す。
 pub async fn device_prefs_read(args: &IdArgs) -> Result<DevicePrefsView, ReadFailure> {
     let client = client(&args.server, args.dev_user.as_deref())?;
     match client.get_device_prefs(&args.id).await {
@@ -627,7 +627,7 @@ pub async fn device_prefs_read(args: &IdArgs) -> Result<DevicePrefsView, ReadFai
     }
 }
 
-/// この端末の設定をまるごと書き換える。送る前に正規化する（型の合わない値は既定に、定義に無い項目は残す）。
+/// このデバイスの設定をまるごと書き換える。送る前に正規化する（型の合わない値は既定に、定義に無い項目は残す）。
 pub async fn device_prefs_write(args: &IdBodyArgs) -> Result<DevicePrefsView, ReadFailure> {
     let prefs = disnans_client_core::view::settings::normalize_device_prefs(&args.body);
     let value = client(&args.server, args.dev_user.as_deref())?

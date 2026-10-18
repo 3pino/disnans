@@ -335,7 +335,7 @@ fn validate_status(mut status: CallStatus) -> AppResult<CallStatus> {
     {
         return Err(AppError::bad_request(
             "invalid_status",
-            "端末の種類が長すぎます",
+            "デバイスの種類が長すぎます",
         ));
     }
     if status.device.as_deref() == Some("") {

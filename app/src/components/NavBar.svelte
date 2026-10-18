@@ -12,7 +12,7 @@
   import { showUpdateBadge, UPDATE_BADGE_LABEL } from '../lib/updateCheck';
 
   // 狭い画面（Android など）では画面の下に横に並べ、広い画面では左に縦に並べる（向きは .nav-bar-side。見た目は ui/NavBar）。
-  // 並びと出す項目は端末ごとの設定（lib/stores/navBar.svelte.ts）。チャット・設定は本体の項目で、
+  // 並びと出す項目はデバイスごとの設定（lib/stores/navBar.svelte.ts）。チャット・設定は本体の項目で、
   // ほかのコマンド（プラグインなど）は押すとそのコマンドを実行する。
   // 選んでいる項目は、いま見せている画面（タブ）に合わせる
 
