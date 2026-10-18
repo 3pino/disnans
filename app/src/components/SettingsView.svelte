@@ -332,14 +332,20 @@
         <SegmentedButton class="settings-theme-picker" label="テーマ" options={themes} value={prefs.theme} onchange={(v) => prefs.setTheme(v)} />
         <ThemeSettings />
         {#if isTauri() && isAndroid()}
-          <span class="field-label">画面の向き</span>
-          <SegmentedButton
-            class="settings-orientation-picker"
-            label="画面の向き"
-            options={orientationOptions}
-            value={orientation.mode}
-            onchange={(v) => orientation.set(v)}
-          />
+          <SettingRow name="画面の向き" class="settings-orientation-row">
+            {#snippet control()}
+              <select
+                class="input settings-orientation-select"
+                aria-label="画面の向き"
+                value={orientation.mode}
+                onchange={(e) => orientation.set(e.currentTarget.value as OrientationMode)}
+              >
+                {#each orientationOptions as o (o.value)}
+                  <option value={o.value}>{o.label}</option>
+                {/each}
+              </select>
+            {/snippet}
+          </SettingRow>
           <SettingRow name="ナビゲーションバーを隠す" description="画面の下端からスワイプすると一時的に表示します" class="settings-hide-nav-bar-row">
             {#snippet control()}
               <Toggle checked={ui.hideNavigationBar} label="ナビゲーションバーを隠す" onchange={(on) => ui.setHideNavigationBar(on)} />
@@ -671,5 +677,10 @@
   .settings-operation-icon {
     display: flex;
     color: var(--text-muted);
+  }
+  /* 画面の向きの選択（.input の幅いっぱいにせず、中身の幅に合わせる。CallSettings の .call-select と同じ流儀） */
+  .settings-orientation-select {
+    width: auto;
+    max-width: 260px;
   }
 </style>

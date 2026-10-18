@@ -68,7 +68,10 @@
             autocomplete="off"
             onchange={(e) => navBar.setLabel(c.id, e.currentTarget.value)}
           />
-          {#if !NAV_REQUIRED_IDS.includes(c.id)}
+          {#if NAV_REQUIRED_IDS.includes(c.id)}
+            <!-- 外せない項目も、外すボタンと同じ幅を空けておく（表示名の入力欄の位置をそろえる） -->
+            <span class="nav-bar-settings-remove-slot" aria-hidden="true"></span>
+          {:else}
             <IconButton label="ナビゲーションバーから外す" class="nav-bar-settings-remove" onclick={() => remove(c.id)}>
               <X size={16} />
             </IconButton>
@@ -127,6 +130,12 @@
     width: 9em;
     max-width: 40vw;
     min-width: 0;
+  }
+  /* 外すボタン（.icon-btn の幅 34px）と同じ幅。外せない項目の行に置く */
+  .nav-bar-settings-remove-slot {
+    display: inline-block;
+    width: 34px;
+    flex: none;
   }
   .nav-bar-settings-source {
     font-size: var(--fs-sm);
