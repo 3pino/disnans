@@ -722,7 +722,7 @@ impl App {
 
     /// 取得したページを既存のメッセージへ重複なく取り込む。
     /// `prune` なら、取得範囲内にあるのにサーバーに無いもの（切断中に削除された）を取り除く。
-    fn merge_page(&mut self, mut page: Vec<Message>, prune: bool) {
+    fn merge_page(&mut self, page: Vec<Message>, prune: bool) {
         if page.is_empty() {
             return;
         }
