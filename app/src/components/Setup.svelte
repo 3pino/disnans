@@ -98,30 +98,30 @@
     display: grid;
     place-items: center;
     min-height: 100%;
-    padding: calc(env(safe-area-inset-top) + 24px) 16px calc(env(safe-area-inset-bottom) + 24px);
+    padding: calc(env(safe-area-inset-top) + var(--space-8)) var(--space-7) calc(env(safe-area-inset-bottom) + var(--space-8));
   }
   .setup-card {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-5);
     width: min(400px, 100%);
-    padding: 28px 24px;
+    padding: 28px var(--space-8);
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: var(--radius-xl);
     box-shadow: var(--shadow);
   }
   .setup-logo {
     color: var(--accent);
   }
   .setup-title {
-    margin: 4px 0 0;
-    font-size: 20px;
+    margin: var(--space-2) 0 0;
+    font-size: var(--fs-xl);
   }
   .setup-intro,
   .setup-error {
-    margin: 0 0 6px;
-    font-size: 14px;
+    margin: 0 0 var(--space-3);
+    font-size: var(--fs-base);
   }
   /* フォームの縦の間隔は gap で取るので、見出しの下の余白はなくす */
   .setup-server-label {
@@ -129,11 +129,11 @@
   }
   .setup-error {
     color: var(--danger);
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   .setup-card > :global(.btn) {
     height: 42px;
-    margin-top: 6px;
+    margin-top: var(--space-3);
   }
   .setup-card > :global(.setup-save-anyway) {
     background: transparent;

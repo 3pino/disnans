@@ -438,14 +438,14 @@
     --mine-gap: 72px;
     position: relative;
     display: flex;
-    gap: 8px;
-    padding: 6px 16px 4px;
-    margin-top: 6px;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-7) var(--space-2);
+    margin-top: var(--space-3);
     /* 横方向の操作（スワイプで返信）は自分で受け、縦のスクロールはそのまま */
     touch-action: pan-y;
   }
   .message-item[data-layout='list'] {
-    gap: 12px;
+    gap: var(--space-6);
   }
   .message-item.message-item-grouped {
     margin-top: 0;
@@ -483,7 +483,7 @@
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding-top: 2px;
+    padding-top: var(--space-1);
   }
   .message-item[data-layout='list'] .message-gutter {
     width: 28px;
@@ -524,20 +524,20 @@
   .message-header {
     display: flex;
     align-items: baseline;
-    gap: 8px;
-    line-height: 1.3;
-    margin-bottom: 2px;
+    gap: var(--space-4);
+    line-height: var(--lh-tight);
+    margin-bottom: var(--space-1);
   }
   .message-header .message-time {
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
   .message-item[data-layout='list'] .message-hover-time {
-    font-size: 11px;
+    font-size: var(--fs-xs);
     line-height: 23px;
   }
   .message-author {
-    font-weight: 650;
-    line-height: 1.3;
+    font-weight: var(--fw-semibold);
+    line-height: var(--lh-tight);
     -webkit-user-select: none;
     user-select: none;
   }
@@ -546,10 +546,10 @@
   .message-replied {
     display: inline-grid;
     place-items: center;
-    margin-left: 4px;
-    padding: 2px;
+    margin-left: var(--space-2);
+    padding: var(--space-1);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     background: none;
     color: var(--text-muted);
     opacity: 0.8;
@@ -578,35 +578,35 @@
   /* ボットの発言の印。目立たせず、灰色の小さな札にする */
   .message-bot-badge {
     display: inline-block;
-    margin-left: 6px;
+    margin-left: var(--space-3);
     padding: 0 5px;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     background: var(--surface-2);
     color: var(--text-muted);
-    font-size: 10px;
-    font-weight: 600;
+    font-size: var(--fs-2xs);
+    font-weight: var(--fw-semibold);
     line-height: 15px;
     letter-spacing: 0.04em;
     vertical-align: 1px;
   }
   /* 吹き出し: 相手の名前は吹き出しの上に小さく */
   .message-item[data-layout='bubble'] .message-author {
-    font-size: 11px;
-    margin: 0 0 2px 2px;
+    font-size: var(--fs-xs);
+    margin: 0 0 var(--space-1) var(--space-1);
   }
   .message-line {
     display: flex;
     align-items: flex-end;
-    gap: 6px;
+    gap: var(--space-3);
     min-width: 0;
   }
   .message-item[data-layout='list'] .message-line {
     display: block;
   }
   .message-item[data-layout='bubble'] .message-line time {
-    font-size: 11px;
+    font-size: var(--fs-xs);
     line-height: 1;
-    margin-bottom: 2px;
+    margin-bottom: var(--space-1);
   }
   .message-item[data-layout='bubble'].message-item-mine .message-line {
     justify-content: flex-end;
@@ -652,8 +652,8 @@
   }
   .message-bubble.message-bubble-mine,
   .message-bubble.message-bubble-other {
-    padding: 7px 12px;
-    border-radius: 16px;
+    padding: 7px var(--space-6);
+    border-radius: var(--radius-xl);
   }
   /* 自分の発言：アクセント色を薄く混ぜた、右側の吹き出し */
   .message-bubble.message-bubble-mine {
@@ -669,7 +669,7 @@
     min-width: 0;
   }
   .message-edited {
-    font-size: 11px;
+    font-size: var(--fs-xs);
     color: var(--text-muted);
     -webkit-user-select: none;
     user-select: none;
@@ -677,24 +677,24 @@
   .message-editor {
     display: flex;
     width: 100%;
-    margin-top: 2px;
-    padding: 2px 8px;
+    margin-top: var(--space-1);
+    padding: var(--space-1) var(--space-4);
     border-radius: var(--radius-sm);
     border: 1px solid var(--border-hover);
     background: var(--bg);
   }
   .message-edit-hint {
     display: flex;
-    gap: 2px;
+    gap: var(--space-1);
     align-items: center;
     flex-wrap: wrap;
-    margin-top: 4px;
-    font-size: 12px;
+    margin-top: var(--space-2);
+    font-size: var(--fs-sm);
     color: var(--text-muted);
   }
   .message-edit-hint > :global(.btn) {
     height: 32px;
-    margin-right: 6px;
+    margin-right: var(--space-3);
   }
   .message-link-button {
     display: inline-flex;
@@ -712,10 +712,10 @@
   .message-send-failed {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-top: 2px;
+    gap: var(--space-3);
+    margin-top: var(--space-1);
     color: var(--danger);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
   /* 付属物（リアクションの並び）は、吹き出しと同じ側に寄せる */
   .message-item[data-layout='bubble'].message-item-mine :global(.reactions) {
@@ -751,7 +751,7 @@
     right: 16px;
     display: none;
     gap: 1px;
-    padding: 2px;
+    padding: var(--space-1);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -763,7 +763,7 @@
     height: 30px;
   }
   .message-toolbar > :global(.message-toolbar-emoji) {
-    font-size: 16px;
+    font-size: var(--fs-lg);
   }
   .message-toolbar > :global(.message-toolbar-delete:hover) {
     color: var(--danger);
@@ -787,11 +787,11 @@
   }
   @media (max-width: 767px) {
     .message-item {
-      padding-left: 10px;
-      padding-right: 10px;
+      padding-left: var(--space-5);
+      padding-right: var(--space-5);
     }
     .message-item[data-layout='list'] {
-      gap: 10px;
+      gap: var(--space-5);
     }
   }
 </style>

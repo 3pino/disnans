@@ -68,9 +68,9 @@
   .timeline-panel-header {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
     height: 52px;
-    padding: 0 8px 0 16px;
+    padding: 0 var(--space-4) 0 var(--space-7);
     border-bottom: 1px solid var(--border);
     flex: none;
   }
@@ -78,9 +78,9 @@
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-4);
     min-width: 0;
-    font-weight: 650;
+    font-weight: var(--fw-semibold);
   }
   .timeline-panel-title span {
     overflow: hidden;
@@ -91,19 +91,19 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 8px 0;
+    padding: var(--space-4) 0;
   }
   /* 返信は、親の下に線でつなぐ */
   .timeline-panel-row-nested {
     border-left: 2px solid var(--border);
   }
   .timeline-panel-empty {
-    padding: 32px 16px;
+    padding: 32px var(--space-7);
     text-align: center;
   }
   @media (max-width: 767px) {
     .timeline-panel-header {
-      padding: calc(env(safe-area-inset-top) + 4px) 8px 4px 4px;
+      padding: calc(env(safe-area-inset-top) + var(--space-2)) var(--space-4) var(--space-2) var(--space-2);
       height: auto;
       border-bottom: none;
     }

@@ -512,7 +512,7 @@
     display: flex;
     align-items: center;
     height: 52px;
-    padding: 0 16px 0 8px;
+    padding: 0 var(--space-7) 0 var(--space-4);
     border-bottom: 1px solid var(--border);
     flex: none;
   }
@@ -523,21 +523,21 @@
   .settings-sub-page-content {
     max-width: 640px;
     margin: 0 auto;
-    padding: 8px 16px 32px;
+    padding: var(--space-4) var(--space-7) 32px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-7);
   }
   .settings-content {
     max-width: 640px;
     margin: 0 auto;
-    padding: 8px 16px 32px;
+    padding: var(--space-4) var(--space-7) 32px;
   }
   .settings-profile-card {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
+    gap: var(--space-6);
+    margin-bottom: var(--space-7);
   }
   .settings-profile-text {
     flex: 1;
@@ -583,14 +583,14 @@
   .settings-profile-display-name {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
     max-width: 100%;
     padding: 0;
     border: none;
     background: transparent;
     color: var(--text);
-    font-weight: 700;
-    font-size: 16px;
+    font-weight: var(--fw-bold);
+    font-size: var(--fs-lg);
     text-align: left;
     cursor: pointer;
   }
@@ -606,28 +606,28 @@
   .settings-display-name-form {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-2);
   }
   .settings-display-name-form > :global(.settings-display-name-input) {
     flex: 1;
     min-width: 0;
   }
   .settings-small-text {
-    font-size: 13px;
+    font-size: var(--fs-md);
     margin: 0;
   }
   .settings-server-line {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
   }
   .settings-server-url {
     overflow-wrap: anywhere;
   }
   .settings-display-name-error {
     color: var(--danger);
-    font-size: 13px;
-    margin: 6px 0 0;
+    font-size: var(--fs-md);
+    margin: var(--space-3) 0 0;
   }
   /* バージョンの行は、名前を控えめな色にする */
   .settings-content :global(.settings-version-row .setting-row-name) {
@@ -635,27 +635,27 @@
   }
   .settings-version {
     font-family: var(--mono);
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   /* バージョンの右に、アップデートを確認するボタン */
   .settings-version-control {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
   }
   .settings-update {
-    padding-top: 12px;
+    padding-top: var(--space-6);
     border-top: 1px solid var(--border);
   }
   .settings-update > :global(* + *) {
-    margin-top: 10px;
+    margin-top: var(--space-5);
   }
   .settings-update-notes {
     max-height: 220px;
-    padding: 10px 12px;
+    padding: var(--space-5) var(--space-6);
     background: var(--surface);
     border-radius: var(--radius-sm);
-    font-size: 14px;
+    font-size: var(--fs-base);
   }
   .settings-update-progress {
     width: 100%;
@@ -665,7 +665,7 @@
   .settings-update-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-4);
   }
   /* 「操作」の行の右の飾りのアイコン */
   .settings-operation-icon {

@@ -89,10 +89,10 @@
   .message-card {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-1);
     max-width: 420px;
-    margin-top: 2px;
-    padding: 8px 12px;
+    margin-top: var(--space-1);
+    padding: var(--space-4) var(--space-6);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--surface);
@@ -115,16 +115,16 @@
   .message-card-header {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
     min-width: 0;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
   .message-card-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
   .message-card-text {
     overflow-wrap: anywhere;
@@ -134,16 +134,16 @@
     display: flex;
     align-items: center;
     gap: 3px;
-    margin-top: 2px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
   .message-card-viewers-more {
-    margin-left: 2px;
+    margin-left: var(--space-1);
   }
   .message-card-unavailable-note {
-    margin-top: 2px;
+    margin-top: var(--space-1);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
 </style>

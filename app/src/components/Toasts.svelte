@@ -39,20 +39,20 @@
     z-index: 90;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-4);
     width: min(440px, calc(100vw - 24px));
     pointer-events: none;
   }
   .toast {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 6px 8px 14px;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-3) var(--space-4) 14px;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    font-size: 14px;
+    font-size: var(--fs-base);
     pointer-events: auto;
     animation: drop 0.18s ease-out;
   }
@@ -77,7 +77,7 @@
     border: none;
     background: none;
     color: var(--accent);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
   .toast > :global(.toast-close) {
     width: 26px;

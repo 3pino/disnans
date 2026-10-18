@@ -57,9 +57,9 @@
   .plugin-settings-page-header {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
     height: 52px;
-    padding: 0 16px 0 8px;
+    padding: 0 var(--space-7) 0 var(--space-4);
     border-bottom: 1px solid var(--border);
     flex: none;
   }
@@ -67,9 +67,9 @@
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-4);
     min-width: 0;
-    font-weight: 650;
+    font-weight: var(--fw-semibold);
   }
   .plugin-settings-page-title > :global(.icon) {
     flex: none;
@@ -86,13 +86,13 @@
   .plugin-settings-page-content {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-7);
     max-width: 640px;
     margin: 0 auto;
-    padding: 16px 16px 32px;
+    padding: var(--space-7) var(--space-7) 32px;
   }
   .plugin-settings-page-empty {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
 </style>

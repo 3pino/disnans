@@ -493,7 +493,7 @@
 
 <style>
   .composer {
-    padding: 0 16px 14px;
+    padding: 0 var(--space-7) 14px;
     padding-bottom: max(14px, env(safe-area-inset-bottom));
   }
   /* 補完の候補は、入力欄だけでなく、この枠（＋ボタンから送信ボタンまで）の幅いっぱいに出す */
@@ -502,11 +502,11 @@
     --message-input-suggest-inset: -1px;
     display: flex;
     align-items: flex-end;
-    gap: 4px;
-    padding: 4px 6px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
     transition:
       border-color 0.12s,
       background-color 0.12s;
@@ -516,7 +516,7 @@
   }
   .composer-search {
     align-items: center;
-    padding: 4px 6px 4px 12px;
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-6);
   }
   .composer-search-icon {
     display: grid;
@@ -559,8 +559,8 @@
   }
   .composer-menu-empty {
     margin: 0;
-    padding: 8px 10px;
-    font-size: 13px;
+    padding: var(--space-4) var(--space-5);
+    font-size: var(--fs-md);
   }
   .composer-send {
     position: relative;
@@ -568,7 +568,7 @@
     place-items: center;
     width: 36px;
     height: 36px;
-    margin-bottom: 2px;
+    margin-bottom: var(--space-1);
     border: none;
     border-radius: 10px;
     background: var(--accent);
@@ -592,25 +592,25 @@
     position: absolute;
     right: 0;
     bottom: calc(100% + 10px);
-    padding: 4px 8px;
+    padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-sm);
     background: var(--surface);
     box-shadow: var(--shadow);
     color: var(--text-muted);
-    font-size: 12px;
-    line-height: 1.4;
+    font-size: var(--fs-sm);
+    line-height: var(--lh-tight);
     white-space: nowrap;
     pointer-events: none;
   }
   .composer-send-hint-ready {
     color: var(--accent);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
   .composer-upload-tray {
     display: flex;
-    gap: 8px;
+    gap: var(--space-4);
     overflow-x: auto;
-    padding: 4px 2px 8px;
+    padding: var(--space-2) var(--space-1) var(--space-4);
   }
   .composer-upload {
     position: relative;
@@ -633,12 +633,12 @@
     position: absolute;
     left: 4px;
     top: 4px;
-    padding: 1px 6px;
-    border-radius: 999px;
+    padding: 1px var(--space-3);
+    border-radius: var(--radius-pill);
     background: color-mix(in oklch, var(--bg) 80%, transparent);
     color: var(--text);
-    font-size: 10px;
-    line-height: 1.5;
+    font-size: var(--fs-2xs);
+    line-height: var(--lh-normal);
     pointer-events: none;
   }
   .composer-upload .composer-upload-preview,
@@ -652,14 +652,14 @@
     display: grid;
     place-content: center;
     justify-items: center;
-    gap: 2px;
+    gap: var(--space-1);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
   }
   .composer-upload-name {
     display: block;
-    padding: 2px 6px 4px;
-    font-size: 11px;
+    padding: var(--space-1) var(--space-3) var(--space-2);
+    font-size: var(--fs-xs);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -680,7 +680,7 @@
   }
   @media (max-width: 767px) {
     .composer {
-      padding: 0 8px 8px;
+      padding: 0 var(--space-4) var(--space-4);
     }
   }
 </style>

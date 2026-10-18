@@ -34,14 +34,14 @@
   .reply-bar {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 6px;
-    padding: 2px 4px 2px 10px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-5);
     border-radius: var(--radius-sm);
     background: var(--surface);
     border: 1px solid var(--border);
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   .reply-bar > :global(.icon-btn) {
     width: 28px;

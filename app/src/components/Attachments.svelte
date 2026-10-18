@@ -59,8 +59,8 @@
   .attachment-images {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 6px;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
   }
   .attachment-image {
     padding: 0;
@@ -84,21 +84,21 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 4px;
-    margin-top: 6px;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
   }
   .attachment-file {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-4);
     max-width: 100%;
-    padding: 8px 12px;
+    padding: var(--space-4) var(--space-6);
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--surface);
     color: var(--text);
     text-decoration: none;
-    font-size: 14px;
+    font-size: var(--fs-base);
   }
   .attachment-file:hover {
     border-color: var(--border-hover);
@@ -111,7 +111,7 @@
   }
   .attachment-file-size {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--fs-sm);
     flex: none;
   }
 </style>

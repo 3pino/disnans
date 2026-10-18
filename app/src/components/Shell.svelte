@@ -94,7 +94,7 @@
   }
   /* 上の枠に中身があるときは、その下の各画面のヘッダーはステータスバー分の余白を取らない（枠が取っている） */
   .shell-root:has(:global(.call-bar, .plugin-status-item > :not(:empty))) :global(.top-bar) {
-    padding-top: 4px;
+    padding-top: var(--space-2);
   }
   .shell {
     flex: 1;
@@ -133,15 +133,15 @@
   }
   .shell-welcome {
     margin: auto;
-    padding: 40px 16px;
+    padding: 40px var(--space-7);
     text-align: center;
   }
   .shell-welcome p {
-    margin: 4px;
+    margin: var(--space-2);
   }
   .shell-welcome-title {
-    font-size: 20px;
-    font-weight: 700;
+    font-size: var(--fs-xl);
+    font-weight: var(--fw-bold);
   }
 
   /* モバイル */

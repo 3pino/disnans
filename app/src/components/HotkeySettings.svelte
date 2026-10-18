@@ -223,12 +223,12 @@
 <style>
   .hotkey-settings-note {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   /* ほかのコマンドと同じキーになっているときの警告 */
   .hotkey-settings-command > :global(.hotkey-settings-conflict) {
-    margin-top: 4px;
-    font-size: 13px;
+    margin-top: var(--space-2);
+    font-size: var(--fs-md);
   }
   /* 行の右にキーを並べる。各キーの中の × で外す */
   .hotkey-settings-command :global(.hotkey-settings-row .setting-row-control) {
@@ -236,12 +236,12 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 4px;
+    gap: var(--space-2);
   }
   .hotkey-settings-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-2);
   }
   .hotkey-settings-chip-remove {
     display: inline-grid;
@@ -258,7 +258,7 @@
   }
   .hotkey-settings-none,
   .hotkey-settings-recording {
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   /* 記録中は、キーを待っていることがわかるようにアクセントの色にする */
   .hotkey-settings-recording {
@@ -274,16 +274,16 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 2px;
-    margin: 2px 0 0 4px;
-    font-size: 13px;
+    gap: var(--space-1);
+    margin: var(--space-1) 0 0 var(--space-2);
+    font-size: var(--fs-md);
   }
   .hotkey-settings-slash-form :global(.hotkey-settings-slash-input) {
     width: 160px;
   }
   .hotkey-settings-slash-error {
-    margin: 2px 0 0 4px;
-    font-size: 13px;
+    margin: var(--space-1) 0 0 var(--space-2);
+    font-size: var(--fs-md);
     color: var(--danger);
   }
 </style>

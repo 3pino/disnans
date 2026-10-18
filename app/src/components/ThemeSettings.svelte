@@ -112,14 +112,14 @@
 
 <style>
   .theme-settings > * + * {
-    margin-top: 6px;
+    margin-top: var(--space-3);
   }
   .theme-settings-small {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   .theme-settings-item {
-    padding: 10px 0;
+    padding: var(--space-5) 0;
   }
   .theme-settings-item + .theme-settings-item {
     border-top: 1px solid var(--border);
@@ -128,16 +128,16 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px 10px;
-    margin-top: 4px;
-    font-size: 12px;
+    gap: var(--space-2) var(--space-5);
+    margin-top: var(--space-2);
+    font-size: var(--fs-sm);
   }
   .theme-settings-version,
   .theme-settings-id {
     font-family: var(--mono);
   }
   .theme-settings-tag {
-    padding: 0 6px;
+    padding: 0 var(--space-3);
     border-radius: var(--radius-sm);
     background: var(--surface-2);
   }
@@ -150,16 +150,16 @@
     color: var(--mention);
   }
   .theme-settings-error {
-    margin: 6px 0 0;
+    margin: var(--space-3) 0 0;
     color: var(--danger);
-    font-size: 13px;
+    font-size: var(--fs-md);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
   .theme-settings-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 8px;
+    gap: var(--space-4);
+    margin-top: var(--space-4);
   }
 </style>

@@ -36,11 +36,11 @@
   .plugin-setting-tab {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-5);
   }
   .plugin-setting-tab-error {
     margin: 0;
     color: var(--danger);
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
 </style>

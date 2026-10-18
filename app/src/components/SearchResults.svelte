@@ -216,30 +216,30 @@
     flex-direction: column;
     justify-content: flex-end;
     min-height: 100%;
-    padding: 16px 0 12px;
+    padding: var(--space-7) 0 var(--space-6);
   }
   .search-results-note {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 16px;
+    gap: var(--space-5);
+    padding: var(--space-7);
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--fs-md);
     text-align: center;
   }
   .search-results-error {
     color: var(--danger);
-    font-size: 14px;
+    font-size: var(--fs-base);
   }
   .search-results-day {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin: 16px 16px 4px;
+    gap: var(--space-6);
+    margin: var(--space-7) var(--space-7) var(--space-2);
     color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
   }
   .search-results-day::before,
   .search-results-day::after {

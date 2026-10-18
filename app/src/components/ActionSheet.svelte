@@ -81,19 +81,19 @@
     right: 0;
     bottom: 0;
     z-index: 61;
-    padding: 12px 12px max(12px, env(safe-area-inset-bottom));
+    padding: var(--space-6) var(--space-6) max(var(--space-6), env(safe-area-inset-bottom));
     background: var(--surface);
     border-top: 1px solid var(--border);
-    border-radius: 16px 16px 0 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
     box-shadow: var(--shadow);
     animation: up 0.18s ease-out;
   }
   .action-sheet-reactions {
     display: flex;
     justify-content: space-between;
-    gap: 4px;
-    padding-bottom: 10px;
-    margin-bottom: 6px;
+    gap: var(--space-2);
+    padding-bottom: var(--space-5);
+    margin-bottom: var(--space-3);
     border-bottom: 1px solid var(--border);
   }
   .action-sheet-reactions .action-sheet-reaction {
@@ -102,7 +102,7 @@
     border: none;
     border-radius: 12px;
     background: var(--surface-2);
-    font-size: 24px;
+    font-size: var(--fs-2xl);
   }
   .action-sheet-reactions .action-sheet-more-reactions {
     display: grid;
@@ -113,8 +113,8 @@
   .action-sheet-items > :global(.action-sheet-item) {
     gap: 14px;
     height: 50px;
-    padding: 0 12px;
-    font-size: 16px;
+    padding: 0 var(--space-6);
+    font-size: var(--fs-lg);
   }
   @keyframes fade {
     from {

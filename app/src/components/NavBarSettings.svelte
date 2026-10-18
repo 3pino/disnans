@@ -101,13 +101,13 @@
 <style>
   .nav-bar-settings-note {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   .nav-bar-settings-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-4);
   }
   .nav-bar-settings-add {
     position: relative;
@@ -129,11 +129,11 @@
     min-width: 0;
   }
   .nav-bar-settings-source {
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
   .nav-bar-settings-none {
     margin: 0;
-    padding: 8px 10px;
-    font-size: 13px;
+    padding: var(--space-4) var(--space-5);
+    font-size: var(--fs-md);
   }
 </style>

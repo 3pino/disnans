@@ -202,7 +202,7 @@
     max-width: calc(100vw - 32px);
     max-height: calc(100dvh - 96px);
     object-fit: contain;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     box-shadow: 0 10px 40px oklch(0 0 0 / 0.5);
     pointer-events: none;
   }
@@ -213,7 +213,7 @@
     right: 8px;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-2);
     color: oklch(0.93 0.015 248);
   }
   .lightbox-toolbar > :global(.icon-btn) {
@@ -228,7 +228,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 14px;
+    font-size: var(--fs-base);
   }
   @keyframes fade {
     from {

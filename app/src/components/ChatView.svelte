@@ -132,7 +132,7 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-6);
     border: 2px dashed color-mix(in oklch, var(--accent) 60%, transparent);
     border-radius: var(--radius);
     background: color-mix(in oklch, var(--bg) 72%, transparent);
@@ -140,7 +140,7 @@
     pointer-events: none;
   }
   .chat-view-drop-label {
-    font-size: 20px;
-    font-weight: 600;
+    font-size: var(--fs-xl);
+    font-weight: var(--fw-semibold);
   }
 </style>

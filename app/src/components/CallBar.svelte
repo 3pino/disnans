@@ -126,12 +126,12 @@
   .call-bar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-4);
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
     /* 右の余白は小さく（退出ボタンが画面の右端に寄る） */
-    padding: 4px 4px 4px 12px;
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-6);
     border-bottom: 1px solid var(--border);
     background: var(--surface);
     flex: none;
@@ -140,10 +140,10 @@
     display: inline-flex;
     align-items: center;
     flex: none;
-    gap: 6px;
+    gap: var(--space-3);
     color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
   }
   .call-label-live {
     color: var(--success);
@@ -153,9 +153,9 @@
     display: flex;
     align-items: center;
     flex: 1 1 0;
-    gap: 10px;
+    gap: var(--space-5);
     min-width: 0;
-    padding: 4px 6px 6px 8px;
+    padding: var(--space-2) var(--space-3) var(--space-3) var(--space-4);
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -222,7 +222,7 @@
     display: inline-flex;
     flex: none;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-1);
   }
   .call-controls :global(.call-active) {
     background: var(--danger-soft);

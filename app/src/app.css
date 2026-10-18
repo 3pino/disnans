@@ -31,12 +31,48 @@
   --danger-soft: color-mix(in oklch, var(--danger) 14%, transparent);
   --hover: color-mix(in oklch, var(--surface-2) 60%, transparent);
 
-  --radius: 10px;
+  /* 角丸 */
+  --radius-xs: 4px;
   --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px; /* モーダル・入力カード */
+  --radius-xl: 16px; /* 吹き出し */
+  --radius-pill: 999px;
+
+  /* 文字サイズ */
+  --fs-2xs: 10px;
+  --fs-xs: 11px; /* バッジ・ナビのラベル */
+  --fs-sm: 12px; /* 小見出し・補足 */
+  --fs-md: 13px; /* 説明文 */
+  --fs-base: 14px; /* 設定の行・トースト */
+  --fs-body: 15px; /* 本文 */
+  --fs-lg: 16px; /* モーダルのタイトルなど */
+  --fs-xl: 20px; /* 画面の大見出し */
+  --fs-2xl: 24px;
+  /* 太さ */
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  /* 行の高さ */
+  --lh-tight: 1.4;
+  --lh-normal: 1.5;
+  --lh-body: 1.55;
+
+  /* 余白（gap・padding・margin） */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 16px;
+  --space-8: 24px;
+
   --nav-side-w: 76px;
   --panel-w: 420px;
   --font: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP',
     'Yu Gothic UI', Meiryo, sans-serif;
+  --serif: ui-serif, 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', 'Noto Serif', Georgia, serif;
   --mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', 'Noto Sans Mono', Menlo, Consolas, monospace;
 }
 
@@ -118,8 +154,8 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
@@ -187,7 +223,7 @@ a {
 /* 画面の上端。中身は持たず、ステータスバー（Android は edge-to-edge）の分の余白だけを取る */
 .top-bar {
   flex: none;
-  padding-top: calc(env(safe-area-inset-top) + 8px);
+  padding-top: calc(env(safe-area-inset-top) + var(--space-4));
 }
 
 .icon-btn {
@@ -222,14 +258,14 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-3);
   height: 36px;
   padding: 0 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   white-space: nowrap;
 }
 .btn:hover {
@@ -283,7 +319,7 @@ a {
 .input {
   width: 100%;
   height: 40px;
-  padding: 0 12px;
+  padding: 0 var(--space-6);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg);
@@ -313,23 +349,23 @@ a {
   border-radius: 9px;
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
   line-height: 1;
 }
 
 /* キーボードのキー（ホットキーの表示） */
 .kbd {
   display: inline-block;
-  padding: 1px 6px;
+  padding: 1px var(--space-3);
   border: 1px solid var(--border);
   border-bottom-width: 2px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text);
   font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
   white-space: nowrap;
 }
 
@@ -354,9 +390,9 @@ a {
 /* 入力欄の上に置く小さな見出し */
 .field-label {
   display: block;
-  margin-bottom: 6px;
-  font-size: 12px;
-  font-weight: 700;
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
   color: var(--text-muted);
 }
 
@@ -399,7 +435,7 @@ a {
 .slider {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
 }
 .slider-input {
   -webkit-appearance: none;
@@ -445,7 +481,7 @@ a {
 .slider-input:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 .slider-input:disabled {
   opacity: 0.5;
@@ -455,7 +491,7 @@ a {
   min-width: 3.5em;
   text-align: right;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -463,8 +499,8 @@ a {
    <div class="segmented" role="radiogroup"><button class="segmented-option" role="radio">…</button>…</div> */
 .segmented {
   display: flex;
-  gap: 4px;
-  padding: 4px;
+  gap: var(--space-2);
+  padding: var(--space-2);
   background: var(--surface-2);
   border-radius: var(--radius-sm);
 }
@@ -473,14 +509,14 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-3);
   height: 32px;
   border: none;
   border-radius: 5px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
 }
 .segmented .segmented-option.segmented-option-selected {
   background: var(--bg);
@@ -501,14 +537,14 @@ a {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
   min-width: 0;
-  padding: 8px 0 6px;
+  padding: var(--space-4) 0 var(--space-3);
   border: none;
   background: none;
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
 }
 .nav-bar .nav-bar-item:hover {
   color: var(--text);
@@ -546,13 +582,13 @@ a {
 .nav-bar.nav-bar-side {
   flex-direction: column;
   width: var(--nav-side-w);
-  padding: 8px 0;
+  padding: var(--space-4) 0;
   border-top: none;
   border-right: 1px solid var(--border);
 }
 .nav-bar.nav-bar-side .nav-bar-item {
   flex: none;
-  padding: 10px 2px 8px;
+  padding: var(--space-5) var(--space-1) var(--space-4);
 }
 
 /* 横の区切り線。<hr class="divider"> */
@@ -566,7 +602,7 @@ a {
 /* 設定のセクション。カードにはせず、区切り線 + 見出しだけにする。
    区切り線（.setting-section-divider）は、前にもセクションがあるときだけ、セクションの上端に出す */
 .setting-section {
-  padding: 18px 2px;
+  padding: 18px var(--space-1);
 }
 .setting-section > .setting-section-divider {
   display: none;
@@ -576,15 +612,15 @@ a {
   display: block;
 }
 .setting-section:first-child {
-  padding-top: 4px;
+  padding-top: var(--space-2);
 }
 .setting-section > * + * {
-  margin-top: 10px;
+  margin-top: var(--space-5);
 }
 .setting-section > .setting-section-title {
-  margin: 0 0 12px;
-  font-size: 12px;
-  font-weight: 700;
+  margin: 0 0 var(--space-6);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
@@ -594,8 +630,8 @@ a {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  font-size: 14px;
+  gap: var(--space-6);
+  font-size: var(--fs-base);
 }
 .setting-row-icon {
   color: var(--text-muted);
@@ -606,19 +642,19 @@ a {
 }
 .setting-row-description {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 .setting-row-control {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   flex: none;
 }
 /* 行全体を押せるボタンにした設定の行（SettingRow に onclick を渡したとき）。ghost ボタンと同じ色 */
 .setting-row-button {
   width: calc(100% + 20px);
   margin: 0 -10px;
-  padding: 8px 10px;
+  padding: var(--space-4) var(--space-5);
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -644,10 +680,10 @@ a {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-3);
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
 }
 .status-line.status-line-muted {
   color: var(--text-muted);
@@ -663,7 +699,7 @@ a {
 }
 .status-line.status-line-error {
   color: var(--danger);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   overflow-wrap: anywhere;
 }
 
@@ -671,7 +707,7 @@ a {
 .menu {
   z-index: 30;
   min-width: 200px;
-  padding: 4px;
+  padding: var(--space-2);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -690,9 +726,9 @@ a {
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-5);
   width: 100%;
-  padding: 8px 10px;
+  padding: var(--space-4) var(--space-5);
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -713,7 +749,7 @@ a {
 /* 入力欄の補完候補（メンションなど）。位置は使う側で決める */
 .suggest-list {
   margin: 0;
-  padding: 4px;
+  padding: var(--space-2);
   list-style: none;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -724,9 +760,9 @@ a {
 .suggest-list .suggest-list-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   width: 100%;
-  padding: 6px 8px;
+  padding: var(--space-3) var(--space-4);
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -736,12 +772,12 @@ a {
   background: var(--accent-soft);
 }
 .suggest-list-item-title {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .suggest-list-item-detail {
   min-width: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -767,18 +803,18 @@ a {
   padding: 20px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   animation: modal-pop 0.15s ease-out;
 }
 .modal .modal-title {
   margin: 0 0 14px;
-  font-size: 17px;
+  font-size: var(--fs-lg);
 }
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-4);
 }
 @keyframes modal-fade {
   from {

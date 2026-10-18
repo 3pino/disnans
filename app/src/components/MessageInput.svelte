@@ -317,8 +317,8 @@
     border: none;
     outline: none;
     background: transparent;
-    padding: 8px 4px;
-    line-height: 1.5;
+    padding: var(--space-4) var(--space-2);
+    line-height: var(--lh-normal);
     max-height: 40vh;
     scrollbar-width: thin;
   }
@@ -357,7 +357,7 @@
   }
   .message-input-suggest-emoji {
     width: 22px;
-    font-size: 18px;
+    font-size: var(--fs-lg);
     line-height: 1;
     text-align: center;
   }
@@ -365,18 +365,18 @@
   .message-input-hint {
     display: flex;
     align-items: baseline;
-    gap: 8px;
-    padding: 6px 12px;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-6);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    font-size: 13px;
+    font-size: var(--fs-md);
     pointer-events: none;
     z-index: 20;
   }
   .message-input-hint-name {
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
   .message-input-hint-args {
     color: var(--accent);

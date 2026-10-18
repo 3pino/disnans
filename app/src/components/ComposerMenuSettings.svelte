@@ -95,7 +95,7 @@
 <style>
   .composer-menu-settings-note {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   .composer-menu-settings-add {
     position: relative;
@@ -113,11 +113,11 @@
     overflow-y: auto;
   }
   .composer-menu-settings-source {
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
   .composer-menu-settings-none {
     margin: 0;
-    padding: 8px 10px;
-    font-size: 13px;
+    padding: var(--space-4) var(--space-5);
+    font-size: var(--fs-md);
   }
 </style>

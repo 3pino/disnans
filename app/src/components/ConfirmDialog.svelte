@@ -20,6 +20,6 @@
     margin: 0 0 18px;
     white-space: pre-line;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: var(--fs-base);
   }
 </style>

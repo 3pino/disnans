@@ -28,10 +28,10 @@
 <style>
   .inline-mention {
     padding: 0 3px;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     background: var(--accent-soft);
     color: var(--accent);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
   .inline-mention.inline-mention-me {
     background: var(--mention-soft);
@@ -41,14 +41,14 @@
     word-break: break-all;
   }
   .inline-highlight {
-    padding: 0 2px;
+    padding: 0 var(--space-1);
     border-radius: 3px;
     background: rgba(250, 204, 21, 0.35);
     color: inherit;
   }
   .inline-code {
-    padding: 0 4px;
-    border-radius: 4px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-xs);
     border: 1px solid var(--border);
     background: var(--surface-2);
     font-family: var(--mono);

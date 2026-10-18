@@ -122,7 +122,7 @@
 <style>
   /* 上の見出しと下のボタンから少し離す */
   .image-crop-area {
-    margin: 10px 0;
+    margin: var(--space-5) 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -192,6 +192,6 @@
     cursor: nwse-resize;
   }
   .modal-actions {
-    margin: 10px 0 0;
+    margin: var(--space-5) 0 0;
   }
 </style>

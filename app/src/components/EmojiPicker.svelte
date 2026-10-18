@@ -53,8 +53,8 @@
     z-index: 50;
     display: grid;
     grid-template-columns: repeat(6, 40px);
-    gap: 2px;
-    padding: 8px;
+    gap: var(--space-1);
+    padding: var(--space-4);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);

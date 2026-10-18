@@ -271,33 +271,33 @@
     flex-direction: column;
     justify-content: flex-end;
     min-height: 100%;
-    padding: 16px 0 12px;
+    padding: var(--space-7) 0 var(--space-6);
   }
   .message-list-loading,
   .message-list-start {
     display: grid;
     place-items: center;
-    padding: 16px;
+    padding: var(--space-7);
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   .message-list-error {
     display: flex;
-    gap: 10px;
+    gap: var(--space-5);
     align-items: center;
     justify-content: center;
-    padding: 16px;
+    padding: var(--space-7);
     color: var(--danger);
-    font-size: 14px;
+    font-size: var(--fs-base);
   }
   .message-list-day-divider {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin: 16px 16px 4px;
+    gap: var(--space-6);
+    margin: var(--space-7) var(--space-7) var(--space-2);
     color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
   }
   .message-list-day-divider::before,
   .message-list-day-divider::after {
@@ -310,11 +310,11 @@
   .message-list-unread-divider {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin: 8px 16px 4px;
+    gap: var(--space-5);
+    margin: var(--space-4) var(--space-7) var(--space-2);
     color: var(--danger);
-    font-size: 12px;
-    font-weight: 650;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
   }
   .message-list-unread-divider::after {
     content: '';
@@ -342,18 +342,18 @@
   .message-list-upload {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-4);
     max-width: 70%;
-    margin: 4px 16px 4px auto;
-    padding: 6px 8px;
+    margin: var(--space-2) var(--space-7) var(--space-2) auto;
+    padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--surface);
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
   /* 一覧のときは、本文と同じ左の位置に（アイコンの幅のぶん空ける） */
   .message-list[data-layout='list'] .message-list-upload {
-    margin: 4px 16px 4px 64px;
+    margin: var(--space-2) var(--space-7) var(--space-2) 64px;
   }
   .message-list-upload.message-list-upload-error {
     border-color: var(--danger);
@@ -363,7 +363,7 @@
     height: 40px;
     flex: none;
     object-fit: cover;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
   }
   .message-list-upload-body {
     display: flex;

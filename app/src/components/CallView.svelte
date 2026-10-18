@@ -185,10 +185,10 @@
   .call-view-title {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-4);
     margin: 0;
-    font-size: 15px;
-    font-weight: 700;
+    font-size: var(--fs-body);
+    font-weight: var(--fw-bold);
     color: var(--text-muted);
   }
   .call-view-title-live {
@@ -198,10 +198,10 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 16px;
+    padding: var(--space-7);
   }
   .call-view-panel {
-    margin: 0 0 16px;
+    margin: 0 0 var(--space-7);
   }
   .call-view-empty {
     margin: 40px 0;
@@ -210,7 +210,7 @@
   .call-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 20px 12px;
+    gap: 20px var(--space-6);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -219,7 +219,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-4);
     min-width: 0;
   }
   .call-name {
@@ -227,7 +227,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   .call-person {
     position: relative;
@@ -292,15 +292,15 @@
     align-items: center;
     justify-content: center;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 10px 12px;
+    gap: var(--space-4);
+    padding: var(--space-5) var(--space-6);
     border-top: 1px solid var(--border);
     background: var(--surface);
   }
   .call-view-output {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
     min-width: 0;
     color: var(--text-muted);
   }

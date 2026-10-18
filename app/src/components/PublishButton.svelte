@@ -80,9 +80,9 @@
   .publish-button-item {
     display: flex;
     flex-direction: column;
-    line-height: 1.35;
+    line-height: var(--lh-tight);
   }
   .publish-button-detail {
-    font-size: 12px;
+    font-size: var(--fs-sm);
   }
 </style>

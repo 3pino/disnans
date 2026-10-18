@@ -38,19 +38,19 @@
   .reactions {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 4px;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
   .reaction-pill {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-2);
     height: 26px;
-    padding: 0 8px;
+    padding: 0 var(--space-4);
     border-radius: 13px;
     border: 1px solid var(--border);
     background: var(--surface);
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   .reaction-pill:hover {
     border-color: var(--text-muted);
@@ -61,11 +61,11 @@
     color: var(--accent);
   }
   .reaction-pill-emoji {
-    font-size: 15px;
+    font-size: var(--fs-body);
     line-height: 1;
   }
   .reaction-pill-count {
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     font-variant-numeric: tabular-nums;
   }
   .reaction-add {

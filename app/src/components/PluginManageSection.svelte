@@ -104,6 +104,6 @@
   .plugin-manage-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-4);
   }
 </style>

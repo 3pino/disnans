@@ -41,15 +41,15 @@
   .reply-quote {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
     max-width: 100%;
-    margin-bottom: 2px;
+    margin-bottom: var(--space-1);
     padding: 0;
     border: none;
     background: none;
     color: var(--text-muted);
-    font-size: 12px;
-    line-height: 1.4;
+    font-size: var(--fs-sm);
+    line-height: var(--lh-tight);
     text-align: left;
     cursor: pointer;
   }

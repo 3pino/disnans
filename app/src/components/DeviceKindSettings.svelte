@@ -77,8 +77,8 @@
     min-width: 0;
     display: grid;
     grid-template-columns: repeat(4, 40px);
-    gap: 2px;
-    padding: 8px;
+    gap: var(--space-1);
+    padding: var(--space-4);
   }
   .device-kind-option {
     display: grid;

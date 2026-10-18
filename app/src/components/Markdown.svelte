@@ -70,19 +70,19 @@
     margin-top: 0.2em;
   }
   .markdown-body :global(pre) {
-    padding: 10px 12px;
+    padding: var(--space-5) var(--space-6);
     border-radius: var(--radius-sm);
     background: var(--surface-2);
     border: 1px solid var(--border);
     overflow-x: auto;
     font-family: var(--mono);
-    font-size: 13px;
-    line-height: 1.5;
+    font-size: var(--fs-md);
+    line-height: var(--lh-normal);
     white-space: pre;
     scrollbar-width: thin;
   }
   .markdown-body :global(blockquote) {
-    padding: 1px 0 1px 12px;
+    padding: 1px 0 1px var(--space-6);
     border-left: 3px solid var(--border);
     color: var(--text-muted);
   }

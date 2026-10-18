@@ -158,7 +158,13 @@ body {
 |---|---|---|
 | `--radius` | 角の丸み（カード、ダイアログ、メニュー） | `10px` |
 | `--radius-sm` | 小さな角の丸み（ボタン、入力欄、タグ） | `6px` |
+| `--radius-xs` / `--radius-lg` / `--radius-xl` / `--radius-pill` | さらに小さい / 大きい（モーダル）/ 吹き出し / 完全な丸 | `4px` / `14px` / `16px` / `999px` |
+| `--fs-2xs` … `--fs-2xl` | 文字サイズ（`2xs` 10 / `xs` 11 / `sm` 12 / `md` 13 / `base` 14 / `body` 15 / `lg` 16 / `xl` 20 / `2xl` 24 px） | 左のとおり |
+| `--fw-medium` / `--fw-semibold` / `--fw-bold` | 文字の太さ | `500` / `600` / `700` |
+| `--lh-tight` / `--lh-normal` / `--lh-body` | 行の高さ | `1.4` / `1.5` / `1.55` |
+| `--space-1` … `--space-8` | 余白（gap・padding・margin）。2 / 4 / 6 / 8 / 10 / 12 / 16 / 24 px | 左のとおり |
 | `--font` | 本文のフォント | システムのフォント（日本語は Hiragino / Noto Sans JP / Yu Gothic UI など） |
+| `--serif` | 明朝・セリフ体のフォント（本体では使っていない。流用先用） | `ui-serif` ほか |
 | `--mono` | 等幅のフォント（コード） | `ui-monospace` ほか |
 | `--nav-side-w` | 広い画面で左に縦に並べるナビゲーションバーの幅 | `76px` |
 | `--panel-w` | PC 版の右側のパネルの幅 | `420px` |

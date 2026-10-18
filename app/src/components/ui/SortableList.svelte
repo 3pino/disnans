@@ -172,7 +172,7 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-2);
   }
   /* ドラッグの間は文字を選べないようにする */
   .sortable-list-dragging {
@@ -182,7 +182,7 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-2);
     border-radius: var(--radius-sm);
     /* ほかの行が空きへ滑る */
     transition: transform 180ms ease;

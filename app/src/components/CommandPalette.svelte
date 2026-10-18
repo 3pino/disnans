@@ -83,7 +83,7 @@
   .command-palette {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-5);
   }
   .command-palette > :global(.command-palette-input) {
     width: 100%;
@@ -112,13 +112,13 @@
   }
   .command-palette-hotkeys {
     display: flex;
-    gap: 4px;
+    gap: var(--space-2);
     margin-left: auto;
     flex: none;
   }
   .command-palette-empty {
     margin: 0;
-    padding: 8px;
-    font-size: 14px;
+    padding: var(--space-4);
+    font-size: var(--fs-base);
   }
 </style>

@@ -32,12 +32,12 @@
   .connection-banner {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 16px;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-7);
     background: color-mix(in oklch, var(--warning) 16%, var(--bg));
     color: var(--warning);
-    font-size: 13px;
-    font-weight: 500;
+    font-size: var(--fs-md);
+    font-weight: var(--fw-medium);
     border-bottom: 1px solid color-mix(in oklch, var(--warning) 40%, transparent);
   }
   .connection-banner-reconnect {
@@ -46,6 +46,6 @@
     background: none;
     color: inherit;
     text-decoration: underline;
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
 </style>

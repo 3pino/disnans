@@ -48,7 +48,7 @@
     place-items: center;
     background: oklch(var(--avatar-l) 0.08 var(--h));
     color: var(--bg);
-    font-weight: 700;
+    font-weight: var(--fw-bold);
     user-select: none;
   }
 </style>

@@ -229,10 +229,10 @@
   .plugin-settings-empty,
   .plugin-settings-small {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-md);
   }
   .plugin-settings-item {
-    padding: 10px 0;
+    padding: var(--space-5) 0;
   }
   .plugin-settings-item + .plugin-settings-item {
     border-top: 1px solid var(--border);
@@ -244,16 +244,16 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px 10px;
-    margin-top: 4px;
-    font-size: 12px;
+    gap: var(--space-2) var(--space-5);
+    margin-top: var(--space-2);
+    font-size: var(--fs-sm);
   }
   .plugin-settings-version,
   .plugin-settings-id {
     font-family: var(--mono);
   }
   .plugin-settings-tag {
-    padding: 0 6px;
+    padding: 0 var(--space-3);
     border-radius: var(--radius-sm);
     background: var(--surface-2);
   }
@@ -266,16 +266,16 @@
     color: var(--mention);
   }
   .plugin-settings-warning {
-    margin: 6px 0 0;
+    margin: var(--space-3) 0 0;
     color: var(--warning);
-    font-size: 13px;
+    font-size: var(--fs-md);
     overflow-wrap: anywhere;
   }
 
   .plugin-settings-error {
-    margin: 6px 0 0;
+    margin: var(--space-3) 0 0;
     color: var(--danger);
-    font-size: 13px;
+    font-size: var(--fs-md);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     -webkit-user-select: text;
@@ -285,20 +285,20 @@
   .plugin-settings-controls {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-2);
   }
   .plugin-settings-dev,
   .plugin-settings-upload {
-    padding-top: 12px;
+    padding-top: var(--space-6);
     border-top: 1px solid var(--border);
   }
   .plugin-settings-dev > * + *,
   .plugin-settings-upload > * + * {
-    margin-top: 6px;
+    margin-top: var(--space-3);
   }
   .plugin-settings-dev-row {
     display: flex;
-    gap: 8px;
+    gap: var(--space-4);
   }
   .plugin-settings-dev-row > :global(.input) {
     flex: 1;
