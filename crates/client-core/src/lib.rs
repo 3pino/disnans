@@ -9,6 +9,7 @@ mod rest;
 mod rest_api;
 mod storage;
 mod url;
+pub mod view;
 #[cfg(feature = "ws")]
 mod ws;
 
