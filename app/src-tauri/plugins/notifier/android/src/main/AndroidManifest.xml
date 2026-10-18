@@ -40,7 +40,7 @@
             </intent-filter>
         </activity>
 
-        <!-- remoteMessaging: メッセージを端末間で届けるための種類。dataSync と違い、時間の制限がなく、起動時にも開始できる -->
+        <!-- remoteMessaging: メッセージをデバイス間で届けるための種類。dataSync と違い、時間の制限がなく、起動時にも開始できる -->
         <service
             android:name="dev.disnans.notifier.NotifyService"
             android:exported="false"

@@ -368,7 +368,7 @@ class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
 
   // ---- ピクチャーインピクチャー ----
 
-  /** Activity を小窓にする。入れなければ entered=false（Android 8 未満、端末が非対応、ユーザーが禁止しているなど） */
+  /** Activity を小窓にする。入れなければ entered=false（Android 8 未満、デバイスが非対応、ユーザーが禁止しているなど） */
   @Command
   fun enterPip(invoke: Invoke) {
     val args = invoke.parseArgs(EnterPipArgs::class.java)

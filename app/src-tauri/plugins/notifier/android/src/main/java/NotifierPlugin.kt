@@ -240,7 +240,7 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   companion object {
     private const val EXTRA_SHARE_HANDLED = "dev.disnans.notifier.SHARE_HANDLED"
     private const val SHARE_DIR = "disnans-share"
-    /** 1ファイルの上限。サーバーに上限はないが、JS が全体をメモリに読むので端末の都合で決めている */
+    /** 1ファイルの上限。サーバーに上限はないが、JS が全体をメモリに読むのでデバイスの都合で決めている */
     private const val MAX_SHARE_BYTES = 200L * 1024 * 1024
   }
 
