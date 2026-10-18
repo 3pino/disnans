@@ -1,5 +1,5 @@
 import { setServerUrl } from './config';
-import { isSharedStorageOs, supportsDesktopStoragePlatform } from './platform';
+import { capabilities, supportsDesktopStoragePlatform } from './platform';
 
 // 判定の本体は platform.ts（Rust の値を優先し、無ければ UA）。ここからも従来どおり読めるように再エクスポートする
 export { supportsDesktopStoragePlatform };
@@ -15,7 +15,7 @@ const invokeTauri: Invoke = async <T>(command: string, args?: Record<string, unk
 
 /** Shared-file storage is enabled only for Windows/Linux desktop builds (platform.ts). */
 export function isDesktopStorageSupported(): boolean {
-  return isSharedStorageOs();
+  return capabilities().sharedStorage;
 }
 
 function fromState(result: StorageState): SharedValue {

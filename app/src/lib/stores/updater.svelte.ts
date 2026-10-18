@@ -1,4 +1,4 @@
-import { isAndroid, isTauri } from '../platform';
+import { capabilities } from '../platform';
 import { isNewer } from '../semver';
 
 const REPO = '3pino/disnans';
@@ -24,7 +24,7 @@ class Updater {
   version = $state<string | null>(null);
   state = $state<UpdateState>({ kind: 'idle' });
   /** Tauri 版だけがアップデートできる */
-  readonly supported = isTauri();
+  readonly supported = capabilities().updater !== null;
   private apply: (() => Promise<void>) | null = null;
 
   async loadVersion(): Promise<void> {
@@ -44,7 +44,7 @@ class Updater {
     this.apply = null;
     try {
       await this.loadVersion();
-      if (isAndroid()) await this.checkAndroid();
+      if (capabilities().updater === 'android') await this.checkAndroid();
       else await this.checkDesktop();
     } catch (e) {
       this.state = opts.quiet ? { kind: 'idle' } : { kind: 'error', message: errorMessage(e) };

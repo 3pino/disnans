@@ -1,6 +1,5 @@
 import { devUser, getServerUrl } from '../config';
-import { isAndroid, isTauri } from '../platform';
-import { isDesktopStorageSupported } from '../desktopStorage';
+import { capabilities, isAndroid, isTauri } from '../platform';
 import { getItem } from '../storage';
 import { CHAT_RUST_FLAG, RUST_API_FLAG, selectChatMode, selectReadApi, type ReadApiChoice, type ReadApiEnv } from './select';
 import type { ChatTransport } from './chat';
@@ -11,12 +10,15 @@ import type { BridgeContext } from './types';
 
 const bridgeContext = (): BridgeContext => ({ server: () => getServerUrl(), devUser });
 
-/** 起動時に実行環境から読む値（呼び出しのたびに読む。経路の決定は呼び出し側が1回だけ行う） */
+/** 起動時に実行環境から読む値（呼び出しのたびに読む。経路の決定は呼び出し側が1回だけ行う）。方針は capabilities() から */
 export function currentBootEnv(): ReadApiEnv {
+  const caps = capabilities();
   return {
     flag: getItem(RUST_API_FLAG),
-    desktop: isDesktopStorageSupported(),
+    desktop: caps.sharedStorage,
     android: isTauri() && isAndroid(),
+    rustApi: caps.rustApi,
+    bodyMode: caps.bodyMode,
     invoke: tauriInvoke,
     context: bridgeContext(),
     log: (message) => console.info(message),
@@ -35,10 +37,19 @@ export function bootWriteApi(env: ReadApiEnv = currentBootEnv()): WriteApiChoice
 
 /** チャットの経路を決める（rust のとき Tauri 実装、js のとき null）。client.start() で1回だけ呼ぶ */
 export function bootChatTransport(
-  env: { flag: string | null; desktop: boolean; android?: boolean; invoke: typeof tauriInvoke; context: BridgeContext; log?: (m: string) => void } = {
+  env: {
+    flag: string | null;
+    desktop: boolean;
+    android?: boolean;
+    rustChat?: 'default' | 'opt-in' | 'off';
+    invoke: typeof tauriInvoke;
+    context: BridgeContext;
+    log?: (m: string) => void;
+  } = {
     flag: getItem(CHAT_RUST_FLAG),
-    desktop: isDesktopStorageSupported(),
+    desktop: capabilities().sharedStorage,
     android: isTauri() && isAndroid(),
+    rustChat: capabilities().rustChat,
     invoke: tauriInvoke,
     context: bridgeContext(),
     log: (message) => console.info(message),

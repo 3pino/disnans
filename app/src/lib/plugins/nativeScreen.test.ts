@@ -12,7 +12,10 @@ const fake = vi.hoisted(() => ({
 vi.mock('../platform', () => ({
   isTauri: () => fake.tauri,
   isAndroid: () => fake.android,
-  isLinuxDesktop: () => fake.tauri && fake.linux && !fake.android,
+  // 方針（Rust の capabilities と同じ規則）: Android の Tauri なら android、Linux の Tauri なら linux
+  capabilities: () => ({
+    nativeScreen: fake.tauri && fake.android ? 'android' : fake.tauri && fake.linux && !fake.android ? 'linux' : null,
+  }),
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: fake.invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: fake.listen }));

@@ -1,6 +1,6 @@
 import { api } from '../api';
 import { getServerUrl } from '../config';
-import { isAndroid, isTauri } from '../platform';
+import { capabilities } from '../platform';
 import { ui, type ToastAvatar } from './ui.svelte';
 
 /**
@@ -32,9 +32,9 @@ export type NotifyEvent = {
   from?: ToastAvatar | null;
 };
 
+/** 通知の出し方（方針の値。Rust の値が無いときは、Tauri かどうかと Android かどうかから推測する） */
 function detectBackend(): Backend {
-  if (!isTauri()) return 'web';
-  return isAndroid() ? 'android' : 'desktop';
+  return capabilities().notifyBackend;
 }
 
 async function invokeNotifier<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

@@ -1,4 +1,4 @@
-import { isAndroid, isTauri } from '../platform';
+import { capabilities } from '../platform';
 
 /**
  * 音の入出力の選択（API v5 の disnans.audio）。
@@ -17,7 +17,7 @@ const attached = new Set<SinkElement>();
 let webSink = '';
 
 function useNative(): boolean {
-  return isTauri() && isAndroid();
+  return capabilities().nativeAudioOutput;
 }
 
 /** enumerateDevices の結果から選択肢を作る。'default' と 'communications' は実際の機器と重なるので外す */

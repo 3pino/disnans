@@ -1,4 +1,4 @@
-import { isAndroid, isTauri } from '../platform';
+import { capabilities } from '../platform';
 
 /**
  * 画面を切っても動き続けるための常駐（API v3 の holdBackground）。
@@ -72,7 +72,7 @@ function sync(): Promise<void> {
 }
 
 export async function holdBackground(opts: Disnans.BackgroundOptions): Promise<Disnans.BackgroundHandle> {
-  if (!isTauri() || !isAndroid()) return Object.assign(() => {}, { update: () => {} });
+  if (!capabilities().backgroundService) return Object.assign(() => {}, { update: () => {} });
   const entry: Held = { ...opts };
   held.add(entry);
   try {

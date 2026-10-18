@@ -23,8 +23,9 @@ export function rustEnabled(flag: string | null, desktop: boolean): boolean {
  * 読取・書込・添付の Rust 経路。デスクトップ（Windows/Linux）と Android の Tauri で、フラグが "0" でないとき。
  * チャットは含まない（chat_* は Android に未登録。rustEnabled のまま）。
  */
-export function rustApiEnabled(flag: string | null, env: { desktop: boolean; android?: boolean }): boolean {
-  return (env.desktop || !!env.android) && flag !== '0';
+export function rustApiEnabled(flag: string | null, env: { desktop: boolean; android?: boolean; rustApi?: boolean }): boolean {
+  const allowed = env.rustApi ?? (env.desktop || !!env.android);
+  return allowed && flag !== '0';
 }
 
 export type ReadApiChoice = { kind: 'http' | 'tauri'; api: ReadApi };
@@ -36,6 +37,10 @@ export type ReadApiEnv = {
   desktop: boolean;
   /** Android の Tauri かどうか（読取・書込・添付だけ Rust。本体は base64 で渡す） */
   android?: boolean;
+  /** 方針の値（capabilities.rustApi）。無いときは desktop と android から決める */
+  rustApi?: boolean;
+  /** 本体の渡し方（capabilities.bodyMode）。無いときは android から決める */
+  bodyMode?: BodyMode;
   invoke: Invoke;
   context: BridgeContext;
   log?: (message: string) => void;
@@ -61,7 +66,7 @@ export type WriteApiChoice = { kind: 'http' | 'tauri'; write: WriteApi; upload: 
  * 読取と書込は別々に決めるが、同じ localStorage の値と同じ実行環境から決まるので常に揃う。
  */
 export function selectWriteApi(env: ReadApiEnv): WriteApiChoice {
-  const mode: BodyMode = env.android ? 'base64' : 'raw';
+  const mode: BodyMode = env.bodyMode ?? (env.android ? 'base64' : 'raw');
   const choice: WriteApiChoice = rustApiEnabled(env.flag, env)
     ? { kind: 'tauri', write: createTauriWriteApi(env.invoke, env.context, mode), upload: createTauriUploadApi(env.invoke, env.context, undefined, mode) }
     : { kind: 'http', write: createHttpWriteApi(), upload: createHttpUploadApi() };
@@ -75,7 +80,13 @@ export function selectWriteApi(env: ReadApiEnv): WriteApiChoice {
  * - Android の Tauri: opt-in のみ。"disnans.rustChat" が "1" のときだけ rust（既定 off。背景中の切断を実機で切り分けるまで）。
  * - それ以外（ブラウザ・macOS など）は js。
  */
-export function selectChatMode(env: { flag: string | null; desktop: boolean; android?: boolean }): 'rust' | 'js' {
+export function selectChatMode(env: { flag: string | null; desktop: boolean; android?: boolean; rustChat?: 'default' | 'opt-in' | 'off' }): 'rust' | 'js' {
+  // 方針の値（capabilities.rustChat）があれば、それに従う
+  if (env.rustChat !== undefined) {
+    if (env.rustChat === 'default') return env.flag !== '0' ? 'rust' : 'js';
+    if (env.rustChat === 'opt-in') return env.flag === '1' ? 'rust' : 'js';
+    return 'js';
+  }
   if (env.desktop) return rustEnabled(env.flag, true) ? 'rust' : 'js';
   if (env.android) return env.flag === '1' ? 'rust' : 'js';
   return 'js';

@@ -1,4 +1,4 @@
-import { isAndroid, isLinuxDesktop, isTauri } from '../platform';
+import { capabilities, isAndroid, isTauri } from '../platform';
 
 /**
  * ネイティブの画面取得への橋渡し。
@@ -10,7 +10,8 @@ import { isAndroid, isLinuxDesktop, isTauri } from '../platform';
  *   デスクトップは本体の `screen_snapshot` コマンド（src-tauri/src/snapshot.rs）、Android は screen プラグインの `snapshot`（PixelCopy）
  */
 
-const native = (): boolean => isTauri() && isAndroid();
+// Android の Tauri（MediaProjection・PiP）。方針（capabilities.nativeScreen）から決める
+const native = (): boolean => capabilities().nativeScreen === 'android';
 
 async function invokeScreen<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core');
@@ -75,14 +76,14 @@ async function invokeCapture<T>(backend: 'android' | 'linux', operation: 'start'
 
 export const screenCaptureApi: Disnans.ScreenCapture = {
   get supported() {
-    return native() || isLinuxDesktop();
+    return capabilities().nativeScreen !== null;
   },
   async start(opts, onFrame) {
     if (!screenCaptureApi.supported) throw new Error('この環境では使えません');
     if (capturing) await screenCaptureApi.stop();
     capturing = true;
     const seq = ++captureSeq;
-    const backend = isLinuxDesktop() ? 'linux' : 'android';
+    const backend = capabilities().nativeScreen ?? 'android';
     captureBackend = backend;
     const frame = (f: CaptureFramePayload) => {
       if (!capturing || seq !== captureSeq || (backend === 'linux' && f.captureId !== seq)) return;
