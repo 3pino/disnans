@@ -369,3 +369,11 @@ export function mentionsToText(body: string, nameOf: (id: string) => string): st
 export function extractMentions(body: string): string[] {
   return [...body.matchAll(/<@([A-Za-z0-9_-]{1,64})>/g)].map((m) => m[1]);
 }
+
+/**
+ * 表示に使う構文木。Tauri の Rust 経路は、本文の木を `markdown`（Rust の core が作った木。V3）として付けて送る。
+ * 無いとき（ブラウザー版・送信直後の仮表示など）は、この TS の parse で作る。
+ */
+export function treeOf(body: string, markdown?: unknown): Block[] {
+  return Array.isArray(markdown) ? (markdown as Block[]) : parse(body);
+}

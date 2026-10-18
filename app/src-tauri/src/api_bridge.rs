@@ -456,12 +456,18 @@ pub async fn api_prefs(args: Base) -> Result<Value, ReadFailure> {
 
 #[tauri::command]
 pub async fn api_messages(args: MessagesArgs) -> Result<Value, ReadFailure> {
-    read_messages(&args).await
+    read_messages(&args).await.map(with_markdown)
 }
 
 #[tauri::command]
 pub async fn api_search_messages(args: SearchArgs) -> Result<Value, ReadFailure> {
-    read_search_messages(&args).await
+    read_search_messages(&args).await.map(with_markdown)
+}
+
+/// 履歴・検索の結果の各メッセージに、本文の構文木 `markdown` を足す（GUI の描画用。V3）
+fn with_markdown(mut messages: Value) -> Value {
+    disnans_client_core::view::markdown::add_to_messages(&mut messages);
+    messages
 }
 
 #[tauri::command]
@@ -638,6 +644,19 @@ mod tests {
             serde_json::to_value(&failure).unwrap(),
             serde_json::json!({"status": 404, "code": "not_found", "message": "見つかりません"})
         );
+    }
+
+    #[test]
+    fn history_and_search_results_carry_the_markdown_tree() {
+        let messages =
+            serde_json::json!([{"id": "m1", "body": "**a**"}, {"id": "m2", "body": "b"}]);
+        let out = with_markdown(messages);
+        assert_eq!(
+            out[0]["markdown"],
+            disnans_client_core::view::markdown::blocks_value("**a**")
+        );
+        assert_eq!(out[1]["markdown"][0]["type"], "paragraph");
+        assert_eq!(out[1]["body"], "b");
     }
 
     #[tokio::test]

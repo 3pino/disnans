@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { parse, type Block, type ListItem } from '../lib/markdown';
+  import { treeOf, type Block, type ListItem } from '../lib/markdown';
   import InlineNodes from './InlineNodes.svelte';
   import CodeBlock from './CodeBlock.svelte';
 
+  // markdown: Rust が作った木（あれば使う。無ければ body を TS で parse する）
   // suffix: 末尾に添える要素（「編集済み」など）。最後が段落ならその行内に置く
-  let { body, suffix }: { body: string; suffix?: Snippet } = $props();
-  const blocks = $derived(parse(body));
+  let { body, markdown, suffix }: { body: string; markdown?: unknown; suffix?: Snippet } = $props();
+  const blocks = $derived(treeOf(body, markdown));
   const inlineSuffix = $derived(blocks.at(-1)?.type === 'paragraph');
 </script>
 

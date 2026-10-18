@@ -771,3 +771,68 @@ pub fn extract_mentions(body: &str) -> Vec<String> {
     }
     ids
 }
+
+/// 本文の構文木を JSON の値にする（TS の `parse(body)` と同じ形）
+pub fn blocks_value(body: &str) -> serde_json::Value {
+    // 木は文字列と配列だけで、シリアライズは失敗しない
+    serde_json::to_value(parse(body)).unwrap_or(serde_json::Value::Null)
+}
+
+/// メッセージの JSON（`body` を持つオブジェクト）に、本文の構文木を `markdown` として足す。
+/// `body` が無い・文字列でないときは何もしない。GUI は `markdown` があればそれを描き、無ければ従来どおり TS で parse する。
+pub fn add_to_message(message: &mut serde_json::Value) {
+    let Some(body) = message.get("body").and_then(|b| b.as_str()) else {
+        return;
+    };
+    let blocks = blocks_value(body);
+    if let Some(obj) = message.as_object_mut() {
+        obj.insert("markdown".to_owned(), blocks);
+    }
+}
+
+/// メッセージの配列（履歴・検索の結果）の各要素に `markdown` を足す
+pub fn add_to_messages(messages: &mut serde_json::Value) {
+    if let Some(items) = messages.as_array_mut() {
+        for item in items {
+            add_to_message(item);
+        }
+    }
+}
+
+#[cfg(test)]
+mod attach_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn adds_the_same_tree_as_parse() {
+        let mut m = json!({"id": "m1", "body": "a **b**"});
+        add_to_message(&mut m);
+        assert_eq!(m["markdown"], blocks_value("a **b**"));
+        assert_eq!(m["markdown"][0]["type"], "paragraph");
+        assert_eq!(m["body"], "a **b**", "body is kept as is");
+    }
+
+    #[test]
+    fn leaves_values_without_a_string_body_alone() {
+        let mut none = json!({"id": "m1"});
+        add_to_message(&mut none);
+        assert!(none.get("markdown").is_none());
+
+        let mut num = json!({"body": 3});
+        add_to_message(&mut num);
+        assert!(num.get("markdown").is_none());
+
+        let mut list = json!([1, "x"]);
+        add_to_messages(&mut list);
+        assert_eq!(list, json!([1, "x"]));
+    }
+
+    #[test]
+    fn adds_to_every_message_in_a_list() {
+        let mut list = json!([{"body": "x"}, {"body": ""}]);
+        add_to_messages(&mut list);
+        assert_eq!(list[0]["markdown"], blocks_value("x"));
+        assert_eq!(list[1]["markdown"], blocks_value(""));
+    }
+}

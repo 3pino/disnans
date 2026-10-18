@@ -22,10 +22,34 @@
 | V2a | `view` モジュール（行の並び・日付・同じ人の続き・メッセージの行） | 完了 |
 | V2b | TUI の表示を `view` に接続（名前の省略・ボット名・メンションの表示を含む） | 完了（TUI のみ） |
 | V3 (Rust) | Markdown の構文木を `view/markdown.rs` に移し、fixture で確かめる | 完了（GUI は未変更） |
-| V3 (GUI) | GUI が `MessageView` を使い、TypeScript の `markdown.ts` と `messageRows.ts` を消す | 判断待ち |
+| V3 (GUI) | GUI が Rust の本文の木（`markdown`）を使う。TypeScript の parse は Rust の木が無いときだけ使う | 実装済み（CI 待ち）。`messageRows.ts` は残す |
 | V4 | 作成・名前・通知の文言を `view` に移す | 未着手 |
 | V5 | 設定項目の定義とコマンド・ナビ項目を `view` に移す | 未着手（端末・ユーザーの設定の境界が決まってから） |
 | V6 | 残った重複の削除 | 未着手 |
+
+## V3 の方式（実装済み）
+
+- 本文の木は、履歴（`api_messages`）・検索（`api_search_messages`）の結果と、チャットの `message.created` / `message.updated` イベントの `message` に、`markdown` として付けて渡す（Rust の `view::markdown::add_to_message`）。
+- 別の呼び出し（一件ずつの invoke）は作らない。木は既存の応答に乗るので、往復は増えない。
+- GUI は `treeOf(body, markdown)` を使う。`markdown` が配列なら使い、無ければ（ブラウザー版・送信直後の仮表示など）TypeScript の `parse` で作る。
+- ブラウザー版は Rust を使えないため、`markdown.ts` の parse は残す（削除できるのは Tauri の経路だけ）。両方の正しさは fixture（`markdown.json`）で保つ。
+
+### payload の測定（V3 の前に行った。TypeScript で測定）
+
+本文の木の JSON の大きさ（`JSON.stringify(parse(body))`）と、メッセージの JSON（ID などを含む、約 250 バイト）を、9 件の典型的な本文で比べた。
+
+| 本文の例 | メッセージ（バイト） | 本文の JSON（バイト） | 木（バイト） |
+|---|---|---|---|
+| 短い文 | 233 | 13 | 71 |
+| 長め（メンション・改行つき） | 286 | 66 | 255 |
+| 箇条書き（入れ子） | 251 | 31 | 331 |
+| 引用 | 241 | 21 | 186 |
+| 300 文字の英字 | 522 | 302 | 360 |
+| 日本語 180 文字 | 366 | 146 | 204 |
+
+- 9 件の合計: メッセージ 2642 バイト、木 1695 バイト（1 件あたり平均 約 190 バイト）。
+- 木は本文の繰り返しと型の印を含むので、本文の 1〜3 倍程度。Android は base64 で送るため、さらに 1/3 増える。1 件あたり数百バイトで、目安の「数 KB」の内に収まる（この測定は TypeScript の木による推定。Rust の木は fixture で同じ形と確かめている）。
+- 結論: 木を付ける方式で payload の増分は小さい。V3 の方式（上）で進める。
 
 ## GUI に渡すときの判断（V3 以降）
 

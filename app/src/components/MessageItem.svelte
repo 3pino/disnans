@@ -337,7 +337,7 @@
           {:else if message.body}
             <div class="message-bubble" class:message-bubble-mine={bubble && isMine} class:message-bubble-other={bubble && !isMine}>
               <div class="message-body">
-                <Markdown body={message.body} suffix={message.edited_at || repliedInline ? bodySuffix : undefined} />
+                <Markdown body={message.body} markdown={'markdown' in message ? message.markdown : undefined} suffix={message.edited_at || repliedInline ? bodySuffix : undefined} />
               </div>
             </div>
           {/if}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractMentions, mentionsToText, parse, parseInline, type Block, type Inline, type ListItem } from './markdown';
+import { extractMentions, mentionsToText, parse, parseInline, treeOf, type Block, type Inline, type ListItem } from './markdown';
 
 const t = (text: string): Inline => ({ type: 'text', text });
 const item = (lines: Inline[][], children: Block[] = []): ListItem => ({ lines, children });
@@ -458,5 +458,19 @@ describe('helpers', () => {
   });
   it('extractMentions', () => {
     expect(extractMentions('<@a> <@b> <c>')).toEqual(['a', 'b']);
+  });
+});
+
+describe('treeOf', () => {
+  it('uses the tree from the Rust side when it is an array', () => {
+    const rust: Block[] = [{ type: 'paragraph', lines: [[{ type: 'text', text: 'from rust' }]] }];
+    expect(treeOf('ignored **body**', rust)).toBe(rust);
+  });
+
+  it('parses the body when no tree is given', () => {
+    expect(treeOf('a **b**')).toEqual(parse('a **b**'));
+    expect(treeOf('a **b**', undefined)).toEqual(parse('a **b**'));
+    expect(treeOf('a **b**', null)).toEqual(parse('a **b**'));
+    expect(treeOf('a **b**', 'not a tree')).toEqual(parse('a **b**'));
   });
 });

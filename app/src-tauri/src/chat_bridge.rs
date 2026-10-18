@@ -62,6 +62,7 @@ pub enum ChatItem {
     },
     Event {
         generation: u64,
+        #[serde(serialize_with = "serialize_event")]
         event: ServerEvent,
     },
     Gap {
@@ -72,6 +73,17 @@ pub enum ChatItem {
         reason: String,
         http_status: Option<u16>,
     },
+}
+
+/// イベントの JSON。`message` を持つイベントは、本文の構文木を `message.markdown` に足す（GUI の描画用。V3）。
+/// 中身の型（`ServerEvent`）は変えない。
+fn serialize_event<S: serde::Serializer>(event: &ServerEvent, s: S) -> Result<S::Ok, S::Error> {
+    use serde::ser::Error;
+    let mut value = serde_json::to_value(event).map_err(S::Error::custom)?;
+    if let Some(message) = value.get_mut("message") {
+        disnans_client_core::view::markdown::add_to_message(message);
+    }
+    value.serialize(s)
 }
 
 impl From<WatchItem> for ChatItem {
@@ -821,5 +833,52 @@ mod tests {
             })["httpStatus"],
             serde_json::Value::Null
         );
+    }
+
+    #[test]
+    fn message_events_carry_the_markdown_tree_and_other_events_do_not() {
+        let user = User {
+            id: "u1".into(),
+            login_name: "a@example".into(),
+            display_name: "A".into(),
+            avatar_url: None,
+            created_at: 0,
+        };
+        let message = serde_json::from_value::<Message>(serde_json::json!({
+            "id": "m1", "author_id": "u1", "reply_to": null, "reply_preview": null,
+            "body": "**hi**", "attachments": [], "reactions": [], "created_at": 1,
+            "edited_at": null, "card": null, "bot": null
+        }))
+        .unwrap();
+        let created = ChatItem::Event {
+            generation: 1,
+            event: ServerEvent::MessageCreated {
+                client_id: None,
+                message: message.clone(),
+            },
+        };
+        let v = serde_json::to_value(&created).unwrap();
+        assert_eq!(v["event"]["type"], "message.created");
+        assert_eq!(v["event"]["message"]["body"], "**hi**");
+        assert_eq!(
+            v["event"]["message"]["markdown"],
+            disnans_client_core::view::markdown::blocks_value("**hi**")
+        );
+        // 元の値（ServerEvent）は変わらない
+        assert!(matches!(
+            &created,
+            ChatItem::Event { event: ServerEvent::MessageCreated { message: m, .. }, .. } if m == &message
+        ));
+
+        let hello = ChatItem::Event {
+            generation: 1,
+            event: ServerEvent::Hello {
+                me: user.clone(),
+                users: vec![user],
+            },
+        };
+        let v = serde_json::to_value(&hello).unwrap();
+        assert_eq!(v["event"]["type"], "hello");
+        assert!(v["event"].get("message").is_none());
     }
 }
