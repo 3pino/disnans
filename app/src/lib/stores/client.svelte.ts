@@ -410,6 +410,13 @@ class Client {
 
   /** 背景に回った時刻（戻ったときに、背景にいた時間を測る） */
   private hiddenAt: number | null = null;
+  /** 通話に参加しているか（通話の側が教える。背景からの復帰で接続を作り直さないため） */
+  private inCall: () => boolean = () => false;
+
+  /** 通話に参加しているかを返す関数を登録する（循環 import を避けるため、通話の側から渡す） */
+  setInCall(fn: () => boolean): void {
+    this.inCall = fn;
+  }
 
   /** 画面の表示が変わった（Android）。隠れたら時刻を覚え、表示に戻ったら resumeReconnect で作り直すか決める */
   private onVisibilityChanged(): void {
@@ -419,7 +426,7 @@ class Client {
     }
     const hiddenMs = this.hiddenAt === null ? 0 : Date.now() - this.hiddenAt;
     this.hiddenAt = null;
-    if (resumeReconnect({ hiddenMs, started: this.chatState === 'started', down: this.chatDown })) this.restartChat();
+    if (resumeReconnect({ hiddenMs, started: this.chatState === 'started', down: this.chatDown, inCall: this.inCall() })) this.restartChat();
   }
 
   /** 接続を作り直す（Android の復帰・ネットワーク変化）。starting のあいだは何もしない */

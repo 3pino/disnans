@@ -16,4 +16,13 @@ describe('resumeReconnect（Android の復帰で作り直すか）', () => {
     expect(resumeReconnect({ hiddenMs: RESUME_STALE_MS, started: true, down: false })).toBe(true);
     expect(resumeReconnect({ hiddenMs: 10 * 60_000, started: true, down: false })).toBe(true);
   });
+
+  it('作り直さない: 通話中は背景が長くても（接続が生きていれば）', () => {
+    expect(resumeReconnect({ hiddenMs: 10 * 60_000, started: true, down: false, inCall: true })).toBe(false);
+  });
+
+  it('作り直す: 通話中でも、切れている・始まっていない', () => {
+    expect(resumeReconnect({ hiddenMs: 0, started: true, down: true, inCall: true })).toBe(true);
+    expect(resumeReconnect({ hiddenMs: 0, started: false, down: false, inCall: true })).toBe(true);
+  });
 });
