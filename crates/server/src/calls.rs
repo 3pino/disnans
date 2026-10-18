@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::http::StatusCode;
 use disnans_shared::{CallMember, CallStatus, ServerEvent};
@@ -15,6 +15,13 @@ use disnans_shared::{CallMember, CallStatus, ServerEvent};
 use crate::chat::Actor;
 use crate::error::{AppError, AppResult};
 use crate::hub::{ConnId, Hub};
+use crate::state::SharedState;
+
+/// 参加者の生存を見回る間隔。
+const SWEEP_INTERVAL: Duration = Duration::from_secs(5);
+/// この時間、参加の印（call.join / call.alive / call.update / call.emit）が無ければ通話から外す。
+/// クライアントは約 5 秒ごとに call.alive を送るので、取りこぼしに余裕を持たせる。
+pub const ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// `call.emit` の payload の上限。
 const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
@@ -61,6 +68,8 @@ struct Member {
     peer: String,
     user_id: String,
     status: CallStatus,
+    /// 最後に参加の印を受け取った時刻（見回りで使う）。
+    last_alive: Instant,
 }
 
 #[derive(Default)]
@@ -138,6 +147,7 @@ impl Calls {
                 peer,
                 user_id: actor.user.id.clone(),
                 status,
+                last_alive: Instant::now(),
             },
         );
         hub.broadcast(&Self::snapshot(&members));
@@ -152,6 +162,42 @@ impl Calls {
         }
     }
 
+    /// 参加中であることの印（call.alive）。送信者の最終生存時刻を更新するだけで、ほかへは配らない。
+    pub fn alive(&self, actor: &Actor<'_>) -> AppResult<()> {
+        let conn = require_conn(actor)?;
+        let mut members = self.lock();
+        let Some(me) = members.get_mut(&conn) else {
+            return Err(not_in_call());
+        };
+        me.last_alive = Instant::now();
+        Ok(())
+    }
+
+    /// `timeout` より長く参加の印が無い参加者を通話から外し、外したら一覧を配る。外した数を返す。
+    /// 外された接続には何も送らない（クライアントは一覧に自分が無いことで気づき、入り直す）。
+    pub fn sweep(&self, hub: &Hub, now: Instant, timeout: Duration) -> usize {
+        let mut members = self.lock();
+        let stale: Vec<ConnId> = members
+            .iter()
+            .filter(|(_, m)| now.saturating_duration_since(m.last_alive) > timeout)
+            .map(|(c, _)| *c)
+            .collect();
+        for conn in &stale {
+            if let Some(m) = members.remove(conn) {
+                tracing::warn!(
+                    conn,
+                    user = %m.user_id,
+                    peer = %m.peer,
+                    "通話の参加者から応答がないので外しました"
+                );
+            }
+        }
+        if !stale.is_empty() {
+            hub.broadcast(&Self::snapshot(&members));
+        }
+        stale.len()
+    }
+
     pub fn update(&self, hub: &Hub, actor: &Actor<'_>, status: CallStatus) -> AppResult<()> {
         let conn = require_conn(actor)?;
         let status = validate_status(status)?;
@@ -159,6 +205,7 @@ impl Calls {
         let Some(me) = members.get_mut(&conn) else {
             return Err(not_in_call());
         };
+        me.last_alive = Instant::now();
         if me.status == status {
             return Ok(());
         }
@@ -226,6 +273,7 @@ impl Calls {
         let Some(me) = members.get_mut(&conn) else {
             return Err(not_in_call());
         };
+        me.last_alive = Instant::now();
         // 送りすぎは黙って捨てる（音声は遅れて届くより捨てたほうがよく、エラーを返すと余計に増える）
         if !me.bucket.allow(Instant::now(), size) {
             return Ok(());
@@ -240,6 +288,17 @@ impl Calls {
         hub.send_lossy_to_conns(&targets, &event);
         Ok(())
     }
+}
+
+/// 参加者の生存を定期的に見回る（サーバーの起動時に1つだけ動かす）。
+pub fn spawn_sweep_task(state: SharedState) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(SWEEP_INTERVAL);
+        loop {
+            interval.tick().await;
+            state.calls.sweep(&state.hub, Instant::now(), ALIVE_TIMEOUT);
+        }
+    });
 }
 
 fn require_conn(actor: &Actor<'_>) -> AppResult<ConnId> {
@@ -288,7 +347,6 @@ fn validate_status(mut status: CallStatus) -> AppResult<CallStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     #[test]
     fn bucket_allows_audio_rate_but_limits_floods() {
@@ -333,5 +391,46 @@ mod tests {
             .filter(|i| b.allow(t1 + Duration::from_millis(8 * u64::from(*i)), 40 * 1024))
             .count();
         assert!(sent < 800, "sent = {sent}");
+    }
+
+    fn member(now: Instant, last_alive: Instant) -> Member {
+        Member {
+            bucket: Bucket::new(now),
+            peer: "p".into(),
+            user_id: "u".into(),
+            status: CallStatus {
+                muted: false,
+                deafened: false,
+                device: None,
+            },
+            last_alive,
+        }
+    }
+
+    #[test]
+    fn sweep_removes_only_members_without_recent_alive() {
+        let hub = Hub::new();
+        let calls = Calls::new();
+        let now = Instant::now();
+        let old = now.checked_sub(Duration::from_secs(25)).unwrap();
+        {
+            let mut members = calls.lock();
+            members.insert(1, member(now, now));
+            members.insert(2, member(now, old));
+        }
+        assert_eq!(calls.sweep(&hub, now, ALIVE_TIMEOUT), 1);
+        assert_eq!(calls.sweep(&hub, now, ALIVE_TIMEOUT), 0);
+        let members = calls.lock();
+        assert!(members.contains_key(&1) && !members.contains_key(&2));
+    }
+
+    #[test]
+    fn sweep_keeps_members_exactly_at_the_timeout() {
+        let hub = Hub::new();
+        let calls = Calls::new();
+        let now = Instant::now();
+        let edge = now.checked_sub(ALIVE_TIMEOUT).unwrap();
+        calls.lock().insert(1, member(now, edge));
+        assert_eq!(calls.sweep(&hub, now, ALIVE_TIMEOUT), 0);
     }
 }

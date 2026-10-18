@@ -288,3 +288,18 @@ async fn another_user_cannot_take_over_a_peer() {
         .await;
     assert!(members(&mut alice).await[0].2);
 }
+
+/// 参加していなければ call.alive は not_in_call。参加中なら何も返さない（生存の印だけ）。
+#[tokio::test]
+async fn alive_needs_a_call_and_is_silent_otherwise() {
+    let server = TestServer::start().await;
+    let mut alice = server.ws(ALICE).await;
+
+    alice.send(ClientEvent::CallAlive).await;
+    assert_eq!(alice.expect_error().await.1, "not_in_call");
+
+    alice.send(join("alice-peer")).await;
+    alice.recv_until(is_state).await;
+    alice.send(ClientEvent::CallAlive).await;
+    alice.assert_silent(Duration::from_millis(200)).await;
+}

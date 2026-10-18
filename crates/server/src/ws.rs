@@ -218,6 +218,7 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
             }
             Ok(())
         }
+        ClientEvent::CallAlive => state.calls.alive(actor),
         ClientEvent::CallUpdate { status } => state.calls.update(&state.hub, actor, status),
         ClientEvent::CallKick { peer } => state.calls.kick(&state.hub, actor, &peer),
         ClientEvent::CallEmit { name, payload } => {

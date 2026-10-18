@@ -43,7 +43,7 @@ function errorCodeOf(e: unknown): string {
 const CALL_ERROR_CODES: ReadonlySet<string> = new Set(['not_in_call', 'peer_in_use', 'invalid_peer', 'invalid_status', 'ws_only']);
 
 /** chat_emit が失敗しても toast しない種類（通話の音声・状態、プレゼンス） */
-const SILENT_EMIT_FAILURES: ReadonlySet<string> = new Set(['call.emit', 'call.update', 'session.open', 'session.close']);
+const SILENT_EMIT_FAILURES: ReadonlySet<string> = new Set(['call.emit', 'call.alive', 'call.update', 'session.open', 'session.close']);
 
 class Client {
   me = $state<User | null>(null);

@@ -121,6 +121,8 @@ function errName(e: unknown): string {
 /** 無音を防ぐ信号（聞こえない大きさ・低さ） */
 /** 参加を送ったあと、サーバーの参加者一覧に自分が居るかを確かめるまでの時間（診断用） */
 const LISTED_CHECK_MS = 3000;
+/** 参加中であることを知らせる間隔（サーバーは ALIVE_TIMEOUT の 20 秒届かなければ外す） */
+const ALIVE_MS = 5000;
 /** 一覧に載る前の plugin の emit を待たせる上限（件数と時間。超えたら捨てる） */
 const EMIT_QUEUE_MAX = 50;
 const EMIT_QUEUE_MS = 5000;
@@ -334,11 +336,8 @@ export class CallStore {
       if (code !== 'not_in_call') this.failJoin(message);
       return;
     }
-    // 載ってからの not_in_call: サーバーは自分を参加者と見ていない。状態を合わせて外れる
-    if (code === 'not_in_call') {
-      this.leave(false, 'not-listed');
-      this.deps.toast('通話から外れました', 'info');
-    }
+    // 載ってからの not_in_call: サーバーは自分を参加者と見ていない（見回りで外された）
+    if (code === 'not_in_call') this.onRemoved();
   }
 
   /** 参加が通らなかった（一覧に載らない・拒否された）。通話の表示を閉じて、理由を知らせる */
@@ -410,15 +409,34 @@ export class CallStore {
           this.flushEmits();
         }
       } else if (this.listed) {
-        // 載っていたのに、いなくなった（サーバーが外した・接続が替わった）。通話から外れる
-        this.leave(false, 'not-listed');
-        this.deps.toast('通話から外れました', 'info');
+        // 載っていたのに、いなくなった（サーバーが外した・接続が替わった）
+        this.onRemoved();
         return;
       }
     }
     if (this.joined) this.reconcile();
     this.refresh();
   }
+
+  /**
+   * サーバーの一覧から自分が外れた（見回りで外された・接続が替わった）。JS が止まっていたあとに戻ったときも、ここに来る。
+   * 一度だけ入り直す。入り直しが載らなければ rejoin → checkListed → failJoin で知らせて閉じる。
+   * その入り直しもまた外れたら、通話から外れる。
+   */
+  private onRemoved(): void {
+    if (!this.autoRejoinUsed) {
+      this.autoRejoinUsed = true;
+      console.warn('[call] サーバーの一覧から外れたので、入り直します');
+      this.listed = false;
+      this.rejoin();
+      return;
+    }
+    this.leave(false, 'not-listed');
+    this.deps.toast('通話から外れました', 'info');
+  }
+  /** 外れてからの自動の入り直しを使ったか（手動で入り直したら戻す） */
+  private autoRejoinUsed = false;
+  private aliveAt = 0;
 
   /** サーバーの参加者に合わせて、接続の管理を増減する */
   private reconcile(): void {
@@ -585,6 +603,8 @@ export class CallStore {
 
         this.peerId = randomId();
         this.rejoinRetried = false;
+        this.autoRejoinUsed = false;
+        this.aliveAt = this.deps.now();
         this.muted = this.settings.joinMuted;
         this.deafened = false;
         this.applyMute();
@@ -909,6 +929,11 @@ export class CallStore {
     if (!this.joined) return;
     const now = this.deps.now();
     let changed = false;
+    // 生存の印。音声が止まっていても（ミュート・無音・画面が裏）送る。JS が止まればサーバーは外す
+    if (this.listed && now - this.aliveAt >= ALIVE_MS) {
+      this.aliveAt = now;
+      this.sendCall({ type: 'call.alive' });
+    }
     if (++this.outputsTick >= OUTPUTS_REFRESH_TICKS) {
       this.outputsTick = 0;
       void this.refreshOutputs();

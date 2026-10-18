@@ -49,5 +49,6 @@ pub async fn build(
     let state: SharedState = Arc::new(AppState::new(config, pool, hub, notifier));
 
     files::spawn_cleanup_task(state.clone());
+    calls::spawn_sweep_task(state.clone());
     Ok((routes::router(state.clone()), state))
 }

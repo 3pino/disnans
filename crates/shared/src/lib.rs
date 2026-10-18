@@ -370,6 +370,10 @@ pub enum ClientEvent {
     /// 通話から抜ける。接続が切れたときも自動で抜ける。
     #[serde(rename = "call.leave")]
     CallLeave,
+    /// 参加中であることを知らせる（約 5 秒ごと）。音声や状態が止まっても、クライアントが生きていれば届く。
+    /// 20 秒届かない参加者はサーバーが通話から外す。
+    #[serde(rename = "call.alive")]
+    CallAlive,
     /// 通話での自分の状態（ミュートなど）を更新する。
     #[serde(rename = "call.update")]
     CallUpdate { status: CallStatus },

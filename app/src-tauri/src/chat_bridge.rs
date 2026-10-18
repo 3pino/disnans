@@ -308,6 +308,7 @@ fn check_emit_kind(event: &ClientEvent) -> Result<(), ChatCommandError> {
         | ClientEvent::PluginEmit { .. }
         | ClientEvent::CallJoin { .. }
         | ClientEvent::CallLeave
+        | ClientEvent::CallAlive
         | ClientEvent::CallUpdate { .. }
         | ClientEvent::CallKick { .. } => Ok(()),
         ClientEvent::CallEmit { payload, .. } => {

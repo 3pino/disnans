@@ -54,6 +54,7 @@ export type ChatEmitEvent = Extract<
       | 'plugin.emit'
       | 'call.join'
       | 'call.leave'
+      | 'call.alive'
       | 'call.update'
       | 'call.kick'
       | 'call.emit';
@@ -71,6 +72,7 @@ const CHAT_EMIT_TYPES: ReadonlySet<string> = new Set([
   'plugin.emit',
   'call.join',
   'call.leave',
+  'call.alive',
   'call.update',
   'call.kick',
   'call.emit',

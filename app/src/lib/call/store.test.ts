@@ -689,25 +689,82 @@ describe('参加と音声', () => {
     }
   });
 
-  it('一覧に載ったあとで、サーバーが「通話に参加していません」を返したら、通話から外れる', async () => {
+  it('一覧に載ったあとで、サーバーが「通話に参加していません」を返したら、一度だけ入り直す。また外れたら通話から外れる', async () => {
     const a = makeClient('u1');
     await a.store.join();
     await flush();
     expect(a.store.listed).toBe(true);
     a.store.onServerEvent({ type: 'error', code: 'not_in_call', message: '通話に参加していません' } as never);
     await flush();
+    expect(a.store.joined).toBe(true);
+    expect(a.store.listed).toBe(true);
+    expect(a.toast).not.toHaveBeenCalledWith('通話から外れました', 'info');
+    expect(a.toast).not.toHaveBeenCalledWith(expect.stringContaining('通話に参加していません'), 'error');
+
+    a.store.onServerEvent({ type: 'error', code: 'not_in_call', message: '通話に参加していません' } as never);
+    await flush();
     expect(a.store.joined).toBe(false);
     expect(a.toast).toHaveBeenCalledWith('通話から外れました', 'info');
-    expect(a.toast).not.toHaveBeenCalledWith(expect.stringContaining('通話に参加していません'), 'error');
   });
 
-  it('一覧から自分が消えたら（サーバーが外した）、通話から外れて知らせる', async () => {
+  it('一覧から自分が消えたら（サーバーが外した）、一度だけ入り直す。入り直しても外れたら通話から外れる', async () => {
     const a = makeClient('u1');
     await a.store.join();
     await flush();
+    const firstPeer = a.store.myPeer;
+    a.store.onServerEvent({ type: 'call.state', members: [] } as never);
+    // 入り直しは新しい peer ID で join を送る。サーバーの一覧に戻る
+    expect(a.store.joined).toBe(true);
+    expect(a.sent.filter((e) => e.type === 'call.join').length).toBe(2);
+    await flush();
+    expect(a.store.listed).toBe(true);
+    expect(a.store.myPeer).not.toBe(firstPeer);
+    expect(a.toast).not.toHaveBeenCalledWith('通話から外れました', 'info');
+
+    // 2 度目に外されたら、もう入り直さない
     a.store.onServerEvent({ type: 'call.state', members: [] } as never);
     expect(a.store.joined).toBe(false);
     expect(a.toast).toHaveBeenCalledWith('通話から外れました', 'info');
+  });
+
+  it('外されて入り直したあと、一覧に戻らなければ 3 秒で閉じて理由を知らせる', async () => {
+    vi.useFakeTimers();
+    try {
+      const a = makeClient('u1');
+      const realHandle = server.handle.bind(server);
+      await a.store.join();
+      await vi.advanceTimersByTimeAsync(10);
+      server.handle = (c, ev) => (ev.type === 'call.join' ? undefined : realHandle(c, ev));
+      a.store.onServerEvent({ type: 'call.state', members: [] } as never);
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(a.store.joined).toBe(false);
+      expect(a.toast).toHaveBeenCalledWith(expect.stringContaining('通話に入れませんでした'), 'error');
+      server.handle = realHandle;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('参加中は 5 秒ごとに call.alive を送る。一覧に載るまでは送らない', async () => {
+    const a = makeClient('u1');
+    const priv = a.store as unknown as { aliveAt: number; listed: boolean };
+    await a.store.join();
+    await flush();
+    const count = () => a.sent.filter((e) => e.type === 'call.alive').length;
+    expect(count()).toBe(0);
+    // 5 秒たったことにして、tick で送る
+    priv.aliveAt = performance.now() - 5000;
+    a.store.tick();
+    expect(count()).toBe(1);
+    // すぐにもう一度は送らない
+    a.store.tick();
+    expect(count()).toBe(1);
+
+    // 一覧から外れている（載っていない）あいだは送らない
+    priv.listed = false;
+    priv.aliveAt = performance.now() - 5000;
+    a.store.tick();
+    expect(count()).toBe(1);
   });
 
   it('参加の前に join が拒否された（error）と、通話を閉じて理由を toast する', async () => {
