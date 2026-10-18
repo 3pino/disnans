@@ -10,7 +10,7 @@
   import { emojiProvider } from '../lib/suggest/emoji';
   import { commandHint, slashProvider } from '../lib/suggest/slash';
   import { slashCommands } from '../lib/slashCommands.svelte';
-  import { isAndroid, isLinuxDesktop } from '../lib/config';
+  import { isAndroid, isLinuxDesktop } from '../lib/platform';
   import { readClipboardImage } from '../lib/clipboardImage';
   import { ui } from '../lib/stores/ui.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';

@@ -1,4 +1,4 @@
-import { isAndroid, isTauri } from './config';
+import { isAndroid, isTauri } from './platform';
 
 let last: boolean | null = null;
 

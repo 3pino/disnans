@@ -1,4 +1,4 @@
-import { isAndroid, isTauri } from './config';
+import { isAndroid, isTauri } from './platform';
 import { shareInbox } from './stores/shareInbox.svelte';
 import { ui } from './stores/ui.svelte';
 

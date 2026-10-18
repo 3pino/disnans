@@ -1,4 +1,4 @@
-import { isAndroid, isLinuxDesktop, isTauri } from '../config';
+import { isAndroid, isLinuxDesktop, isTauri } from '../platform';
 
 /**
  * ネイティブの画面取得への橋渡し。

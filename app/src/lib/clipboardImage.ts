@@ -1,4 +1,4 @@
-import { isLinuxDesktop } from './config';
+import { isLinuxDesktop } from './platform';
 
 /**
  * クリップボードの画像を File にする（Linux の Tauri のみ）。形式は WebP（送る画像の標準）。WebP を作れなければ PNG。

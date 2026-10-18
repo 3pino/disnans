@@ -6,7 +6,7 @@
   import Composer from './Composer.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
-  import { isLinuxDesktop } from '../lib/config';
+  import { isLinuxDesktop } from '../lib/platform';
   import { listenNativeDrop, pointInRect, readDroppedFiles } from '../lib/dropFiles';
 
   let {

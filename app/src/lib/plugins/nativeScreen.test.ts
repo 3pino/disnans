@@ -9,7 +9,7 @@ const fake = vi.hoisted(() => ({
   offs: [] as ReturnType<typeof vi.fn>[],
   listen: vi.fn(),
 }));
-vi.mock('../config', () => ({
+vi.mock('../platform', () => ({
   isTauri: () => fake.tauri,
   isAndroid: () => fake.android,
   isLinuxDesktop: () => fake.tauri && fake.linux && !fake.android,

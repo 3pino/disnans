@@ -5,7 +5,8 @@
   import ConfirmDialog from './components/ConfirmDialog.svelte';
   import Toasts from './components/Toasts.svelte';
   import Lightbox from './components/Lightbox.svelte';
-  import { applyServerUrl, needsServerSetup, isAndroid, isTauri, getServerUrl } from './lib/config';
+  import { applyServerUrl, needsServerSetup, getServerUrl } from './lib/config';
+  import { isAndroid, isTauri } from './lib/platform';
   import { didInitializeWithLegacyFallback, getDesktopSharedStorage, initializeDesktopStorage, isDesktopStorageSupported } from './lib/desktopStorage';
   import { flushDraftSaves } from './lib/drafts';
   import { isMac } from './lib/plugins/hotkey';

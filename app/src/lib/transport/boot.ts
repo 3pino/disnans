@@ -1,4 +1,5 @@
-import { devUser, getServerUrl, isAndroid, isTauri } from '../config';
+import { devUser, getServerUrl } from '../config';
+import { isAndroid, isTauri } from '../platform';
 import { isDesktopStorageSupported } from '../desktopStorage';
 import { getItem } from '../storage';
 import { CHAT_RUST_FLAG, RUST_API_FLAG, selectChatMode, selectReadApi, type ReadApiChoice, type ReadApiEnv } from './select';

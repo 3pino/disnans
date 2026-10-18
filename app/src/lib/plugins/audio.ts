@@ -1,4 +1,4 @@
-import { isAndroid, isTauri } from '../config';
+import { isAndroid, isTauri } from '../platform';
 
 /**
  * 音の入出力の選択（API v5 の disnans.audio）。

@@ -1,6 +1,6 @@
 // 開発用フォルダ（PC 版だけ）。プラグインとテーマを置く。中身は src-tauri/src/dev_plugins.rs
 
-import { isAndroid, isTauri } from '../config';
+import { isAndroid, isTauri } from '../platform';
 
 /** dev_plugins_scan の1件 */
 export type DevPluginStat = { folder: string; files: string[]; stamp: string };

@@ -21,7 +21,7 @@ import {
   type AppCommand,
   type CommandVia,
 } from './commands.svelte';
-import { isAndroid } from './config';
+import { isAndroid } from './platform';
 import { prefs } from './stores/prefs.svelte';
 import { ui } from './stores/ui.svelte';
 import { callCommands, registerCallComposerAction } from './call/commands';

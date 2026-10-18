@@ -1,4 +1,4 @@
-import { isAndroid, isTauri } from '../config';
+import { isAndroid, isTauri } from '../platform';
 import { isNewer } from '../semver';
 
 const REPO = '3pino/disnans';

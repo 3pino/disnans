@@ -44,7 +44,8 @@
   import type { MessageLayout } from '../lib/messageLayout';
   import { ui, type SettingsSubpage, type ThemePref } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
-  import { applyServerUrl, devUser, getServerUrl, isAndroid, isCustomAvatar, isTauri } from '../lib/config';
+  import { applyServerUrl, devUser, getServerUrl, isCustomAvatar } from '../lib/config';
+  import { isAndroid, isTauri } from '../lib/platform';
   import { saveServerUrl } from '../lib/desktopStorage';
   import { notifications } from '../lib/stores/notifications.svelte';
 

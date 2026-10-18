@@ -46,6 +46,20 @@ export function isLinuxDesktop(): boolean {
   return typeof navigator !== 'undefined' && /linux/i.test(navigator.userAgent);
 }
 
+/** UA と platform の文字列から、shared-file storage を使う端末か（Windows か Linux で、Android でない） */
+export function supportsDesktopStoragePlatform(userAgent: string, platform = ''): boolean {
+  const agent = `${userAgent} ${platform}`;
+  return /windows|linux/i.test(agent) && !/android/i.test(agent);
+}
+
+/** shared-file storage を使えるか（Windows か Linux の Tauri 版。macOS とブラウザーは使わない）。Rust の値を優先し、無ければ UA */
+export function isSharedStorageOs(): boolean {
+  if (!isTauri() || isAndroid()) return false;
+  const info = injectedPlatform();
+  if (info) return info.os === 'windows' || info.os === 'linux';
+  return typeof navigator !== 'undefined' && supportsDesktopStoragePlatform(navigator.userAgent, navigator.platform);
+}
+
 /** Mac か（キーの表記。Cmd と Ctrl の扱い）。iPhone・iPad も含める（従来どおり） */
 export function isMacLike(): boolean {
   const info = injectedPlatform();

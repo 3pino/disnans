@@ -17,7 +17,7 @@
   import { devFolderSupported } from '../lib/plugins/dev';
   import { localHashes, updatePlugin } from '../lib/plugins/deliver';
   import { hasPluginUpdate, pluginUpdateText } from '../lib/plugins/update';
-  import { isTauri } from '../lib/config';
+  import { isTauri } from '../lib/platform';
   import { ui } from '../lib/stores/ui.svelte';
   import type { PluginVisibility } from '../lib/protocol/PluginVisibility';
 

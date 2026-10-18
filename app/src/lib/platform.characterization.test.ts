@@ -2,7 +2,8 @@
 // いまの判定（UA・Tauri の有無）の結果を、環境の組み合わせごとに固定する。
 // この表が P1・P2 の前後で変わらないことが、挙動を変えていないことの確認になる（変えるなら表を直す前に理由を書く）。
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isAndroid, isLinuxDesktop, isTauri, needsServerSetup } from './config';
+import { needsServerSetup } from './config';
+import { isAndroid, isLinuxDesktop, isTauri } from './platform';
 import { isDesktopStorageSupported } from './desktopStorage';
 import { devFolderSupported } from './plugins/dev';
 import { isMac } from './plugins/hotkey';

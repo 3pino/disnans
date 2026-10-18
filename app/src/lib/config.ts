@@ -1,8 +1,5 @@
 import { getItem, setItem } from './storage';
-import { isAndroid, isLinuxDesktop, isTauri } from './platform';
-
-// 端末の判定は platform.ts に集めた（Rust の値を優先し、無ければ UA）。ここからも従来どおり読めるように再エクスポートする
-export { isAndroid, isLinuxDesktop, isTauri };
+import { isTauri } from './platform';
 
 const SERVER_KEY = 'disnans.server';
 const DEV_USER_KEY = 'disnans.devUser';

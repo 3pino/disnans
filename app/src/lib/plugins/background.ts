@@ -1,4 +1,4 @@
-import { isAndroid, isTauri } from '../config';
+import { isAndroid, isTauri } from '../platform';
 
 /**
  * 画面を切っても動き続けるための常駐（API v3 の holdBackground）。

@@ -1,5 +1,6 @@
 import { api } from '../api';
-import { getServerUrl, isAndroid, isTauri } from '../config';
+import { getServerUrl } from '../config';
+import { isAndroid, isTauri } from '../platform';
 import { ui, type ToastAvatar } from './ui.svelte';
 
 /**
