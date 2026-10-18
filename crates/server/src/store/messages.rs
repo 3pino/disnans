@@ -42,7 +42,7 @@ struct ReactionRow {
     user_id: String,
 }
 
-/// 列。`thread_id` は廃止した（列は残してあるが、常に NULL）。
+/// 列。`thread_id` の列は残してあるが、常に NULL。
 const COLUMNS: &str = "id, author_id, reply_to, body, created_at, edited_at, bot_plugin, bot_name";
 
 // ---- 読み込み ----

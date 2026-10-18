@@ -16,7 +16,7 @@ pub async fn list(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
 ) -> AppResult<Json<Vec<ReadMarker>>> {
-    // 配列の形は残す（スレッドの廃止前からの形）
+    // 配列の形は残す（古いクライアントが読む形）
     Ok(Json(vec![reads::get(&state.pool, &user).await?]))
 }
 
@@ -30,7 +30,7 @@ pub async fn mark(
     let message_id = Ulid::from_string(&req.message_id)
         .map_err(|_| AppError::bad_request("invalid_message_id", "メッセージ ID が不正です"))?
         .to_string();
-    // スレッドは廃止した。古いクライアントが thread_id を送っても、メインチャットの既読として扱う
+    // 古いクライアントが thread_id を送っても、メインチャットの既読として扱う
 
     // 未読数をメッセージの配信と同じ順番で数えるため、書き込みのロックを持ったまま数えて配信する
     let _guard = state.write_lock().await;

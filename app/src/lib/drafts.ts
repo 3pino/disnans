@@ -1,7 +1,7 @@
 import { getItem, setItem } from './storage';
 import type { SaveResult, SharedStorage } from './sharedStorage';
 
-// 打ちかけの文章（下書き）。メインチャットのぶんを、ユーザーごとに localStorage へ残す（スレッドは廃止した）。
+// 打ちかけの文章（下書き）。メインチャットのぶんを、ユーザーごとに localStorage へ残す。
 // 画面を切り替えても、アプリを再起動しても残る。送信したら消す
 
 const PREFIX = 'disnans.draft.';

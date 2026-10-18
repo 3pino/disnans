@@ -49,7 +49,7 @@ export type SharedStorage = {
   getServerWithStatus(): Promise<SharedReadResult>;
   /** A legacy-fallback result is not persisted on desktop; hosts must not treat it as a successful server change. */
   setServer(value: string | null): Promise<SaveResult>;
-  /** Read/save one draft. place is `main` (スレッドは廃止した。場所の名前は保存の形として残す). */
+  /** Read/save one draft. place is `main`. */
   getDraft(serverUrl: string, userId: string, place: string): Promise<string | null>;
   /** Optional for older injected ports; desktop adapters expose read failures separately from an empty draft. */
   getDraftWithStatus?(serverUrl: string, userId: string, place: string): Promise<SharedReadResult>;

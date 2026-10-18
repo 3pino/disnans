@@ -711,7 +711,7 @@ async fn plugin_can_post_message_as_bot() {
     assert_eq!(history.len(), 3);
     assert!(history.iter().all(|m| m.bot.is_some()));
 
-    // thread_id は廃止した。付けられても無視して、メインチャットに投稿する
+    // thread_id は無視して、メインチャットに投稿する
     let res = server
         .post_json(
             BOB,

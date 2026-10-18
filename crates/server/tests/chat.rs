@@ -1,4 +1,4 @@
-//! 認証・メッセージ・スレッド・リアクション・ページングの結合テスト。
+//! 認証・メッセージ・リアクション・ページングの結合テスト。
 
 mod common;
 
@@ -188,7 +188,7 @@ async fn send_edit_delete_over_ws() {
     assert!(matches!(alice.recv().await, ServerEvent::Pong));
 }
 
-/// スレッドは廃止した。`thread_id` を付けた履歴の取得は、メインチャットの履歴として返す。
+/// `thread_id` を付けた履歴の取得は、メインチャットの履歴として返す。
 #[tokio::test]
 async fn history_ignores_thread_id() {
     let server = TestServer::start().await;

@@ -60,7 +60,7 @@ pub enum StoredValue<T> {
     Cleared,
 }
 
-/// 下書きの場所。メインチャットだけ（スレッド廃止。旧スレッドの下書きは読まない）。
+/// 下書きの場所。メインチャットだけ（旧スレッドの下書きは読まない）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DraftPlace {
     Main,

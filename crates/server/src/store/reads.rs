@@ -1,6 +1,6 @@
 //! read_markers テーブル（既読の位置）。
 //!
-//! 場所（scope）はメインチャットの `''` だけ（スレッドは廃止した）。
+//! 場所（scope）はメインチャットの `''` だけ。
 //! 行がない場所は、アカウントを作った時刻の位置（`baseline`）まで既読とみなす。
 
 use disnans_shared::{ReadMarker, User};

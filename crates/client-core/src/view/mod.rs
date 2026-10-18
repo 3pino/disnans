@@ -5,7 +5,7 @@
 //! - サーバー由来の文字列は **生の値のまま**返す。表示用のエスケープ（制御文字・双方向制御）は各 UI が行う。
 //! - 時刻の日付（暦の日）はタイムゾーンを持つ `Calendar` が決める。文言（「今日」「昨日」など）は UI が作る。
 //! - 名前が分からないユーザーは `name: None`。「不明なユーザー」などの文言は UI が選ぶ。
-//! - スレッドは正式廃止のため、モデルに含めない（`thread`・`thread_id` は見ない）。
+//! - スレッドはモデルに含めない（`thread`・`thread_id` は見ない）。
 //!
 //! 行の列（`timeline_rows`）は、TUI の transcript と同じ並びを表す:
 //! 日付の区切り → （同じ人の続きでなければ）先頭行に投稿者の頭（`head`）→ 本文の行 → メタ（bot・返信・カード・添付・リアクション・編集）。
@@ -239,7 +239,7 @@ pub fn timeline_rows(messages: &[Message], ctx: &Context<'_>) -> Vec<Row> {
 }
 
 /// `cur` が `prev` の続きか（同じ人・同じボット・5 分未満。日付の変わり目は含めない）。
-/// 呼び出し側が日付の区切りを判断する。スレッドの条件は持たない（スレッド廃止）
+/// 呼び出し側が日付の区切りを判断する。スレッドの条件は持たない
 pub fn is_continuation(prev: &Message, cur: &Message) -> bool {
     let bot_of = |m: &Message| m.bot.as_ref().map(|b| (b.plugin.clone(), b.name.clone()));
     prev.author_id == cur.author_id

@@ -70,7 +70,7 @@ class Notifications {
 
   private async initAndroid(): Promise<void> {
     const { addPluginListener } = await import('@tauri-apps/api/core');
-    // 通知から開いたら、チャットを表示する（スレッドは廃止した）
+    // 通知から開いたら、チャットを表示する
     await addPluginListener('notifier', 'open', () => this.openTarget());
     const { target } = await invokeNotifier<{ target?: unknown }>('take_launch_target');
     if (target) this.openTarget();

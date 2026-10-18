@@ -55,7 +55,7 @@ class Client {
   generation = $state(0);
 
   private socket: Socket | null = null;
-  /** メインチャットの履歴（スレッドは廃止した） */
+  /** メインチャットの履歴 */
   private readonly main = new Timeline();
   private listeners = new Set<Listener>();
   private seq = 0;

@@ -1,4 +1,4 @@
-//! 返信・silent と、スレッドの廃止（古いクライアントの送信の互換・API が消えていること）の結合テスト。
+//! 返信・silent と、古いクライアントの送信（thread_id・start_thread）の互換、スレッド API が無いことの結合テスト。
 
 mod common;
 
@@ -83,7 +83,7 @@ async fn silent_sends_no_notification() {
     bob.assert_silent(Duration::from_millis(300)).await;
 }
 
-/// スレッドの API は消した。存在しないパスと同じ普通の 404 になる。
+/// スレッドの API は無い。存在しないパスと同じ普通の 404 になる。
 #[tokio::test]
 async fn thread_routes_are_plain_not_found() {
     let server = TestServer::start().await;
@@ -106,7 +106,7 @@ async fn thread_routes_are_plain_not_found() {
     }
 }
 
-/// 廃止したメッセージ（thread.create）は、知らない形として断る。
+/// thread.create は知らない形として断る。
 #[tokio::test]
 async fn thread_create_over_ws_is_unknown() {
     let server = TestServer::start().await;
@@ -117,7 +117,7 @@ async fn thread_create_over_ws_is_unknown() {
     assert_eq!(alice.expect_error().await.1, "invalid_event");
 }
 
-/// 古いクライアントは thread_id と start_thread を付けて送ってくる。廃止したので無視され、メインチャットに入る。
+/// 古いクライアントは thread_id と start_thread を付けて送ってくる。それらは無視され、メインチャットに入る。
 #[tokio::test]
 async fn old_message_send_with_thread_fields_still_goes_through() {
     let server = TestServer::start().await;

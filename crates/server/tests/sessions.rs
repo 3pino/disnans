@@ -195,7 +195,7 @@ async fn rejects_invalid_sessions() {
         .unwrap();
     assert_eq!(error_code(res).await, (400, "invalid_plugin_id".into()));
 
-    // thread_id は廃止した。付けられても無視して、メインチャットにカードを出す
+    // thread_id は無視して、メインチャットにカードを出す
     let mut raw = serde_json::to_value(create_req()).unwrap();
     raw["thread_id"] = json!("nope");
     let res = server
@@ -248,7 +248,7 @@ async fn card_cannot_be_edited_and_deletion_removes_session() {
     let mut bob = server.ws(BOB).await;
     alice.recv().await; // bob の user.updated
 
-    // カードはメインチャットに出る（スレッドは廃止した）
+    // カードはメインチャットに出る
     let session = create(&server, ALICE, &create_req()).await;
     let ServerEvent::MessageCreated { message, .. } = bob
         .recv_until(|e| matches!(e, ServerEvent::MessageCreated { .. }))

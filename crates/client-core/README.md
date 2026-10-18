@@ -10,7 +10,6 @@ GUI（Tauri）・CLI・TUI が共有するクライアント側の部品。URL �
 - `app/src-tauri`: Tauri の薄い橋（invoke の受け口、チャットの橋、共通ファイルの橋、デバイスの情報の注入）。方針は core に置き、橋は呼ぶだけ。
 - `app`（Svelte / TypeScript）: 画面、状態、Android の通知サービス（`notifier` プラグイン）。Tauri（Windows・Linux・Android）のチャットは Rust の接続を使う。ブラウザー開発版は TypeScript の WebSocket のまま。GUI の Markdown と表示は、まだ TypeScript の実装を使っている（[表示データの切り替え](../../docs/PLAN_SHARED_VIEW.md)）。
 - デバイスごとの方針（`platform::capabilities_for`）は core に一つだけ置く。Tauri・TUI・CLI の値はここから決まる。
-- スレッドは廃止済み。core に thread の型・API はない。
 
 ## 通信の基本
 

@@ -4,7 +4,7 @@
 
 - `markdown.json`: 本文の Markdown（`parseInline` / `parse`）、メンションの取り出し・置き換え。
 - `mentions.json`: 入力欄の `@名前` ↔ `<@id>`（`bodyToDraft` / `draftToBody`）。
-- `continuation.json`: 同じ人の連続（まとめ）の判定。スレッドの条件は含まない（スレッド廃止。V2 で TS からも外す）。
+- `continuation.json`: 同じ人の連続（まとめ）の判定。スレッドの条件は含まない。
 
 形式: `schema: 1`。各ケースは `name`・入力・`expected`（期待する出力）。JSON の型は TS の型と同じ形（`type` で判別）。
 

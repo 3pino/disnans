@@ -58,7 +58,7 @@ impl StorageKey {
             } => {
                 let server = ServerUrl::parse(&server_url).map_err(|e| e.to_string())?;
                 validate_identifier(&user_id, "userId")?;
-                // スレッドは廃止。place は "main" だけ（旧スレッドの下書きは読まない）
+                // place は "main" だけ（旧スレッドの下書きは読まない）
                 if place != "main" {
                     return Err("place must be 'main'".into());
                 }

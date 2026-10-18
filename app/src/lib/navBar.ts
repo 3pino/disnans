@@ -13,7 +13,7 @@ export const NAV_SEARCH_ID = 'app:search';
 /** 本体の2つ（チャット・設定）。コマンドの登録より前に出るので、登録されていなくても出す */
 export const NAV_BUILTIN_IDS: readonly string[] = [NAV_CHAT_ID, NAV_SETTINGS_ID];
 
-/** 廃止した項目（スレッドは廃止した）。保存されていても読み捨てる */
+/** 廃止した項目（スレッド）。保存されていても読み捨てる */
 export const NAV_REMOVED_IDS: readonly string[] = ['app:open-threads'];
 
 /** 外せない項目。チャットと設定は、設定画面に戻れるように必ず出す */

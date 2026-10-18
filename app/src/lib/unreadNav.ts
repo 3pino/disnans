@@ -2,7 +2,7 @@ import { ui } from './stores/ui.svelte';
 import { requestJump, unread } from './stores/unread.svelte';
 
 /**
- * 未読への移動（コマンド・ホットキーから呼ぶ）。未読はメインチャットだけ（スレッドは廃止した）。
+ * 未読への移動（コマンド・ホットキーから呼ぶ）。未読はメインチャットだけ。
  */
 
 /** いま見ている画面の最初の未読までスクロールする（未読がなければ一番下へ） */
