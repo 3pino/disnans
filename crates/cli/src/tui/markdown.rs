@@ -22,6 +22,10 @@ impl Deco {
     pub const QUOTE: u16 = 64;
     pub const MENTION: u16 = 128;
     pub const HIGHLIGHT: u16 = 256;
+    pub const REACTION: u16 = 512;
+    pub const REACTION_MINE: u16 = 1024;
+    /// リストの記号（薄く出す）。
+    pub const MARKER: u16 = 2048;
 
     pub fn has(self, flag: u16) -> bool {
         self.0 & flag != 0
@@ -57,7 +61,7 @@ fn width_of(cells: &[Cell]) -> usize {
 
 /// 本文を行にする。`name_of` はメンションの表示名（分からなければ呼び出し側が代わりの文言を返す）。
 pub fn render(body: &str, name_of: &dyn Fn(&str) -> String) -> Vec<MdLine> {
-    blocks(&markdown::parse(body), name_of, true)
+    blocks(&markdown::parse(body), name_of, false)
 }
 
 fn blocks(list: &[Block], name_of: &dyn Fn(&str) -> String, blank_between: bool) -> Vec<MdLine> {
@@ -86,7 +90,7 @@ fn blocks(list: &[Block], name_of: &dyn Fn(&str) -> String, blank_between: bool)
                 }
             }
             Block::Quote { children } => {
-                for mut line in blocks(children, name_of, true) {
+                for mut line in blocks(children, name_of, false) {
                     let bar = cells("▎ ", Deco(Deco::QUOTE));
                     prepend(&mut line.first, bar.clone());
                     prepend(&mut line.rest, bar);
@@ -107,14 +111,18 @@ fn blocks(list: &[Block], name_of: &dyn Fn(&str) -> String, blank_between: bool)
                     let indent = " ".repeat(sanitize::display_width(&marker));
                     if item.lines.is_empty() {
                         out.push(MdLine {
-                            first: cells(&marker, Deco::NONE),
+                            first: cells(&marker, Deco(Deco::MARKER)),
                             rest: cells(&indent, Deco::NONE),
                             content: Vec::new(),
                         });
                     }
                     for (i, line) in item.lines.iter().enumerate() {
                         out.push(MdLine {
-                            first: cells(if i == 0 { &marker } else { &indent }, Deco::NONE),
+                            first: if i == 0 {
+                                cells(&marker, Deco(Deco::MARKER))
+                            } else {
+                                cells(&indent, Deco::NONE)
+                            },
                             rest: cells(&indent, Deco::NONE),
                             content: inline_cells(line, Deco::NONE, name_of),
                         });
@@ -233,6 +241,14 @@ pub fn layout_line(line: &MdLine, inner: usize) -> Vec<LaidLine> {
         .collect()
 }
 
+pub fn cells_to_content(
+    cells: &[Cell],
+    kind: super::transcript::RowKind,
+) -> super::transcript::Content {
+    let (text, spans) = to_text(cells);
+    (kind, text, spans)
+}
+
 fn to_text(cells: &[Cell]) -> (String, Vec<(usize, usize, Deco)>) {
     let mut text = String::new();
     let mut spans: Vec<(usize, usize, Deco)> = Vec::new();
@@ -271,8 +287,8 @@ mod tests {
     }
 
     #[test]
-    fn paragraphs_are_separated_by_a_blank_line_and_lines_are_kept() {
-        assert_eq!(texts("a\nb\n\nc", 20), ["a", "b", "", "c"]);
+    fn blocks_have_no_blank_lines_between_them_like_the_gui() {
+        assert_eq!(texts("a\nb\n\nc", 20), ["a", "b", "c"]);
     }
 
     #[test]

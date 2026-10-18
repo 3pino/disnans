@@ -51,7 +51,7 @@ pub struct ImageSlot {
 }
 
 /// 1行分の内容（種類, 文字, 装飾の範囲）。
-type Content = (RowKind, String, Vec<(usize, usize, Deco)>);
+pub type Content = (RowKind, String, Vec<(usize, usize, Deco)>);
 
 const IMAGE_MAX_COLS: usize = 32;
 const IMAGE_MAX_ROWS: usize = 10;
@@ -322,12 +322,23 @@ fn message_rows_with(
                     }
                 }
                 view::Meta::Reactions { items } => {
-                    let text = items
-                        .iter()
-                        .map(|r| format!("{}{}", sanitize::inline(&r.emoji), r.count))
-                        .collect::<Vec<_>>()
-                        .join("  ");
-                    push(&mut content, RowKind::Meta, &text);
+                    // 各リアクションは「 👍 2 」（前後に空白）。背景色は view.rs が decos で付ける。
+                    let mut cells: Vec<markdown::Cell> = Vec::new();
+                    for r in items {
+                        if !cells.is_empty() {
+                            cells.push((' ', Deco::NONE));
+                        }
+                        let deco = Deco(if r.mine {
+                            Deco::REACTION_MINE
+                        } else {
+                            Deco::REACTION
+                        });
+                        let text = format!(" {} {} ", sanitize::inline(&r.emoji), r.count);
+                        cells.extend(text.chars().map(|c| (c, deco)));
+                    }
+                    for line in markdown::wrap_cells(&cells, inner) {
+                        content.push(markdown::cells_to_content(&line, RowKind::Meta));
+                    }
                 }
                 view::Meta::Edited => push(&mut content, RowKind::Meta, "(編集済み)"),
             },
@@ -576,9 +587,9 @@ mod tests {
             None,
             None,
         );
-        assert_eq!(rows.len(), 4, "{rows:?}");
+        assert_eq!(rows.len(), 3, "{rows:?}");
         assert!(rows[0].text.ends_with("あいうえお"), "{:?}", rows[0].text);
-        assert!(rows[3].text.ends_with('x'));
+        assert!(rows[2].text.ends_with('x'));
         for row in &rows {
             assert!(sanitize::display_width(&row.text) <= 20, "{:?}", row.text);
         }
@@ -608,7 +619,7 @@ mod tests {
         let rows = message_rows(&m, &[], 60, None, None);
         let text: Vec<&str> = rows.iter().map(|r| r.text.as_str()).collect();
         assert!(text[0].ends_with("[添付: photo.png (1.5 KB)]"), "{text:?}");
-        assert!(text.iter().any(|l| l.ends_with("👍2")));
+        assert!(text.iter().any(|l| l.ends_with(" 👍 2 ")));
         assert!(text.iter().any(|l| l.ends_with("(編集済み)")));
         assert_eq!(text.len(), 3);
     }

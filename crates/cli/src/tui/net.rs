@@ -72,6 +72,7 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
         app.enable_images(cell_pixels());
     }
     let mut force_images = false;
+    let mut last_selection = (app.mode, app.selected.clone());
 
     let (tx, mut rx) = unbounded_channel::<NetEvent>();
     let (term_tx, mut term_rx) = unbounded_channel::<event::Event>();
@@ -86,6 +87,12 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
 
     let result = loop {
         // 画像: 配置が変わるなら、文字の描画の前に古い画像を消し、後に新しい画像を重ねる。
+        // 選択の強調で文字が書き換わると、その下の画像が消えるので、描き直す。
+        let selection = (app.mode, app.selected.clone());
+        if selection != last_selection {
+            force_images = true;
+            last_selection = selection;
+        }
         let mut image_out = Vec::new();
         let images_changed = match terminal.size() {
             Ok(size) if graphics.protocol != Protocol::None => {

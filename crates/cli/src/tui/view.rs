@@ -235,6 +235,15 @@ fn deco_style(deco: Deco, base: Style) -> Style {
     if deco.has(Deco::MENTION) {
         style = style.fg(BLUE).add_modifier(Modifier::BOLD);
     }
+    if deco.has(Deco::MARKER) {
+        style = style.fg(Color::DarkGray);
+    }
+    if deco.has(Deco::REACTION) {
+        style = style.fg(Color::White).bg(Color::Rgb(60, 60, 70));
+    }
+    if deco.has(Deco::REACTION_MINE) {
+        style = style.fg(Color::White).bg(Color::Rgb(30, 80, 150));
+    }
     if deco.has(Deco::HIGHLIGHT) {
         style = style.bg(Color::Rgb(90, 80, 20));
     }
