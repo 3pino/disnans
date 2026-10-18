@@ -1,3 +1,5 @@
+import { isMacLike } from '../platform';
+
 /** "Mod+Shift+D" を読んだもの */
 export type Hotkey = {
   ctrl: boolean;
@@ -8,8 +10,9 @@ export type Hotkey = {
   key: string;
 };
 
+/** Mac か（Rust の値があればそれ。無ければ UA。判定は platform.ts） */
 export function isMac(): boolean {
-  return typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
+  return isMacLike();
 }
 
 /**

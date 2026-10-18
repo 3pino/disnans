@@ -5,6 +5,9 @@ fn open_devtools(window: tauri::WebviewWindow) {
     window.open_devtools();
 }
 
+// 端末の事実（OS の種類）を WebView に渡す。window.__DISNANS_PLATFORM__（ステップ7）
+mod platform;
+
 #[cfg(desktop)]
 mod dev_plugins;
 
@@ -174,6 +177,7 @@ pub fn run() {
         builder = builder.manage(chat_bridge::ChatHub::default());
     }
 
+    builder = builder.plugin(platform::plugin());
     builder = builder.plugin(tauri_plugin_opener::init());
 
     // アップデート: デスクトップは公式の updater、Android は自前のプラグイン

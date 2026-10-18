@@ -1,21 +1,12 @@
 import { getItem, setItem } from './storage';
+import { isAndroid, isLinuxDesktop, isTauri } from './platform';
+
+// 端末の判定は platform.ts に集めた（Rust の値を優先し、無ければ UA）。ここからも従来どおり読めるように再エクスポートする
+export { isAndroid, isLinuxDesktop, isTauri };
 
 const SERVER_KEY = 'disnans.server';
 const DEV_USER_KEY = 'disnans.devUser';
 let serverUrlOverride: string | undefined;
-
-export function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-}
-
-export function isAndroid(): boolean {
-  return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
-}
-
-/** Linux の Tauri 版（WebKitGTK）。ファイルのドロップとクリップボードの画像の扱いが他と違う */
-export function isLinuxDesktop(): boolean {
-  return isTauri() && !isAndroid() && typeof navigator !== 'undefined' && /linux/i.test(navigator.userAgent);
-}
 
 /** 末尾のスラッシュを落とし、スキームがなければ http:// を補う */
 export function normalizeServerUrl(input: string): string {

@@ -1,4 +1,5 @@
 import { isAndroid, isTauri, setServerUrl } from './config';
+import { injectedPlatform } from './platform';
 import { createSharedStorage, type LegacyStoragePort, type SaveResult, type SharedFilePort, type SharedKey, type SharedStorage, type SharedValue } from './sharedStorage';
 
 type StorageState = { state: 'missing' } | { state: 'value'; value: string } | { state: 'cleared' };
@@ -17,6 +18,9 @@ export function supportsDesktopStoragePlatform(userAgent: string, platform = '')
 /** Shared-file storage is enabled only for Windows/Linux desktop builds. */
 export function isDesktopStorageSupported(): boolean {
   if (!isTauri() || isAndroid() || typeof navigator === 'undefined') return false;
+  // Rust の値（window.__DISNANS_PLATFORM__）があればそれを使う。無ければ UA で判断する（従来どおり）
+  const info = injectedPlatform();
+  if (info) return info.os === 'windows' || info.os === 'linux';
   return supportsDesktopStoragePlatform(navigator.userAgent, navigator.platform);
 }
 

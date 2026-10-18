@@ -1,4 +1,5 @@
 import { getItem, setItem } from './storage';
+import { isAndroid } from './platform';
 
 // この端末の種類（アイコン用）。端末ごとの設定で、サーバーには送らない（storage の localStorage に置く）
 // まだ使っている場所はない。使うときは deviceKind.value を読む（リアクティブ）
@@ -21,8 +22,10 @@ export function normalizeDeviceKind(raw: unknown): DeviceKind | null {
 }
 
 /** 初めて開いたときの推測。Android はスマートフォン、それ以外はノート PC */
-export function guessDeviceKind(userAgent: string = typeof navigator !== 'undefined' ? navigator.userAgent : ''): DeviceKind {
-  return /android/i.test(userAgent) ? 'smartphone' : 'laptop';
+export function guessDeviceKind(userAgent?: string): DeviceKind {
+  // 引数が無いときは、この端末が Android か（Rust の値があればそれ。無ければ UA。platform.ts）
+  const android = userAgent === undefined ? isAndroid() : /android/i.test(userAgent);
+  return android ? 'smartphone' : 'laptop';
 }
 
 class DeviceKindStore {
