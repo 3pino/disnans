@@ -138,7 +138,7 @@ async fn history_before_joining_is_read() {
 async fn rejects_bad_requests() {
     let server = TestServer::start().await;
     let mut alice = server.ws(ALICE).await;
-    let m = alice.post("hi").await;
+    alice.post("hi").await;
 
     let res = mark(&server, ALICE, "not-a-ulid").await;
     assert_eq!(res.status(), 400);
