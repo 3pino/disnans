@@ -22,7 +22,7 @@ export type Capabilities = {
   sharedStorage: boolean;
   /** 読取・書込・添付を Rust 経路で行う（既定で on。localStorage の "0" で off） */
   rustApi: boolean;
-  /** チャットの経路。"default" は既定で Rust（localStorage の "0" で JS に戻る）、"off" は JS のまま */
+  /** チャットの経路。"default" は Rust（S7 で逃げ道を廃止）、"off" は JS Socket（ブラウザーと macOS） */
   rustChat: 'default' | 'off';
   /** 本体の渡し方（Android の WebView は base64） */
   bodyMode: 'raw' | 'base64';

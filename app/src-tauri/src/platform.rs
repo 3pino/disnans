@@ -30,7 +30,7 @@ pub struct Capabilities {
     pub shared_storage: bool,
     /// 読取・書込・添付を Rust 経路で行う（既定で on。flag "0" で off）
     pub rust_api: bool,
-    /// チャットの経路: "default"（既定で Rust。localStorage "disnans.rustChat"="0" で JS に戻る）・"off"（JS のまま）
+    /// チャットの経路: "default"（Rust。S7 で逃げ道を廃止）・"off"（JS Socket のまま。macOS と、ブラウザー）
     pub rust_chat: &'static str,
     /// 本体の渡し方: "raw"（バイト列）・"base64"（Android の WebView）
     pub body_mode: &'static str,

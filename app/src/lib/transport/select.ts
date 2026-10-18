@@ -11,7 +11,10 @@ import type { BodyMode } from './body';
  */
 export const RUST_API_FLAG = 'disnans.rustApi';
 
-/** チャットの Rust 経路の切り替え（localStorage キー）。読取とは独立。既定の扱いは RUST_API_FLAG と同じ */
+/**
+ * 旧: チャットの Rust 経路の切り替え（localStorage キー）。S7 で廃止した。Tauri では見ない（常に rust）。
+ * 読取の RUST_API_FLAG は従来どおり（逃げ道は残す）。
+ */
 export const CHAT_RUST_FLAG = 'disnans.rustChat';
 
 /** Rust 経路を使うか。デスクトップ（Windows/Linux の Tauri）で、フラグが "0" でないとき */
@@ -75,16 +78,13 @@ export function selectWriteApi(env: ReadApiEnv): WriteApiChoice {
 }
 
 /**
- * チャットの経路（契約 §8.1）。
- * - デスクトップ（Windows/Linux の Tauri）と Android の Tauri: "disnans.rustChat" が "0" でなければ rust（既定 on）。
- *   Android は S1 で既定を rust に変えた（JS Socket と同じ uid で動くため、背景の条件は同じ）。"0" で JS に戻せる。
- * - それ以外（ブラウザ・macOS など）は js（ブラウザーの開発用 Socket は残す）。
+ * チャットの経路（契約 §8.1。S7）。
+ * - Tauri の Windows・Linux と Android: 常に rust。JS Socket は作らない。逃げ道（"disnans.rustChat" の "0"）は廃止。
+ * - ブラウザー（開発用）は js（Socket を残す）。macOS は方針が off（対象外。Q1 のとおり従来の js）。
  * 方針の値（capabilities.rustChat）があれば、それに従う。無いときは desktop と android から決める。
+ * flag は互換のために受け取るだけで、見ない。
  */
-export function selectChatMode(env: { flag: string | null; desktop: boolean; android?: boolean; rustChat?: 'default' | 'off' }): 'rust' | 'js' {
-  if (env.rustChat !== undefined) {
-    return env.rustChat === 'default' && env.flag !== '0' ? 'rust' : 'js';
-  }
-  if (env.desktop || env.android) return env.flag !== '0' ? 'rust' : 'js';
-  return 'js';
+export function selectChatMode(env: { flag?: string | null; desktop: boolean; android?: boolean; rustChat?: 'default' | 'off' }): 'rust' | 'js' {
+  if (env.rustChat !== undefined) return env.rustChat === 'default' ? 'rust' : 'js';
+  return env.desktop || env.android ? 'rust' : 'js';
 }

@@ -1,7 +1,7 @@
 import { devUser, getServerUrl } from '../config';
 import { capabilities, isAndroid, isTauri } from '../platform';
 import { getItem } from '../storage';
-import { CHAT_RUST_FLAG, RUST_API_FLAG, selectChatMode, selectReadApi, type ReadApiChoice, type ReadApiEnv } from './select';
+import { RUST_API_FLAG, selectChatMode, selectReadApi, type ReadApiChoice, type ReadApiEnv } from './select';
 import type { ChatTransport } from './chat';
 import { createTauriChatTransport } from './tauriChat';
 import { selectWriteApi, type WriteApiChoice } from './select';
@@ -38,7 +38,7 @@ export function bootWriteApi(env: ReadApiEnv = currentBootEnv()): WriteApiChoice
 /** チャットの経路を決める（rust のとき Tauri 実装、js のとき null）。client.start() で1回だけ呼ぶ */
 export function bootChatTransport(
   env: {
-    flag: string | null;
+    flag?: string | null;
     desktop: boolean;
     android?: boolean;
     rustChat?: 'default' | 'off';
@@ -46,7 +46,6 @@ export function bootChatTransport(
     context: BridgeContext;
     log?: (m: string) => void;
   } = {
-    flag: getItem(CHAT_RUST_FLAG),
     desktop: capabilities().sharedStorage,
     android: isTauri() && isAndroid(),
     rustChat: capabilities().rustChat,

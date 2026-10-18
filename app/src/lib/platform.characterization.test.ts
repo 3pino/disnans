@@ -168,17 +168,17 @@ describe('フラグ（localStorage）による上書き', () => {
     }
   });
 
-  it('chat: desktop と Android は "0" で js（既定は rust）', () => {
+  it('chat: Tauri の Windows・Linux と Android は flag によらず rust（S7）', () => {
     const chat = (name: string, flag: string | null) => {
       stubEnv(ENVS.find((e) => e.name === name)!);
       const base = currentBootEnv();
       return bootChatTransport({ flag, desktop: base.desktop, android: base.android, invoke: base.invoke, context: base.context, log: undefined }) !== null ? 'rust' : 'js';
     };
-    expect(chat('windows Tauri', '0')).toBe('js');
+    expect(chat('windows Tauri', '0')).toBe('rust');
     expect(chat('windows Tauri', null)).toBe('rust');
     expect(chat('android Tauri', '1')).toBe('rust');
     expect(chat('android Tauri', null)).toBe('rust');
-    expect(chat('android Tauri', '0')).toBe('js');
+    expect(chat('android Tauri', '0')).toBe('rust');
   });
 });
 

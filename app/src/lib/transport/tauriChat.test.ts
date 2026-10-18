@@ -90,31 +90,35 @@ describe('chat over Tauri', () => {
   });
 });
 
-describe('chat mode selection', () => {
-  it('rust by default on the desktop; "0" turns it off; other platforms stay js', () => {
+describe('chat mode selection (S7: Tauri always rust; the flag is ignored)', () => {
+  it('Tauri desktop (Windows/Linux) is rust whatever the flag says; browser and macOS stay js', () => {
     expect(selectChatMode({ flag: null, desktop: true })).toBe('rust');
     expect(selectChatMode({ flag: '1', desktop: true })).toBe('rust');
-    expect(selectChatMode({ flag: '0', desktop: true })).toBe('js');
+    expect(selectChatMode({ flag: '0', desktop: true })).toBe('rust');
     expect(selectChatMode({ flag: null, desktop: false })).toBe('js');
     expect(selectChatMode({ flag: '1', desktop: false })).toBe('js');
   });
 
-  it('Android (S1): default on; only "0" turns it off; other values are not "0", so still on', () => {
+  it('Android is rust whatever the flag says (the "0" escape hatch is gone)', () => {
     expect(selectChatMode({ flag: null, desktop: false, android: true })).toBe('rust');
+    expect(selectChatMode({ flag: '0', desktop: false, android: true })).toBe('rust');
     expect(selectChatMode({ flag: '1', desktop: false, android: true })).toBe('rust');
-    expect(selectChatMode({ flag: '0', desktop: false, android: true })).toBe('js');
     expect(selectChatMode({ flag: 'yes', desktop: false, android: true })).toBe('rust');
   });
 
-  it('the full matrix: desktop and Android default on, browser and macOS always js', () => {
+  it('the capability wins when present: "off" is js, "default" is rust', () => {
+    expect(selectChatMode({ desktop: true, rustChat: 'off' })).toBe('js');
+    expect(selectChatMode({ desktop: false, android: false, rustChat: 'default' })).toBe('rust');
+  });
+
+  it('the full matrix', () => {
     const rows: [string | null, boolean, boolean, 'rust' | 'js'][] = [
       // flag, desktop, android, expected
       [null, true, false, 'rust'],
       ['1', true, false, 'rust'],
-      ['0', true, false, 'js'],
+      ['0', true, false, 'rust'],
       [null, false, true, 'rust'],
-      ['1', false, true, 'rust'],
-      ['0', false, true, 'js'],
+      ['0', false, true, 'rust'],
       ['1', false, false, 'js'],
       [null, false, false, 'js'],
     ];
