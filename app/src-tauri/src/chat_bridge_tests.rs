@@ -180,7 +180,6 @@ fn message(id: &str, body: &str) -> Message {
     Message {
         id: id.into(),
         author_id: "id-alice".into(),
-        thread_id: None,
         reply_to: None,
         reply_preview: None,
         body: body.into(),
@@ -188,7 +187,6 @@ fn message(id: &str, body: &str) -> Message {
         reactions: vec![],
         created_at: 1,
         edited_at: None,
-        thread: None,
         card: None,
         bot: None,
     }
@@ -324,10 +322,8 @@ fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
 fn draft(client_id: &str, body: &str) -> MessageDraft {
     MessageDraft {
         client_id: client_id.into(),
-        thread_id: None,
         body: body.into(),
         attachment_ids: vec![],
-        start_thread: false,
         reply_to: None,
         silent: false,
     }
@@ -455,8 +451,8 @@ fn events_arrive_in_the_order_the_server_sent_them() {
 #[test]
 fn a_send_that_the_server_refuses_keeps_its_code_as_rejected() {
     let reply: Reply = Arc::new(|_: usize, value: &Value| {
-        if value["body"] == "bad-thread" {
-            vec![error_for(value, "thread_not_found")]
+        if value["body"] == "bad-reply" {
+            vec![error_for(value, "reply_not_found")]
         } else {
             vec![ack(value)]
         }
@@ -467,12 +463,12 @@ fn a_send_that_the_server_refuses_keeps_its_code_as_rejected() {
     start(&hub, &fake.url, Some("alice"), sink.clone()).unwrap();
     wait_until("connected", || sink.len() >= 1);
 
-    match send(&hub, draft("c-refused", "bad-thread")) {
+    match send(&hub, draft("c-refused", "bad-reply")) {
         SendResult::Rejected {
             client_id, code, ..
         } => {
             assert_eq!(client_id, "c-refused");
-            assert_eq!(code, "thread_not_found");
+            assert_eq!(code, "reply_not_found");
         }
         other => panic!("expected rejected, got {other:?}"),
     }
@@ -944,7 +940,7 @@ fn each_chat_event_is_written_as_its_wire_json_in_order() {
         serde_json::json!({"type": "message.delete", "message_id": "m2"}),
         serde_json::json!({"type": "reaction.add", "message_id": "m3", "emoji": "👍"}),
         serde_json::json!({"type": "reaction.remove", "message_id": "m3", "emoji": "👍"}),
-        serde_json::json!({"type": "thread.create", "root_message_id": "m4"}),
+        serde_json::json!({"type": "call.leave"}),
     ];
     for event in &events {
         emit(&hub, event.clone()).unwrap();
@@ -968,10 +964,8 @@ fn message_send_is_refused_and_nothing_is_written() {
     let send = serde_json::json!({
         "type": "message.send",
         "client_id": "c-1",
-        "thread_id": null,
         "body": "hi",
         "attachment_ids": [],
-        "start_thread": false,
         "reply_to": null,
         "silent": false
     });
@@ -1032,7 +1026,7 @@ fn other_kinds_and_malformed_events_are_refused_and_not_written() {
 #[test]
 fn emit_without_a_session_is_not_connected_and_writes_nothing() {
     let hub = ChatHub::default();
-    let event = serde_json::json!({"type": "thread.create", "root_message_id": "m1"});
+    let event = serde_json::json!({"type": "reaction.add", "message_id": "m1", "emoji": "👍"});
     assert_eq!(emit_error_code(&hub, event), "not_connected");
 }
 

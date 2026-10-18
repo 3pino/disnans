@@ -10,7 +10,6 @@ import { Socket, type SocketStatus } from '../ws';
 import { wsUrl } from '../config';
 import { isAndroid, isTauri } from '../platform';
 import { Timeline, type OutgoingFile, type PendingMessage } from './timeline.svelte';
-import { threads } from './threads.svelte';
 import { ui, type ToastAvatar } from './ui.svelte';
 import { notifications } from './notifications.svelte';
 import { page, unread } from './unread.svelte';
@@ -26,7 +25,6 @@ import { AUDIO_MAX_IN_FLIGHT, callLatency } from '../call/latency';
 
 type Listener = (ev: ServerEvent) => void;
 
-const MAIN = '__main__';
 /** 接続できないとき、チャットを再試行する間隔（JS Socket の再接続の上限と同じ） */
 const CHAT_RETRY_MS = 30_000;
 
@@ -54,7 +52,8 @@ class Client {
   generation = $state(0);
 
   private socket: Socket | null = null;
-  private timelines = new Map<string, Timeline>();
+  /** メインチャットの履歴（スレッドは廃止した） */
+  private readonly main = new Timeline();
   private listeners = new Set<Listener>();
   private seq = 0;
   /** チャットの Rust 経路（null なら従来の JS 経路）。start() で1回だけ決める */
@@ -96,7 +95,7 @@ class Client {
       onEvent: (ev) => this.dispatch(ev),
       onStatus: (s) => {
         this.setLink(s);
-        if (s === 'closed') for (const t of this.timelines.values()) t.markSentUnknown();
+        if (s === 'closed') this.main.markSentUnknown();
       },
     });
     this.socket.start();
@@ -208,18 +207,8 @@ class Client {
     return (this.socket?.bufferedAmount ?? 0) + this.chatEmitBytes;
   }
 
-  timeline(threadId: string | null): Timeline {
-    const key = threadId ?? MAIN;
-    let t = this.timelines.get(key);
-    if (!t) {
-      t = new Timeline(threadId);
-      this.timelines.set(key, t);
-    }
-    return t;
-  }
-
-  peekTimeline(threadId: string | null): Timeline | undefined {
-    return this.timelines.get(threadId ?? MAIN);
+  timeline(): Timeline {
+    return this.main;
   }
 
   user(id: string): User | undefined {
@@ -237,13 +226,9 @@ class Client {
     return { author: authorOf(m, this.users), user: this.users[m.author_id], id: m.author_id };
   }
 
-  /** どこかに読み込まれているメッセージを探す */
+  /** 読み込まれているメッセージを探す */
   findMessage(id: string): Message | undefined {
-    for (const t of this.timelines.values()) {
-      const m = t.find(id);
-      if (m) return m;
-    }
-    return threads.get(id)?.root;
+    return this.main.find(id);
   }
 
   // ---- 操作 ----
@@ -252,16 +237,14 @@ class Client {
    * メッセージを送る。添付は送るときにアップロードし、そのあとでメッセージを送る（送信中は仮表示）。
    * 失敗したら仮表示を「送信できませんでした」にして、再送・取り消しに任せる
    */
-  sendMessage(opts: { threadId: string | null; body: string; files: OutgoingFile[]; startThread?: boolean; replyTo?: Message | null; silent?: boolean }): void {
+  sendMessage(opts: { body: string; files: OutgoingFile[]; replyTo?: Message | null; silent?: boolean }): void {
     const me = this.me;
     if (!me) return;
     const clientId = `c-${Date.now().toString(36)}-${(++this.seq).toString(36)}`;
-    const tl = this.timeline(opts.threadId);
-    tl.addPending({
+    this.main.addPending({
       id: clientId,
       client_id: clientId,
       author_id: me.id,
-      thread_id: opts.threadId,
       reply_to: opts.replyTo?.id ?? null,
       reply_preview: opts.replyTo ? replyPreviewOf(opts.replyTo) : null,
       body: opts.body,
@@ -269,14 +252,12 @@ class Client {
       reactions: [],
       created_at: Date.now(),
       edited_at: null,
-      thread: null,
       card: null,
       bot: null,
       sent: false,
       failed: false,
       unknown: false,
       attachment_ids: [],
-      start_thread: opts.startThread ?? false,
       silent: opts.silent ?? false,
       files: opts.files.map((f) => ({
         key: ++this.seq,
@@ -290,24 +271,23 @@ class Client {
       })),
       busy: false,
     });
-    void this.deliver(opts.threadId, clientId);
+    void this.deliver(clientId);
   }
 
   /** 送信できなかったものを、もう一度送る（アップロード済みのファイルは上げ直さない） */
-  retry(threadId: string | null, clientId: string): void {
-    const p = this.timeline(threadId).pending.find((x) => x.client_id === clientId);
+  retry(clientId: string): void {
+    const p = this.main.pending.find((x) => x.client_id === clientId);
     // 結果が分からないもの（unknown）は、二重投稿になるので再送しない
     if (!p || !p.failed || p.unknown) return;
-    void this.deliver(threadId, clientId);
+    void this.deliver(clientId);
   }
 
   /**
    * 仮表示のメッセージを先へ進める: まだ上げていないファイルを順に上げ、そろったらメッセージを送る。
    * 失敗したところで止め、failed にする（同じ操作をもう一度すれば続きから）
    */
-  private async deliver(threadId: string | null, clientId: string): Promise<void> {
-    const tl = this.timeline(threadId);
-    const find = () => tl.pending.find((x) => x.client_id === clientId);
+  private async deliver(clientId: string): Promise<void> {
+    const find = () => this.main.pending.find((x) => x.client_id === clientId);
     const p = find();
     if (!p || p.busy) return;
     p.busy = true;
@@ -340,16 +320,14 @@ class Client {
       p.attachment_ids = ids;
       p.attachments = p.files.flatMap((x) => (x.attachment ? [x.attachment] : []));
       if (this.chat) {
-        await this.submitChat(threadId, p);
+        await this.submitChat(p);
         return;
       }
       p.sent = this.send({
         type: 'message.send',
         client_id: clientId,
-        thread_id: threadId,
         body: p.body,
         attachment_ids: ids,
-        start_thread: p.start_thread,
         reply_to: p.reply_to,
         silent: p.silent,
       });
@@ -359,7 +337,7 @@ class Client {
   }
 
   editMessage(msg: Message, body: string): void {
-    this.timeline(msg.thread_id).patch(msg.id, (m) => {
+    this.main.patch(msg.id, (m) => {
       m.body = body;
       m.edited_at = Date.now();
     });
@@ -375,14 +353,6 @@ class Client {
     if (!me) return;
     const mine = msg.reactions.find((r) => r.emoji === emoji)?.user_ids.includes(me.id);
     this.send({ type: mine ? 'reaction.remove' : 'reaction.add', message_id: msg.id, emoji });
-  }
-
-  /** メッセージからスレッドを開く（なければ作る） */
-  openThreadFrom(msg: Message): void {
-    if (!msg.thread) {
-      this.send({ type: 'thread.create', root_message_id: msg.id });
-    }
-    ui.openThread(msg.id);
   }
 
   async updateDisplayName(name: string): Promise<void> {
@@ -508,29 +478,27 @@ class Client {
   }
 
   /** Rust 経路の送信。結果（SendOutcome）で仮表示を進める。送信中は busy のまま待つ */
-  private async submitChat(threadId: string | null, p: PendingMessage): Promise<void> {
+  private async submitChat(p: PendingMessage): Promise<void> {
     const chat = this.chat;
     if (!chat) return;
     p.sent = true;
     const outcome = await chat.send({
       clientId: p.client_id,
-      threadId,
       body: p.body,
       attachmentIds: p.attachment_ids,
-      startThread: p.start_thread,
       replyTo: p.reply_to,
       silent: p.silent,
     });
     if (outcome.outcome === 'notSent') p.sent = false;
-    this.applySendOutcome(threadId, p.client_id, outcome);
+    this.applySendOutcome(p.client_id, outcome);
   }
 
   /** 送信結果を仮表示に反映する。notSent は client_id を持たないので、送った側の clientId を使う */
-  private applySendOutcome(threadId: string | null, clientId: string, outcome: SendOutcome): void {
+  private applySendOutcome(clientId: string, outcome: SendOutcome): void {
     switch (outcome.outcome) {
       case 'confirmed':
         // echo（message.created）と同じ処理。どちらが先でも結果は同じ（冪等）
-        this.timeline(threadId).upsert(outcome.message, outcome.clientId);
+        this.main.upsert(outcome.message, outcome.clientId);
         return;
       case 'rejected':
         this.reflectSend(outcome.clientId, true, errorText(outcome.code, outcome.message));
@@ -555,10 +523,10 @@ class Client {
   private settleAll(clientId: string, rejected: boolean): { state: 'failed' | 'unknown' | null; changed: boolean } {
     let state: 'failed' | 'unknown' | null = null;
     let changed = false;
-    for (const t of this.timelines.values()) {
-      const before = t.sendState(clientId);
-      const s = t.settleFromError(clientId, rejected);
-      if (!s) continue;
+    const t = this.main;
+    const before = t.sendState(clientId);
+    const s = t.settleFromError(clientId, rejected);
+    if (s) {
       state = s;
       if (before !== s) changed = true;
     }
@@ -571,10 +539,8 @@ class Client {
     if (!chat) return;
     const outcome = await chat.send({
       clientId: ev.client_id,
-      threadId: ev.thread_id,
       body: ev.body,
       attachmentIds: ev.attachment_ids,
-      startThread: ev.start_thread,
       replyTo: ev.reply_to,
       silent: ev.silent,
     });
@@ -586,10 +552,9 @@ class Client {
 
   // ---- イベント処理 ----
 
-  /** 取りこぼしのあとで、読み込み済みの履歴・スレッド・未読を REST で読み直す（applyHello と同じ範囲） */
+  /** 取りこぼしのあとで、読み込み済みの履歴・未読を REST で読み直す（applyHello と同じ範囲） */
   private refreshAfterGap(): void {
-    for (const t of this.timelines.values()) if (t.loaded || t.error) void t.load();
-    void threads.load();
+    if (this.main.loaded || this.main.error) void this.main.load();
     void unread.load();
   }
 
@@ -602,8 +567,7 @@ class Client {
     this.ready = true;
     this.generation++;
     // 再接続時は、読み込み済みの履歴を取り直す
-    for (const t of this.timelines.values()) if (t.loaded || t.error) void t.load();
-    void threads.load();
+    if (this.main.loaded || this.main.error) void this.main.load();
     unread.me = me.id;
     void unread.load();
   }
@@ -616,48 +580,29 @@ class Client {
       }
       case 'message.created': {
         const m = ev.message;
-        this.timeline(m.thread_id).upsert(m, ev.client_id);
-        if (m.thread) threads.upsert({ root: m, info: m.thread });
+        this.main.upsert(m, ev.client_id);
         // 自分のものは数えない。見ている場所なら、MessageList がすぐに既読にする
         unread.onMessage(m);
         break;
       }
       case 'message.updated': {
         const m = ev.message;
-        this.timeline(m.thread_id).upsert(m);
-        threads.updateRoot(m);
-        for (const t of this.timelines.values()) t.setReplyPreview(m.id, replyPreviewOf(m));
+        this.main.upsert(m);
+        this.main.setReplyPreview(m.id, replyPreviewOf(m));
         break;
       }
       case 'message.deleted': {
-        const tl = this.peekTimeline(ev.thread_id);
         // 未読に数えていたものなら減らす（読み込んでいなければ投稿者が分からないので、他人のものとみなす）
-        unread.onDeleted(ev.message_id, ev.thread_id, tl?.find(ev.message_id)?.author_id);
-        tl?.remove(ev.message_id);
-        for (const t of this.timelines.values()) t.setReplyPreview(ev.message_id, null);
+        unread.onDeleted(ev.message_id, this.main.find(ev.message_id)?.author_id);
+        this.main.remove(ev.message_id);
+        this.main.setReplyPreview(ev.message_id, null);
         // 消えたメッセージを起点にした返信のツリーは、開いていれば閉じ、遷移の履歴からも外す
         ui.forgetPanel((p) => p.kind === 'replyTree' && p.messageId === ev.message_id);
-        if (threads.get(ev.message_id) || this.timelines.has(ev.message_id)) {
-          threads.remove(ev.message_id);
-          unread.removeScope(ev.message_id);
-          this.timelines.delete(ev.message_id);
-          const id = ev.message_id;
-          ui.forgetPanel((p) => (p.kind === 'thread' && p.id === id) || (p.kind === 'replyTree' && p.place === id));
-        }
         reply.drop(ev.message_id);
         break;
       }
-      case 'thread.updated': {
-        threads.upsert(ev.thread);
-        // 起点のメッセージの thread 情報も更新する
-        const root = ev.thread.root;
-        this.timeline(root.thread_id).upsert(root);
-        break;
-      }
       case 'reaction.updated': {
-        for (const t of this.timelines.values()) t.setReactions(ev.message_id, ev.reactions);
-        const t = threads.get(ev.message_id);
-        if (t) t.root.reactions = ev.reactions;
+        this.main.setReactions(ev.message_id, ev.reactions);
         break;
       }
       case 'user.updated': {
@@ -670,7 +615,7 @@ class Client {
         // （背景の通知は常駐サービスが受け持ち、表示済みかどうかを message_id で確かめている）
         if (ev.replayed) break;
         const body = mentionsToText(ev.body, (id) => this.nameOf(id));
-        notifications.show({ title: ev.title, body, threadId: ev.thread_id, sample: ev.sample, from: this.senderOf(ev.message_id) });
+        notifications.show({ title: ev.title, body, sample: ev.sample, from: this.senderOf(ev.message_id) });
         break;
       }
       case 'error': {

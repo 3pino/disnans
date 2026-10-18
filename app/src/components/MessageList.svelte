@@ -15,13 +15,11 @@
 
   let {
     timeline,
-    inThread = false,
     header,
     empty,
     active = false,
   }: {
     timeline: Timeline;
-    inThread?: boolean;
     header?: Snippet;
     empty?: Snippet;
     /** 画面に見えている（見えていて一番下までスクロールしていれば既読にする） */
@@ -142,7 +140,7 @@
   let wasShowing = false;
 
   function findFirstUnread(): string | null {
-    return firstUnread(timeline.messages, unread.cursor(timeline.threadId), client.me?.id ?? null)?.id ?? null;
+    return firstUnread(timeline.messages, unread.cursor, client.me?.id ?? null)?.id ?? null;
   }
 
   /** 区切り線が上から少し下に来るようにスクロールする。区切り線がなければ false */
@@ -168,30 +166,29 @@
   // 表示したときに区切り線の位置を決める。一番下が見えていて、画面にフォーカスがあれば既読にする
   $effect(() => {
     const isShowing = showing;
-    const count = unread.count(timeline.threadId);
+    const count = unread.count;
     const latest = timeline.messages.at(-1)?.id;
     const canMark = isShowing && page.active && atBottom;
     untrack(() => {
       if (isShowing && !wasShowing) {
         separatorId = findFirstUnread();
         // 開いたとき（と、移動を頼まれたとき）は最初の未読へ
-        const requested = takePendingJump(timeline.threadId);
+        const requested = takePendingJump();
         if (separatorId !== null || requested) jumpToSeparator();
       } else if (isShowing && !canMark && separatorId === null && count > 0) {
         // 見えているが読んでいない（スクロールで上にいる、フォーカスがない）間に届いた
         separatorId = findFirstUnread();
       }
       wasShowing = isShowing;
-      if (canMark && atBottom && latest) unread.markRead(timeline.threadId, latest);
+      if (canMark && atBottom && latest) unread.markRead(latest);
     });
   });
 
   // 見えている間は、コマンドから「最初の未読へ」を受け付ける
   $effect(() => {
     if (!showing) return;
-    const threadId = timeline.threadId;
     return untrack(() =>
-      registerUnreadView(threadId, {
+      registerUnreadView({
         scrollToFirstUnread: () => {
           const id = findFirstUnread();
           if (id !== null) separatorId = id;
@@ -228,7 +225,7 @@
       {#if r.msg.id === separatorId}
         <div class="message-list-unread-divider" role="separator"><span>ここから未読</span></div>
       {/if}
-      <MessageItem message={r.msg} grouped={r.grouped} replied={r.replied} {inThread} />
+      <MessageItem message={r.msg} grouped={r.grouped} replied={r.replied} />
     {/each}
     <!-- 送信中の添付のアップロードの進み（送信中の仮表示は一番下に並ぶ） -->
     {#each timeline.pending as p (p.client_id)}

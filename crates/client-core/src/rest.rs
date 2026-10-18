@@ -9,7 +9,6 @@ use crate::ServerUrl;
 
 #[derive(Debug, Clone, Default)]
 pub struct MessagesQuery {
-    pub thread_id: Option<String>,
     pub before: Option<String>,
     pub limit: Option<u32>,
 }
@@ -191,9 +190,6 @@ impl RestClient {
 /// `/api/messages` with its query string. Pure, so the encoder is dropped before any await.
 fn messages_path(query: &MessagesQuery) -> String {
     let mut serializer = form_urlencoded::Serializer::new(String::new());
-    if let Some(value) = &query.thread_id {
-        serializer.append_pair("thread_id", value);
-    }
     if let Some(value) = &query.before {
         serializer.append_pair("before", value);
     }
@@ -282,18 +278,13 @@ mod tests {
         let client = RestClient::new(ServerUrl::parse(&base).unwrap(), None).unwrap();
         let error = client
             .messages(&MessagesQuery {
-                thread_id: Some("thread/1".into()),
                 before: Some("id+2".into()),
                 limit: Some(25),
             })
             .await
             .unwrap_err();
         let request = server.await.unwrap();
-        assert!(
-            request.starts_with(
-                "GET /api/messages?thread_id=thread%2F1&before=id%2B2&limit=25 HTTP/1.1"
-            )
-        );
+        assert!(request.starts_with("GET /api/messages?before=id%2B2&limit=25 HTTP/1.1"));
         assert!(
             matches!(error, ClientError::Http { code, message, .. } if code == "bad_query" && message == "bad query")
         );
@@ -389,13 +380,9 @@ mod send_check {
     fn messages_path_encodes_query() {
         assert_eq!(messages_path(&MessagesQuery::default()), "/api/messages");
         let query = MessagesQuery {
-            thread_id: Some("thread:1 x".into()),
             before: Some("m-9".into()),
             limit: Some(20),
         };
-        assert_eq!(
-            messages_path(&query),
-            "/api/messages?thread_id=thread%3A1+x&before=m-9&limit=20"
-        );
+        assert_eq!(messages_path(&query), "/api/messages?before=m-9&limit=20");
     }
 }

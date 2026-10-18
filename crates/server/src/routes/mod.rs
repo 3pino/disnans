@@ -1,5 +1,6 @@
 //! HTTP のルーティング。
 
+mod devices;
 mod files;
 mod messages;
 mod notify;
@@ -12,7 +13,7 @@ mod users;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn_with_state;
-use axum::routing::{delete, get, post, put};
+use axum::routing::{any, delete, get, post, put};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
@@ -39,15 +40,28 @@ pub fn router(state: SharedState) -> Router {
                 .put(users::put_prefs)
                 .layer(DefaultBodyLimit::max(users::MAX_PREFS_BYTES * 2)),
         )
+        // 端末ごとの設定（上限は設定の大きさに、少し余裕を足したもの）
+        .route("/me/devices", get(devices::list))
+        .route(
+            "/me/devices/{device_id}",
+            put(devices::put).delete(devices::delete),
+        )
+        .route(
+            "/me/devices/{device_id}/prefs",
+            get(devices::get_prefs)
+                .put(devices::put_prefs)
+                .layer(DefaultBodyLimit::max(users::MAX_PREFS_BYTES * 2)),
+        )
         .route("/me/read", get(reads::list).put(reads::mark))
         .route("/users", get(users::list))
         .route("/avatars/{id}", get(users::avatar))
         .route("/messages", get(messages::list))
         .route("/messages/search", get(messages::search))
-        .route("/threads", get(threads::list))
-        .route("/threads/{id}", get(threads::get).patch(threads::update))
-        .route("/threads/{id}/tags", put(threads::set_tags))
-        .route("/thread-tags", get(threads::tags))
+        // スレッドは廃止した（古いクライアントのために 410 を返す）
+        .route("/threads", any(threads::gone))
+        .route("/threads/{id}", any(threads::gone))
+        .route("/threads/{id}/tags", any(threads::gone))
+        .route("/thread-tags", any(threads::gone))
         // ファイルサイズの上限はなし（ストリーミングでディスクに書く）
         .route(
             "/files",

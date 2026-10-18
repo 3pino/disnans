@@ -31,10 +31,8 @@ export type SendOutcome =
 
 export type MessageDraft = {
   clientId: string;
-  threadId: string | null;
   body: string;
   attachmentIds: string[];
-  startThread: boolean;
   replyTo: string | null;
   silent: boolean;
 };
@@ -52,7 +50,6 @@ export type ChatEmitEvent = Extract<
       | 'message.delete'
       | 'reaction.add'
       | 'reaction.remove'
-      | 'thread.create'
       | 'session.emit'
       | 'plugin.emit'
       | 'call.join'
@@ -68,7 +65,6 @@ const CHAT_EMIT_TYPES: ReadonlySet<string> = new Set([
   'message.delete',
   'reaction.add',
   'reaction.remove',
-  'thread.create',
   'session.emit',
   'plugin.emit',
   'call.join',
@@ -97,7 +93,7 @@ export interface ChatTransport {
   start(onItem: (item: ChatItem) => void): Promise<void>;
   /** 結果は必ず SendOutcome で返る（reject しない。書込前の失敗は notSent） */
   send(draft: MessageDraft): Promise<SendOutcome>;
-  /** 編集・削除・リアクション・スレッド作成。成功は書込んだこと（反映は後から event で届く）。失敗は ChatCommandError で reject */
+  /** 編集・削除・リアクション。成功は書込んだこと（反映は後から event で届く）。失敗は ChatCommandError で reject */
   emit(event: ChatEmitEvent): Promise<void>;
   /** 切断中なら待たずに再接続する */
   reconnect(): Promise<void>;
@@ -109,7 +105,6 @@ export const CHAT_EVENT_TYPES: ReadonlySet<string> = new Set([
   'message.created',
   'message.updated',
   'message.deleted',
-  'thread.updated',
   'reaction.updated',
   'user.updated',
   'notify',

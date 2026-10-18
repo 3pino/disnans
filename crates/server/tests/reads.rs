@@ -15,42 +15,24 @@ async fn markers(server: &TestServer, user: &str) -> Vec<ReadMarker> {
     server.get_json(user, "/api/me/read").await
 }
 
-fn find<'a>(list: &'a [ReadMarker], thread_id: Option<&str>) -> &'a ReadMarker {
-    list.iter()
-        .find(|m| m.thread_id.as_deref() == thread_id)
-        .unwrap_or_else(|| panic!("{thread_id:?} がありません: {list:?}"))
+/// メインチャットの既読（一覧の先頭）。
+fn find(list: &[ReadMarker]) -> &ReadMarker {
+    list.first()
+        .unwrap_or_else(|| panic!("既読の位置がありません: {list:?}"))
 }
 
-async fn mark(
-    server: &TestServer,
-    user: &str,
-    thread_id: Option<&str>,
-    message_id: &str,
-) -> reqwest::Response {
+async fn mark(server: &TestServer, user: &str, message_id: &str) -> reqwest::Response {
     server
         .put_json(
             user,
             "/api/me/read",
             &MarkRead {
-                thread_id: thread_id.map(Into::into),
                 message_id: message_id.into(),
             },
         )
         .send()
         .await
         .unwrap()
-}
-
-fn reply(thread_id: &str, body: &str) -> ClientEvent {
-    ClientEvent::MessageSend {
-        client_id: format!("r-{body}"),
-        thread_id: Some(thread_id.into()),
-        body: body.into(),
-        attachment_ids: vec![],
-        start_thread: false,
-        reply_to: None,
-        silent: false,
-    }
 }
 
 #[tokio::test]
@@ -61,56 +43,35 @@ async fn counts_unread_and_syncs_between_devices() {
     let mut alice2 = server.ws(ALICE).await;
     let mut bob = server.ws(BOB).await;
 
-    // 最初は未読なし。メインチャットは必ず先頭にある
+    // 最初は未読なし。場所はメインチャットだけ
     let list = markers(&server, ALICE).await;
     assert_eq!(list.len(), 1);
-    assert!(list[0].thread_id.is_none());
     assert_eq!(list[0].unread_count, 0);
 
     let m1 = bob.post("1").await;
     let m2 = bob.post("2").await;
     // 自分のメッセージは数えない
     alice.post("自分").await;
-    let root = bob
-        .post_with(ClientEvent::MessageSend {
-            client_id: "root".into(),
-            thread_id: None,
-            body: "話題".into(),
-            attachment_ids: vec![],
-            start_thread: true,
-            reply_to: None,
-            silent: false,
-        })
-        .await;
-    let r1 = bob.post_with(reply(&root.id, "a")).await;
-    bob.post_with(reply(&root.id, "b")).await;
-    alice.post_with(reply(&root.id, "自分の返信")).await;
-    // 返信のあとの thread.updated まで受け取っておく（あとで接続する bob2 に混ざらないように）
-    alice
-        .recv_until(|e| matches!(e, ServerEvent::ThreadUpdated { .. }))
-        .await;
+    let r1 = bob.post("a").await;
+    bob.post("b").await;
+    alice.post("自分の返信").await;
 
     let list = markers(&server, ALICE).await;
-    assert_eq!(list.len(), 2);
-    assert_eq!(find(&list, None).unread_count, 3);
-    assert_eq!(find(&list, Some(&root.id)).unread_count, 2);
+    assert_eq!(list.len(), 1);
+    assert_eq!(find(&list).unread_count, 4);
     // bob から見ると、alice の分だけ未読
     let list = markers(&server, BOB).await;
-    assert_eq!(find(&list, None).unread_count, 1);
-    assert_eq!(find(&list, Some(&root.id)).unread_count, 1);
+    assert_eq!(find(&list).unread_count, 2);
 
     // 既読を進めると、自分のすべての接続に read.updated が届く
     let mut bob2 = server.ws(BOB).await;
-    // bob の未読の返信は、接続し直したときに再送される（既読にしていないため）
-    match bob2.recv_any().await {
-        ServerEvent::Notify { replayed, .. } => assert!(replayed),
-        other => panic!("再送が来るはずでした: {other:?}"),
-    }
-    let res = mark(&server, ALICE, None, &m1.id).await;
+    // 一般の投稿の通知は再送しない（bob2 には何も来ない）
+    bob2.assert_silent(Duration::from_millis(200)).await;
+    let res = mark(&server, ALICE, &m1.id).await;
     assert_eq!(res.status(), 200);
     let marker: ReadMarker = res.json().await.unwrap();
     assert_eq!(marker.last_read_id, m1.id);
-    assert_eq!(marker.unread_count, 2);
+    assert_eq!(marker.unread_count, 3);
     for client in [&mut alice, &mut alice2] {
         let ServerEvent::ReadUpdated { marker } = client
             .recv_until(|e| matches!(e, ServerEvent::ReadUpdated { .. }))
@@ -118,53 +79,36 @@ async fn counts_unread_and_syncs_between_devices() {
         else {
             unreachable!()
         };
-        assert!(marker.thread_id.is_none());
         assert_eq!(marker.last_read_id, m1.id);
-        assert_eq!(marker.unread_count, 2);
+        assert_eq!(marker.unread_count, 3);
     }
     // 他人には届かない
     bob2.assert_silent(Duration::from_millis(200)).await;
 
     // 戻らない（古い ID なら何もせず、いまの位置を返す。配信もしない）
-    mark(&server, ALICE, None, &m2.id).await;
+    mark(&server, ALICE, &m2.id).await;
     alice2
         .recv_until(|e| matches!(e, ServerEvent::ReadUpdated { .. }))
         .await;
-    let res = mark(&server, ALICE, None, &m1.id).await;
+    let res = mark(&server, ALICE, &m1.id).await;
     let marker: ReadMarker = res.json().await.unwrap();
     assert_eq!(marker.last_read_id, m2.id);
-    assert_eq!(marker.unread_count, 1);
+    assert_eq!(marker.unread_count, 2);
     alice2.assert_silent(Duration::from_millis(200)).await;
-
-    // スレッドの既読
-    let marker: ReadMarker = mark(&server, ALICE, Some(&root.id), &r1.id)
-        .await
-        .json()
-        .await
-        .unwrap();
-    assert_eq!(marker.thread_id.as_deref(), Some(root.id.as_str()));
-    assert_eq!(marker.unread_count, 1);
 
     // 未読のメッセージが消えたら数えない
     let list = markers(&server, ALICE).await;
-    let last = find(&list, None).last_read_id.clone();
+    let last = find(&list).last_read_id.clone();
     assert_eq!(last, m2.id);
     bob.send(ClientEvent::MessageDelete {
-        message_id: root.id.clone(),
+        message_id: r1.id.clone(),
     })
     .await;
     bob.recv_until(|e| matches!(e, ServerEvent::MessageDeleted { .. }))
         .await;
     let list = markers(&server, ALICE).await;
-    assert_eq!(list.len(), 1, "消したスレッドは出さない");
-    assert_eq!(find(&list, None).unread_count, 0);
-    // スレッドの既読の位置も消える
-    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM read_markers WHERE scope = ?")
-        .bind(&root.id)
-        .fetch_one(&server.state.pool)
-        .await
-        .unwrap();
-    assert_eq!(rows, 0);
+    assert_eq!(list.len(), 1);
+    assert_eq!(find(&list).unread_count, 1);
 }
 
 #[tokio::test]
@@ -176,22 +120,18 @@ async fn history_before_joining_is_read() {
 
     // あとから来た人には、それまでの履歴は未読にならない
     let list = markers(&server, CAROL).await;
-    let main = find(&list, None);
+    let main = find(&list);
     assert_eq!(main.unread_count, 0);
     assert!(main.last_read_id > old.id);
 
     // それより古い位置への既読は何もしない
-    let marker: ReadMarker = mark(&server, CAROL, None, &old.id)
-        .await
-        .json()
-        .await
-        .unwrap();
+    let marker: ReadMarker = mark(&server, CAROL, &old.id).await.json().await.unwrap();
     assert_eq!(marker.last_read_id, main.last_read_id);
 
     // 来たあとのメッセージは未読になる
     alice.post("新しい話").await;
     let list = markers(&server, CAROL).await;
-    assert_eq!(find(&list, None).unread_count, 1);
+    assert_eq!(find(&list).unread_count, 1);
 }
 
 #[tokio::test]
@@ -200,15 +140,12 @@ async fn rejects_bad_requests() {
     let mut alice = server.ws(ALICE).await;
     let m = alice.post("hi").await;
 
-    let res = mark(&server, ALICE, None, "not-a-ulid").await;
+    let res = mark(&server, ALICE, "not-a-ulid").await;
     assert_eq!(res.status(), 400);
     assert_eq!(
         res.json::<ApiError>().await.unwrap().code,
         "invalid_message_id"
     );
-
-    let res = mark(&server, ALICE, Some(&m.id), &m.id).await;
-    assert_eq!(res.status(), 404);
 }
 
 /// 0008 を当てた時点のメッセージは、全員について既読になる。
@@ -250,7 +187,7 @@ async fn migration_marks_existing_messages_read() {
         .await
         .unwrap();
     }
-    // メインチャット: M1, M2（M2 が起点のスレッドに R1, R2）
+    // メインチャット: M1, M2（M2 が起点のスレッドに R1, R2。0012 でスレッドは消えるので、最後はメインだけ残る）
     for (id, author, thread) in [
         ("01A000000000000000000000M1", "U1", None),
         ("01A000000000000000000000M2", "U2", None),
@@ -289,21 +226,12 @@ async fn migration_marks_existing_messages_read() {
     .await
     .unwrap();
     let expected = |u: &str, s: &str, id: &str| (u.to_owned(), s.to_owned(), id.to_owned());
+    // 0008 の時点では、スレッドの行も入る。0012 で消えるので、最後はメインチャットの行だけ
     assert_eq!(
         rows,
         vec![
             expected("U1", "", "01A000000000000000000000M2"),
-            expected(
-                "U1",
-                "01A000000000000000000000M2",
-                "01A000000000000000000000R2"
-            ),
             expected("U2", "", "01A000000000000000000000M2"),
-            expected(
-                "U2",
-                "01A000000000000000000000M2",
-                "01A000000000000000000000R2"
-            ),
         ]
     );
 }

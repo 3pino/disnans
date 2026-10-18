@@ -223,10 +223,8 @@ async fn attachments_follow_their_message() {
     alice
         .send(ClientEvent::MessageSend {
             client_id: "x".into(),
-            thread_id: None,
             body: String::new(),
             attachment_ids: vec![bobs.id.clone()],
-            start_thread: false,
             reply_to: None,
             silent: false,
         })
@@ -237,10 +235,8 @@ async fn attachments_follow_their_message() {
     let root = alice
         .post_with(ClientEvent::MessageSend {
             client_id: "root".into(),
-            thread_id: None,
             body: String::new(),
             attachment_ids: vec![b.id.clone(), a.id.clone()],
-            start_thread: true,
             reply_to: None,
             silent: false,
         })
@@ -257,31 +253,27 @@ async fn attachments_follow_their_message() {
     alice
         .send(ClientEvent::MessageSend {
             client_id: "again".into(),
-            thread_id: None,
             body: "again".into(),
             attachment_ids: vec![a.id.clone()],
-            start_thread: false,
             reply_to: None,
             silent: false,
         })
         .await;
     assert_eq!(alice.expect_error().await.1, "invalid_attachment");
 
-    // スレッドの返信に bob のファイルを付ける
+    // 返信に bob のファイルを付ける
     let reply = bob
         .post_with(ClientEvent::MessageSend {
             client_id: "reply".into(),
-            thread_id: Some(root.id.clone()),
             body: "file".into(),
             attachment_ids: vec![bobs.id.clone()],
-            start_thread: false,
             reply_to: None,
             silent: false,
         })
         .await;
     assert_eq!(reply.attachments.len(), 1);
 
-    // 起点を消すと、返信の添付ファイルもディスクから消える
+    // メッセージを消すと、そのファイルもディスクから消える（返信のファイルは残る）
     alice
         .send(ClientEvent::MessageDelete {
             message_id: root.id.clone(),
@@ -290,7 +282,23 @@ async fn attachments_follow_their_message() {
     alice
         .recv_until(|e| matches!(e, ServerEvent::MessageDeleted { .. }))
         .await;
-    for id in [&a.id, &b.id, &bobs.id] {
+    for id in [&a.id, &b.id] {
+        let res = server
+            .get(ALICE, &format!("/api/files/{id}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 404);
+        assert!(!files::file_path(&server.state.config, id).exists());
+    }
+    bob.send(ClientEvent::MessageDelete {
+        message_id: reply.id.clone(),
+    })
+    .await;
+    bob.recv_until(|e| matches!(e, ServerEvent::MessageDeleted { .. }))
+        .await;
+    {
+        let id = &bobs.id;
         let res = server
             .get(ALICE, &format!("/api/files/{id}"))
             .send()

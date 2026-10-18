@@ -229,7 +229,7 @@ pub fn timeline_rows(messages: &[Message], ctx: &Context<'_>) -> Vec<Row> {
             Some((prev, _)) if !new_day => is_continuation(prev, message),
             _ => false,
         };
-        rows.extend(message_rows(message, continuation, ctx));
+        rows.extend(rows_of(message, continuation, ctx));
         previous = Some((message, day));
     }
     rows
@@ -244,8 +244,13 @@ fn is_continuation(prev: &Message, cur: &Message) -> bool {
         && cur.created_at - prev.created_at < GROUP_MS
 }
 
+/// 1 件のメッセージの行（前の発言との続きは見ない。頭は必ず先頭行に付く）。一覧は `timeline_rows` を使う
+pub fn message_rows(message: &Message, ctx: &Context<'_>) -> Vec<Row> {
+    rows_of(message, false, ctx)
+}
+
 /// 1 件のメッセージの行。`continuation` なら先頭行にも頭（head）を付けない
-fn message_rows(message: &Message, continuation: bool, ctx: &Context<'_>) -> Vec<Row> {
+fn rows_of(message: &Message, continuation: bool, ctx: &Context<'_>) -> Vec<Row> {
     let head = head_of(message, ctx);
     let lines = message_lines(message, ctx);
     lines

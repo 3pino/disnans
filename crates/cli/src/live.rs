@@ -187,7 +187,6 @@ mod tests {
         Message {
             id: id.into(),
             author_id: "u".into(),
-            thread_id: None,
             reply_to: None,
             reply_preview: None,
             body: "x".into(),
@@ -195,7 +194,6 @@ mod tests {
             reactions: vec![],
             created_at: 1,
             edited_at: None,
-            thread: None,
             card: None,
             bot: None,
         }

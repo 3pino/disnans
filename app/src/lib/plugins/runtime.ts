@@ -101,7 +101,7 @@ export class PluginBase implements Disnans.Plugin {
   notify(userIds: string[], text: string, opts?: { session?: Disnans.Session<any> }): Promise<void> {
     return rt(this).notify(userIds, text, opts?.session?.id ?? null);
   }
-  postMessage(opts: { body: string; threadId?: string | null; name?: string; notify?: boolean }): Promise<void> {
+  postMessage(opts: { body: string; name?: string; notify?: boolean }): Promise<void> {
     return rt(this).postMessage(opts);
   }
   broadcast(name: string, payload?: unknown): void {
@@ -241,7 +241,7 @@ export class PluginRuntime {
             }
           : undefined,
         // run の例外は本体（入力欄）がトーストで知らせる
-        run: ({ args, threadId }) => cmd.run({ args: args.trim(), threadId }),
+        run: ({ args }) => cmd.run({ args: args.trim() }),
         // 省くとプラグインのアイコン（icon.svg はあとから読めることがあるので、そのつど引く）
         get icon() {
           return cmd.icon || services.pluginIcon(id);
@@ -269,7 +269,7 @@ export class PluginRuntime {
         return action.icon || services.pluginIcon(id);
       },
       // run の例外は本体（入力欄）がトーストで知らせる
-      run: ({ threadId }) => action.run({ threadId }),
+      run: () => action.run(),
       source: this.manifest.name,
     });
     this.register(off);
@@ -288,7 +288,6 @@ export class PluginRuntime {
       this.addError(`メッセージの操作「${action.label}」の placement「${String(placement)}」を読めません（menu / toolbar / both）`);
       return;
     }
-    const ctxOf = (c: { place: string | null; inThread: boolean }): Disnans.MessageActionContext => ({ threadId: c.place, inThread: c.inThread });
     const off = services.registerMessageAction({
       // 本体や他のプラグインとぶつからないように、プラグイン ID を前に付ける
       id: `plugin:${id}:${action.id}`,
@@ -304,7 +303,7 @@ export class PluginRuntime {
         ? (c) => {
             // 判定の例外はログにして、その項目だけ出さない
             try {
-              return !!action.when?.(c.message as unknown as Disnans.Message, ctxOf(c));
+              return !!action.when?.(c.message as unknown as Disnans.Message);
             } catch (e) {
               this.log(`メッセージの操作「${action.label}」の when で例外`, e);
               return false;
@@ -312,7 +311,7 @@ export class PluginRuntime {
           }
         : undefined,
       // run の例外は本体（メッセージの操作）がトーストで知らせる
-      run: (c) => action.run(c.message as unknown as Disnans.Message, ctxOf(c)),
+      run: (c) => action.run(c.message as unknown as Disnans.Message),
       source: this.manifest.name,
     });
     this.register(off);
@@ -429,7 +428,7 @@ export class PluginRuntime {
           : undefined,
         source: this.manifest.name,
         // run の例外は本体（入力欄・ホットキー・パレット）がトーストで知らせる
-        run: ({ args, threadId, via }) => cmd.run({ args: args.trim(), threadId, via }),
+        run: ({ args, via }) => cmd.run({ args: args.trim(), via }),
       });
     } catch (e) {
       this.addError(`コマンド「${cmd.name}」を登録できません: ${errorMessage(e)}`);
@@ -701,9 +700,8 @@ export class PluginRuntime {
     return this.services.api.notify(this.id, { user_ids: userIds, body: text, session_id: sessionId });
   }
 
-  postMessage(opts: { body: string; threadId?: string | null; name?: string; notify?: boolean }): Promise<void> {
+  postMessage(opts: { body: string; name?: string; notify?: boolean }): Promise<void> {
     return this.services.api.postMessage(this.id, {
-      thread_id: opts.threadId ?? null,
       body: opts.body,
       name: opts.name ?? null,
       notify: opts.notify ?? false,

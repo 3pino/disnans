@@ -75,19 +75,19 @@ class TimelinePanels {
   }
 
   /**
-   * メッセージを起点にした返信のツリーを開く。place はそのメッセージのいる場所（スレッドの ID。メインチャットなら null）。
+   * メッセージを起点にした返信のツリーを開く。
    * パネルは { kind: 'replyTree' } で、中身（replyTreeSpec）はその場で作る。戻る操作で開き直せるよう、ID の発行や後片付けは要らない
    */
-  openReplyTree(message: Pick<Message, 'id'>, place: string | null): void {
-    ui.openReplyTree(message.id, place);
+  openReplyTree(message: Pick<Message, 'id'>): void {
+    ui.openReplyTree(message.id);
   }
 
   /** 返信のツリーの中身 */
-  replyTreeSpec(messageId: string, place: string | null): TimelineSpec {
+  replyTreeSpec(messageId: string): TimelineSpec {
     return {
       title: '返信のツリー',
       // 読み込み済みのメッセージから作る。返信は起点より新しいので、起点があれば返信もそろっている
-      entries: () => replyTree(client.peekTimeline(place)?.messages ?? [], messageId),
+      entries: () => replyTree(client.timeline().messages, messageId),
       empty: 'このメッセージは読み込まれていません。',
     };
   }

@@ -174,7 +174,7 @@ ui.navbar(opts: {
 }): HTMLElement
 ```
 
-タブのバー（`.nav-bar`）です。本体の下のナビゲーション（Chat / Threads / Settings）と同じ見た目で、view の中にタブを作るときに使います。
+タブのバー（`.nav-bar`）です。本体のナビゲーション（Chat / Settings など）と同じ見た目で、view の中にタブを作るときに使います。
 押すと選択中の見た目も切り替わります。`badge` は 0・空文字列・`null` なら出ません。
 
 ```js

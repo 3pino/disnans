@@ -25,8 +25,48 @@ pub async fn connect(path: &Path) -> Result<SqlitePool, sqlx::Error> {
         .connect_with(options)
         .await?;
 
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    let migrator = sqlx::migrate!("./migrations");
+    // 移行で消えるものがあるかもしれないので、適用の前に DB をまるごと残す（data/backup/）
+    if has_pending_migrations(&pool, &migrator).await? {
+        backup_before_migrate(&pool, path).await?;
+    }
+    migrator.run(&pool).await?;
     Ok(pool)
+}
+
+/// まだ適用していないマイグレーションがあるか。新しい DB（履歴の表がない）は移すデータがないので `false`。
+async fn has_pending_migrations(
+    pool: &SqlitePool,
+    migrator: &sqlx::migrate::Migrator,
+) -> Result<bool, sqlx::Error> {
+    let table: Option<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations'",
+    )
+    .fetch_optional(pool)
+    .await?;
+    if table.is_none() {
+        return Ok(false);
+    }
+    let applied: Vec<i64> =
+        sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE success = 1")
+            .fetch_all(pool)
+            .await?;
+    Ok(migrator.iter().any(|m| !applied.contains(&m.version)))
+}
+
+/// 適用の前の DB を `<データ>/backup/pre-migrate-<時刻>.db` にコピーする（VACUUM INTO）。
+/// 失敗したら起動を止める（バックアップなしで移行しない）。
+async fn backup_before_migrate(pool: &SqlitePool, path: &Path) -> Result<(), sqlx::Error> {
+    let dir = path.parent().unwrap_or(Path::new(".")).join("backup");
+    std::fs::create_dir_all(&dir).map_err(sqlx::Error::Io)?;
+    let file = dir.join(format!("pre-migrate-{}.db", now_ms()));
+    // VACUUM INTO は引数に式を取る。パスの ' は二つに直して文字列リテラルにする
+    let literal = file.to_string_lossy().replace('\'', "''");
+    sqlx::query(&format!("VACUUM INTO '{literal}'"))
+        .execute(pool)
+        .await?;
+    tracing::info!(backup = %file.display(), "マイグレーションの前に DB をバックアップしました");
+    Ok(())
 }
 
 /// 新しい ULID を作る。

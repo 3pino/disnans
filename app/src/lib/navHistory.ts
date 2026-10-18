@@ -3,10 +3,9 @@
 // 履歴が尽きたら、いまの状態から1段ずつ閉じる（検索 → パネル → 設定のサブページ → チャット以外のタブ）。
 // チャットのトップで何も開いていなければ、戻る先はない（Android ではアプリが裏に回る）
 
-/** 右側のパネル（モバイルでは全画面）。スレッド、返信のツリー、メッセージの集合（timeline。lib/stores/timelinePanel.svelte.ts）、プラグインの view */
+/** 右側のパネル（モバイルでは全画面）。返信のツリー、メッセージの集合（timeline。lib/stores/timelinePanel.svelte.ts）、プラグインの view */
 export type Panel =
-  | { kind: 'thread'; id: string }
-  | { kind: 'replyTree'; messageId: string; place: string | null }
+  | { kind: 'replyTree'; messageId: string }
   | { kind: 'timeline'; id: number }
   | { kind: 'plugin'; plugin: string; view: string; sessionId: string }
   | null;
@@ -14,8 +13,8 @@ export type Panel =
 /** 設定の中のサブページ（一覧の代わりに出す）。入力欄のキー・ホットキー・ナビゲーションバー・＋メニュー・通話 */
 export type SettingsSubpage = 'enterKeys' | 'hotkeys' | 'navBar' | 'composerMenu' | 'call';
 
-/** モバイルのボトムナビのタブ。デスクトップでは chat・settings・call を使う */
-export type NavTab = 'chat' | 'threads' | 'settings' | 'call';
+/** ナビゲーションバーのタブ（チャット・設定・通話） */
+export type NavTab = 'chat' | 'settings' | 'call';
 
 /** 履歴に積む画面の状態。画像の全画面とプラグインの層（ui.onBack）は、履歴とは別に一番上で扱う */
 export type NavState = {
@@ -52,10 +51,8 @@ export function samePanel(a: Panel, b: Panel): boolean {
   if (a === null || b === null) return a === b;
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
-    case 'thread':
-      return a.id === (b as typeof a).id;
     case 'replyTree':
-      return a.messageId === (b as typeof a).messageId && a.place === (b as typeof a).place;
+      return a.messageId === (b as typeof a).messageId;
     case 'timeline':
       return a.id === (b as typeof a).id;
     case 'plugin': {

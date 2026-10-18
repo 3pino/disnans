@@ -1,6 +1,5 @@
 import { tick } from 'svelte';
 import MessageCircle from '@lucide/svelte/icons/message-circle';
-import MessagesSquare from '@lucide/svelte/icons/messages-square';
 import Settings from '@lucide/svelte/icons/settings';
 import TextCursorInput from '@lucide/svelte/icons/text-cursor-input';
 import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
@@ -9,7 +8,6 @@ import Command from '@lucide/svelte/icons/command';
 import Search from '@lucide/svelte/icons/search';
 import SunMoon from '@lucide/svelte/icons/sun-moon';
 import ChevronsDown from '@lucide/svelte/icons/chevrons-down';
-import ChevronsUp from '@lucide/svelte/icons/chevrons-up';
 import BookmarkCheck from '@lucide/svelte/icons/bookmark-check';
 import {
   APP_COMMAND_PREFIX,
@@ -26,7 +24,7 @@ import { prefs } from './stores/prefs.svelte';
 import { ui } from './stores/ui.svelte';
 import { callCommands, registerCallComposerAction } from './call/commands';
 import { startCall } from './call/instance.svelte';
-import { jumpToFirstUnread, jumpToNextUnread, jumpToPrevUnread } from './unreadNav';
+import { jumpToFirstUnread, jumpToNextUnread } from './unreadNav';
 
 /** コマンドパレットを開くコマンド（設定の説明にも使う） */
 export const PALETTE_COMMAND_ID = `${APP_COMMAND_PREFIX}command-palette`;
@@ -59,15 +57,10 @@ class CommandHost {
     window.addEventListener('keydown', (e) => this.onKeydown(e));
   }
 
-  /** いま開いているスレッド（なければ null） */
-  get threadId(): string | null {
-    return ui.panel?.kind === 'thread' ? ui.panel.id : null;
-  }
-
   /** コマンドを実行する。失敗はトーストで知らせる */
   async run(cmd: AppCommand, via: Exclude<CommandVia, 'slash'>): Promise<void> {
     try {
-      await runCommand(cmd, { args: '', threadId: this.threadId, via });
+      await runCommand(cmd, { args: '', via });
     } catch (e) {
       ui.toast(e instanceof Error ? e.message : String(e), 'error');
     }
@@ -127,18 +120,6 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       run: () => ui.openSearch(),
     },
     {
-      id: id('open-threads'),
-      name: 'スレッドの一覧を開く',
-      icon: MessagesSquare,
-      run: async () => {
-        // Threads タブを開く（狭い画面ではパネルを閉じる）。広い画面では一覧の先頭にフォーカスする
-        ui.selectTab('threads', ui.isMobile);
-        if (ui.isMobile) return;
-        await tick();
-        document.querySelector<HTMLElement>('#threads-view .thread-list-item')?.focus();
-      },
-    },
-    {
       id: id('open-settings'),
       name: '設定を開く',
       icon: Settings,
@@ -150,11 +131,8 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       name: '入力欄にフォーカス',
       icon: TextCursorInput,
       run: async () => {
-        // スレッドを開いていればその入力欄、なければメインチャットの入力欄
-        const inPanel = ui.panel?.kind === 'thread';
-        if (!inPanel) await showChat();
-        const sel = inPanel ? '.shell-thread-panel .message-input-textarea' : '#main-chat .message-input-textarea';
-        document.querySelector<HTMLTextAreaElement>(sel)?.focus();
+        await showChat();
+        document.querySelector<HTMLTextAreaElement>('#main-chat .message-input-textarea')?.focus();
       },
     },
     {
@@ -168,31 +146,18 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       name: '最新のメッセージへ移動',
       icon: ArrowDownToLine,
       run: async () => {
-        // スレッドを開いていればそのスレッド、なければメインチャット
-        const inPanel = ui.panel?.kind === 'thread';
-        if (!inPanel) await showChat();
-        const el = document.querySelector<HTMLElement>(
-          inPanel ? '.shell-thread-panel .message-list-scroller' : '#main-chat .message-list-scroller',
-        );
+        await showChat();
+        const el = document.querySelector<HTMLElement>('#main-chat .message-list-scroller');
         el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
       },
     },
     {
       id: id('next-unread'),
-      name: '次の未読へ移動',
+      name: '未読へ移動',
       icon: ChevronsDown,
       defaultHotkey: 'Alt+Shift+ArrowDown',
       run: () => {
         if (!jumpToNextUnread()) ui.toast('未読はありません', 'info');
-      },
-    },
-    {
-      id: id('prev-unread'),
-      name: '前の未読へ移動',
-      icon: ChevronsUp,
-      defaultHotkey: 'Alt+Shift+ArrowUp',
-      run: () => {
-        if (!jumpToPrevUnread()) ui.toast('未読はありません', 'info');
       },
     },
     {

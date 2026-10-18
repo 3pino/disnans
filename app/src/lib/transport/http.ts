@@ -56,13 +56,9 @@ export function createHttpReadApi(): ReadApi {
     me: () => request('GET', '/api/me'),
     users: () => request('GET', '/api/users'),
     prefs: () => request('GET', '/api/me/prefs'),
-    messages: (opts) =>
-      request('GET', '/api/messages' + qs({ thread_id: opts.threadId, before: opts.before, limit: opts.limit })),
+    messages: (opts) => request('GET', '/api/messages' + qs({ before: opts.before, limit: opts.limit })),
     searchMessages: (opts) =>
       request('GET', '/api/messages/search' + qs({ q: opts.q, before: opts.before, limit: opts.limit })),
-    threads: () => request('GET', '/api/threads'),
-    thread: (id) => request('GET', `/api/threads/${encodeURIComponent(id)}`),
-    threadTags: () => request('GET', '/api/thread-tags'),
     readMarkers: () => request('GET', '/api/me/read'),
     plugins: () => request('GET', '/api/plugins'),
     session: (id) => request('GET', `/api/sessions/${encodeURIComponent(id)}`),

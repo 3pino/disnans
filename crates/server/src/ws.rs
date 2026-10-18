@@ -53,7 +53,7 @@ async fn is_read(state: &SharedState, user: &User, n: &Notification) -> bool {
     let Some(message_id) = &n.message_id else {
         return false;
     };
-    match reads::get(&state.pool, user, n.thread_id.as_deref()).await {
+    match reads::get(&state.pool, user).await {
         Ok(marker) => {
             let position = marker
                 .map(|m| m.last_read_id)
@@ -170,20 +170,17 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
     let result = match event {
         ClientEvent::MessageSend {
             client_id: id,
-            thread_id,
             body,
             attachment_ids,
-            start_thread,
             reply_to,
             silent,
+            ..
         } => {
             client_id = Some(id.clone());
             let req = SendMessage {
                 client_id: id,
-                thread_id,
                 body,
                 attachment_ids,
-                start_thread,
                 reply_to,
                 silent,
             };
@@ -194,9 +191,6 @@ async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text:
         }
         ClientEvent::MessageDelete { message_id } => {
             chat::delete_message(state, actor, &message_id).await
-        }
-        ClientEvent::ThreadCreate { root_message_id } => {
-            chat::create_thread(state, actor, &root_message_id).await
         }
         ClientEvent::ReactionAdd { message_id, emoji } => {
             chat::add_reaction(state, actor, &message_id, &emoji).await

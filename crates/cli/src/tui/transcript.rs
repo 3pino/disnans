@@ -1,7 +1,9 @@
 //! メッセージを表示行へ変える（折り返し・エスケープ済み）。
 
+use disnans_client_core::view::{self, Calendar};
 use disnans_shared::{Message, User};
 
+use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use super::sanitize;
@@ -49,14 +51,6 @@ const IMAGE_MAX_ROWS: usize = 10;
 pub const ACCENTS: usize = 6;
 const NAME_COLUMN_MAX: usize = 10;
 
-/// 投稿者の表示名。名前が分からなければ ID。
-pub fn author_name(users: &[User], id: &str) -> String {
-    users.iter().find(|user| user.id == id).map_or_else(
-        || sanitize::inline(id),
-        |user| sanitize::inline(&user.display_name),
-    )
-}
-
 /// 名前の列幅（桁）。全員で揃えて本文の開始位置をそろえる。
 fn name_column(users: &[User], width: usize) -> usize {
     let widest = users
@@ -98,6 +92,71 @@ pub fn separator_row(label: &str, width: usize) -> Row {
     }
 }
 
+/// 投稿者の名前が分からないときの表示（GUI と同じ文言）
+const UNKNOWN_USER: &str = "不明なユーザー";
+
+/// 日曜始まりの曜日の表示（`view::Day::weekday` の添字）
+const WEEK: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
+
+/// 利用者のタイムゾーンでの暦。ゾーンが無ければ UTC（timefmt と同じ扱い）
+pub struct ZoneCalendar<'a> {
+    pub zone: Option<&'a TimeZone>,
+}
+
+impl Calendar for ZoneCalendar<'_> {
+    fn day_of(&self, timestamp_ms: i64) -> view::Day {
+        let utc = TimeZone::UTC;
+        let zone = self.zone.unwrap_or(&utc);
+        match Timestamp::from_millisecond(timestamp_ms) {
+            Ok(ts) => {
+                let z = ts.to_zoned(zone.clone());
+                view::Day {
+                    year: i32::from(z.year()),
+                    month: z.month() as u8,
+                    day: z.day() as u8,
+                    weekday: z.weekday().to_sunday_zero_offset() as u8,
+                }
+            }
+            Err(_) => view::UtcCalendar.day_of(0),
+        }
+    }
+}
+
+/// 日付の区切りの文字（`10月12日 (月)`）
+fn day_text(day: view::Day) -> String {
+    format!(
+        "{}月{}日 ({})",
+        day.month,
+        day.day,
+        WEEK[usize::from(day.weekday.min(6))]
+    )
+}
+
+/// 一覧の全行（日付の区切りと、各メッセージの行）。日付はゾーンで決める。
+/// `messages` は古い順。続きの判定（名前を省くこと）はしない（TUI は従来どおり毎回出す）。
+pub fn timeline(
+    messages: &[Message],
+    users: &[User],
+    width: usize,
+    zone: Option<&TimeZone>,
+    gfx: Option<(u16, u16)>,
+) -> Vec<Row> {
+    let calendar = ZoneCalendar { zone };
+    let ctx = view::Context::new(users, None, &calendar);
+    let mut rows = Vec::new();
+    let mut day: Option<view::Day> = None;
+    for message in messages {
+        let today = calendar.day_of(message.created_at);
+        if day != Some(today) {
+            rows.push(separator_row(&day_text(today), width));
+            day = Some(today);
+        }
+        let model = view::message_rows(message, &ctx);
+        rows.extend(message_rows_with(message, &model, users, width, gfx));
+    }
+    rows
+}
+
 /// 1メッセージ分の行。`width` は履歴の表示幅（桁）。
 /// 先頭行は `アイコン 名前 本文`、続く行は本文の開始位置にそろえる。
 pub fn message_rows(
@@ -107,24 +166,40 @@ pub fn message_rows(
     _zone: Option<&TimeZone>,
     gfx: Option<(u16, u16)>,
 ) -> Vec<Row> {
+    let calendar = view::UtcCalendar;
+    let ctx = view::Context::new(users, None, &calendar);
+    let model = view::message_rows(message, &ctx);
+    message_rows_with(message, &model, users, width, gfx)
+}
+
+/// 表示データ（core の行）を、TUI の行（幅で折り返し、接頭辞と画像の予約を付ける）に変える
+fn message_rows_with(
+    message: &Message,
+    model: &[view::Row],
+    users: &[User],
+    width: usize,
+    gfx: Option<(u16, u16)>,
+) -> Vec<Row> {
+    let Some(view::Row::Message {
+        head: Some(head), ..
+    }) = model.first()
+    else {
+        return Vec::new();
+    };
     let name_w = name_column(users, width);
     // アイコン(2桁) + 空白 + 名前 + 空白2つ。名前と本文が詰まって見えないようにする。
     let lead_w = 2 + 1 + name_w + 2;
     let width = width.max(lead_w + 1);
     let inner = width - lead_w;
-    let name = author_name(users, &message.author_id);
+    let name = sanitize::inline(head.name.as_deref().unwrap_or(UNKNOWN_USER));
     let icon = name.chars().next().map_or("?".to_owned(), String::from);
     let lead = format!("{} {}  ", pad_to(&icon, 2), pad_to(&name, name_w));
     let accent = accent(&message.author_id);
+    let avatar = match gfx {
+        Some(_) => head.avatar.as_ref().map(|a| a.url.clone()),
+        None => None,
+    };
 
-    let avatar = gfx.and_then(|_| {
-        users
-            .iter()
-            .find(|u| u.id == message.author_id)
-            .and_then(|u| u.avatar_url.as_deref())
-            .filter(|url| safe_path(url, "/api/avatars/") || is_external_avatar(url))
-            .map(str::to_owned)
-    });
     let mut content: Vec<(RowKind, String)> = Vec::new();
     // 画像の予約行（内容の行の後ろに追加する）。
     let mut images: Vec<(usize, ImageSlot)> = Vec::new();
@@ -133,94 +208,85 @@ pub fn message_rows(
             content.push((kind, line));
         }
     };
-    if let Some(bot) = &message.bot {
-        push(
-            &mut content,
-            RowKind::Meta,
-            &format!("[bot: {}]", sanitize::inline(&bot.name)),
-        );
-    }
-    if let Some(reply) = &message.reply_preview {
-        let who = author_name(users, &reply.author_id);
-        push(
-            &mut content,
-            RowKind::Meta,
-            &format!("↩ {who}: {}", sanitize::inline(&reply.body)),
-        );
-    } else if message.reply_to.is_some() {
-        push(&mut content, RowKind::Meta, "↩ 返信（元の投稿は削除済み）");
-    }
-    if !message.body.is_empty() {
-        for line in sanitize::body_lines(&message.body) {
-            push(&mut content, RowKind::Body, &line);
-        }
-    }
-    if let Some(card) = &message.card {
-        push(
-            &mut content,
-            RowKind::Meta,
-            &format!(
-                "[カード: {}] {}",
-                sanitize::inline(&card.title),
-                sanitize::inline(&card.text)
-            ),
-        );
-    }
-    for attachment in &message.attachments {
-        push(
-            &mut content,
-            RowKind::Meta,
-            &format!(
-                "[添付: {} ({})]",
-                sanitize::inline(&attachment.file_name),
-                format_size(attachment.size)
-            ),
-        );
-        if let Some(cell) = gfx
-            && attachment.has_thumb
-            && attachment.mime.starts_with("image/")
-            && let (Some(w), Some(h)) = (attachment.width, attachment.height)
-            && w > 0
-            && h > 0
-            && !attachment.id.is_empty()
-            && attachment
-                .id
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-        {
-            let (cols, rows) = image_cells(w, h, inner, cell);
-            for row in 0..rows {
-                images.push((
-                    content.len(),
-                    ImageSlot {
-                        key: format!("/api/files/{}/thumb", attachment.id),
-                        row: row as u16,
-                        rows: rows as u16,
-                        cols: cols as u16,
-                        offset: lead_w as u16,
-                    },
-                ));
-                content.push((RowKind::Meta, String::new()));
+    for row in model {
+        let view::Row::Message { line, .. } = row else {
+            continue;
+        };
+        match line {
+            view::Line::Body { segments } => {
+                push(&mut content, RowKind::Body, &body_text(segments));
             }
+            view::Line::Meta { meta } => match meta {
+                view::Meta::Bot { name } => push(
+                    &mut content,
+                    RowKind::Meta,
+                    &format!("[bot: {}]", sanitize::inline(name)),
+                ),
+                view::Meta::Reply {
+                    author, excerpt, ..
+                } => {
+                    let who = author.as_deref().unwrap_or(UNKNOWN_USER);
+                    push(
+                        &mut content,
+                        RowKind::Meta,
+                        &format!("↩ {}: {}", sanitize::inline(who), sanitize::inline(excerpt)),
+                    );
+                }
+                view::Meta::ReplyDeleted => {
+                    push(&mut content, RowKind::Meta, "↩ 返信（元の投稿は削除済み）")
+                }
+                view::Meta::Card { title, text, .. } => push(
+                    &mut content,
+                    RowKind::Meta,
+                    &format!(
+                        "[カード: {}] {}",
+                        sanitize::inline(title),
+                        sanitize::inline(text)
+                    ),
+                ),
+                view::Meta::Attachment {
+                    file_name,
+                    size,
+                    thumb,
+                    ..
+                } => {
+                    push(
+                        &mut content,
+                        RowKind::Meta,
+                        &format!(
+                            "[添付: {} ({})]",
+                            sanitize::inline(file_name),
+                            format_size(*size)
+                        ),
+                    );
+                    if let (Some(cell), Some(thumb)) = (gfx, thumb) {
+                        let (cols, rows) = image_cells(thumb.width, thumb.height, inner, cell);
+                        for row in 0..rows {
+                            images.push((
+                                content.len(),
+                                ImageSlot {
+                                    key: thumb.path.clone(),
+                                    row: row as u16,
+                                    rows: rows as u16,
+                                    cols: cols as u16,
+                                    offset: lead_w as u16,
+                                },
+                            ));
+                            content.push((RowKind::Meta, String::new()));
+                        }
+                    }
+                }
+                view::Meta::Reactions { items } => {
+                    let text = items
+                        .iter()
+                        .map(|r| format!("{}{}", sanitize::inline(&r.emoji), r.count))
+                        .collect::<Vec<_>>()
+                        .join("  ");
+                    push(&mut content, RowKind::Meta, &text);
+                }
+                view::Meta::Edited => push(&mut content, RowKind::Meta, "(編集済み)"),
+            },
         }
-    }
-    let reactions: Vec<String> = message
-        .reactions
-        .iter()
-        .filter(|reaction| !reaction.user_ids.is_empty())
-        .map(|reaction| {
-            format!(
-                "{}{}",
-                sanitize::inline(&reaction.emoji),
-                reaction.user_ids.len()
-            )
-        })
-        .collect();
-    if !reactions.is_empty() {
-        push(&mut content, RowKind::Meta, &reactions.join("  "));
-    }
-    if message.edited_at.is_some() {
-        push(&mut content, RowKind::Meta, "(編集済み)");
     }
     if content.is_empty() {
         content.push((RowKind::Body, String::new()));
@@ -248,6 +314,20 @@ pub fn message_rows(
         .collect()
 }
 
+/// 本文の 1 行（部品）を端末の文字にする。メンションは `@名前`（分からなければ `@不明なユーザー`）
+fn body_text(segments: &[view::Segment]) -> String {
+    segments
+        .iter()
+        .map(|segment| match segment {
+            view::Segment::Text { text } => sanitize::escape_text(text, false),
+            view::Segment::Mention { name, .. } => format!(
+                "@{}",
+                sanitize::inline(name.as_deref().unwrap_or(UNKNOWN_USER))
+            ),
+        })
+        .collect()
+}
+
 /// 取得先に使ってよいパスか（サーバー由来の文字列をそのまま URL に入れない）。
 /// Tailscale のプロフィール画像など、サーバー外の https の絶対 URL（GUI と同じくそのまま取得する）。
 pub fn is_external_avatar(url: &str) -> bool {
@@ -255,15 +335,6 @@ pub fn is_external_avatar(url: &str) -> bool {
         && url.starts_with("https://")
         && url.is_ascii()
         && !url.bytes().any(|b| b.is_ascii_control() || b == b' ')
-}
-
-fn safe_path(path: &str, prefix: &str) -> bool {
-    path.strip_prefix(prefix).is_some_and(|rest| {
-        !rest.is_empty()
-            && rest
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-    })
 }
 
 /// 画像を出す桁・行数。端末のセルの縦横比（`cell` はピクセル）で、元の比率に近づける。
@@ -313,7 +384,6 @@ pub mod tests_support {
         Message {
             id: id.into(),
             author_id: author.into(),
-            thread_id: None,
             reply_to: None,
             reply_preview: None,
             body: body.into(),
@@ -321,7 +391,6 @@ pub mod tests_support {
             reactions: vec![],
             created_at: 1_800_000_000_000,
             edited_at: None,
-            thread: None,
             card: None,
             bot: None,
         }
@@ -347,8 +416,52 @@ mod tests {
         assert_eq!(rows[0].text, "A  Alice  こんにちは");
         assert_eq!(rows[0].prefix, "A  Alice  ".len());
         assert_eq!(rows[1].text, "          二行目");
+        // 不明なユーザーは ID ではなく「不明なユーザー」（GUI と同じ文言。幅 5 桁に省く）
         let rows = message_rows(&message("m", "u2", "x"), &users, 40, None, None);
-        assert_eq!(rows[0].text, "u  u2     x");
+        assert_eq!(rows[0].text, "不 不明…  x");
+    }
+
+    #[test]
+    fn a_bot_message_shows_the_bot_name_in_the_head_and_the_bot_line() {
+        let mut m = message("m", "u1", "結果");
+        m.bot = Some(BotInfo {
+            plugin: "poll".into(),
+            name: "投票".into(),
+        });
+        let rows = message_rows(&m, &[user("u1", "Alice")], 40, None, None);
+        // 先頭行に名前（ボットの名前）。bot の印は本文より前の行
+        assert_eq!(rows[0].text, "投 投票   [bot: 投票]");
+        assert_eq!(rows[1].text, "          結果");
+        assert_eq!(rows.len(), 2, "{rows:?}");
+    }
+
+    #[test]
+    fn mentions_show_the_name_or_the_unknown_user_wording() {
+        let users = [user("u1", "Alice")];
+        let rows = message_rows(
+            &message("m", "u1", "やあ <@u1> と <@ghost>"),
+            &users,
+            60,
+            None,
+            None,
+        );
+        assert_eq!(rows[0].text, "A  Alice  やあ @Alice と @不明なユーザー");
+    }
+
+    #[test]
+    fn timeline_puts_one_separator_per_day_in_the_zone_and_labels_it() {
+        let mut a = message("a", "u1", "x");
+        a.created_at = 1_800_000_000_000;
+        let mut b = message("b", "u1", "y");
+        b.created_at = 1_800_000_000_000 + 3_600_000 * 24;
+        let rows = timeline(&[a, b], &[user("u1", "Alice")], 40, None, None);
+        let separators: Vec<&str> = rows
+            .iter()
+            .filter(|r| r.kind == RowKind::Separator)
+            .map(|r| r.text.trim_matches('─').trim())
+            .collect();
+        // 2027-01-15 08:00 UTC（金）と翌日
+        assert_eq!(separators, ["1月15日 (金)", "1月16日 (土)"]);
     }
 
     #[test]
@@ -415,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_lines_for_attachments_reactions_threads_and_edits() {
+    fn meta_lines_for_attachments_reactions_and_edits() {
         let mut m = message("m", "u", "");
         m.attachments.push(Attachment {
             id: "a".into(),

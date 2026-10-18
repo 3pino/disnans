@@ -170,11 +170,6 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
 }
-.screenshare-preview-info {
-  margin: 0;
-  color: var(--text);
-  font-size: 0.85rem;
-}
 .screenshare-preview-actions {
   display: flex;
   flex-wrap: wrap;

@@ -36,16 +36,16 @@ describe('registry', () => {
 });
 
 describe('runSlashCommand', () => {
-  it('passes args and threadId', async () => {
+  it('passes args', async () => {
     let got: unknown = null;
     const off = registerSlashCommand({ name: 'got', description: '', run: (ctx) => void (got = ctx) });
-    await runSlashCommand('got', 'x', 't1');
-    expect(got).toEqual({ args: 'x', threadId: 't1' });
+    await runSlashCommand('got', 'x');
+    expect(got).toEqual({ args: 'x' });
     off();
   });
 
   it('rejects unknown commands and failures', async () => {
-    await expect(runSlashCommand('nope', '', null)).rejects.toThrow('/nope');
+    await expect(runSlashCommand('nope', '')).rejects.toThrow('/nope');
     const off = registerSlashCommand({
       name: 'fail',
       description: '',
@@ -53,7 +53,7 @@ describe('runSlashCommand', () => {
         throw new Error('だめ');
       },
     });
-    await expect(runSlashCommand('fail', '', null)).rejects.toThrow('/fail: だめ');
+    await expect(runSlashCommand('fail', '')).rejects.toThrow('/fail: だめ');
     off();
   });
 });

@@ -10,11 +10,11 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock, Mutex};
 
+use base64::Engine;
 use disnans_client_core::{
     MessageSearchQuery, MessagesQuery, ReadFailure, RestClient, ServerUrl, UploadAbortHandle,
-    UploadAbortRegistration, messages_path, search_path, session_path, thread_path,
+    UploadAbortRegistration, messages_path, search_path, session_path,
 };
-use base64::Engine;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -35,8 +35,6 @@ pub struct MessagesArgs {
     pub server: String,
     #[serde(default)]
     pub dev_user: Option<String>,
-    #[serde(default)]
-    pub thread_id: Option<String>,
     #[serde(default)]
     pub before: Option<String>,
     #[serde(default)]
@@ -78,7 +76,7 @@ pub struct BodyArgs {
     pub body: Value,
 }
 
-/// `id` と `body` を持つ書込（PATCH /api/threads/{id} など）。
+/// `id` と `body` を持つ書込（PATCH /api/sessions/{id} など）。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IdBodyArgs {
@@ -87,17 +85,6 @@ pub struct IdBodyArgs {
     pub dev_user: Option<String>,
     pub id: String,
     pub body: Value,
-}
-
-/// タグの置き換え（PUT /api/threads/{id}/tags）。`tags` は配列。
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TagsArgs {
-    pub server: String,
-    #[serde(default)]
-    pub dev_user: Option<String>,
-    pub id: String,
-    pub tags: Value,
 }
 
 /// 添付のアバター（PUT /api/me/avatar）。バイト列は raw body、このフィールドは `x-disnans-args` ヘッダー。
@@ -320,7 +307,6 @@ pub async fn read_prefs(args: &Base) -> Result<Value, ReadFailure> {
 
 pub async fn read_messages(args: &MessagesArgs) -> Result<Value, ReadFailure> {
     let path = messages_path(&MessagesQuery {
-        thread_id: args.thread_id.clone(),
         before: args.before.clone(),
         limit: args.limit,
     });
@@ -334,23 +320,6 @@ pub async fn read_search_messages(args: &SearchArgs) -> Result<Value, ReadFailur
         limit: args.limit,
     });
     read(&args.server, args.dev_user.as_deref(), &path).await
-}
-
-pub async fn read_threads(args: &Base) -> Result<Value, ReadFailure> {
-    read(&args.server, args.dev_user.as_deref(), "/api/threads").await
-}
-
-pub async fn read_thread(args: &IdArgs) -> Result<Value, ReadFailure> {
-    read(
-        &args.server,
-        args.dev_user.as_deref(),
-        &thread_path(&args.id),
-    )
-    .await
-}
-
-pub async fn read_thread_tags(args: &Base) -> Result<Value, ReadFailure> {
-    read(&args.server, args.dev_user.as_deref(), "/api/thread-tags").await
 }
 
 pub async fn read_read_markers(args: &Base) -> Result<Value, ReadFailure> {
@@ -387,21 +356,6 @@ pub async fn clear_avatar(args: &Base) -> Result<Value, ReadFailure> {
 pub async fn set_prefs(args: &BodyArgs) -> Result<Value, ReadFailure> {
     client(&args.server, args.dev_user.as_deref())?
         .set_prefs(&args.body)
-        .await
-}
-
-pub async fn update_thread(args: &IdBodyArgs) -> Result<Value, ReadFailure> {
-    client(&args.server, args.dev_user.as_deref())?
-        .update_thread(&args.id, &args.body)
-        .await
-}
-
-pub async fn set_thread_tags(args: &TagsArgs) -> Result<Value, ReadFailure> {
-    if !args.tags.is_array() {
-        return Err(ReadFailure::invalid_request("tags は配列にしてください"));
-    }
-    client(&args.server, args.dev_user.as_deref())?
-        .set_thread_tags(&args.id, &args.tags)
         .await
 }
 
@@ -511,21 +465,6 @@ pub async fn api_search_messages(args: SearchArgs) -> Result<Value, ReadFailure>
 }
 
 #[tauri::command]
-pub async fn api_threads(args: Base) -> Result<Value, ReadFailure> {
-    read_threads(&args).await
-}
-
-#[tauri::command]
-pub async fn api_thread(args: IdArgs) -> Result<Value, ReadFailure> {
-    read_thread(&args).await
-}
-
-#[tauri::command]
-pub async fn api_thread_tags(args: Base) -> Result<Value, ReadFailure> {
-    read_thread_tags(&args).await
-}
-
-#[tauri::command]
 pub async fn api_read_markers(args: Base) -> Result<Value, ReadFailure> {
     read_read_markers(&args).await
 }
@@ -581,16 +520,6 @@ pub async fn api_clear_avatar(args: Base) -> Result<Value, ReadFailure> {
 #[tauri::command]
 pub async fn api_set_prefs(args: BodyArgs) -> Result<Value, ReadFailure> {
     set_prefs(&args).await
-}
-
-#[tauri::command]
-pub async fn api_update_thread(args: IdBodyArgs) -> Result<Value, ReadFailure> {
-    update_thread(&args).await
-}
-
-#[tauri::command]
-pub async fn api_set_thread_tags(args: TagsArgs) -> Result<Value, ReadFailure> {
-    set_thread_tags(&args).await
 }
 
 #[tauri::command]
@@ -694,30 +623,29 @@ mod tests {
     async fn api_error_is_returned_with_status_code_and_message() {
         let (server, task) = one_shot(
             "404 Not Found",
-            r#"{"code":"not_found","message":"スレッドが見つかりません"}"#,
+            r#"{"code":"not_found","message":"見つかりません"}"#,
         )
         .await;
-        let failure = read_thread(&IdArgs {
+        let failure = read_session(&IdArgs {
             server: server.clone(),
             dev_user: None,
-            id: "t/1".into(),
+            id: "s/1".into(),
         })
         .await
         .unwrap_err();
-        assert_eq!(task.await.unwrap(), "GET /api/threads/t%2F1 HTTP/1.1");
+        assert_eq!(task.await.unwrap(), "GET /api/sessions/s%2F1 HTTP/1.1");
         assert_eq!(
             serde_json::to_value(&failure).unwrap(),
-            serde_json::json!({"status": 404, "code": "not_found", "message": "スレッドが見つかりません"})
+            serde_json::json!({"status": 404, "code": "not_found", "message": "見つかりません"})
         );
     }
 
     #[tokio::test]
-    async fn optional_thread_id_null_is_not_sent() {
+    async fn missing_optional_query_fields_are_not_sent() {
         let (server, task) = one_shot("200 OK", "[]").await;
         read_messages(&MessagesArgs {
             server,
             dev_user: None,
-            thread_id: None,
             before: None,
             limit: Some(3),
         })
@@ -822,20 +750,6 @@ mod tests {
         .unwrap();
         assert_eq!(value, Value::Null);
         assert_eq!(task.await.unwrap(), "DELETE /api/plugins/a%2Fb HTTP/1.1");
-    }
-
-    #[tokio::test]
-    async fn tags_must_be_an_array_before_any_request() {
-        let failure = set_thread_tags(&TagsArgs {
-            server: "http://127.0.0.1:9".into(),
-            dev_user: None,
-            id: "t1".into(),
-            tags: serde_json::json!("not-an-array"),
-        })
-        .await
-        .unwrap_err();
-        assert_eq!(failure.code, "invalid_request");
-        assert_eq!(failure.status, None);
     }
 
     #[tokio::test]

@@ -1,5 +1,4 @@
 import Copy from '@lucide/svelte/icons/copy';
-import MessageSquare from '@lucide/svelte/icons/message-square';
 import Pencil from '@lucide/svelte/icons/pencil';
 import Reply from '@lucide/svelte/icons/reply';
 import SmilePlus from '@lucide/svelte/icons/smile-plus';
@@ -27,11 +26,9 @@ function canEdit({ message }: MessageActionContext): boolean {
 export async function removeMessage(message: MessageActionContext['message']): Promise<void> {
   const ok = await ui.confirm({
     title: 'メッセージを削除しますか？',
-    body: message.thread
-      ? 'このメッセージから始まったスレッドの返信もすべて削除されます。元には戻せません。'
-      : message.card
-        ? 'このカードのセッション（プラグインの状態）も削除されます。元には戻せません。'
-        : '削除すると元には戻せません。',
+    body: message.card
+      ? 'このカードのセッション（プラグインの状態）も削除されます。元には戻せません。'
+      : '削除すると元には戻せません。',
     okLabel: '削除',
     danger: true,
   });
@@ -60,16 +57,7 @@ export function registerCoreMessageActions(): void {
     placement: 'both',
     order: 200,
     when: (c) => !isPending(c),
-    run: (c) => reply.set(c.place, c.message),
-  });
-  registerMessageAction({
-    id: 'core:thread',
-    label: (c) => (c.message.thread ? 'スレッドを開く' : 'スレッドを立てる'),
-    icon: MessageSquare,
-    placement: 'both',
-    order: 300,
-    when: (c) => !c.inThread && !isPending(c) && c.message.thread_id === null,
-    run: (c) => client.openThreadFrom(c.message),
+    run: (c) => reply.set(c.message),
   });
   registerMessageAction({
     id: 'core:copy',

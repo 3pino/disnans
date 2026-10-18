@@ -35,12 +35,9 @@ pub async fn create(state: &AppState, actor: &Actor<'_>, req: CreateSession) -> 
     validate_card(&req.card)?;
 
     let _guard = state.write_lock().await;
-    if let Some(thread_id) = &req.thread_id {
-        chat::ensure_thread_exists(state, thread_id).await?;
-    }
 
     // カードは本文が空のメッセージ（本文の検証は通さない）
-    let message = chat::new_row(&actor.user.id, req.thread_id, String::new());
+    let message = chat::new_row(&actor.user.id, String::new());
     let row = SessionRow {
         id: db::new_id(),
         plugin: req.plugin,
@@ -102,13 +99,9 @@ pub async fn update(state: &AppState, id: &str, req: UpdateSession) -> AppResult
     });
     // カードの書き換えは編集ではないので、edited_at は変えない
     if card_changed && let Some(message) = messages::get(&state.pool, &session.message_id).await? {
-        let is_root = message.thread.is_some();
         state
             .hub
             .broadcast(&ServerEvent::MessageUpdated { message });
-        if is_root {
-            chat::broadcast_thread(state, &session.message_id).await?;
-        }
     }
     Ok(session)
 }
@@ -197,19 +190,14 @@ pub async fn notify(state: &AppState, plugin_id: &str, req: PluginNotify) -> App
         .await?
         .map(|p| p.name)
         .unwrap_or_else(|| plugin_id.to_owned());
-    let (message_id, thread_id) = match &req.session_id {
-        Some(session_id) => {
-            let row = find(state, session_id).await?;
-            let message = messages::get_row(&state.pool, &row.message_id).await?;
-            (Some(row.message_id), message.and_then(|m| m.thread_id))
-        }
-        None => (None, None),
+    let message_id = match &req.session_id {
+        Some(session_id) => Some(find(state, session_id).await?.message_id),
+        None => None,
     };
     let notification = Notification {
         title,
         body: body.to_owned(),
         message_id,
-        thread_id,
         sample: false,
         general: false,
     };

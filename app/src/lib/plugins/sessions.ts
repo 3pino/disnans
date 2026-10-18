@@ -160,10 +160,9 @@ export class SessionsImpl implements Disnans.Sessions {
     return s;
   }
 
-  async create<S = unknown>(opts: { state: S; card: Disnans.Card; threadId?: string | null }): Promise<Disnans.Session<S>> {
+  async create<S = unknown>(opts: { state: S; card: Disnans.Card }): Promise<Disnans.Session<S>> {
     const data = await this.services.api.createSession({
       plugin: this.pluginId,
-      thread_id: opts.threadId ?? null,
       state: opts.state,
       card: { title: opts.card.title, text: opts.card.text },
     });

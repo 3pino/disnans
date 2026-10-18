@@ -28,6 +28,13 @@
 | PUT | `/api/me/read` | 既読の位置を進める（body: `MarkRead`） | `ReadMarker` |
 | GET | `/api/me/prefs` | 自分の設定（ホットキー・Enter キーの動作など。まだなければ `{}`） | JSON オブジェクト |
 | PUT | `/api/me/prefs` | 自分の設定をまるごと置き換える（body: JSON オブジェクト） | JSON オブジェクト |
+| GET | `/api/me/devices` | 自分の端末の一覧（`device_id`, `name`, `created_at`, `last_seen_at`, `has_prefs`。新しい順） | `[DeviceInfo]` |
+| PUT | `/api/me/devices/{device_id}` | 端末を登録する・名前を変える（body: `{ "name": "…" }`）。上限 50 台（超えると `409 too_many_devices`） | `DeviceInfo` |
+| DELETE | `/api/me/devices/{device_id}` | 端末と、その設定を消す | `204`（なければ `404`） |
+| GET | `/api/me/devices/{device_id}/prefs` | この端末の設定。未保存・端末がなければ `404` | `{ "prefs": {…}, "updated_at": n }` |
+| PUT | `/api/me/devices/{device_id}/prefs` | この端末の設定をまるごと置き換える（body: `{ "prefs": {…} }`）。端末を登録していなければ `404` | `{ "prefs": {…}, "updated_at": n }` |
+
+端末 ID はクライアントが作る（1〜64 文字、英数字とハイフン。認証ではなく、自分の端末だけに使う）。端末の一覧・設定の変更は他の端末にイベントで知らせない。設定の大きさは `/api/me/prefs` と同じ上限（64 KB）。
 | GET | `/api/users` | メンバー一覧 | `User[]` |
 | GET | `/api/avatars/{id}` | 自分で設定したアバターの画像（WebP） | バイナリ |
 | GET | `/api/messages?thread_id=&before=&limit=` | メッセージ履歴 | `Message[]` |

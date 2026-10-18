@@ -48,7 +48,7 @@ export default class BotPlugin extends Plugin {
       slash: 'bot',
       description: 'ボットとして投稿する',
       args: '<本文>',
-      run: (ctx) => this.say(ctx.args, ctx.threadId),
+      run: (ctx) => this.say(ctx.args),
     });
     this.addCommand({
       id: 'say-as',
@@ -62,7 +62,7 @@ export default class BotPlugin extends Plugin {
           ui.toast('/bot-as <名前> <本文> の形で入力してください', 'error');
           return;
         }
-        return this.say(parsed.text, ctx.threadId, parsed.name);
+        return this.say(parsed.text, parsed.name);
       },
     });
     this.addCommand({
@@ -71,7 +71,7 @@ export default class BotPlugin extends Plugin {
       slash: 'bot-notify',
       description: '通知付きでボットとして投稿する（自分にも通知が届く）',
       args: '[秒] <本文>',
-      run: (ctx) => this.sayNotify(ctx.args, ctx.threadId),
+      run: (ctx) => this.sayNotify(ctx.args),
     });
   }
 
@@ -79,9 +79,8 @@ export default class BotPlugin extends Plugin {
    * 通知を送るように投稿する。秒数が指定されていれば、その間待ってから投稿する
    * （待っている間に、アプリを裏に回して通知を確かめられる）。
    * @param {string} args
-   * @param {string | null} threadId
    */
-  async sayNotify(args, threadId) {
+  async sayNotify(args) {
     const { seconds, text } = splitDelayAndText(args);
     if (!text) {
       ui.toast('本文を入力してください', 'error');
@@ -91,22 +90,21 @@ export default class BotPlugin extends Plugin {
       ui.toast(`${seconds} 秒後に投稿します`);
       await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
     }
-    return this.say(text, threadId, undefined, true);
+    return this.say(text, undefined, true);
   }
 
   /**
    * @param {string} text
-   * @param {string | null} threadId
    * @param {string} [name]
    * @param {boolean} [notify]
    */
-  async say(text, threadId, name, notify = false) {
+  async say(text, name, notify = false) {
     if (!text.trim()) {
       ui.toast('本文を入力してください', 'error');
       return;
     }
     try {
-      await this.postMessage({ body: text, threadId, name, notify });
+      await this.postMessage({ body: text, name, notify });
     } catch (e) {
       ui.toast(`投稿できませんでした: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }

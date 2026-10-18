@@ -166,10 +166,10 @@ describe('desktop shared storage integration', () => {
   it('does not turn an unreadable draft without backup into an empty editor, but restores an available backup', async () => {
     const failReads = async <T>(): Promise<T> => { throw new Error('IPC unavailable'); };
     const noBackup = createDesktopSharedStorage(failReads, memoryLegacy());
-    const missingLocation = draftLocation(server, 'unreadable-user', null);
+    const missingLocation = draftLocation(server, 'unreadable-user');
     await expect(loadDraftAt(missingLocation, noBackup)).rejects.toThrow('共有下書きを読み込めず');
 
-    const backupLocation = draftLocation(server, 'backup-user', null);
+    const backupLocation = draftLocation(server, 'backup-user');
     const backup = createDesktopSharedStorage(failReads, memoryLegacy({
       'disnans.server': server,
       'disnans.draft.backup-user.main': 'recoverable legacy draft',
@@ -217,22 +217,19 @@ describe('desktop shared storage integration', () => {
   it('keeps server, user, and place draft namespaces distinct and clears only the captured location', async () => {
     const files = installStorageInvoke();
     const shared = createDesktopSharedStorage(invokeMock, memoryLegacy());
-    const original = draftLocation(server, 'user-a', null);
-    const otherLocation = draftLocation(otherServer, 'user-a', null);
-    const anotherUser = draftLocation(server, 'user-b', null);
-    const thread = draftLocation(server, 'user-a', 'thread-1');
+    const original = draftLocation(server, 'user-a');
+    const otherLocation = draftLocation(otherServer, 'user-a');
+    const anotherUser = draftLocation(server, 'user-b');
 
     applyServerUrl(otherServer);
     expect(await saveDraftAt(original, 'before switching server', shared)).toEqual({ status: 'shared' });
     expect(await saveDraftAt(otherLocation, 'other server', shared)).toEqual({ status: 'shared' });
     expect(await saveDraftAt(anotherUser, 'other user', shared)).toEqual({ status: 'shared' });
-    expect(await saveDraftAt(thread, 'thread body', shared)).toEqual({ status: 'shared' });
     expect(await saveDraftAt(original, '', shared)).toEqual({ status: 'shared' });
 
     expect(await loadDraftAt(original, shared)).toBe('');
     expect(await loadDraftAt(otherLocation, shared)).toBe('other server');
     expect(await loadDraftAt(anotherUser, shared)).toBe('other user');
-    expect(await loadDraftAt(thread, shared)).toBe('thread body');
     expect(files.get(keyId({ kind: 'draft', serverUrl: server, userId: 'user-a', place: 'main' }))).toBeNull();
     expect(files.get(keyId({ kind: 'draft', serverUrl: otherServer, userId: 'user-a', place: 'main' }))).toBe('other server');
     await expect(flushDraftSaves()).resolves.toBeUndefined();
@@ -245,7 +242,7 @@ describe('desktop shared storage integration', () => {
       return invokeMock(command, args) as Promise<T>;
     }, legacy);
     installStorageInvoke();
-    const location = draftLocation(server, 'user-a', null);
+    const location = draftLocation(server, 'user-a');
 
     await expect(saveDraftAt(location, 'keep this body', shared)).rejects.toThrow('IPC unavailable');
     expect(await loadDraftAt(location, shared)).toBe('keep this body');
@@ -258,7 +255,7 @@ describe('desktop shared storage integration', () => {
 
   it('retains a superseded draft in-session, blocks reload, then clears pending state after a successful retry', async () => {
     const { drafts } = await freshDesktopModules();
-    const location = drafts.draftLocation(server, 'superseded-user', null);
+    const location = drafts.draftLocation(server, 'superseded-user');
     const files = new Map<string, string | null>();
     let supersedeNextReadback = true;
     invokeMock.mockImplementation(async (command: string, input?: Record<string, unknown>): Promise<FileState> => {

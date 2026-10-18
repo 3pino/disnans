@@ -24,9 +24,9 @@ export type ComposerMenuEntry = {
 
 /** 実行できる項目（＋メニューに出すとき） */
 export type ComposerMenuItem = ComposerMenuEntry & {
-  /** メインチャットでだけ出す、など（設定画面では見ない） */
-  when?: (ctx: { threadId: string | null }) => boolean;
-  run: (ctx: { threadId: string | null }) => void | Promise<void>;
+  /** 出すかどうか（設定画面では見ない） */
+  when?: () => boolean;
+  run: () => void | Promise<void>;
 };
 
 export type ComposerMenuPrefs = {
@@ -65,7 +65,7 @@ export function composerMenuAvailable(pickFiles: () => void): ComposerMenuItem[]
         icon: a.icon,
         source: a.source,
         when: a.when,
-        run: (ctx) => a.run(ctx),
+        run: () => a.run(),
       }),
     ),
     ...commandList().map(
@@ -75,7 +75,7 @@ export function composerMenuAvailable(pickFiles: () => void): ComposerMenuItem[]
         label: c.name,
         icon: c.icon,
         source: c.source,
-        run: ({ threadId }) => runCommand(c, { args: '', threadId, via: 'palette' }),
+        run: () => runCommand(c, { args: '', via: 'palette' }),
       }),
     ),
   ];

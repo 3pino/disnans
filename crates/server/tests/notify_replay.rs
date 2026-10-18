@@ -13,10 +13,8 @@ const BOB: &str = "bob@test";
 fn mention(bob_id: &str, text: &str) -> ClientEvent {
     ClientEvent::MessageSend {
         client_id: format!("c-{text}"),
-        thread_id: None,
         body: format!("<@{bob_id}> {text}"),
         attachment_ids: vec![],
-        start_thread: false,
         reply_to: None,
         silent: false,
     }
@@ -71,7 +69,7 @@ async fn replay_skips_mentions_already_read() {
     let res = reqwest::Client::new()
         .put(server.url("/api/me/read"))
         .header("X-Dev-User", BOB)
-        .json(&serde_json::json!({ "thread_id": null, "message_id": first.id }))
+        .json(&serde_json::json!({ "message_id": first.id }))
         .send()
         .await
         .unwrap();

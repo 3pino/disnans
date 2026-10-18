@@ -1,8 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import ThreadsView from './ThreadsView.svelte';
   import ChatView from './ChatView.svelte';
-  import ThreadPanel from './ThreadPanel.svelte';
   import PluginPanel from './PluginPanel.svelte';
   import TimelinePanel from './TimelinePanel.svelte';
   import SettingsView from './SettingsView.svelte';
@@ -16,7 +14,7 @@
   import { commandHost } from '../lib/commandHost.svelte';
 
   const panelOpen = $derived(ui.panel !== null);
-  // チャットは Chat タブのときだけ。スレッドの一覧（Threads タブ）・設定・通話はその場所を使う（どの幅でも同じ）
+  // チャットは Chat タブのときだけ。設定・通話はその場所を使う（どの幅でも同じ）
   const showChat = $derived(ui.tab === 'chat');
 
   // 設定（ホットキーなど）の読み込み・本体のコマンドの登録・ホットキーの受け付けを始める
@@ -39,7 +37,7 @@
   <main id="main-chat" class="shell-main-chat" class:shell-main-chat-hidden={!showChat}>
     <header class="top-bar"></header>
     <ConnectionBanner />
-    <ChatView threadId={null} placeholder="メッセージを送信" empty={mainEmpty} active={chatVisible} />
+    <ChatView placeholder="メッセージを送信" empty={mainEmpty} active={chatVisible} />
   </main>
 
   {#if ui.tab === 'settings'}
@@ -56,31 +54,23 @@
     <div class="shell-call"><CallView /></div>
   {/if}
 
-  {#if ui.tab === 'threads'}
-    <div class="shell-threads"><ThreadsView /></div>
-  {/if}
-
-  {#if ui.panel?.kind === 'thread'}
-    <div class="shell-thread-panel">
-      <ThreadPanel threadId={ui.panel.id} />
-    </div>
-  {:else if ui.panel?.kind === 'timeline'}
-    <!-- メッセージの集合（プラグインのタイムライン）。枠はスレッドのパネルと同じ -->
-    <div class="shell-thread-panel">
+  {#if ui.panel?.kind === 'timeline'}
+    <!-- メッセージの集合（プラグインのタイムライン）。枠は同じ -->
+    <div class="shell-panel">
       {#key ui.panel.id}
         <TimelinePanel id={ui.panel.id} />
       {/key}
     </div>
   {:else if ui.panel?.kind === 'replyTree'}
     <!-- 返信のツリー。表示はメッセージの集合と同じ -->
-    <div class="shell-thread-panel">
-      {#key `${ui.panel.place ?? ''}/${ui.panel.messageId}`}
-        <TimelinePanel tree={{ messageId: ui.panel.messageId, place: ui.panel.place }} />
+    <div class="shell-panel">
+      {#key ui.panel.messageId}
+        <TimelinePanel tree={{ messageId: ui.panel.messageId }} />
       {/key}
     </div>
   {:else if ui.panel?.kind === 'plugin'}
-    <!-- プラグインの view。枠はスレッドのパネルと同じ -->
-    <div class="shell-thread-panel">
+    <!-- プラグインの view。枠は同じ -->
+    <div class="shell-panel">
       <PluginPanel plugin={ui.panel.plugin} view={ui.panel.view} sessionId={ui.panel.sessionId} />
     </div>
   {/if}
@@ -119,12 +109,6 @@
   .shell:not(.shell-mobile) > :global(.app-nav-bar) {
     order: -1;
   }
-  .shell-threads {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-  }
   .shell-settings {
     min-width: 0;
     min-height: 0;
@@ -142,7 +126,7 @@
     min-width: 0;
     min-height: 0;
   }
-  .shell-thread-panel {
+  .shell-panel {
     min-width: 0;
     min-height: 0;
     border-left: 1px solid var(--border);
@@ -167,15 +151,14 @@
   }
   .shell-mobile .shell-main-chat,
   .shell-mobile .shell-settings,
-  .shell-mobile .shell-call,
-  .shell-mobile .shell-threads {
+  .shell-mobile .shell-call {
     flex: 1;
     min-height: 0;
   }
   .shell-main-chat.shell-main-chat-hidden {
     display: none;
   }
-  .shell-mobile .shell-thread-panel {
+  .shell-mobile .shell-panel {
     position: fixed;
     inset: 0;
     z-index: 30;

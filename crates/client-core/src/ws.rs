@@ -56,11 +56,9 @@ const MAX_MESSAGE_BYTES: usize = 8 << 20;
 const DEV_USER_HEADER: &str = "X-Dev-User";
 /// Server error codes that are returned before the message is committed. Any other error after a
 /// send is reported as [`UnknownReason::ServerError`] because the outcome is not known.
-const REJECTED_CODES: [&str; 7] = [
+const REJECTED_CODES: [&str; 5] = [
     "empty_message",
     "body_too_long",
-    "nested_thread",
-    "thread_not_found",
     "reply_not_found",
     "reply_other_place",
     "invalid_attachment",
@@ -246,7 +244,7 @@ impl ChatConnection {
         &self.users
     }
 
-    /// Send one message to the main chat (no thread, no attachments, no reply), with a new
+    /// Send one message to the main chat (no attachments, no reply), with a new
     /// client ID. See [`ChatConnection::send_message_with_id`].
     pub async fn send_message(
         &mut self,
@@ -430,7 +428,7 @@ impl ChatConnection {
 }
 
 /// Checks shared by every send path. Nothing is written for an invalid request. The server
-/// decides the rest (nested threads, missing targets, and so on) and answers with a code.
+/// decides the rest (missing targets, and so on) and answers with a code.
 fn validate_send(client_id: &str, request: &SendRequest) -> Result<(), String> {
     if client_id.is_empty() {
         return Err("client_id が空です".into());
@@ -442,25 +440,19 @@ fn validate_send(client_id: &str, request: &SendRequest) -> Result<(), String> {
     if request.body.chars().count() > MAX_BODY_CHARS {
         return Err(format!("本文は{MAX_BODY_CHARS}文字までです"));
     }
-    let ids = request
-        .thread_id
-        .iter()
-        .chain(request.reply_to.iter())
-        .chain(request.attachment_ids.iter());
+    let ids = request.reply_to.iter().chain(request.attachment_ids.iter());
     if ids.into_iter().any(String::is_empty) {
         return Err("ID が空です".into());
     }
     Ok(())
 }
 
-/// The `message.send` frame for a main-chat or thread message.
+/// The `message.send` frame for a main-chat message.
 fn send_frame(client_id: &str, request: &SendRequest) -> Result<String, serde_json::Error> {
     serde_json::to_string(&ClientEvent::MessageSend {
         client_id: client_id.to_owned(),
-        thread_id: request.thread_id.clone(),
         body: request.body.clone(),
         attachment_ids: request.attachment_ids.clone(),
-        start_thread: request.start_thread,
         reply_to: request.reply_to.clone(),
         silent: request.silent,
     })
@@ -740,14 +732,10 @@ impl Drop for ChatSession {
 /// main-chat message with an empty body; set `body` before sending.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SendRequest {
-    pub thread_id: Option<String>,
     pub body: String,
     /// Attachment IDs from `POST /api/files`. A body may be empty when attachments are given.
     pub attachment_ids: Vec<String>,
-    /// Start a thread from this message. Not valid together with `thread_id` (the server
-    /// answers `nested_thread`).
-    pub start_thread: bool,
-    /// Reply target. It must be in the same place (main chat or the same thread).
+    /// Reply target (a message in the main chat).
     pub reply_to: Option<String>,
     pub silent: bool,
 }
@@ -785,7 +773,7 @@ pub struct SessionSender {
 }
 
 impl SessionSender {
-    /// Send one main-chat message (no thread, no attachments, no reply) with the caller's
+    /// Send one main-chat message (no attachments, no reply) with the caller's
     /// `client_id`. See [`ChatSession`] for the outcome rules. `client_id` must be unique per
     /// logical message; a duplicate of a pending ID is refused with `NotSent`.
     pub async fn send(
@@ -833,7 +821,7 @@ impl SessionSender {
             .unwrap_or_else(|_| unknown(client_id.to_owned(), UnknownReason::Disconnected))
     }
 
-    /// Send an event that has no acknowledgement (edit, delete, reaction, thread creation, call
+    /// Send an event that has no acknowledgement (edit, delete, reaction, call
     /// and plugin signalling). Returns once the frame is written. The server gives no per-event
     /// confirmation; its result, if any, arrives as an event on `next()`.
     pub async fn emit(&self, event: ClientEvent) -> Result<(), EmitError> {
@@ -1420,7 +1408,6 @@ mod tests {
         Message {
             id: id.into(),
             author_id: "id-alice".into(),
-            thread_id: None,
             reply_to: None,
             reply_preview: None,
             body: body.into(),
@@ -1428,7 +1415,6 @@ mod tests {
             reactions: vec![],
             created_at: 1,
             edited_at: None,
-            thread: None,
             card: None,
             bot: None,
         }
@@ -1798,9 +1784,7 @@ mod tests {
                     client_id: sent_id,
                     body,
                     silent,
-                    thread_id,
                     reply_to,
-                    start_thread,
                     attachment_ids,
                 },
             ) => {
@@ -1808,8 +1792,7 @@ mod tests {
                 assert_eq!(message.body, "hi");
                 assert_eq!(body, "hi");
                 assert!(*silent);
-                assert!(thread_id.is_none() && reply_to.is_none());
-                assert!(!start_thread);
+                assert!(reply_to.is_none());
                 assert!(attachment_ids.is_empty());
             }
             other => panic!("unexpected outcome: {other:?}"),
@@ -2794,18 +2777,14 @@ mod tests {
     fn outgoing_request(event: &ClientEvent) -> Option<SendRequest> {
         match event {
             ClientEvent::MessageSend {
-                thread_id,
                 body,
                 attachment_ids,
-                start_thread,
                 reply_to,
                 silent,
                 ..
             } => Some(SendRequest {
-                thread_id: thread_id.clone(),
                 body: body.clone(),
                 attachment_ids: attachment_ids.clone(),
-                start_thread: *start_thread,
                 reply_to: reply_to.clone(),
                 silent: *silent,
             }),
@@ -2820,23 +2799,19 @@ mod tests {
         let session = start_session(&server, fast_tuning()).await;
         let sender = session.sender();
 
-        let thread_reply = SendRequest {
-            thread_id: Some("thread-1".into()),
-            body: "in thread".into(),
+        let reply = SendRequest {
+            body: "a reply".into(),
             reply_to: Some("m-parent".into()),
             silent: true,
             ..SendRequest::default()
         };
         assert!(matches!(
-            sender
-                .send_request("c-thread", thread_reply.clone(), WAIT)
-                .await,
+            sender.send_request("c-reply", reply.clone(), WAIT).await,
             SendOutcome::Confirmed { .. }
         ));
         // An attachment-only message is valid; the body may be empty.
         let attachments = SendRequest {
             attachment_ids: vec!["f-1".into(), "f-2".into()],
-            start_thread: true,
             ..SendRequest::default()
         };
         assert!(matches!(
@@ -2852,7 +2827,7 @@ mod tests {
             .iter()
             .filter_map(outgoing_request)
             .collect();
-        assert_eq!(sent, vec![thread_reply, attachments]);
+        assert_eq!(sent, vec![reply, attachments]);
         session.close().await;
     }
 
@@ -2870,7 +2845,7 @@ mod tests {
             },
             SendRequest {
                 body: "x".into(),
-                thread_id: Some(String::new()),
+                reply_to: Some(String::new()),
                 ..SendRequest::default()
             },
             SendRequest {
@@ -2933,10 +2908,8 @@ mod tests {
             sender
                 .emit(ClientEvent::MessageSend {
                     client_id: "c-x".into(),
-                    thread_id: None,
                     body: "sneaky".into(),
                     attachment_ids: Vec::new(),
-                    start_thread: false,
                     reply_to: None,
                     silent: false,
                 })

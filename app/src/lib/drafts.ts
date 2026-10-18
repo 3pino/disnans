@@ -1,19 +1,17 @@
 import { getItem, setItem } from './storage';
 import type { SaveResult, SharedStorage } from './sharedStorage';
 
-// 打ちかけの文章（下書き）。メインチャットとスレッドごと、ユーザーごとに localStorage へ残す。
-// 画面やスレッドを切り替えても、アプリを再起動しても残る。送信したら消す
+// 打ちかけの文章（下書き）。メインチャットのぶんを、ユーザーごとに localStorage へ残す（スレッドは廃止した）。
+// 画面を切り替えても、アプリを再起動しても残る。送信したら消す
 
 const PREFIX = 'disnans.draft.';
 
-/** 下書きの置き場所の名前。メインチャットは main、スレッドは thread:<スレッド ID> */
-export function draftPlace(threadId: string | null): string {
-  return threadId === null ? 'main' : `thread:${threadId}`;
-}
+/** 下書きの置き場所の名前（メインチャットは main。保存の形は従来どおり） */
+export const DRAFT_PLACE = 'main';
 
-/** 下書きを保存するキー（ユーザーごと・場所ごと） */
-export function draftKey(userId: string, threadId: string | null): string {
-  return `${PREFIX}${userId}.${draftPlace(threadId)}`;
+/** 下書きを保存するキー（ユーザーごと） */
+export function draftKey(userId: string): string {
+  return `${PREFIX}${userId}.${DRAFT_PLACE}`;
 }
 
 /** Desktop shared-file draft identity plus the legacy key used by browser/Android. */
@@ -24,8 +22,8 @@ export type DraftLocation = {
   legacyKey: string;
 };
 
-export function draftLocation(serverUrl: string, userId: string, threadId: string | null): DraftLocation {
-  return { serverUrl, userId, place: draftPlace(threadId), legacyKey: draftKey(userId, threadId) };
+export function draftLocation(serverUrl: string, userId: string): DraftLocation {
+  return { serverUrl, userId, place: DRAFT_PLACE, legacyKey: draftKey(userId) };
 }
 
 export type DraftStore = { get(key: string): string | null; set(key: string, value: string | null): void };

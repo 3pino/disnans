@@ -301,8 +301,8 @@ describe('PluginRuntime', () => {
     const a = f.commands.get('dice:a')!;
     expect(a).toMatchObject({ name: 'A', defaultHotkey: 'Mod+Shift+D', slash: 'roll', args: '[n]', source: 'ダイス', icon: 'puzzle' });
     expect(a.suggestArgs?.('')).toEqual([{ value: '1' }]);
-    await a.run({ args: '  2 ', threadId: 't1', via: 'slash' });
-    expect(run).toHaveBeenCalledWith({ args: '2', threadId: 't1', via: 'slash' });
+    await a.run({ args: '  2 ', via: 'slash' });
+    expect(run).toHaveBeenCalledWith({ args: '2', via: 'slash' });
 
     const b = f.commands.get('dice:b')!;
     expect(b.defaultHotkey).toBeUndefined();

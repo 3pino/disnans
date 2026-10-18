@@ -26,7 +26,6 @@ export type AndroidStatus = {
 export type NotifyEvent = {
   title: string;
   body: string;
-  threadId: string | null;
   sample: boolean;
   /** 通知のもとのメッセージを送った人（分かるとき）。アプリ内のトーストでは、タイトルの代わりにこのアイコンを出す */
   from?: ToastAvatar | null;
@@ -71,10 +70,10 @@ class Notifications {
 
   private async initAndroid(): Promise<void> {
     const { addPluginListener } = await import('@tauri-apps/api/core');
-    // 通知から開いたら、そのスレッド（なければチャット）を表示する
-    await addPluginListener<{ threadId?: string | null }>('notifier', 'open', (t) => this.openTarget(t.threadId));
-    const { target } = await invokeNotifier<{ target?: { threadId?: string | null } }>('take_launch_target');
-    if (target) this.openTarget(target.threadId);
+    // 通知から開いたら、チャットを表示する（スレッドは廃止した）
+    await addPluginListener('notifier', 'open', () => this.openTarget());
+    const { target } = await invokeNotifier<{ target?: unknown }>('take_launch_target');
+    if (target) this.openTarget();
 
     // 初回は通知の許可を求める（Android 13 以降。2回目以降は何も出ない）
     await invokeNotifier('request_permission');
@@ -87,9 +86,8 @@ class Notifications {
     this.permission = (await isPermissionGranted()) ? 'granted' : await requestPermission();
   }
 
-  private openTarget(threadId: string | null | undefined): void {
-    if (threadId) ui.openThread(threadId);
-    else ui.showMain('never');
+  private openTarget(): void {
+    ui.showMain('never');
   }
 
   /** Android の常駐サービスの状態を読み直す */
@@ -139,7 +137,7 @@ class Notifications {
 
   /** サーバーの notify イベントを表示する */
   show(ev: NotifyEvent): void {
-    if (!ev.sample && this.isViewing(ev.threadId)) return;
+    if (!ev.sample && this.isViewing()) return;
     const visible = document.visibilityState === 'visible';
 
     if (this.backend === 'android') {
@@ -157,12 +155,11 @@ class Notifications {
     if (visible) this.toast(ev);
   }
 
-  /** 通知の対象をいま画面で見ているか */
-  private isViewing(threadId: string | null): boolean {
+  /** 通知の対象（チャット）をいま画面で見ているか */
+  private isViewing(): boolean {
     if (document.visibilityState !== 'visible') return false;
     // デスクトップでは、ウィンドウが見えていても別のアプリを使っていれば見ていないとみなす
     if (this.backend !== 'android' && !document.hasFocus()) return false;
-    if (threadId) return ui.panel?.kind === 'thread' && ui.panel.id === threadId;
     return ui.isMobile ? ui.tab === 'chat' : ui.tab !== 'settings' && ui.tab !== 'call';
   }
 
@@ -174,10 +171,10 @@ class Notifications {
         );
         return true;
       }
-      const n = new Notification(ev.title, { body: ev.body, tag: ev.threadId ?? 'main' });
+      const n = new Notification(ev.title, { body: ev.body, tag: 'main' });
       n.onclick = () => {
         window.focus();
-        this.openTarget(ev.threadId);
+        this.openTarget();
         n.close();
       };
       return true;
@@ -187,7 +184,7 @@ class Notifications {
   }
 
   private toast(ev: NotifyEvent): void {
-    const open = ev.sample ? undefined : { label: '開く', run: () => this.openTarget(ev.threadId) };
+    const open = ev.sample ? undefined : { label: '開く', run: () => this.openTarget() };
     // 送った人が分かるときは、タイトルの文字の代わりにその人のアイコンを出し、本文だけを並べる
     const text = ev.from && ev.body ? ev.body : ev.body ? `${ev.title}: ${ev.body}` : ev.title;
     ui.toast(text, 'info', open, 8000, ev.from ?? undefined);

@@ -6,13 +6,10 @@
   import type { Message } from '../lib/protocol/Message';
   import { dayLabel, sameDay } from '../lib/format';
   import { jumpToMessage } from '../lib/jump';
-  import { mentionsToText } from '../lib/markdown';
   import { matchRanges } from '../lib/search';
-  import { threadTitle } from '../lib/thread';
   import { client } from '../lib/stores/client.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { messageSearch as search } from '../lib/stores/search.svelte';
-  import { threads } from '../lib/stores/threads.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 
   // 検索中のメインのタイムライン。当たったメッセージだけを、チャットと同じ並び（古いものが上、下端から積み上がる）で出す。
@@ -33,14 +30,6 @@
     }
     return out;
   });
-
-  /** 結果の場所の見出し（スレッドのものだけ。メインチャットは何も出さない） */
-  function placeOf(hit: Message): string | null {
-    if (!hit.thread_id) return null;
-    const t = threads.get(hit.thread_id);
-    if (!t) return 'スレッド';
-    return threadTitle(t) ?? (mentionsToText(t.root.body, (id) => client.nameOf(id)).replace(/\s+/g, ' ').slice(0, 30) || 'スレッド');
-  }
 
   function scrollToBottom() {
     scroller?.scrollTo({ top: scroller.scrollHeight, behavior: 'instant' });
@@ -136,23 +125,16 @@
     }
   }
 
-  /** 選んだメッセージへ移動する。スレッドのものはスレッドを開く（モバイルでは全画面になる） */
+  /** 選んだメッセージへ移動する */
   async function pick(hit: Message): Promise<void> {
-    const threadId = hit.thread_id;
     ui.closeSearch();
-    if (threadId) {
-      ui.openThread(threadId);
-    } else {
-      ui.showMain();
-    }
-    const target = await until(() =>
-      document.querySelector<HTMLElement>(threadId ? '.shell-thread-panel .message-list-scroller' : '#main-chat .message-list-scroller'),
-    );
+    ui.showMain();
+    const target = await until(() => document.querySelector<HTMLElement>('#main-chat .message-list-scroller'));
     if (!target) {
       ui.toast('メッセージを表示できませんでした', 'error');
       return;
     }
-    const timeline = client.timeline(threadId);
+    const timeline = client.timeline();
     await until(() => timeline.loaded || !!timeline.error);
     await jumpToMessage(target, timeline, hit.id);
   }
@@ -185,7 +167,6 @@
         {#if r.day}
           <div class="search-results-day"><span>{r.day}</span></div>
         {/if}
-        {@const place = placeOf(r.msg)}
         <div
           class="search-hit"
           role="button"
@@ -194,17 +175,16 @@
           onclick={() => void pick(r.msg)}
           onkeydown={(e) => onkeydown(e, r.msg)}
         >
-          {#if place}<div class="search-hit-place">スレッド: {place}</div>{/if}
           <!-- 中の操作（リンク・ボタン・スワイプ）は効かせず、押したら移動する -->
           <div class="search-hit-body" inert>
-            <MessageItem message={r.msg} inThread={!!r.msg.thread_id} />
+            <MessageItem message={r.msg} />
           </div>
         </div>
       {/each}
 
       <!-- 状態の表示は一番下（入力欄のすぐ上）に出す -->
       {#if !search.active}
-        <div class="search-results-note">言葉を入力すると、メインチャットとスレッドのメッセージを絞り込みます。</div>
+        <div class="search-results-note">言葉を入力すると、メッセージを絞り込みます。</div>
       {:else if search.hits.length === 0 && !search.error}
         {#if search.loading || search.shown !== search.query.trim()}
           <div class="search-results-note"><LoaderCircle size={18} class="spin" />&nbsp;検索しています…</div>
@@ -276,10 +256,5 @@
   .search-hit:hover,
   .search-hit:focus-visible {
     background: var(--surface);
-  }
-  .search-hit-place {
-    padding: 4px 16px 0;
-    color: var(--text-muted);
-    font-size: 12px;
   }
 </style>

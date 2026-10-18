@@ -75,11 +75,10 @@ mod tests {
     use super::*;
     use disnans_shared::Message;
 
-    fn message(thread: Option<&str>, body: &str) -> Message {
+    fn message(body: &str) -> Message {
         Message {
             id: "m1".into(),
             author_id: "u1".into(),
-            thread_id: thread.map(str::to_owned),
             reply_to: None,
             reply_preview: None,
             body: body.into(),
@@ -87,7 +86,6 @@ mod tests {
             reactions: vec![],
             created_at: 1,
             edited_at: None,
-            thread: None,
             card: None,
             bot: None,
         }
@@ -97,7 +95,7 @@ mod tests {
     fn only_main_chat_message_events_are_emitted_as_one_json_line() {
         let created = ServerEvent::MessageCreated {
             client_id: None,
-            message: message(None, "a\nb\u{1b}\u{202e}"),
+            message: message("a\nb\u{1b}\u{202e}"),
         };
         let line = event_line(3, &created, true).unwrap();
         assert!(!line.contains('\n') && !line.contains('\u{1b}') && !line.contains('\u{202e}'));
@@ -109,19 +107,12 @@ mod tests {
         assert!(event_line(1, &ServerEvent::Pong, true).is_none());
         let deleted = ServerEvent::MessageDeleted {
             message_id: "m1".into(),
-            thread_id: None,
         };
         let value: Value = serde_json::from_str(&event_line(1, &deleted, true).unwrap()).unwrap();
         assert_eq!(
             value,
             json!({"type": "message.deleted", "generation": 1, "message_id": "m1"})
         );
-        // 廃止されたスレッドの thread_id が付いて届いても無視して同じ出力にする。
-        let legacy = ServerEvent::MessageDeleted {
-            message_id: "m1".into(),
-            thread_id: Some("t".into()),
-        };
-        assert!(event_line(1, &legacy, true).is_some());
     }
 
     #[test]
@@ -129,7 +120,7 @@ mod tests {
         let line = event_line(
             1,
             &ServerEvent::MessageUpdated {
-                message: message(None, "a\n\u{1b}[2J"),
+                message: message("a\n\u{1b}[2J"),
             },
             false,
         )

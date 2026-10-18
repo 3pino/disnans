@@ -4,8 +4,4 @@ import type { Card } from "./Card";
 /**
  * `POST /api/sessions`
  */
-export type CreateSession = { plugin: string, 
-/**
- * カードを流すスレッド。`null` ならメインチャット。
- */
-thread_id: string | null, state: unknown, card: Card, };
+export type CreateSession = { plugin: string, state: unknown, card: Card, };

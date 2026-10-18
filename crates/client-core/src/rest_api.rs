@@ -155,12 +155,11 @@ fn with_query(path: &str, query: String) -> String {
     }
 }
 
-/// `GET /api/messages?…`（順序は `thread_id`, `before`, `limit`）。
+/// `GET /api/messages?…`（順序は `before`, `limit`）。
 pub fn messages_path(query: &MessagesQuery) -> String {
     with_query(
         "/api/messages",
         query_string(&[
-            ("thread_id", query.thread_id.clone()),
             ("before", query.before.clone()),
             ("limit", query.limit.map(|v| v.to_string())),
         ]),
@@ -177,11 +176,6 @@ pub fn search_path(query: &MessageSearchQuery) -> String {
             ("limit", query.limit.map(|v| v.to_string())),
         ]),
     )
-}
-
-/// `GET /api/threads/{id}`。
-pub fn thread_path(id: &str) -> String {
-    format!("/api/threads/{}", encode_path_segment(id))
 }
 
 /// `GET /api/sessions/{id}`。
@@ -483,26 +477,6 @@ impl RestClient {
         .await
     }
 
-    pub async fn update_thread(&self, id: &str, body: &Value) -> Result<Value, ReadFailure> {
-        send_write(
-            self.write_request(reqwest::Method::PATCH, &thread_path(id))
-                .json(body),
-            true,
-        )
-        .await
-    }
-
-    /// タグを置き換える（本文は `{"tags": [...]}`）。
-    pub async fn set_thread_tags(&self, id: &str, tags: &Value) -> Result<Value, ReadFailure> {
-        let path = with_id("/api/threads/", id, "/tags");
-        send_write(
-            self.write_request(reqwest::Method::PUT, &path)
-                .json(&serde_json::json!({ "tags": tags })),
-            true,
-        )
-        .await
-    }
-
     pub async fn mark_read(&self, body: &Value) -> Result<Value, ReadFailure> {
         send_write(
             self.write_request(reqwest::Method::PUT, "/api/me/read")
@@ -727,17 +701,15 @@ mod tests {
     fn messages_query_omits_empty_values_and_keeps_order() {
         assert_eq!(messages_path(&MessagesQuery::default()), "/api/messages");
         let path = messages_path(&MessagesQuery {
-            thread_id: Some(String::new()),
             before: Some("id+2".into()),
             limit: Some(25),
         });
         assert_eq!(path, "/api/messages?before=id%2B2&limit=25");
         let path = messages_path(&MessagesQuery {
-            thread_id: Some("t 1".into()),
-            before: None,
+            before: Some(String::new()),
             limit: Some(0),
         });
-        assert_eq!(path, "/api/messages?thread_id=t+1&limit=0");
+        assert_eq!(path, "/api/messages?limit=0");
     }
 
     #[test]
@@ -756,7 +728,6 @@ mod tests {
 
     #[test]
     fn id_paths_are_encoded() {
-        assert_eq!(thread_path("a/../b?x"), "/api/threads/a%2F..%2Fb%3Fx");
         assert_eq!(session_path("s 1"), "/api/sessions/s%201");
     }
 
@@ -774,14 +745,14 @@ mod tests {
     async fn api_error_keeps_status_code_and_message() {
         let (client, server) = one_shot(
             "404 Not Found",
-            r#"{"code":"not_found","message":"スレッドが見つかりません"}"#,
+            r#"{"code":"not_found","message":"見つかりません"}"#,
         )
         .await;
-        let failure = client.get_value("/api/threads/x").await.unwrap_err();
+        let failure = client.get_value("/api/sessions/x").await.unwrap_err();
         server.await.unwrap();
         assert_eq!(
             serde_json::to_value(&failure).unwrap(),
-            serde_json::json!({"status": 404, "code": "not_found", "message": "スレッドが見つかりません"})
+            serde_json::json!({"status": 404, "code": "not_found", "message": "見つかりません"})
         );
     }
 

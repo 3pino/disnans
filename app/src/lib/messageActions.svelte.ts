@@ -14,10 +14,6 @@ export type MessageActionPlacement = 'menu' | 'toolbar' | 'both';
 /** 項目を出すかどうか・実行するときに渡す、メッセージのいる場所 */
 export type MessageActionContext = {
   message: Message;
-  /** スレッドのパネルの中（起点のメッセージを含む）で見ているか */
-  inThread: boolean;
-  /** 返信を送る場所（スレッドの ID。メインチャットなら null） */
-  place: string | null;
 };
 
 /** 実行するときだけ渡すもの */

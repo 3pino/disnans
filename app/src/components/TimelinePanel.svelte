@@ -9,12 +9,12 @@
   import { ui } from '../lib/stores/ui.svelte';
   import { timelinePanels } from '../lib/stores/timelinePanel.svelte';
 
-  // メッセージの集合を、本体のメッセージ表示（MessageItem）のまま出すパネル（枠は ThreadPanel と同じ）。
+  // メッセージの集合を、本体のメッセージ表示（MessageItem）のまま出すパネル（枠は返信のツリーと同じ）。
   // 返信のツリーと、プラグインの openTimeline が使う。深さ（depth）があれば、その分だけ字下げして線で結ぶ
   // id: timelinePanels のパネル（プラグインの openTimeline）。tree: 返信のツリー（中身はその場で作る）
-  let { id, tree }: { id?: number; tree?: { messageId: string; place: string | null } } = $props();
+  let { id, tree }: { id?: number; tree?: { messageId: string } } = $props();
 
-  const spec = $derived(id !== undefined ? timelinePanels.get(id) : tree ? timelinePanels.replyTreeSpec(tree.messageId, tree.place) : undefined);
+  const spec = $derived(id !== undefined ? timelinePanels.get(id) : tree ? timelinePanels.replyTreeSpec(tree.messageId) : undefined);
   const entries = $derived(spec?.entries() ?? []);
 
   /** 字下げする深さの上限（これより深いものは同じ位置に並べる。狭い画面で本文が潰れないように） */

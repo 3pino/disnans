@@ -3,7 +3,6 @@
   import Reply from '@lucide/svelte/icons/reply';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import X from '@lucide/svelte/icons/x';
-  import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import { SEND_TEXT } from '../lib/sendOutcome';
   import AuthorAvatar from './AuthorAvatar.svelte';
   import ReplyQuote from './ReplyQuote.svelte';
@@ -23,11 +22,9 @@
   import { authorOf, isOwnMessage } from '../lib/author';
   import { ui } from '../lib/stores/ui.svelte';
   import { reply } from '../lib/stores/reply.svelte';
-  import { placeOf } from '../lib/reply';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { enterComboLabel, sendCombos } from '../lib/enterKeys';
-  import { unread as unreadStore } from '../lib/stores/unread.svelte';
-  import { formatFull, formatStamp, formatTime, relative } from '../lib/format';
+  import { formatFull, formatStamp, formatTime } from '../lib/format';
   import { QUICK_REACTIONS } from '../lib/emoji';
   import { extractMentions } from '../lib/markdown';
   import { resolveMessageActions, type MessageActionContext } from '../lib/messageActions.svelte';
@@ -38,20 +35,17 @@
   let {
     message,
     grouped = false,
-    inThread = false,
     replied = false,
   }: {
     message: Message | PendingMessage;
     grouped?: boolean;
     /** このメッセージへの返信が一覧にあるか（一覧の中でまとめて判定して渡す） */
     replied?: boolean;
-    /** スレッドのパネルの中（起点のメッセージを含む）。ここからはスレッドを作れない */
-    inThread?: boolean;
   } = $props();
 
   /** 吹き出しのときの、他人の発言のアイコンの大きさ（px）。ふだんの半分くらい */
   const AVATAR_PX = 20;
-  /** リストのときのアイコンの大きさ（px）。スレッド一覧（ThreadList）のアイコンと同じ */
+  /** リストのときのアイコンの大きさ（px） */
   const AVATAR_LIST_PX = 28;
 
   /** 表示の仕方（設定）。吹き出しのときだけ、自分の発言を右に寄せ、時刻を吹き出しの横に出す */
@@ -64,18 +58,14 @@
   const isMine = $derived(isOwnMessage(message, client.me?.id));
   const mentionsMe = $derived(!!client.me && extractMentions(message.body).includes(client.me.id));
   const editing = $derived(ui.editing === message.id && !pending && !message.card);
-  /** このメッセージが起点のスレッドの未読数 */
-  const unread = $derived(message.thread ? unreadStore.count(message.id) : 0);
   /** 返信できるか（同じ場所のメッセージに返信する） */
   const canReply = $derived(!pending);
-  /** 返信を送る場所（スレッドの ID。メインチャットなら null） */
-  const place = $derived(placeOf(message, inThread));
   /** 左へのスワイプで返信できるか（メニューの「返信」と同じ） */
   const canSwipe = $derived(canReply && !editing);
 
   // メッセージの操作（長押しのメニュー・ホバーのツールバー）。本体の項目もプラグインの項目も、同じ登録簿から並べる
   registerCoreMessageActions();
-  const actionCtx = $derived<MessageActionContext>({ message: message as Message, inThread, place });
+  const actionCtx = $derived<MessageActionContext>({ message: message as Message });
   const menuActions = $derived(pending ? [] : resolveMessageActions(actionCtx, 'menu'));
   const toolbarActions = $derived(pending ? [] : resolveMessageActions(actionCtx, 'toolbar'));
   /** 本文の末尾（インライン）に「返信あり」のアイコンを出す。本文がなければ（カード・添付だけ）下に単独で出す */
@@ -115,7 +105,7 @@
 
   /** このメッセージへの返信を始める（入力欄の上に返信先を出す） */
   function startReply() {
-    if (canReply) reply.set(place, message as Message);
+    if (canReply) reply.set(message as Message);
   }
 
   function saveEdit() {
@@ -145,7 +135,7 @@
 
   /** このメッセージを起点にした返信のツリーを、パネルに開く */
   function openReplyTree() {
-    timelinePanels.openReplyTree(message, place);
+    timelinePanels.openReplyTree(message);
   }
 
   function startPress(e: TouchEvent) {
@@ -339,7 +329,7 @@
           </div>
         {:else}
           {#if message.reply_to}
-            <ReplyQuote {message} threadId={place} />
+            <ReplyQuote {message} />
           {/if}
           {#if message.card}
             <!-- プラグインのセッションのカード。吹き出しの代わりに、その下に出す -->
@@ -362,40 +352,24 @@
             <button
               type="button"
               class="message-link-button"
-              onclick={() => client.timeline(message.thread_id).discardPending(pending.client_id)}><X size={13} />{SEND_TEXT.dismissUnknown}</button
+              onclick={() => client.timeline().discardPending(pending.client_id)}><X size={13} />{SEND_TEXT.dismissUnknown}</button
             >
           </div>
         {:else if pending?.failed}
           <div class="message-send-failed">
             {SEND_TEXT.failed}
-            <button type="button" class="message-link-button" onclick={() => client.retry(message.thread_id, pending.client_id)}
+            <button type="button" class="message-link-button" onclick={() => client.retry(pending.client_id)}
               ><RefreshCw size={13} />{SEND_TEXT.retry}</button
             >
             <button
               type="button"
               class="message-link-button"
-              onclick={() => client.timeline(message.thread_id).discardPending(pending.client_id)}><X size={13} />{SEND_TEXT.discard}</button
+              onclick={() => client.timeline().discardPending(pending.client_id)}><X size={13} />{SEND_TEXT.discard}</button
             >
           </div>
         {/if}
 
         <Reactions {message} onaddclick={(r) => (picker = r)} />
-
-        {#if message.thread && !inThread}
-          <button type="button" class="message-thread-link" onclick={() => ui.openThread(message.id)}>
-            <MessagesSquare size={15} />
-            {#if message.thread.reply_count > 0}
-              <span class="message-thread-link-count">{message.thread.reply_count}件の返信</span>
-              {#if message.thread.last_reply_at}
-                <span class="muted message-thread-link-last-reply">最終 {relative(message.thread.last_reply_at, ui.now)}</span>
-              {/if}
-            {:else}
-              <span class="message-thread-link-count">スレッドで返信</span>
-            {/if}
-            {#if unread > 0}<span class="badge message-thread-link-unread">{unread}</span>{/if}
-            <ChevronRight size={14} />
-          </button>
-        {/if}
       </div>
 
       {#if repliedShown && !repliedInline}
@@ -741,27 +715,6 @@
     gap: 6px;
     margin-top: 2px;
     color: var(--danger);
-    font-size: 12px;
-  }
-  .message-thread-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 4px;
-    padding: 4px 10px 4px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-    color: var(--accent);
-    font-size: 13px;
-  }
-  .message-thread-link:hover {
-    border-color: var(--border-hover);
-  }
-  .message-thread-link .message-thread-link-count {
-    font-weight: 600;
-  }
-  .message-thread-link .muted {
     font-size: 12px;
   }
   /* 付属物（リアクションの並び）は、吹き出しと同じ側に寄せる */

@@ -15,11 +15,3 @@ export function replyPreviewOf(m: Pick<Message, 'author_id' | 'body' | 'attachme
     bot: m.bot,
   };
 }
-
-/**
- * メッセージが属する場所（返信を送るスレッドの ID。メインチャットなら null）。
- * スレッドの起点は、スレッドのパネルの中で見ているとき（`inThread`）だけそのスレッド扱いにする
- */
-export function placeOf(m: Pick<Message, 'id' | 'thread_id'>, inThread: boolean): string | null {
-  return m.thread_id ?? (inThread ? m.id : null);
-}

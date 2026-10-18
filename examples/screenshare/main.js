@@ -995,10 +995,9 @@ export default class ScreenSharePlugin extends Plugin {
   /** @type {HTMLCanvasElement | null} */
   previewSource = null;
   /** プレビューの元が disnans 自身の画面（snapshot の source が app） */
-  previewIsApp = false;
   previewBusy = false;
   previewSeq = 0;
-  /** @type {{ img: HTMLImageElement; info: HTMLElement } | null} */
+  /** @type {{ img: HTMLImageElement } | null} */
   previewEls = null;
 
   async onload() {
@@ -2041,9 +2040,7 @@ export default class ScreenSharePlugin extends Plugin {
     img.className = 'screenshare-preview-img';
     img.alt = '今の設定での見え方';
     img.hidden = true;
-    const info = document.createElement('p');
-    info.className = 'screenshare-preview-info';
-    box.append(img, info);
+    box.append(img);
     if (canSnapshot()) {
       const actions = document.createElement('div');
       actions.className = 'screenshare-preview-actions';
@@ -2051,7 +2048,7 @@ export default class ScreenSharePlugin extends Plugin {
       box.append(actions);
     }
     containerEl.append(box);
-    this.previewEls = { img, info };
+    this.previewEls = { img };
     // 前に撮ったものがあればまず出し、撮り直す（snapshot はダイアログを出さないので、開くたびに撮ってよい）
     if (this.previewSource) this.refreshPreview();
     void this.capturePreview();
@@ -2079,7 +2076,6 @@ export default class ScreenSharePlugin extends Plugin {
       console.warn('[screenshare] 共有中の画面をプレビューにできません', e);
       return false;
     }
-    this.previewIsApp = false;
     this.refreshPreview();
     return true;
   }
@@ -2104,23 +2100,21 @@ export default class ScreenSharePlugin extends Plugin {
    */
   async capturePreview() {
     if (this.previewBusy) return;
-    const els = this.previewEls;
     this.previewBusy = true;
     try {
       if (await this.previewFromSharing()) return;
       if (!canSnapshot()) {
-        this.showNoPreview('この環境では画面を撮れないため、プレビューはありません');
+        console.warn('[screenshare] この環境では画面を撮れないため、プレビューはありません');
+        this.showNoPreview();
         return;
       }
-      if (els?.img.isConnected && !this.previewSource) els.info.textContent = '画面を撮っています…';
       const shot = await disnans.screenCapture.snapshot();
       const cv = await urlToCanvas(shot.dataUrl);
       if (cv.width > 1920 || cv.height > 1920) this.setPreviewSource(cv, cv.width, cv.height);
       else this.previewSource = cv;
-      this.previewIsApp = shot.source === 'app';
     } catch (e) {
-      console.warn('[screenshare] プレビューの画面を撮れません', e);
-      this.showNoPreview(`画面を撮れなかったため、プレビューはありません（${snapshotFailureReason(e)}）`);
+      console.warn(`[screenshare] 画面を撮れなかったため、プレビューはありません（${snapshotFailureReason(e)}）`, e);
+      this.showNoPreview();
       return;
     } finally {
       this.previewBusy = false;
@@ -2128,17 +2122,13 @@ export default class ScreenSharePlugin extends Plugin {
     this.refreshPreview();
   }
 
-  /**
-   * プレビューを出さず、文言だけにする
-   * @param {string} text
-   */
-  showNoPreview(text) {
+  /** プレビューを出さない（画像を隠す） */
+  showNoPreview() {
     this.previewSource = null;
     const els = this.previewEls;
     if (!els?.img.isConnected) return;
     els.img.hidden = true;
     els.img.removeAttribute('src');
-    els.info.textContent = text;
   }
 
   /** 今の設定でプレビューを作り直す */
@@ -2155,15 +2145,8 @@ export default class ScreenSharePlugin extends Plugin {
       if (seq !== this.previewSeq) return;
       els.img.src = `data:${out.mime};base64,${out.b64}`;
       els.img.hidden = false;
-      const est = estimateBandwidth(out.b64.length, this.settings.fps);
-      const kind = out.mime.replace('image/', '').toUpperCase();
-      els.info.textContent =
-        `${size.w}×${size.h}・${kind}・1 フレーム 約 ${formatBytes(est.imageBytes)}` +
-        `・${this.settings.fps} FPS で動き続けると 約 ${formatBytes(est.bytesPerSec)}/秒` +
-        (est.capped ? '（上限で間引かれます）' : '') +
-        (this.previewIsApp ? '（プレビューは disnans の画面）' : '');
     } catch (e) {
-      els.info.textContent = 'プレビューを作れませんでした';
+      els.img.hidden = true;
       console.warn('[screenshare] プレビューに失敗', e);
     }
   }

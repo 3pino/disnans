@@ -8,10 +8,9 @@ use std::{net::SocketAddr, time::Duration};
 
 use disnans_client_core::{
     MessageSearchQuery, MessagesQuery, RestClient, ServerUrl, messages_path, search_path,
-    session_path, thread_path,
+    session_path,
 };
 use disnans_server::{chat, config::Config, state::SharedState, store::users};
-use disnans_shared::{ThreadTag, UpdateThread};
 use serde_json::Value;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -138,10 +137,8 @@ async fn seed(server: &TestServer) -> String {
         &alice_actor,
         chat::SendMessage {
             client_id: "c-main-1".into(),
-            thread_id: None,
             body: "main hello".into(),
             attachment_ids: vec![],
-            start_thread: false,
             reply_to: None,
             silent: true,
         },
@@ -153,10 +150,8 @@ async fn seed(server: &TestServer) -> String {
         &bob_actor,
         chat::SendMessage {
             client_id: "c-main-2".into(),
-            thread_id: None,
             body: "main from bob 日本語 & <tags>".into(),
             attachment_ids: vec![],
-            start_thread: false,
             reply_to: None,
             silent: true,
         },
@@ -169,17 +164,15 @@ async fn seed(server: &TestServer) -> String {
         &alice_actor,
         chat::SendMessage {
             client_id: "c-thread-root".into(),
-            thread_id: None,
             body: "thread root".into(),
             attachment_ids: vec![],
-            start_thread: true,
             reply_to: None,
             silent: true,
         },
     )
     .await
     .unwrap();
-    let root = messages_in(server, None)
+    let root = messages_in(server)
         .await
         .into_iter()
         .find(|m| m["body"] == "thread root")
@@ -192,38 +185,15 @@ async fn seed(server: &TestServer) -> String {
         &bob_actor,
         chat::SendMessage {
             client_id: "c-thread-reply".into(),
-            thread_id: Some(root.clone()),
             body: "reply in thread".into(),
             attachment_ids: vec![],
-            start_thread: false,
             reply_to: Some(root.clone()),
             silent: true,
         },
     )
     .await
     .unwrap();
-    chat::update_thread(
-        state,
-        &alice_actor,
-        &root,
-        UpdateThread {
-            title: Some("Planning".into()),
-            archived: None,
-        },
-    )
-    .await
-    .unwrap();
-    chat::set_thread_tags(
-        state,
-        &root,
-        vec![ThreadTag {
-            label: "todo".into(),
-            icon: Some("check".into()),
-        }],
-    )
-    .await
-    .unwrap();
-    let first = messages_in(server, None)
+    let first = messages_in(server)
         .await
         .into_iter()
         .find(|m| m["body"] == "main hello")
@@ -271,12 +241,8 @@ async fn seed(server: &TestServer) -> String {
     root
 }
 
-async fn messages_in(server: &TestServer, thread: Option<&str>) -> Vec<Value> {
-    let path = match thread {
-        Some(id) => format!("/api/messages?thread_id={id}&limit=100"),
-        None => "/api/messages?limit=100".to_owned(),
-    };
-    let (status, body) = raw_get(server, &path).await;
+async fn messages_in(server: &TestServer) -> Vec<Value> {
+    let (status, body) = raw_get(server, "/api/messages?limit=100").await;
     assert_eq!(status, 200);
     json(&body).as_array().unwrap().clone()
 }
@@ -284,7 +250,7 @@ async fn messages_in(server: &TestServer, thread: Option<&str>) -> Vec<Value> {
 #[tokio::test(flavor = "multi_thread")]
 async fn rust_get_matches_the_raw_http_json_for_every_read_endpoint() {
     let server = TestServer::start().await;
-    let root = seed(&server).await;
+    seed(&server).await;
     let client = server.client();
 
     // (Rust 経路で使うパス, 同じ要求を生の HTTP で送るパス)
@@ -294,19 +260,10 @@ async fn rust_get_matches_the_raw_http_json_for_every_read_endpoint() {
         ("/api/me/prefs".into(), "/api/me/prefs".into()),
         (
             messages_path(&MessagesQuery {
-                thread_id: None,
                 before: None,
                 limit: Some(100),
             }),
             "/api/messages?limit=100".into(),
-        ),
-        (
-            messages_path(&MessagesQuery {
-                thread_id: Some(root.clone()),
-                before: None,
-                limit: None,
-            }),
-            format!("/api/messages?thread_id={root}"),
         ),
         (
             search_path(&MessageSearchQuery {
@@ -316,9 +273,6 @@ async fn rust_get_matches_the_raw_http_json_for_every_read_endpoint() {
             }),
             "/api/messages/search?q=main+hello&limit=10".into(),
         ),
-        ("/api/threads".into(), "/api/threads".into()),
-        (thread_path(&root), format!("/api/threads/{root}")),
-        ("/api/thread-tags".into(), "/api/thread-tags".into()),
         ("/api/me/read".into(), "/api/me/read".into()),
         ("/api/plugins".into(), "/api/plugins".into()),
     ];
@@ -338,7 +292,7 @@ async fn rust_get_matches_the_raw_http_json_for_every_read_endpoint() {
 #[tokio::test(flavor = "multi_thread")]
 async fn read_bodies_still_conform_to_the_shared_types() {
     let server = TestServer::start().await;
-    let root = seed(&server).await;
+    seed(&server).await;
     let client = server.client();
 
     let me = client.get_value("/api/me").await.unwrap();
@@ -346,35 +300,19 @@ async fn read_bodies_still_conform_to_the_shared_types() {
     let messages = client.get_value("/api/messages?limit=100").await.unwrap();
     let messages: Vec<disnans_shared::Message> = serde_json::from_value(messages).unwrap();
     assert!(messages.len() >= 3);
-    let thread = client.get_value(&thread_path(&root)).await.unwrap();
-    serde_json::from_value::<disnans_shared::Thread>(thread).unwrap();
     let markers = client.get_value("/api/me/read").await.unwrap();
     serde_json::from_value::<Vec<disnans_shared::ReadMarker>>(markers).unwrap();
     let plugins = client.get_value("/api/plugins").await.unwrap();
     serde_json::from_value::<Vec<disnans_shared::PluginInfo>>(plugins).unwrap();
-    let tags = client.get_value("/api/thread-tags").await.unwrap();
-    serde_json::from_value::<Vec<disnans_shared::ThreadTagUsage>>(tags).unwrap();
 
     server.stop().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn thread_messages_and_prefs_match_the_raw_http_json() {
+async fn prefs_match_the_raw_http_json() {
     let server = TestServer::start().await;
-    let root = seed(&server).await;
+    seed(&server).await;
     let client = server.client();
-
-    let in_thread = client
-        .get_value(&messages_path(&MessagesQuery {
-            thread_id: Some(root.clone()),
-            before: None,
-            limit: None,
-        }))
-        .await
-        .unwrap();
-    // スレッドの中の一覧は返信だけ（起点は主チャットの一覧に出る）
-    assert_eq!(in_thread.as_array().unwrap().len(), 1);
-    assert_eq!(in_thread[0]["body"], "reply in thread");
 
     let prefs = client.get_value("/api/me/prefs").await.unwrap();
     assert_eq!(
@@ -391,29 +329,14 @@ async fn api_errors_have_the_same_status_and_code_as_http() {
     seed(&server).await;
     let client = server.client();
 
-    for path in [
-        thread_path("no-such-thread"),
-        session_path("no-such-session"),
-    ] {
-        let failure = client.get_value(&path).await.unwrap_err();
-        let (status, body) = raw_get(&server, &path).await;
-        let raw = json(&body);
-        assert_eq!(status, 404, "{path}");
-        assert_eq!(failure.status, Some(status), "{path}");
-        assert_eq!(Some(failure.code.as_str()), raw["code"].as_str(), "{path}");
-        assert_eq!(failure.message, raw["message"].as_str().unwrap(), "{path}");
-    }
-
-    let failure = client
-        .get_value(&messages_path(&MessagesQuery {
-            thread_id: Some("no-such-thread".into()),
-            before: None,
-            limit: None,
-        }))
-        .await
-        .unwrap_err();
-    assert_eq!(failure.status, Some(404));
-    assert_eq!(failure.code, "not_found");
+    let path = session_path("no-such-session");
+    let failure = client.get_value(&path).await.unwrap_err();
+    let (status, body) = raw_get(&server, &path).await;
+    let raw = json(&body);
+    assert_eq!(status, 404, "{path}");
+    assert_eq!(failure.status, Some(status), "{path}");
+    assert_eq!(Some(failure.code.as_str()), raw["code"].as_str(), "{path}");
+    assert_eq!(failure.message, raw["message"].as_str().unwrap(), "{path}");
 
     server.stop().await;
 }

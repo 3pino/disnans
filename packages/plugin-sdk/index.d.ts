@@ -398,13 +398,13 @@ declare global {
 
       /**
        * このプラグインの名前（`name` で変えられる）のボットとして、チャットにメッセージを投稿する（API v5）。
-       * 投稿した人（author）は自分のままで、メッセージに bot の印が付く。`threadId` を省くとメインチャット。
+       * 投稿した人（author）は自分のままで、メッセージに bot の印が付く。投稿先はメインチャット。
        * 本文は普通のメッセージと同じ制限（空でなく 10,000 文字まで）。`name` は前後の空白を除いて 40 文字まで。
        * `notify: true` なら、メンションされた人・スレッドの参加者に加えて、投稿した本人にも通知する（API v6）。
        * 通知の文言はボットの名前で作る。省略（`false`）すると通知は送らない
        */
       /** 失敗が code 'unknown_outcome' のときは送信済みかどうか分からない。再送は plugin が判断する（二重投稿に注意） */
-      postMessage(opts: { body: string; threadId?: string | null; name?: string; notify?: boolean }): Promise<void>;
+      postMessage(opts: { body: string; name?: string; notify?: boolean }): Promise<void>;
 
       /**
        * このプラグインの一時的なイベントを、いまつながっているほかの人（と自分の別の端末）に送る（API v3）。
@@ -504,8 +504,6 @@ declare global {
     type SlashContext = {
       /** コマンド名のあとの文字列（前後の空白は除く。なければ空文字列） */
       args: string;
-      /** 入力したのがスレッドならその ID、メインチャットなら null */
-      threadId: string | null;
     };
 
     type ComposerAction = {
@@ -513,15 +511,13 @@ declare global {
       label: string;
       /** アイコン（省略するとプラグインのアイコン）。独自の SVG は addIcon で登録してから名前で指定する */
       icon?: IconName;
-      run(ctx: { threadId: string | null }): void | Promise<void>;
+      run(): void | Promise<void>;
     };
 
     /** メッセージ（API v9）。本体が渡すもの。プラグインが作るものではない（addMessageAction の when / run や app から受け取って使う） */
     type Message = {
       readonly id: string;
       readonly author_id: string;
-      /** スレッド内の返信ならそのスレッドの ID。メインチャットなら null */
-      readonly thread_id: string | null;
       /** 返信なら返信先のメッセージの ID */
       readonly reply_to: string | null;
       /** Markdown サブセットの生テキスト。メンションは `<@user_id>` */
@@ -534,15 +530,7 @@ declare global {
       /** プラグインがボットとして投稿したなら入る */
       readonly bot: { plugin: string; name: string } | null;
       readonly attachments: readonly unknown[];
-      readonly thread: unknown | null;
       readonly reply_preview: unknown | null;
-    };
-
-    type MessageActionContext = {
-      /** メッセージのいるスレッドの ID（メインチャットなら null。スレッドのパネルで起点のメッセージを見ているときはそのスレッド） */
-      threadId: string | null;
-      /** スレッドのパネルの中で見ているか */
-      inThread: boolean;
     };
 
     type MessageAction = {
@@ -562,9 +550,9 @@ declare global {
        */
       order?: number;
       /** このメッセージに出すか。省略すると常に出す（送信中の仮表示には出さない）。例外を投げると出さない */
-      when?(msg: Message, ctx: MessageActionContext): boolean;
+      when?(msg: Message): boolean;
       /** 選ばれたとき。例外は本体がトーストで知らせる */
-      run(msg: Message, ctx: MessageActionContext): void | Promise<void>;
+      run(msg: Message): void | Promise<void>;
     };
 
     type TimelineOptions = {
@@ -629,8 +617,6 @@ declare global {
     type CommandContext = {
       /** スラッシュコマンドならコマンド名のあとの文字列（前後の空白は除く）。ホットキー・パレットからは空文字列 */
       args: string;
-      /** スラッシュコマンドなら入力したスレッド、ホットキー・パレットなら開いているスレッドの ID。メインチャットなら null */
-      threadId: string | null;
       /** どこから実行したか */
       via: 'hotkey' | 'palette' | 'slash';
     };
@@ -682,7 +668,7 @@ declare global {
 
     interface Sessions {
       /** セッションを作り、カードをチャットに流す */
-      create<S = unknown>(opts: { state: S; card: Card; threadId?: string | null }): Promise<Session<S>>;
+      create<S = unknown>(opts: { state: S; card: Card }): Promise<Session<S>>;
       /** セッションを読む（同じ ID なら同じオブジェクトを返す） */
       get<S = unknown>(id: string): Promise<Session<S>>;
     }

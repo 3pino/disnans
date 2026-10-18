@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{TestServer, WsClient};
+use common::TestServer;
 use disnans_shared::{ApiError, ClientEvent, Message, ServerEvent};
 
 const ALICE: &str = "alice@test";
@@ -25,51 +25,24 @@ fn bodies(list: &[Message]) -> Vec<&str> {
     list.iter().map(|m| m.body.as_str()).collect()
 }
 
-async fn make_thread(alice: &mut WsClient, title: &str) -> Message {
-    let root = alice.post(title).await;
-    alice
-        .send(ClientEvent::ThreadCreate {
-            root_message_id: root.id.clone(),
-        })
-        .await;
-    alice
-        .recv_until(|e| matches!(e, ServerEvent::ThreadUpdated { .. }))
-        .await;
-    root
-}
-
 #[tokio::test]
-async fn finds_japanese_substrings_in_main_chat_and_threads() {
+async fn finds_japanese_substrings_in_the_main_chat() {
     let server = TestServer::start().await;
     let mut alice = server.ws(ALICE).await;
 
     let main = alice.post("明日の会議は十三時です").await;
-    let root = make_thread(&mut alice, "週末の予定").await;
-    let reply = alice
-        .post_with(ClientEvent::MessageSend {
-            client_id: "c-reply".into(),
-            thread_id: Some(root.id.clone()),
-            body: "会議の資料は共有フォルダに置きました".into(),
-            attachment_ids: vec![],
-            start_thread: false,
-            reply_to: None,
-            silent: true,
-        })
-        .await;
+    let other = alice.post("会議の資料は共有フォルダに置きました").await;
 
     // 3文字以上（trigram の索引）
     let hits = search(&server, "会議は").await;
     assert_eq!(bodies(&hits), ["明日の会議は十三時です"]);
     assert_eq!(hits[0].id, main.id);
-    assert_eq!(hits[0].thread_id, None);
 
-    // 2文字（LIKE で探す）。新しい順に、スレッドの返信も含む
+    // 2文字（LIKE で探す）。新しい順
     let hits = search(&server, "会議").await;
     assert_eq!(hits.len(), 2);
-    assert_eq!(hits[0].id, reply.id);
-    assert_eq!(hits[0].thread_id.as_deref(), Some(root.id.as_str()));
+    assert_eq!(hits[0].id, other.id);
     assert_eq!(hits[1].id, main.id);
-    assert_eq!(hits[1].thread_id, None);
 }
 
 #[tokio::test]
@@ -159,26 +132,15 @@ async fn edits_and_deletes_update_the_index() {
 }
 
 #[tokio::test]
-async fn deleting_a_thread_root_removes_its_replies_from_search() {
+async fn deleting_a_message_removes_it_from_search() {
     let server = TestServer::start().await;
     let mut alice = server.ws(ALICE).await;
-    let root = make_thread(&mut alice, "旅行の計画").await;
-    alice
-        .post_with(ClientEvent::MessageSend {
-            client_id: "c-reply".into(),
-            thread_id: Some(root.id.clone()),
-            body: "旅行先はどこにしますか".into(),
-            attachment_ids: vec![],
-            start_thread: false,
-            reply_to: None,
-            silent: true,
-        })
-        .await;
+    let msg = alice.post("旅行先はどこにしますか").await;
     assert_eq!(search(&server, "旅行先").await.len(), 1);
 
     alice
         .send(ClientEvent::MessageDelete {
-            message_id: root.id.clone(),
+            message_id: msg.id.clone(),
         })
         .await;
     alice

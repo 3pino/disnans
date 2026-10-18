@@ -7,7 +7,7 @@ import {
   NAV_CHAT_ID,
   NAV_SEARCH_ID,
   NAV_SETTINGS_ID,
-  NAV_THREADS_ID,
+  NAV_REMOVED_IDS,
   navItemLabel,
   normalizeNavItems,
   normalizeNavLabels,
@@ -17,7 +17,7 @@ import {
   visibleNavItems,
 } from './navBar';
 
-const ALL = new Set([NAV_CHAT_ID, NAV_THREADS_ID, NAV_SETTINGS_ID, 'dice:roll', 'app:next']);
+const ALL = new Set([NAV_CHAT_ID, NAV_SETTINGS_ID, 'dice:roll', 'app:next']);
 
 describe('normalizeNavItems', () => {
   it('配列でなければ既定の並び', () => {
@@ -32,7 +32,7 @@ describe('normalizeNavItems', () => {
 
   it('必須の項目（チャット・設定）がなければ末尾に足す', () => {
     expect(normalizeNavItems(['dice:roll'])).toEqual(['dice:roll', NAV_CHAT_ID, NAV_SETTINGS_ID]);
-    expect(normalizeNavItems([NAV_THREADS_ID])).toEqual([NAV_THREADS_ID, NAV_CHAT_ID, NAV_SETTINGS_ID]);
+    expect(normalizeNavItems([])).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID]);
   });
 });
 
@@ -42,12 +42,14 @@ describe('visibleNavItems', () => {
     expect(visibleNavItems(list, ALL)).toEqual([NAV_SETTINGS_ID, 'dice:roll', NAV_CHAT_ID]);
   });
 
-  it('本体の3つは登録より前でも出す（登録されるまで空にしない）', () => {
+  it('本体の2つは登録より前でも出す（登録されるまで空にしない）', () => {
     expect(visibleNavItems(DEFAULT_NAV_ITEMS, new Set())).toEqual(DEFAULT_NAV_ITEMS);
   });
 
-  it('スレッドは広い画面でも出す（左の縦並びでも Threads タブで一覧へ行ける）', () => {
-    expect(visibleNavItems(DEFAULT_NAV_ITEMS, ALL)).toEqual([NAV_CHAT_ID, NAV_THREADS_ID, NAV_SETTINGS_ID]);
+  it('廃止した項目（スレッド）は、保存されていても出さない', () => {
+    const list = [NAV_REMOVED_IDS[0], NAV_CHAT_ID, NAV_SETTINGS_ID];
+    expect(visibleNavItems(list, ALL)).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID]);
+    expect(normalizeNavItems(list)).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID]);
   });
 });
 
@@ -58,17 +60,17 @@ describe('追加・削除・並べ替え', () => {
   });
 
   it('削除できるのは必須以外。必須のチャット・設定は外せない', () => {
-    expect(removeNavItem(DEFAULT_NAV_ITEMS, NAV_THREADS_ID)).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID]);
+    expect(removeNavItem(DEFAULT_NAV_ITEMS, 'dice:roll')).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID]);
     expect(removeNavItem(DEFAULT_NAV_ITEMS, NAV_CHAT_ID)).toEqual(DEFAULT_NAV_ITEMS);
     expect(removeNavItem(DEFAULT_NAV_ITEMS, NAV_SETTINGS_ID)).toEqual(DEFAULT_NAV_ITEMS);
   });
 
   it('表示の並びの指定した位置に動かす。登録されていない項目は位置を変えずに残す', () => {
-    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_SETTINGS_ID, 1)).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID, NAV_THREADS_ID]);
-    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_CHAT_ID, 2)).toEqual([NAV_THREADS_ID, NAV_SETTINGS_ID, NAV_CHAT_ID]);
+    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_SETTINGS_ID, 0)).toEqual([NAV_SETTINGS_ID, NAV_CHAT_ID]);
+    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_CHAT_ID, 1)).toEqual([NAV_SETTINGS_ID, NAV_CHAT_ID]);
     // 範囲外は端に収める
-    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_CHAT_ID, 99)).toEqual([NAV_THREADS_ID, NAV_SETTINGS_ID, NAV_CHAT_ID]);
-    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_SETTINGS_ID, -5)).toEqual([NAV_SETTINGS_ID, NAV_CHAT_ID, NAV_THREADS_ID]);
+    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_CHAT_ID, 99)).toEqual([NAV_SETTINGS_ID, NAV_CHAT_ID]);
+    expect(reorderNavItem(DEFAULT_NAV_ITEMS, ALL, NAV_SETTINGS_ID, -5)).toEqual([NAV_SETTINGS_ID, NAV_CHAT_ID]);
     const list = ['dice:gone', NAV_CHAT_ID, 'dice:roll', NAV_SETTINGS_ID];
     expect(reorderNavItem(list, ALL, NAV_SETTINGS_ID, 0)).toEqual(['dice:gone', NAV_SETTINGS_ID, NAV_CHAT_ID, 'dice:roll']);
   });
@@ -77,7 +79,7 @@ describe('追加・削除・並べ替え', () => {
 describe('表示名', () => {
   it('既定の短い名前', () => {
     expect(DEFAULT_NAV_LABELS[NAV_CHAT_ID]).toBe('Chat');
-    expect(DEFAULT_NAV_LABELS[NAV_THREADS_ID]).toBe('Threads');
+    expect(NAV_REMOVED_IDS).toContain('app:open-threads');
     expect(DEFAULT_NAV_LABELS[NAV_SETTINGS_ID]).toBe('Settings');
     expect(DEFAULT_NAV_LABELS[NAV_CALL_ID]).toBe('Call');
     expect(DEFAULT_NAV_LABELS[NAV_SEARCH_ID]).toBe('Search');

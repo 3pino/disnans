@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use common::{TestServer, send};
 use disnans_shared::{
-    ApiError, Card, ClientEvent, CreateSession, Message, PluginNotify, ServerEvent, Session,
-    UpdateSession, User,
+    ApiError, Card, ClientEvent, CreateSession, PluginNotify, ServerEvent, Session, UpdateSession,
+    User,
 };
 use serde_json::json;
 
@@ -22,10 +22,9 @@ fn card(title: &str, text: &str) -> Card {
     }
 }
 
-fn create_req(thread_id: Option<String>) -> CreateSession {
+fn create_req() -> CreateSession {
     CreateSession {
         plugin: "dice".into(),
-        thread_id,
         state: json!({ "schema": 1, "dice": "2d6", "result": null }),
         card: card("サイコロ", "alice がサイコロ（2d6）を用意しました"),
     }
@@ -55,7 +54,7 @@ async fn create_get_update_and_conflict() {
     alice.recv().await; // bob の user.updated
 
     // 作成: 配布されていないプラグインでもよい。カードのメッセージが全員に流れる
-    let session = create(&server, ALICE, &create_req(None)).await;
+    let session = create(&server, ALICE, &create_req()).await;
     assert_eq!(session.plugin, "dice");
     assert_eq!(session.version, 1);
     assert_eq!(session.created_by, alice_user.id);
@@ -187,7 +186,7 @@ async fn create_get_update_and_conflict() {
 async fn rejects_invalid_sessions() {
     let server = TestServer::start().await;
 
-    let mut req = create_req(None);
+    let mut req = create_req();
     req.plugin = "Bad_ID".into();
     let res = server
         .post_json(ALICE, "/api/sessions", &req)
@@ -196,15 +195,23 @@ async fn rejects_invalid_sessions() {
         .unwrap();
     assert_eq!(error_code(res).await, (400, "invalid_plugin_id".into()));
 
-    let req = create_req(Some("nope".into()));
+    // thread_id は廃止した。付けられても無視して、メインチャットにカードを出す
+    let mut raw = serde_json::to_value(create_req()).unwrap();
+    raw["thread_id"] = json!("nope");
     let res = server
-        .post_json(ALICE, "/api/sessions", &req)
+        .post_json(ALICE, "/api/sessions", &raw)
         .send()
         .await
         .unwrap();
-    assert_eq!(error_code(res).await, (404, "thread_not_found".into()));
+    assert!(res.status().is_success());
+    let created: serde_json::Value = res.json().await.unwrap();
+    let list = server.messages("").await;
+    assert!(
+        list.iter()
+            .any(|m| Some(m.id.as_str()) == created["message_id"].as_str())
+    );
 
-    let mut req = create_req(None);
+    let mut req = create_req();
     req.state = json!({ "big": "x".repeat(1024 * 1024) });
     let res = server
         .post_json(ALICE, "/api/sessions", &req)
@@ -217,7 +224,7 @@ async fn rejects_invalid_sessions() {
     assert!(server.messages("").await.is_empty());
 
     // 大きすぎる state での更新も失敗する
-    let session = create(&server, ALICE, &create_req(None)).await;
+    let session = create(&server, ALICE, &create_req()).await;
     let res = server
         .put_json(
             ALICE,
@@ -235,44 +242,25 @@ async fn rejects_invalid_sessions() {
 }
 
 #[tokio::test]
-async fn card_in_thread_cannot_be_edited_and_deletion_removes_session() {
+async fn card_cannot_be_edited_and_deletion_removes_session() {
     let server = TestServer::start().await;
     let mut alice = server.ws(ALICE).await;
     let mut bob = server.ws(BOB).await;
     alice.recv().await; // bob の user.updated
 
-    // スレッドにカードを流すと thread.updated も届く
-    let root = alice
-        .post_with(ClientEvent::MessageSend {
-            client_id: "root".into(),
-            thread_id: None,
-            body: "ゲームしよう".into(),
-            attachment_ids: vec![],
-            start_thread: true,
-            reply_to: None,
-            silent: false,
-        })
-        .await;
-    alice
-        .recv_until(|e| matches!(e, ServerEvent::ThreadUpdated { .. }))
-        .await;
-    bob.recv_until(|e| matches!(e, ServerEvent::ThreadUpdated { .. }))
-        .await;
-
-    let session = create(&server, ALICE, &create_req(Some(root.id.clone()))).await;
-    let ServerEvent::MessageCreated { message, .. } = bob.recv().await else {
+    // カードはメインチャットに出る（スレッドは廃止した）
+    let session = create(&server, ALICE, &create_req()).await;
+    let ServerEvent::MessageCreated { message, .. } = bob
+        .recv_until(|e| matches!(e, ServerEvent::MessageCreated { .. }))
+        .await
+    else {
         panic!()
     };
-    assert_eq!(message.thread_id.as_deref(), Some(root.id.as_str()));
+    assert_eq!(message.id, session.message_id);
     assert!(message.card.is_some());
-    let ServerEvent::ThreadUpdated { thread } = bob.recv().await else {
-        panic!()
-    };
-    assert_eq!(thread.info.reply_count, 1);
-    alice.recv().await;
-    alice.recv().await;
-    let replies: Vec<Message> = server.messages(&format!("?thread_id={}", root.id)).await;
-    assert_eq!(replies[0].card.as_ref().unwrap().session_id, session.id);
+    alice
+        .recv_until(|e| matches!(e, ServerEvent::MessageCreated { .. }))
+        .await;
 
     // カードは編集できない
     alice
@@ -323,7 +311,7 @@ async fn emit_is_relayed_to_other_connections() {
     alice.recv().await; // bob の user.updated
     alice2.recv().await;
 
-    let session = create(&server, ALICE, &create_req(None)).await;
+    let session = create(&server, ALICE, &create_req()).await;
     for client in [&mut alice, &mut alice2, &mut bob] {
         client.recv().await; // message.created
     }
@@ -460,7 +448,6 @@ async fn plugin_notify() {
         title,
         body,
         message_id,
-        thread_id,
         sample,
         ..
     } = bob.recv_any().await
@@ -469,7 +456,7 @@ async fn plugin_notify() {
     };
     assert_eq!(title, "dice");
     assert_eq!(body, "あなたの番です");
-    assert_eq!((message_id, thread_id, sample), (None, None, false));
+    assert_eq!((message_id, sample), (None, false));
     // 重複して送らない。ほかの人には送らない
     bob.assert_silent(Duration::from_millis(200)).await;
     carol.assert_silent(Duration::from_millis(100)).await;
@@ -480,7 +467,7 @@ async fn plugin_notify() {
         .upload_plugin(ALICE, &[("manifest.json", manifest), ("main.js", b"")])
         .await;
     assert_eq!(res.status(), 200);
-    let session = create(&server, ALICE, &create_req(None)).await;
+    let session = create(&server, ALICE, &create_req()).await;
     for client in [&mut alice, &mut bob, &mut carol] {
         client
             .recv_until(|e| matches!(e, ServerEvent::MessageCreated { message, .. } if message.card.is_some()))
@@ -503,17 +490,13 @@ async fn plugin_notify() {
     assert_eq!(res.status(), 204);
     for client in [&mut alice, &mut carol] {
         let ServerEvent::Notify {
-            title,
-            message_id,
-            thread_id,
-            ..
+            title, message_id, ..
         } = client.recv_any().await
         else {
             panic!()
         };
         assert_eq!(title, "ダイス");
         assert_eq!(message_id.as_deref(), Some(session.message_id.as_str()));
-        assert_eq!(thread_id, None);
     }
     bob.assert_silent(Duration::from_millis(200)).await;
 

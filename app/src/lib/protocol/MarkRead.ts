@@ -5,10 +5,6 @@
  */
 export type MarkRead = { 
 /**
- * スレッドの ID。メインチャットなら `null`。
- */
-thread_id: string | null, 
-/**
  * ここまで読んだメッセージの ID。いまの位置より古ければ何もしない（戻らない）。
  */
 message_id: string, };

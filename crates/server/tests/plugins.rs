@@ -711,27 +711,18 @@ async fn plugin_can_post_message_as_bot() {
     assert_eq!(history.len(), 3);
     assert!(history.iter().all(|m| m.bot.is_some()));
 
-    // スレッドへの投稿は返信数に数えられる
-    let root = alice.post("root").await;
-    alice
-        .send(ClientEvent::ThreadCreate {
-            root_message_id: root.id.clone(),
-        })
-        .await;
+    // thread_id は廃止した。付けられても無視して、メインチャットに投稿する
     let res = server
         .post_json(
             BOB,
             "/api/plugins/dice/messages",
-            &serde_json::json!({ "body": "in thread", "thread_id": root.id }),
+            &serde_json::json!({ "body": "in thread", "thread_id": "01NOPE" }),
         )
         .send()
         .await
         .unwrap();
     assert_eq!(res.status(), 200);
-    let thread: disnans_shared::Thread = server
-        .get_json(ALICE, &format!("/api/threads/{}", root.id))
-        .await;
-    assert_eq!(thread.info.reply_count, 1);
+    let posted: Message = res.json().await.unwrap();
 
     // 作者（呼び出した人）は削除できる。他人は削除できない
     bob.send(ClientEvent::MessageDelete {
@@ -763,7 +754,7 @@ async fn named_id(server: &TestServer) -> String {
 }
 
 #[tokio::test]
-async fn bot_post_validates_plugin_body_and_thread() {
+async fn bot_post_validates_plugin_body() {
     let server = TestServer::start().await;
     let m = manifest("dice", "1.0.0");
     server
@@ -790,15 +781,6 @@ async fn bot_post_validates_plugin_body_and_thread() {
     .await
     .unwrap();
     assert_eq!(error_code(res).await, (400, "empty_message".into()));
-
-    let res = post(
-        ALICE,
-        "/api/plugins/dice/messages",
-        serde_json::json!({ "body": "x", "thread_id": "01NOPE" }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(error_code(res).await, (404, "thread_not_found".into()));
 
     // 他人の自分だけのプラグインは、ないものとして扱う
     let m = manifest("mine", "1.0.0");

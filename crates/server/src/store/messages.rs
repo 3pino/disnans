@@ -1,13 +1,10 @@
-//! messages / threads / reactions テーブル。
+//! messages / reactions テーブル。
 //!
-//! `Message` は添付ファイル・リアクション・スレッド・カードの情報をまとめて組み立てる。
+//! `Message` は添付ファイル・リアクション・カード・ボットの情報をまとめて組み立てる。
 
 use std::collections::HashMap;
 
-use disnans_shared::{
-    Attachment, BotInfo, Message, Reaction, ReplyPreview, Thread, ThreadInfo, ThreadTag,
-    ThreadTagUsage,
-};
+use disnans_shared::{Attachment, BotInfo, Message, Reaction, ReplyPreview};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use super::{files, json_ids, sessions};
@@ -17,23 +14,12 @@ use super::{files, json_ids, sessions};
 pub struct MessageRow {
     pub id: String,
     pub author_id: String,
-    pub thread_id: Option<String>,
     pub reply_to: Option<String>,
     pub body: String,
     pub created_at: i64,
     pub edited_at: Option<i64>,
     pub bot_plugin: Option<String>,
     pub bot_name: Option<String>,
-}
-
-#[derive(sqlx::FromRow)]
-struct ThreadRow {
-    id: String,
-    reply_count: i64,
-    last_reply_at: Option<i64>,
-    created_by: String,
-    title: Option<String>,
-    archived: bool,
 }
 
 #[derive(sqlx::FromRow)]
@@ -56,8 +42,8 @@ struct ReactionRow {
     user_id: String,
 }
 
-const COLUMNS: &str =
-    "id, author_id, thread_id, reply_to, body, created_at, edited_at, bot_plugin, bot_name";
+/// 列。`thread_id` は廃止した（列は残してあるが、常に NULL）。
+const COLUMNS: &str = "id, author_id, reply_to, body, created_at, edited_at, bot_plugin, bot_name";
 
 // ---- 読み込み ----
 
@@ -89,7 +75,6 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
 
     let mut attachments = files::attachments_for(pool, &ids_json).await?;
     let mut reactions = reactions_for(pool, &ids_json).await?;
-    let mut threads = thread_infos_for(pool, &ids_json).await?;
     let mut cards = sessions::cards_for(pool, &ids_json).await?;
     let mut previews = reply_previews_for(pool, &rows).await?;
 
@@ -101,7 +86,6 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
         .map(|row| Message {
             attachments: attachments.remove(&row.id).unwrap_or_default(),
             reactions: reactions.remove(&row.id).unwrap_or_default(),
-            thread: threads.remove(&row.id),
             card: cards.remove(&row.id),
             bot: row
                 .bot_plugin
@@ -109,7 +93,6 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
                 .map(|(plugin, name)| BotInfo { plugin, name }),
             id: row.id,
             author_id: row.author_id,
-            thread_id: row.thread_id,
             reply_preview: row.reply_to.as_ref().and_then(|to| previews.remove(to)),
             reply_to: row.reply_to,
             body: row.body,
@@ -120,7 +103,6 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
 }
 
 /// 本文の全文検索。空白で区切った語をすべて含むメッセージを、`before` より古いものから新しい順に最大 `limit` 件返す。
-/// メインチャットもスレッドの返信も対象にする（`thread_id` で、どこのメッセージかわかる）。
 pub async fn search(
     pool: &SqlitePool,
     query: &str,
@@ -197,21 +179,18 @@ fn escape_like(s: &str) -> String {
     out
 }
 
-/// メインチャット（`thread_id` が `None`）またはスレッドの返信を、`before` より古いものから
-/// 新しい順に最大 `limit` 件取り、古い順に並べて返す。
+/// メッセージを、`before` より古いものから新しい順に最大 `limit` 件取り、古い順に並べて返す。
 pub async fn page(
     pool: &SqlitePool,
-    thread_id: Option<&str>,
     before: Option<&str>,
     limit: u32,
 ) -> sqlx::Result<Vec<Message>> {
     let mut ids: Vec<String> = sqlx::query_scalar(
         "SELECT id FROM messages
-         WHERE thread_id IS ? AND (? IS NULL OR id < ?)
+         WHERE (? IS NULL OR id < ?)
          ORDER BY id DESC
          LIMIT ?",
     )
-    .bind(thread_id)
     .bind(before)
     .bind(before)
     .bind(limit)
@@ -299,192 +278,14 @@ async fn reply_previews_for(
         .collect())
 }
 
-async fn thread_infos_for(
-    pool: &SqlitePool,
-    ids_json: &str,
-) -> sqlx::Result<HashMap<String, ThreadInfo>> {
-    let rows: Vec<ThreadRow> = sqlx::query_as(
-        "SELECT t.id,
-                (SELECT COUNT(*) FROM messages r WHERE r.thread_id = t.id) AS reply_count,
-                (SELECT MAX(r.created_at) FROM messages r WHERE r.thread_id = t.id) AS last_reply_at,
-                COALESCE(t.created_by, m.author_id) AS created_by,
-                t.title, t.archived
-         FROM threads t
-         JOIN messages m ON m.id = t.id
-         WHERE t.id IN (SELECT value FROM json_each(?))",
-    )
-    .bind(ids_json)
-    .fetch_all(pool)
-    .await?;
-
-    let mut tags = tags_for(pool, ids_json).await?;
-    Ok(rows
-        .into_iter()
-        .map(|row| {
-            (
-                row.id.clone(),
-                ThreadInfo {
-                    reply_count: row.reply_count as u32,
-                    last_reply_at: row.last_reply_at,
-                    created_by: row.created_by,
-                    title: row.title,
-                    tags: tags.remove(&row.id).unwrap_or_default(),
-                    archived: row.archived,
-                },
-            )
-        })
-        .collect())
-}
-
-async fn tags_for(
-    pool: &SqlitePool,
-    ids_json: &str,
-) -> sqlx::Result<HashMap<String, Vec<ThreadTag>>> {
-    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
-        "SELECT thread_id, label, icon FROM thread_tags
-         WHERE thread_id IN (SELECT value FROM json_each(?))
-         ORDER BY thread_id, position",
-    )
-    .bind(ids_json)
-    .fetch_all(pool)
-    .await?;
-    let mut map: HashMap<String, Vec<ThreadTag>> = HashMap::new();
-    for (thread_id, label, icon) in rows {
-        map.entry(thread_id)
-            .or_default()
-            .push(ThreadTag { label, icon });
-    }
-    Ok(map)
-}
-
-/// すでに使われているタグと、使っているスレッドの数（多い順、同数なら文字列順）。
-pub async fn tag_usages(pool: &SqlitePool) -> sqlx::Result<Vec<ThreadTagUsage>> {
-    let rows: Vec<(String, Option<String>, i64)> = sqlx::query_as(
-        "SELECT label, icon, COUNT(*) AS n FROM thread_tags
-         GROUP BY label, icon
-         ORDER BY n DESC, label, icon",
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(label, icon, n)| ThreadTagUsage {
-            tag: ThreadTag { label, icon },
-            count: n as u32,
-        })
-        .collect())
-}
-
-/// スレッドを立てた人。
-pub async fn thread_creator(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<String>> {
-    sqlx::query_scalar(
-        "SELECT COALESCE(t.created_by, m.author_id) FROM threads t
-         JOIN messages m ON m.id = t.id WHERE t.id = ?",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-}
-
-pub async fn set_thread_title(
-    pool: &SqlitePool,
-    id: &str,
-    title: Option<&str>,
-) -> sqlx::Result<()> {
-    sqlx::query("UPDATE threads SET title = ? WHERE id = ?")
-        .bind(title)
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-pub async fn set_thread_archived(pool: &SqlitePool, id: &str, archived: bool) -> sqlx::Result<()> {
-    sqlx::query("UPDATE threads SET archived = ? WHERE id = ?")
-        .bind(archived)
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-/// スレッドのタグを置き換える。
-pub async fn set_thread_tags(
-    conn: &mut SqliteConnection,
-    id: &str,
-    tags: &[ThreadTag],
-) -> sqlx::Result<()> {
-    sqlx::query("DELETE FROM thread_tags WHERE thread_id = ?")
-        .bind(id)
-        .execute(&mut *conn)
-        .await?;
-    for (position, tag) in tags.iter().enumerate() {
-        sqlx::query(
-            "INSERT INTO thread_tags (thread_id, position, label, icon) VALUES (?, ?, ?, ?)",
-        )
-        .bind(id)
-        .bind(position as i64)
-        .bind(&tag.label)
-        .bind(&tag.icon)
-        .execute(&mut *conn)
-        .await?;
-    }
-    Ok(())
-}
-
-pub async fn thread_exists(pool: &SqlitePool, id: &str) -> sqlx::Result<bool> {
-    let found: Option<i64> = sqlx::query_scalar("SELECT 1 FROM threads WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
-    Ok(found.is_some())
-}
-
-pub async fn get_thread(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Thread>> {
-    Ok(get(pool, id).await?.and_then(into_thread))
-}
-
-/// スレッド一覧。最後に動きがあった順（返信がなければ起点の作成時刻）の降順。
-///
-/// ID（ULID）は作成時刻の順に並ぶので、最新の返信の ID（なければ起点の ID）で並べる。
-/// 同じミリ秒の投稿でも順番がぶれない。
-pub async fn list_threads(pool: &SqlitePool) -> sqlx::Result<Vec<Thread>> {
-    let ids: Vec<String> = sqlx::query_scalar(
-        "SELECT t.id FROM threads t
-         ORDER BY COALESCE((SELECT MAX(r.id) FROM messages r WHERE r.thread_id = t.id), t.id) DESC",
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(load(pool, &ids)
-        .await?
-        .into_iter()
-        .filter_map(into_thread)
-        .collect())
-}
-
-fn into_thread(root: Message) -> Option<Thread> {
-    let info = root.thread.clone()?;
-    Some(Thread { root, info })
-}
-
-/// スレッドに関わっている人（起点の投稿者と、返信した人）。
-pub async fn thread_participants(pool: &SqlitePool, thread_id: &str) -> sqlx::Result<Vec<String>> {
-    sqlx::query_scalar("SELECT DISTINCT author_id FROM messages WHERE id = ? OR thread_id = ?")
-        .bind(thread_id)
-        .bind(thread_id)
-        .fetch_all(pool)
-        .await
-}
-
 // ---- 書き込み ----
 
 pub async fn insert(conn: &mut SqliteConnection, row: &MessageRow) -> sqlx::Result<()> {
     sqlx::query(&format!(
-        "INSERT INTO messages ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO messages ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     ))
     .bind(&row.id)
     .bind(&row.author_id)
-    .bind(&row.thread_id)
     .bind(&row.reply_to)
     .bind(&row.body)
     .bind(row.created_at)
@@ -493,21 +294,6 @@ pub async fn insert(conn: &mut SqliteConnection, row: &MessageRow) -> sqlx::Resu
     .bind(&row.bot_name)
     .execute(conn)
     .await?;
-    Ok(())
-}
-
-pub async fn insert_thread(
-    conn: &mut SqliteConnection,
-    id: &str,
-    created_by: &str,
-    now: i64,
-) -> sqlx::Result<()> {
-    sqlx::query("INSERT INTO threads (id, created_by, created_at) VALUES (?, ?, ?)")
-        .bind(id)
-        .bind(created_by)
-        .bind(now)
-        .execute(conn)
-        .await?;
     Ok(())
 }
 
@@ -521,7 +307,7 @@ pub async fn update_body(pool: &SqlitePool, id: &str, body: &str, now: i64) -> s
     Ok(())
 }
 
-/// メッセージを消す。スレッドの返信・リアクション・添付ファイルの行は外部キーで一緒に消える。
+/// メッセージを消す。リアクション・添付ファイルの行は外部キーで一緒に消える。
 pub async fn delete(conn: &mut SqliteConnection, id: &str) -> sqlx::Result<()> {
     sqlx::query("DELETE FROM messages WHERE id = ?")
         .bind(id)

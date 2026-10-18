@@ -17,7 +17,6 @@ pub struct Notification {
     pub title: String,
     pub body: String,
     pub message_id: Option<Id>,
-    pub thread_id: Option<Id>,
     /// 動作確認用のサンプル。
     pub sample: bool,
     /// メインチャットの一般の投稿による通知（投稿者以外の全員）。再送の対象にしない。
@@ -32,7 +31,6 @@ impl Notification {
             title: "disnans".into(),
             body: "サンプル通知です。通知はこのように表示されます。".into(),
             message_id: None,
-            thread_id: None,
             sample: true,
             general: false,
         }
@@ -135,7 +133,6 @@ fn event(n: &Notification) -> ServerEvent {
         title: n.title.clone(),
         body: n.body.clone(),
         message_id: n.message_id.clone(),
-        thread_id: n.thread_id.clone(),
         sample: n.sample,
         replayed: false,
     }
@@ -148,14 +145,12 @@ pub fn replay_event(n: &Notification) -> ServerEvent {
             title,
             body,
             message_id,
-            thread_id,
             sample,
             ..
         } => ServerEvent::Notify {
             title,
             body,
             message_id,
-            thread_id,
             sample,
             replayed: true,
         },
@@ -194,7 +189,6 @@ pub enum Sender<'a> {
 /// 新しいメッセージについて、誰にどんな通知を送るかを決める。
 ///
 /// - メンションされた人
-/// - スレッドへの返信なら、そのスレッドに関わっている人（`participants`: 起点の投稿者と返信した人）
 /// - `Sender::Bot` のときは、投稿した本人
 ///
 /// `reply_author` は返信先の作者。返信なら、その人にも通知する。
@@ -203,7 +197,6 @@ pub enum Sender<'a> {
 pub fn plan(
     message: &Message,
     users: &[User],
-    participants: &[String],
     reply_author: Option<&str>,
     sender: Sender,
 ) -> Vec<(String, Notification)> {
@@ -235,7 +228,6 @@ pub fn plan(
                 title,
                 body: body.clone(),
                 message_id: Some(message.id.clone()),
-                thread_id: message.thread_id.clone(),
                 sample: false,
                 general,
             },
@@ -253,24 +245,15 @@ pub fn plan(
     {
         push(id, format!("{author} replied to you"), false);
     }
-    if message.thread_id.is_some() {
-        for id in participants {
-            if sent.insert(id.as_str()) {
-                push(id, format!("{author} replied to you"), false);
-            }
-        }
-    }
-    // メインのチャットの投稿は、投稿者以外の全員に通知する（メンションや返信に当たる人は、上で優先して送り済み）。
+    // 投稿は、投稿者以外の全員に通知する（メンションや返信に当たる人は、上で優先して送り済み）。
     // ボットの投稿も同じく全員に送る。ただし投稿した本人は、下の本人宛ての通知を1件だけ受け取る。
     // この通知は再送の対象にしない
-    if message.thread_id.is_none() {
-        for u in users {
-            if matches!(sender, Sender::Bot(_)) && u.id == message.author_id {
-                continue;
-            }
-            if sent.insert(u.id.as_str()) {
-                push(&u.id, author.to_owned(), true);
-            }
+    for u in users {
+        if matches!(sender, Sender::Bot(_)) && u.id == message.author_id {
+            continue;
+        }
+        if sent.insert(u.id.as_str()) {
+            push(&u.id, author.to_owned(), true);
         }
     }
     if let Some(title) = self_title.filter(|_| !sent.contains(message.author_id.as_str())) {
@@ -320,11 +303,10 @@ mod tests {
         }
     }
 
-    fn message(author: &str, thread_id: Option<&str>, body: &str) -> Message {
+    fn message(author: &str, body: &str) -> Message {
         Message {
             id: "M1".into(),
             author_id: author.into(),
-            thread_id: thread_id.map(Into::into),
             reply_to: None,
             reply_preview: None,
             body: body.into(),
@@ -332,7 +314,6 @@ mod tests {
             reactions: vec![],
             created_at: 0,
             edited_at: None,
-            thread: None,
             card: None,
             bot: None,
         }
@@ -349,47 +330,38 @@ mod tests {
     }
 
     #[test]
-    fn plans_mentions_and_thread_replies_once_each() {
+    fn plans_mentions_once_each() {
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
-        let msg = message("A", Some("ROOT"), "<@B> <@A> <@ZZZ> 見て");
-        let plan = plan(
-            &msg,
-            &users,
-            &["B".into(), "C".into(), "A".into()],
-            None,
-            Sender::User,
-        );
+        let msg = message("A", "<@B> <@A> <@ZZZ> 見て");
+        let plan = plan(&msg, &users, None, Sender::User);
 
         let targets: Vec<_> = plan
             .iter()
             .map(|(u, n)| (u.as_str(), n.title.as_str()))
             .collect();
-        assert_eq!(
-            targets,
-            vec![("B", "alice mentioned you"), ("C", "alice replied to you")]
-        );
+        // メンションされた B は1回だけ（メンションの文言）。自分（A）と不明な ID には送らない
+        assert_eq!(targets, vec![("B", "alice mentioned you"), ("C", "alice")]);
         assert_eq!(plan[0].1.body, "@bob @alice <@ZZZ> 見て");
-        assert_eq!(plan[0].1.thread_id.as_deref(), Some("ROOT"));
     }
 
     #[test]
     fn notifies_reply_target_unless_self_or_already_notified() {
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
-        let msg = message("A", None, "了解");
+        let msg = message("A", "了解");
         // メインチャットなので、返信先（B）のほかに C にも一般の通知が届く
-        let p = plan(&msg, &users, &[], Some("B"), Sender::User);
+        let p = plan(&msg, &users, Some("B"), Sender::User);
         let targets: Vec<_> = p
             .iter()
             .map(|(u, n)| (u.as_str(), n.title.as_str()))
             .collect();
         assert_eq!(targets, vec![("B", "alice replied to you"), ("C", "alice")]);
         // 自分への返信でも、本人には送らない（ほかの人には届く）
-        let p = plan(&msg, &users, &[], Some("A"), Sender::User);
+        let p = plan(&msg, &users, Some("A"), Sender::User);
         assert!(p.iter().all(|(u, _)| u != "A"));
         assert_eq!(p.len(), 2);
         // メンション済みの人には1回だけ（メンションの文言を優先する）
-        let msg = message("A", None, "<@B> 了解");
-        let p = plan(&msg, &users, &[], Some("B"), Sender::User);
+        let msg = message("A", "<@B> 了解");
+        let p = plan(&msg, &users, Some("B"), Sender::User);
         assert_eq!(p.len(), 2);
         assert_eq!(p[0].1.title, "alice mentioned you");
         assert_eq!(p[1].1.title, "alice");
@@ -399,8 +371,8 @@ mod tests {
     fn bot_main_chat_post_reaches_everyone_and_the_poster_once() {
         // ボットの投稿（notify:true）は全員に届く。投稿した本人にはボットの名前で1件だけ送る
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
-        let msg = message("A", None, "hello");
-        let plan = plan(&msg, &users, &[], None, Sender::Bot("ダイス"));
+        let msg = message("A", "hello");
+        let plan = plan(&msg, &users, None, Sender::Bot("ダイス"));
         let targets: Vec<_> = plan
             .iter()
             .map(|(u, n)| (u.as_str(), n.title.as_str()))
@@ -414,11 +386,10 @@ mod tests {
     }
 
     #[test]
-    fn bot_uses_its_name_in_mention_and_thread_titles() {
+    fn bot_uses_its_name_in_mention_and_general_titles() {
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
-        let msg = message("A", Some("ROOT"), "<@B> 見て");
-        // 投稿者（A）はスレッドの参加者に入っていないので、本人への通知になる
-        let plan = plan(&msg, &users, &["C".into()], None, Sender::Bot("ダイス"));
+        let msg = message("A", "<@B> 見て");
+        let plan = plan(&msg, &users, None, Sender::Bot("ダイス"));
         let targets: Vec<_> = plan
             .iter()
             .map(|(u, n)| (u.as_str(), n.title.as_str()))
@@ -427,7 +398,7 @@ mod tests {
             targets,
             vec![
                 ("B", "ダイス mentioned you"),
-                ("C", "ダイス replied to you"),
+                ("C", "ダイス"),
                 ("A", "ダイス"),
             ]
         );
@@ -436,8 +407,8 @@ mod tests {
     #[test]
     fn bot_poster_gets_one_notification_even_if_mentioned() {
         let users = [user("A", "alice")];
-        let msg = message("A", None, "<@A> 自分宛て");
-        let plan = plan(&msg, &users, &[], None, Sender::Bot("ダイス"));
+        let msg = message("A", "<@A> 自分宛て");
+        let plan = plan(&msg, &users, None, Sender::Bot("ダイス"));
         assert_eq!(plan.len(), 1);
         assert_eq!(plan[0].1.title, "ダイス mentioned you");
     }
@@ -445,8 +416,8 @@ mod tests {
     #[test]
     fn main_chat_post_notifies_everyone_but_the_author() {
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
-        let msg = message("A", None, "hello");
-        let plan = plan(&msg, &users, &[], None, Sender::User);
+        let msg = message("A", "hello");
+        let plan = plan(&msg, &users, None, Sender::User);
         let targets: Vec<_> = plan
             .iter()
             .map(|(u, n)| (u.as_str(), n.title.as_str(), n.body.as_str()))
@@ -455,15 +426,15 @@ mod tests {
             targets,
             vec![("B", "alice", "hello"), ("C", "alice", "hello"),]
         );
-        // メインチャットでは thread_id を持たない。一般の通知は再送の対象外（general）
-        assert!(plan.iter().all(|(_, n)| n.thread_id.is_none() && n.general));
+        // 一般の通知は再送の対象外（general）
+        assert!(plan.iter().all(|(_, n)| n.general));
     }
 
     #[test]
     fn main_chat_mention_keeps_the_mention_title() {
         let users = [user("A", "alice"), user("B", "bob"), user("C", "carol")];
-        let msg = message("A", None, "<@C> 見て");
-        let plan = plan(&msg, &users, &[], None, Sender::User);
+        let msg = message("A", "<@C> 見て");
+        let plan = plan(&msg, &users, None, Sender::User);
         let targets: Vec<_> = plan
             .iter()
             .map(|(u, n)| (u.as_str(), n.title.as_str()))
@@ -484,7 +455,6 @@ mod replay_tests {
             title: "t".into(),
             body: id.into(),
             message_id: Some(id.into()),
-            thread_id: None,
             sample: false,
             general: false,
         }

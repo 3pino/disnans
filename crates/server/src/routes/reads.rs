@@ -9,7 +9,7 @@ use crate::auth::CurrentUser;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::state::SharedState;
-use crate::store::{messages, reads};
+use crate::store::reads;
 
 /// メインチャットとすべてのスレッドの既読の位置と未読数（メインチャットが先頭）。
 pub async fn list(
@@ -29,19 +29,14 @@ pub async fn mark(
     let message_id = Ulid::from_string(&req.message_id)
         .map_err(|_| AppError::bad_request("invalid_message_id", "メッセージ ID が不正です"))?
         .to_string();
-    let thread_id = req.thread_id.as_deref().filter(|s| !s.is_empty());
+    // スレッドは廃止した。古いクライアントが thread_id を送っても、メインチャットの既読として扱う
 
     // 未読数をメッセージの配信と同じ順番で数えるため、書き込みのロックを持ったまま数えて配信する
     let _guard = state.write_lock().await;
-    if let Some(thread_id) = thread_id
-        && !messages::thread_exists(&state.pool, thread_id).await?
-    {
-        return Err(AppError::not_found("スレッドが見つかりません"));
-    }
-    let changed = reads::advance(&state.pool, &user, thread_id, &message_id, db::now_ms()).await?;
-    let marker = reads::get(&state.pool, &user, thread_id)
+    let changed = reads::advance(&state.pool, &user, &message_id, db::now_ms()).await?;
+    let marker = reads::get(&state.pool, &user)
         .await?
-        .ok_or_else(|| AppError::not_found("スレッドが見つかりません"))?;
+        .ok_or_else(|| AppError::not_found("既読の位置が見つかりません"))?;
     if changed {
         state.hub.send_to_user(
             &user.id,

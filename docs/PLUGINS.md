@@ -114,7 +114,7 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `12`（`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `13`（v13 でスレッドを廃止した。`threadId` などの指定は無視され、メッセージはメインチャットに入る。`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -235,7 +235,7 @@ app/node_modules/.bin/tsc -p examples/dice
 | `session.update(state, { card })` / `session.onChange(cb)` | 楽観ロック付きの保存、変更の購読 |
 | `session.emit(name, payload)` / `session.on(name, cb)` | 保存しない一時的なイベント |
 | `this.notify(userIds, text, { session })` | 通知 |
-| `this.postMessage({ body, threadId?, name?, notify? })` | ボットとしてメッセージを投稿する（v5）。投稿者は自分のままで、名前は `name`（省略するとプラグインの名前）。`notify: true`（v6）なら、通常の宛先に加えて投稿した本人にも通知が届く（文言はボットの名前）。省略すると通知は送らない。例: `examples/bot`。失敗が `unknown_outcome` のときは送信済みかどうか分からない。再送は plugin が判断する（二重投稿に注意） |
+| `this.postMessage({ body, name?, notify? })` | ボットとしてメッセージを投稿する（v5）。投稿者は自分のままで、名前は `name`（省略するとプラグインの名前）。`notify: true`（v6）なら、通常の宛先に加えて投稿した本人にも通知が届く（文言はボットの名前）。省略すると通知は送らない。例: `examples/bot`。失敗が `unknown_outcome` のときは送信済みかどうか分からない。再送は plugin が判断する（二重投稿に注意） |
 | `this.openSettings()` | このプラグインの設定画面を開く（v6）。設定タブに切り替える |
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント（v3）。いまつながっている人に届く |
 | `this.addStatusBarItem()` | 常時表示のステータス欄（画面上部の枠。通話のバーと同じ）に出す要素（v3） |
@@ -252,7 +252,7 @@ app/node_modules/.bin/tsc -p examples/dice
 | `disnans.call.*` | 本体の通話の状態の読み取りと、参加者どうしのデータの送受信、通話のバーのボタン（v8）、通話の画面の領域と送信待ちの量（v10。→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)） |
 | `disnans.ui.onBack(handler)` / `ui.setImmersive(on)` | 戻る操作（Android の戻るジェスチャー・PC の Alt+←）で閉じる層を足す／Android で全画面（システムバーを隠す没入モード）にする（v9。→ [画面共有のためのネイティブ API](#画面共有のためのネイティブ-apiv9)） |
 | `disnans.screenCapture.*` / `disnans.pip.*` | Android の画面のキャプチャ（MediaProjection）と、ピクチャーインピクチャー（v9。同上）。Linux の画面のキャプチャは portal / PipeWire（v12）。ダイアログなしの静止画 `screenCapture.snapshot()`（v11。デスクトップでも使える） |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 12） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 13） |
 
 ### コマンド（パレット・ホットキー・スラッシュコマンド）
 
@@ -277,9 +277,8 @@ this.addCommand({
     return PRESETS.filter((p) => p.value.startsWith(q)); // [{ value: '2d6', description: 'サイコロ2個' }, ...]
   },
   // ctx.args: `/dice 2d6` なら '2d6'（前後の空白は除く）。ホットキー・パレットからは ''
-  // ctx.threadId: スラッシュコマンドは入力したスレッド、ホットキー・パレットは開いているスレッド（なければ null）
   // ctx.via: 'slash' / 'hotkey' / 'palette'
-  run: (ctx) => this.prepare(ctx.args, ctx.threadId),
+  run: (ctx) => this.prepare(ctx.args),
 });
 ```
 
@@ -304,7 +303,7 @@ this.addSlashCommand({
   icon: 'hand',        // 省略するとプラグインのアイコン
   args: '[名前]',       // 任意
   suggestArgs: (input) => [], // 任意
-  run: ({ args, threadId }) => disnans.ui.toast(`こんにちは ${args}`),
+  run: ({ args }) => disnans.ui.toast(`こんにちは ${args}`),
 });
 ```
 
@@ -315,7 +314,7 @@ this.addComposerAction({
   id: 'roll-2d6',
   label: 'サイコロ（2d6）',
   icon: 'dices', // アイコンの名前（Lucide の名前。省略するとプラグインのアイコン）
-  run: ({ threadId }) => this.prepare('2d6', threadId),
+  run: () => this.prepare('2d6'),
 });
 ```
 
@@ -330,7 +329,7 @@ this.addIcon('dice-cube', '<path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="m3 7 9 
 
 ### メッセージの操作とタイムライン（v9）
 
-メッセージを長押ししたときのメニュー（モバイル）と、デスクトップでホバーしたときのツールバーに、項目を足せます。本体の項目（返信・スレッドを立てる・コピー・編集・削除、ツールバーのリアクション）も同じ仕組みで並んでいて、`order`（小さいほど前）で並びが決まります。
+メッセージを長押ししたときのメニュー（モバイル）と、デスクトップでホバーしたときのツールバーに、項目を足せます。本体の項目（返信・コピー・編集・削除、ツールバーのリアクション）も同じ仕組みで並んでいて、`order`（小さいほど前）で並びが決まります。
 
 ```js
 this.addMessageAction({
@@ -338,16 +337,16 @@ this.addMessageAction({
   label: 'あとで読む',
   icon: 'bookmark',          // アイコンの名前。省略するとプラグインのアイコン
   placement: 'both',         // 'menu'（長押し）| 'toolbar'（ホバー）| 'both'。省略は both
-  order: 1000,               // 省略は 1000。本体は 返信 200・スレッド 300・コピー 400・編集 500・削除 9000（リアクションはツールバー先頭の 100）
+  order: 1000,               // 省略は 1000。本体は 返信 200・コピー 400・編集 500・削除 9000（リアクションはツールバー先頭の 100）
   danger: false,             // true で注意の色
-  when: (msg, ctx) => !msg.card,           // 省略すると常に出す。送信中の仮表示には出ない
-  run: (msg, ctx) => { /* ctx = { threadId, inThread } */ },
+  when: (msg) => !msg.card,                // 省略すると常に出す。送信中の仮表示には出ない
+  run: (msg) => { /* ... */ },
 });
 ```
 
-`msg` は本体のメッセージ（`id` `author_id` `thread_id` `reply_to` `body` `reactions` `created_at` `edited_at` `card` `bot` など。型は `Disnans.Message`）。`when` が例外を投げた項目は出さず、`run` の例外はトーストで知らせます。
+`msg` は本体のメッセージ（`id` `author_id` `reply_to` `body` `reactions` `created_at` `edited_at` `card` `bot` など。型は `Disnans.Message`）。`when` が例外を投げた項目は出さず、`run` の例外はトーストで知らせます。
 
-`openTimeline` は、メッセージの集合を**本体のメッセージ表示**（リアクション・返信の引用・長押しメニューもそのまま）で、パネル（デスクトップは右、モバイルは全画面）に並べます。スレッドのパネルや返信のツリーと同じ枠です。
+`openTimeline` は、メッセージの集合を**本体のメッセージ表示**（リアクション・返信の引用・長押しメニューもそのまま）で、パネル（デスクトップは右、モバイルは全画面）に並べます。返信のツリーと同じ枠です。
 
 ```js
 const panel = this.openTimeline({
@@ -464,7 +463,6 @@ this.registerCardRenderer((el, card) => {
 const session = await this.sessions.create({
   state: { schema: 1, spec: '2d6', count: 2, sides: 6, roller: this.app.me.id, result: null },
   card: { title: 'ダイス', text: 'A がサイコロ（2d6）を用意しました' },
-  threadId, // スレッドに流すなら ID、メインチャットなら null
 });
 this.openView('dice', session);
 ```

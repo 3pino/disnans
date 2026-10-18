@@ -29,7 +29,7 @@
   import { MAX_BODY } from '../lib/errors';
   import { isSilentSwipe, sendButtonLift, swipeUpLift } from '../lib/silentSend';
 
-  let { threadId, placeholder }: { threadId: string | null; placeholder: string } = $props();
+  let { placeholder }: { placeholder: string } = $props();
 
   /** 添付するファイル。送るまでアップロードしない（手元に File を持つだけ） */
   type Staged = {
@@ -55,7 +55,7 @@
 
   /** 下書きを保存する場所（接続先・ユーザー・メインチャット/スレッドごと）。 */
   const desktopShared = isDesktopStorageSupported() ? getDesktopSharedStorage() : null;
-  const draftTarget = $derived(client.me ? draftLocation(getServerUrl(), client.me.id, threadId) : null);
+  const draftTarget = $derived(client.me ? draftLocation(getServerUrl(), client.me.id) : null);
   const draftIdentity = $derived(draftTarget
     ? JSON.stringify([draftTarget.serverUrl, draftTarget.userId, draftTarget.place])
     : null);
@@ -144,7 +144,7 @@
   });
 
   /** 検索モード（メインチャットの入力欄だけ）。通常の入力欄は隠すだけにして、下書きと添付を残す */
-  const searching = $derived(threadId === null && ui.searchOpen);
+  const searching = $derived(ui.searchOpen);
   let searchEl: HTMLInputElement | undefined = $state();
 
   // 検索モードに入ったとき、もう一度コマンドを実行したときに、検索欄へフォーカスする
@@ -176,9 +176,8 @@
     return canCropImage(s.info);
   }
 
-  // 共有で受け取ったものを、メインチャットの入力欄が拾う（スレッドは対象外）
+  // 共有で受け取ったものを、メインチャットの入力欄が拾う
   $effect(() => {
-    if (threadId !== null) return;
     if (!draftReady || !input) return;
     if (shareInbox.files.length === 0 && shareInbox.text === '') return;
     untrack(() => takeShared());
@@ -196,7 +195,7 @@
   // 「＋」メニューの項目。並び順と出す項目は利用者の設定（設定 > 一般 > ＋メニュー）
   const actions = $derived(
     composerMenuItems(
-      composerMenuAvailable(() => fileEl?.click()).filter((a) => !a.when || a.when({ threadId })),
+      composerMenuAvailable(() => fileEl?.click()).filter((a) => !a.when || a.when()),
       prefs.composerMenu,
     ).map((x) => x.entry),
   );
@@ -204,7 +203,7 @@
   async function runAction(a: ComposerMenuItem) {
     menuOpen = false;
     try {
-      await a.run({ threadId });
+      await a.run();
     } catch (e) {
       ui.toast(`${a.label}: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }
@@ -227,7 +226,7 @@
 
   // 返信先を選んだら、すぐ入力できるように入力欄にフォーカスする
   $effect(() => {
-    if (reply.get(threadId)) untrack(() => input?.focus());
+    if (reply.get()) untrack(() => input?.focus());
   });
 
   export function focus() {
@@ -247,7 +246,7 @@
     const target = draftTarget;
     // コマンドは送らずに実行する。添付はそのまま残す
     if (parsed.kind === 'command') {
-      if (client.ready) void runCommand(parsed.name, parsed.args, target, threadId, input, draftIdentity, input.getRawBody());
+      if (client.ready) void runCommand(parsed.name, parsed.args, target, input, draftIdentity, input.getRawBody());
       return;
     }
     if (!canSend) return;
@@ -258,8 +257,8 @@
       return;
     }
     // アップロードと送信は client の仮表示の中で行う。入力欄はすぐ空にする
-    client.sendMessage({ threadId, body, files: staged.map((s) => ({ file: s.file, crop: s.crop })), replyTo: reply.get(threadId), silent });
-    reply.clear(threadId);
+    client.sendMessage({ body, files: staged.map((s) => ({ file: s.file, crop: s.crop })), replyTo: reply.get(), silent });
+    reply.clear();
     input.clear();
     hasText = false;
     if (target) persistDraft(target, '');
@@ -317,14 +316,13 @@
     name: string,
     args: string,
     target: DraftLocation | null,
-    targetThreadId: string | null,
     editor: MessageInput | undefined,
     identity: string | null,
     submittedBody: string,
   ) {
     running = true;
     try {
-      await runSlashCommand(name, args, targetThreadId);
+      await runSlashCommand(name, args);
       const stillSameEditor = !!editor && input === editor && draftIdentity === identity;
       if (stillSameEditor && editor.getRawBody() === submittedBody) {
         editor.clear();
@@ -342,7 +340,7 @@
   function editLast() {
     const me = client.me?.id;
     if (!me) return;
-    const msgs = client.timeline(threadId).messages;
+    const msgs = client.timeline().messages;
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].author_id === me && !msgs[i].bot) {
         ui.editing = msgs[i].id;
@@ -352,9 +350,9 @@
   }
 </script>
 
-<div class="composer" class:composer-in-thread={threadId !== null}>
+<div class="composer">
   {#if !searching}
-    <ReplyBar {threadId} />
+    <ReplyBar />
   {/if}
 
   {#if staged.length > 0 && !searching}
@@ -683,10 +681,6 @@
   @media (max-width: 767px) {
     .composer {
       padding: 0 8px 8px;
-    }
-    /* スレッドは全画面でボトムナビがないので、ナビゲーションバーの分を空ける */
-    .composer.composer-in-thread {
-      padding-bottom: max(8px, env(safe-area-inset-bottom));
     }
   }
 </style>

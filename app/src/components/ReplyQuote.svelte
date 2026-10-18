@@ -9,7 +9,7 @@
 
   // 返信のメッセージの本文の上に出す、返信先の小さな引用。押すと元のメッセージまでスクロールする。
   // 返信先が削除されていれば、押せない「削除されたメッセージ」にする
-  let { message, threadId }: { message: Pick<Message, 'reply_to' | 'reply_preview'>; threadId: string | null } = $props();
+  let { message }: { message: Pick<Message, 'reply_to' | 'reply_preview'> } = $props();
 
   const preview = $derived(message.reply_preview);
   const author = $derived(preview ? authorOf(preview, client.users) : null);
@@ -19,7 +19,7 @@
 
   function open(e: MouseEvent) {
     if (!message.reply_to) return;
-    void jumpToMessage(e.currentTarget as HTMLElement, client.timeline(threadId), message.reply_to);
+    void jumpToMessage(e.currentTarget as HTMLElement, client.timeline(), message.reply_to);
   }
 </script>
 

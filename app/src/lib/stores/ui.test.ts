@@ -18,9 +18,9 @@ beforeEach(() => reset());
 
 describe('ui.back', () => {
   it('画像の全画面を最初に閉じ、次にプラグインの層、そのあと遷移の履歴を戻る', () => {
-    ui.openThread('t1');
+    ui.openTimeline(1);
     ui.openSearch();
-    ui.openThread('t1');
+    ui.openTimeline(1);
     const run = vi.fn();
     ui.addPluginBack(run);
     ui.lightbox = { src: 'x', alt: 'x.png', downloadUrl: 'x' };
@@ -44,8 +44,8 @@ describe('ui.back', () => {
   });
 
   it('返信のツリーは、戻るとチャットへ', () => {
-    ui.openReplyTree('m1', null);
-    expect(ui.panel).toEqual({ kind: 'replyTree', messageId: 'm1', place: null });
+    ui.openReplyTree('m1');
+    expect(ui.panel).toEqual({ kind: 'replyTree', messageId: 'm1' });
     expect(ui.backDepth()).toBe(1);
     ui.back();
     expect(ui.panel).toBeNull();
@@ -53,11 +53,11 @@ describe('ui.back', () => {
     expect(ui.backDepth()).toBe(0);
   });
 
-  it('スレッドの中で開いた返信のツリーは、戻るとスレッドへ', () => {
-    ui.openThread('t1');
-    ui.openReplyTree('m1', 't1');
+  it('メッセージの集合のパネルから開いた返信のツリーは、戻るとその集合へ', () => {
+    ui.openTimeline(1);
+    ui.openReplyTree('m1');
     ui.back();
-    expect(ui.panel).toEqual({ kind: 'thread', id: 't1' });
+    expect(ui.panel).toEqual({ kind: 'timeline', id: 1 });
   });
 
   it('通話の画面から開いた通話の設定は、戻ると通話の画面へ', () => {
@@ -93,11 +93,11 @@ describe('ui.selectTab / openSettings（タブの切り替え）', () => {
   it('タブを切り替えると履歴を捨てる。チャット以外のタブで戻るとチャットのトップへ', () => {
     ui.openCall();
     ui.openSettingsSub('call');
-    ui.selectTab('threads');
+    ui.selectTab('settings');
     expect(ui.navStack).toHaveLength(1);
-    ui.openThread('t1');
+    ui.openTimeline(1);
     ui.back();
-    expect(ui.tab).toBe('threads');
+    expect(ui.tab).toBe('settings');
     ui.back();
     expect(ui.tab).toBe('chat');
     expect(ui.back()).toBe(false);
@@ -106,7 +106,7 @@ describe('ui.selectTab / openSettings（タブの切り替え）', () => {
   it('タブを何度切り替えても履歴は積み上がらない', () => {
     for (let i = 0; i < 10; i++) {
       ui.openSettings();
-      ui.selectTab('threads');
+      ui.selectTab('settings');
       ui.openCall('reset');
     }
     expect(ui.backDepth()).toBe(1);
@@ -117,15 +117,15 @@ describe('ui.selectTab / openSettings（タブの切り替え）', () => {
 
 describe('ui.closePanel / forgetPanel', () => {
   it('画面のボタンで閉じたら、その分の履歴も消える', () => {
-    ui.openThread('t1');
+    ui.openTimeline(1);
     ui.closePanel();
     expect(ui.backDepth()).toBe(0);
   });
 
   it('消えたパネルは、戻る操作で開き直さない', () => {
-    ui.openThread('t1');
-    ui.openReplyTree('m1', 't1');
-    ui.forgetPanel((p) => p.kind === 'thread' && p.id === 't1');
+    ui.openTimeline(1);
+    ui.openReplyTree('m1');
+    ui.forgetPanel((p) => p.kind === 'timeline' && p.id === 1);
     ui.back();
     expect(ui.panel).toBeNull();
     expect(ui.backDepth()).toBe(0);

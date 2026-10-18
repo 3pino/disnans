@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GROUP_MS, isContinuation, type RowLike } from './messageRows';
 
-const base: RowLike = { author_id: 'a', created_at: 1_000_000, thread: null };
+const base: RowLike = { author_id: 'a', created_at: 1_000_000 };
 
 describe('isContinuation', () => {
   it('同じ人が5分未満で続けたら連続', () => {
@@ -23,11 +23,5 @@ describe('isContinuation', () => {
 
   it('日付が変わる発言は連続ではない', () => {
     expect(isContinuation(base, { ...base, created_at: base.created_at + 1000 }, true)).toBe(false);
-  });
-
-  it('スレッドの起点（前の発言が thread を持つ、または自分が thread を持つ）は連続ではない', () => {
-    const root = { ...base, thread: { reply_count: 1 } };
-    expect(isContinuation(root, { ...base, created_at: base.created_at + 1000 }, false)).toBe(false);
-    expect(isContinuation(base, { ...base, created_at: base.created_at + 1000, thread: { reply_count: 0 } }, false)).toBe(false);
   });
 });

@@ -22,7 +22,6 @@ fn msg(id: &str, author: &str, body: &str, at: i64) -> Message {
     Message {
         id: id.into(),
         author_id: author.into(),
-        thread_id: None,
         reply_to: None,
         reply_preview: None,
         body: body.into(),
@@ -30,7 +29,6 @@ fn msg(id: &str, author: &str, body: &str, at: i64) -> Message {
         reactions: Vec::new(),
         created_at: at,
         edited_at: None,
-        thread: None,
         card: None,
         bot: None,
     }
@@ -44,7 +42,7 @@ fn users() -> Vec<User> {
     ]
 }
 
-fn rows_of(messages: &[Message], me: Option<&str>) -> Vec<Row> {
+fn timeline_of(messages: &[Message], me: Option<&str>) -> Vec<Row> {
     let users = users();
     let cal = UtcCalendar;
     let ctx = Context::new(&users, me, &cal);
@@ -74,7 +72,7 @@ fn head_at(row: &Row) -> Option<&Head> {
 
 #[test]
 fn a_separator_precedes_the_first_message_of_each_day() {
-    let rows = rows_of(
+    let rows = timeline_of(
         &[msg("m1", "bob", "a", T0), msg("m2", "bob", "b", T0 + DAY)],
         None,
     );
@@ -91,7 +89,7 @@ fn a_separator_precedes_the_first_message_of_each_day() {
 
 #[test]
 fn the_same_person_within_five_minutes_continues_and_has_no_head() {
-    let rows = rows_of(
+    let rows = timeline_of(
         &[
             msg("m1", "bob", "first", T0),
             msg("m2", "bob", "second", T0 + GROUP_MS - 1),
@@ -105,7 +103,7 @@ fn the_same_person_within_five_minutes_continues_and_has_no_head() {
 
 #[test]
 fn exactly_five_minutes_does_not_continue() {
-    let rows = rows_of(
+    let rows = timeline_of(
         &[
             msg("m1", "bob", "a", T0),
             msg("m2", "bob", "b", T0 + GROUP_MS),
@@ -118,7 +116,7 @@ fn exactly_five_minutes_does_not_continue() {
 #[test]
 fn a_new_day_never_continues_even_within_five_minutes() {
     // 日付の境界（UTC の真夜中）をまたぐ
-    let rows = rows_of(
+    let rows = timeline_of(
         &[
             msg("m1", "bob", "a", DAY - 60_000),
             msg("m2", "bob", "b", DAY + 60_000),
@@ -128,22 +126,6 @@ fn a_new_day_never_continues_even_within_five_minutes() {
     assert!(head_at(&rows[1]).is_some(), "{rows:?}");
     assert!(matches!(rows[2], Row::Separator { .. }));
     assert!(head_at(&rows[3]).is_some());
-}
-
-#[test]
-fn threads_are_not_a_grouping_condition_any_more() {
-    let thread = ThreadInfo {
-        reply_count: 1,
-        last_reply_at: None,
-        created_by: "bob".into(),
-        title: None,
-        tags: Vec::new(),
-        archived: false,
-    };
-    let mut first = msg("m1", "bob", "a", T0);
-    first.thread = Some(thread);
-    let rows = rows_of(&[first, msg("m2", "bob", "b", T0 + 1000)], None);
-    assert!(head_at(&rows[2]).is_none());
 }
 
 #[test]
@@ -158,7 +140,7 @@ fn a_bot_message_is_grouped_only_with_the_same_plugin_and_name() {
     b.bot = Some(bot("poll", "投票"));
     let mut c = msg("m3", "bob", "c", T0 + 2000);
     c.bot = Some(bot("quiz", "出題"));
-    let rows = rows_of(&[a, b, c], None);
+    let rows = timeline_of(&[a, b, c], None);
     // 頭が付くのは、続きでない最初の行だけ（m1 と m3）
     let with_head: Vec<String> = rows
         .iter()
@@ -178,7 +160,7 @@ fn the_head_of_a_bot_is_the_bot_name_and_is_never_own() {
         plugin: "poll".into(),
         name: "投票".into(),
     });
-    let rows = rows_of(&[m], Some("me"));
+    let rows = timeline_of(&[m], Some("me"));
     let head = head_at(&rows[1]).expect("head");
     assert_eq!(head.name.as_deref(), Some("投票"));
     assert_eq!(head.avatar, None);
@@ -193,7 +175,7 @@ fn the_head_of_a_bot_is_the_bot_name_and_is_never_own() {
 
 #[test]
 fn own_messages_are_marked_and_unknown_users_have_no_name() {
-    let rows = rows_of(
+    let rows = timeline_of(
         &[
             msg("m1", "me", "mine", T0),
             msg("m2", "ghost", "?", T0 + DAY),
@@ -234,7 +216,7 @@ fn avatars_are_own_paths_or_external_https_only() {
 
 #[test]
 fn body_is_split_into_lines_with_crlf_and_cr_as_breaks() {
-    let rows = rows_of(&[msg("m1", "bob", "a\r\nb\rc\nd", T0)], None);
+    let rows = timeline_of(&[msg("m1", "bob", "a\r\nb\rc\nd", T0)], None);
     let lines: Vec<String> = rows
         .iter()
         .filter_map(body_line)
@@ -252,14 +234,14 @@ fn body_is_split_into_lines_with_crlf_and_cr_as_breaks() {
 
 #[test]
 fn an_empty_body_without_meta_is_one_empty_body_line() {
-    let rows = rows_of(&[msg("m1", "bob", "", T0)], None);
+    let rows = timeline_of(&[msg("m1", "bob", "", T0)], None);
     assert_eq!(body_line(&rows[1]), Some(&Vec::new()));
     assert_eq!(rows.len(), 2);
 }
 
 #[test]
 fn mentions_resolve_to_names_and_mark_me_and_keep_unknown_or_bad_ids_as_text() {
-    let rows = rows_of(
+    let rows = timeline_of(
         &[msg(
             "m1",
             "bob",
@@ -298,7 +280,7 @@ fn mentions_resolve_to_names_and_mark_me_and_keep_unknown_or_bad_ids_as_text() {
 #[test]
 fn a_mention_id_longer_than_64_chars_is_text() {
     let long = "x".repeat(65);
-    let rows = rows_of(&[msg("m1", "bob", &format!("<@{long}>"), T0)], None);
+    let rows = timeline_of(&[msg("m1", "bob", &format!("<@{long}>"), T0)], None);
     assert_eq!(
         body_line(&rows[1]),
         Some(&vec![text(&format!("<@{long}>"))])
@@ -324,7 +306,7 @@ fn attachments_report_kind_and_a_thumb_only_when_it_is_safe_and_sized() {
         att("f_3", "image/png", true, Some(0), Some(480)),
         att("f_4", "application/pdf", true, Some(640), Some(480)),
     ];
-    let rows = rows_of(&[m], None);
+    let rows = timeline_of(&[m], None);
     let metas: Vec<&Meta> = rows
         .iter()
         .filter_map(|r| match r {
@@ -386,7 +368,7 @@ fn reactions_skip_empty_ones_and_count_and_mark_mine() {
             user_ids: vec!["carol".into()],
         },
     ];
-    let rows = rows_of(&[m], Some("me"));
+    let rows = timeline_of(&[m], Some("me"));
     let items = rows
         .iter()
         .find_map(|r| match r {
@@ -434,7 +416,7 @@ fn reply_card_and_edited_are_meta_lines_in_the_transcript_order() {
         text: "3件".into(),
     });
     m.edited_at = Some(T0 + 5);
-    let rows = rows_of(&[m], None);
+    let rows = timeline_of(&[m], None);
     let kinds: Vec<&str> = rows[1..]
         .iter()
         .map(|r| match r {
@@ -465,7 +447,7 @@ fn reply_card_and_edited_are_meta_lines_in_the_transcript_order() {
 fn a_reply_to_a_deleted_message_is_a_single_meta_line() {
     let mut m = msg("m1", "bob", "x", T0);
     m.reply_to = Some("gone".into());
-    let rows = rows_of(&[m], None);
+    let rows = timeline_of(&[m], None);
     assert!(matches!(
         &rows[1],
         Row::Message {
@@ -503,7 +485,7 @@ fn the_calendar_decides_the_day_and_the_grouping() {
         .count();
     assert_eq!(separators, 1);
     assert_eq!(
-        rows_of(
+        timeline_of(
             &[
                 msg("m1", "bob", "a", DAY - 3_600_000),
                 msg("m2", "bob", "b", DAY + 3_600_000)
@@ -519,7 +501,7 @@ fn the_calendar_decides_the_day_and_the_grouping() {
 
 #[test]
 fn the_json_shape_is_camel_case_with_type_tags() {
-    let rows = rows_of(&[msg("m1", "me", "hi <@bob>", T0)], Some("me"));
+    let rows = timeline_of(&[msg("m1", "me", "hi <@bob>", T0)], Some("me"));
     let value = serde_json::to_value(&rows[1]).unwrap();
     assert_eq!(value["type"], "message");
     assert_eq!(value["messageId"], "m1");
@@ -546,7 +528,7 @@ fn the_card_plugin_and_session_are_kept_as_raw_values() {
         title: "t\u{202e}".into(),
         text: "x".into(),
     });
-    let rows = rows_of(&[m], None);
+    let rows = timeline_of(&[m], None);
     assert!(
         matches!(
             &rows[1],

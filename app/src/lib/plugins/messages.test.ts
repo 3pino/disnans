@@ -82,11 +82,11 @@ describe('addMessageAction', () => {
     expect(a.id).toBe('plugin:read-later:x');
     expect(a.placement).toBe('both');
     expect(a.icon).toBe('puzzle');
-    const c = { message: m('m1'), inThread: true, place: 't1' };
+    const c = { message: m('m1') };
     expect(a.when!(c)).toBe(true);
-    expect(when).toHaveBeenCalledWith(c.message, { threadId: 't1', inThread: true });
+    expect(when).toHaveBeenCalledWith(c.message);
     await a.run({ ...c, anchor: new DOMRect(), openPicker: () => {} });
-    expect(run).toHaveBeenCalledWith(c.message, { threadId: 't1', inThread: true });
+    expect(run).toHaveBeenCalledWith(c.message);
     r.stop();
     expect(actions).toHaveLength(0);
   });
@@ -109,7 +109,7 @@ describe('addMessageAction', () => {
     }
     await r.start(P as unknown as PluginClass);
     expect(actions).toHaveLength(1);
-    expect(actions[0].when!({ message: m('m1'), inThread: false, place: null })).toBe(false);
+    expect(actions[0].when!({ message: m('m1') })).toBe(false);
     expect(r.errors).toHaveLength(1);
     err.mockRestore();
   });
@@ -179,11 +179,11 @@ describe('examples/messages', () => {
     const mod = (await import('../../../../examples/messages/main.js')) as { default: PluginClass };
     await r.start(mod.default);
     const act = actions[0];
-    expect(act.when!({ message: m('c', { card: {} as never }), inThread: false, place: null })).toBe(false);
-    const run = (id: string) => act.run({ message: m(id), inThread: false, place: null, anchor: new DOMRect(), openPicker: () => {} });
+    expect(act.when!({ message: m('c', { card: {} as never }) })).toBe(false);
+    const run = (id: string) => act.run({ message: m(id), anchor: new DOMRect(), openPicker: () => {} });
     await run('a');
     await run('b');
-    commands.get('read-later:open')!.run({ args: '', threadId: null, via: 'palette' } as never);
+    commands.get('read-later:open')!.run({ args: '', via: 'palette' } as never);
     expect(timelines[0].spec.entries().map((e) => e.message.id)).toEqual(['b', 'a']);
     await run('b');
     expect(timelines[0].spec.entries().map((e) => e.message.id)).toEqual(['a']);

@@ -10,9 +10,7 @@
   import { replyPreviewOf } from '../lib/reply';
 
   // 入力欄の上に出す「返信先のアイコン 本文の冒頭 ×」のバー（名前は出さず、アイコンで相手を示す）
-  let { threadId }: { threadId: string | null } = $props();
-
-  const target = $derived(reply.get(threadId));
+  const target = $derived(reply.get());
   const author = $derived(target ? authorOf(target, client.users) : null);
   const text = $derived.by(() => {
     if (!target) return '';
@@ -28,7 +26,7 @@
       <AuthorAvatar {author} user={client.user(target.author_id)} id={target.author_id} size={18} />
     </span>
     <span class="reply-bar-text">{text}</span>
-    <IconButton label="返信をやめる" onclick={() => reply.clear(threadId)}><X size={16} /></IconButton>
+    <IconButton label="返信をやめる" onclick={() => reply.clear()}><X size={16} /></IconButton>
   </div>
 {/if}
 

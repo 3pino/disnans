@@ -287,24 +287,13 @@ impl App {
     }
 
     pub fn rows(&self) -> Vec<Row> {
-        let width = self.viewport.0;
-        let mut rows = Vec::new();
-        let mut day = None;
-        for m in &self.messages {
-            let (key, label) = crate::timefmt::day_label(m.created_at, self.zone.as_ref());
-            if day != Some(key) {
-                rows.push(transcript::separator_row(&label, width));
-                day = Some(key);
-            }
-            rows.extend(transcript::message_rows(
-                m,
-                &self.users,
-                width,
-                self.zone.as_ref(),
-                self.gfx,
-            ));
-        }
-        rows
+        transcript::timeline(
+            &self.messages,
+            &self.users,
+            self.viewport.0,
+            self.zone.as_ref(),
+            self.gfx,
+        )
     }
 
     fn message_height(&self, message: &Message) -> usize {

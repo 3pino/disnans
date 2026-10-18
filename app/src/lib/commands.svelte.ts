@@ -9,8 +9,6 @@ export type CommandVia = 'hotkey' | 'palette' | 'slash';
 export type CommandContext = {
   /** `/コマンド` のあとの文字列（前後の空白は除く）。ホットキー・パレットからは空文字列 */
   args: string;
-  /** スラッシュコマンドは入力したスレッド、ほかは開いているスレッド（なければ null） */
-  threadId: string | null;
   via: CommandVia;
 };
 
@@ -88,7 +86,7 @@ export function registerCommand(cmd: AppCommand): () => void {
       description: cmd.description || cmd.name,
       args: cmd.args,
       suggestArgs: cmd.suggestArgs,
-      run: ({ args, threadId }) => cmd.run({ args, threadId, via: 'slash' }),
+      run: ({ args }) => cmd.run({ args, via: 'slash' }),
       // アイコンはあとから変わることがある（プラグインの icon.svg など）ので、そのつど引く
       get icon() {
         return cmd.icon;

@@ -44,57 +44,6 @@ pub struct Reaction {
     pub user_ids: Vec<Id>,
 }
 
-/// スレッドの情報。スレッドの ID は起点のメッセージの ID と同じ。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ThreadInfo {
-    pub reply_count: u32,
-    pub last_reply_at: Option<Timestamp>,
-    /// スレッドを立てた人。タイトルとアーカイブの設定ができるのはこの人だけ。
-    pub created_by: Id,
-    /// スレッドのタイトル。`null` なら起点のメッセージの冒頭を見出しにする。
-    pub title: Option<String>,
-    /// タグ（表示の順）。
-    pub tags: Vec<ThreadTag>,
-    /// アーカイブされているか（一覧でグレーアウトするだけ。返信はできる）。
-    pub archived: bool,
-}
-
-/// スレッドのタグ。好きな文字列（絵文字を含む）と、0 か 1 個の Lucide アイコン名。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ThreadTag {
-    pub label: String,
-    /// Lucide のアイコン名（英小文字・数字・ハイフン）。
-    pub icon: Option<String>,
-}
-
-/// `PATCH /api/threads/{id}`。指定した項目だけ変える（スレッドを立てた人だけ）。
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct UpdateThread {
-    /// 新しいタイトル。空文字なら消す（起点の冒頭を見出しにする）。
-    #[serde(default)]
-    pub title: Option<String>,
-    #[serde(default)]
-    pub archived: Option<bool>,
-}
-
-/// `PUT /api/threads/{id}/tags`。タグ全体を置き換える（誰でもできる）。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct SetThreadTags {
-    pub tags: Vec<ThreadTag>,
-}
-
-/// `GET /api/thread-tags` の1件。すでに使われているタグと、使っているスレッドの数。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ThreadTagUsage {
-    pub tag: ThreadTag,
-    pub count: u32,
-}
-
 /// 返信先のメッセージの要約（引用の表示用）。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -111,9 +60,7 @@ pub struct ReplyPreview {
 pub struct Message {
     pub id: Id,
     pub author_id: Id,
-    /// スレッド内の返信なら、そのスレッド（起点のメッセージ）の ID。メインチャットなら `null`。
-    pub thread_id: Option<Id>,
-    /// 返信なら、返信先のメッセージの ID（同じメインチャット・同じスレッドのメッセージ）。
+    /// 返信なら、返信先のメッセージの ID（メインチャットのメッセージ）。
     pub reply_to: Option<Id>,
     /// 返信先の要約。返信先が削除されていれば `null`（`reply_to` だけが残る）。
     pub reply_preview: Option<ReplyPreview>,
@@ -123,8 +70,6 @@ pub struct Message {
     pub reactions: Vec<Reaction>,
     pub created_at: Timestamp,
     pub edited_at: Option<Timestamp>,
-    /// このメッセージがスレッドの起点なら入る。
-    pub thread: Option<ThreadInfo>,
     /// プラグインのセッションのカードなら入る（本文は空）。
     pub card: Option<MessageCard>,
     /// プラグインがボットとして投稿したメッセージなら入る。`author_id` は投稿を実行した人。
@@ -143,7 +88,6 @@ pub struct BotInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PluginPostMessage {
-    pub thread_id: Option<Id>,
     pub body: String,
     /// 省略するとプラグインの表示名。
     pub name: Option<String>,
@@ -248,8 +192,6 @@ pub struct Session {
 #[ts(export)]
 pub struct CreateSession {
     pub plugin: String,
-    /// カードを流すスレッド。`null` ならメインチャット。
-    pub thread_id: Option<Id>,
     #[ts(type = "unknown")]
     pub state: serde_json::Value,
     pub card: Card,
@@ -277,20 +219,10 @@ pub struct PluginNotify {
     pub session_id: Option<Id>,
 }
 
-/// スレッド一覧の1件。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct Thread {
-    pub root: Message,
-    pub info: ThreadInfo,
-}
-
-/// 既読の位置と未読数（メインチャットかスレッド1つ分）。`GET /api/me/read` と `read.updated` で使う。
+/// 既読の位置と未読数（メインチャット）。`GET /api/me/read` と `read.updated` で使う。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReadMarker {
-    /// スレッドの ID。メインチャットなら `null`。
-    pub thread_id: Option<Id>,
     /// ここまで読んだ位置。この ID 以下のメッセージは既読（ID の文字列の大小で比べる）。
     /// 実在するメッセージの ID とは限らない（一度も既読にしていなければ、アカウントを作った時刻の位置）。
     pub last_read_id: Id,
@@ -298,12 +230,49 @@ pub struct ReadMarker {
     pub unread_count: u32,
 }
 
+/// 端末の一覧の1件（`GET /api/me/devices`）。端末 ID はクライアントが決める。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DeviceInfo {
+    pub device_id: String,
+    pub name: String,
+    pub created_at: Timestamp,
+    /// 最後に設定を読み書きした時刻。
+    pub last_seen_at: Timestamp,
+    /// 端末の設定が保存されているか。
+    pub has_prefs: bool,
+}
+
+/// `PUT /api/me/devices/{device_id}`（端末の登録と名前の変更）
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PutDevice {
+    pub name: String,
+}
+
+/// 端末ごとの設定（`GET/PUT /api/me/devices/{device_id}/prefs`）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DevicePrefs {
+    /// JSON オブジェクト。中身はクライアントが決める。
+    #[ts(type = "unknown")]
+    pub prefs: serde_json::Value,
+    pub updated_at: Timestamp,
+}
+
+/// `PUT /api/me/devices/{device_id}/prefs`（まるごと置き換え）
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PutDevicePrefs {
+    /// JSON オブジェクト。
+    #[ts(type = "unknown")]
+    pub prefs: serde_json::Value,
+}
+
 /// `PUT /api/me/read`
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MarkRead {
-    /// スレッドの ID。メインチャットなら `null`。
-    pub thread_id: Option<Id>,
     /// ここまで読んだメッセージの ID。いまの位置より古ければ何もしない（戻らない）。
     pub message_id: Id,
 }
@@ -353,13 +322,10 @@ pub enum ClientEvent {
     MessageSend {
         /// 仮表示と確定したメッセージを突き合わせるための、クライアントが決める ID。
         client_id: String,
-        thread_id: Option<Id>,
         body: String,
         /// 事前に `POST /api/files` でアップロードした添付ファイルの ID。
         attachment_ids: Vec<Id>,
-        /// `true` なら、このメッセージを起点にスレッドを作る。
-        start_thread: bool,
-        /// 返信先のメッセージ ID。同じメインチャット・同じスレッドのメッセージだけ指定できる。
+        /// 返信先のメッセージ ID。メインチャットのメッセージだけ指定できる。
         #[serde(default)]
         reply_to: Option<Id>,
         /// `true` なら通知を送らない。
@@ -370,8 +336,6 @@ pub enum ClientEvent {
     MessageEdit { message_id: Id, body: String },
     #[serde(rename = "message.delete")]
     MessageDelete { message_id: Id },
-    #[serde(rename = "thread.create")]
-    ThreadCreate { root_message_id: Id },
     #[serde(rename = "reaction.add")]
     ReactionAdd { message_id: Id, emoji: String },
     #[serde(rename = "reaction.remove")]
@@ -432,13 +396,7 @@ pub enum ServerEvent {
     #[serde(rename = "message.updated")]
     MessageUpdated { message: Message },
     #[serde(rename = "message.deleted")]
-    MessageDeleted {
-        message_id: Id,
-        thread_id: Option<Id>,
-    },
-    /// スレッドが作られた、または返信数などが変わった。
-    #[serde(rename = "thread.updated")]
-    ThreadUpdated { thread: Thread },
+    MessageDeleted { message_id: Id },
     #[serde(rename = "reaction.updated")]
     ReactionUpdated {
         message_id: Id,
@@ -446,13 +404,12 @@ pub enum ServerEvent {
     },
     #[serde(rename = "user.updated")]
     UserUpdated { user: User },
-    /// 自分宛ての通知（メンション、スレッドへの返信など）。
+    /// 自分宛ての通知（メンション、返信、全体向けの投稿など）。
     #[serde(rename = "notify")]
     Notify {
         title: String,
         body: String,
         message_id: Option<Id>,
-        thread_id: Option<Id>,
         /// 「サンプル通知を送信」で送ったもの。アプリを表示中でもシステム通知を出す。
         sample: bool,
         /// 接続が切れていた間の通知を、接続し直したときに再送したもの（直近の分だけ）。

@@ -21,7 +21,7 @@ pub use platform::{
 pub use rest::{ClientError, MessagesQuery, RestClient};
 pub use rest_api::{
     MessageSearchQuery, ReadFailure, UploadAbortHandle, UploadAbortRegistration, messages_path,
-    search_path, session_path, thread_path,
+    search_path, session_path,
 };
 pub use storage::{DraftKey, DraftPlace, LocalStore, StoreError, StoredValue};
 pub use url::{ServerUrl, UrlError, normalize_server_url};

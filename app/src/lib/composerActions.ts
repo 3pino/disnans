@@ -10,16 +10,15 @@ export type ComposerAction = {
   label: string;
   /** アイコン（Svelte の部品か、アイコンの名前: lib/icons.svelte.ts）。無ければ既定のアイコン（Puzzle） */
   icon?: IconRef;
-  /** メインチャットでだけ出す、など */
-  when?: (ctx: { threadId: string | null }) => boolean;
-  run: (ctx: { threadId: string | null }) => void | Promise<void>;
+  /** 出すかどうか（省略なら出す） */
+  when?: () => boolean;
+  run: () => void | Promise<void>;
   /** 出どころ（プラグイン名など）。本体の項目は省略 */
   source?: string;
 };
 
 /** 本体の項目にだけ渡す操作 */
 export type ComposerContext = {
-  threadId: string | null;
   pickFiles: () => void;
 };
 

@@ -28,7 +28,7 @@ async function setup() {
           name: c.slash,
           description: c.description || c.name,
           args: c.args,
-          run: ({ args, threadId }) => c.run({ args, threadId, via: 'slash' }),
+          run: ({ args }) => c.run({ args, via: 'slash' }),
         } as HostSlashCommand);
       }
       return () => {};
@@ -48,43 +48,43 @@ async function setup() {
 describe('examples/bot', () => {
   it('/bot は本文をそのまま、いまのスレッドに投稿する', async () => {
     const { slash, postMessage } = await setup();
-    await slash.get('bot')!.run({ args: 'こんにちは', threadId: 't1' });
-    expect(postMessage).toHaveBeenCalledWith('bot', { thread_id: 't1', body: 'こんにちは', name: null, notify: false });
-    await slash.get('bot')!.run({ args: 'main', threadId: null });
-    expect(postMessage).toHaveBeenLastCalledWith('bot', { thread_id: null, body: 'main', name: null, notify: false });
+    await slash.get('bot')!.run({ args: 'こんにちは' });
+    expect(postMessage).toHaveBeenCalledWith('bot', { body: 'こんにちは', name: null, notify: false });
+    await slash.get('bot')!.run({ args: 'main' });
+    expect(postMessage).toHaveBeenLastCalledWith('bot', { body: 'main', name: null, notify: false });
   });
 
   it('/bot-as は最初の語を名前にして投稿する', async () => {
     const { slash, postMessage } = await setup();
-    await slash.get('bot-as')!.run({ args: 'Alice  hello world', threadId: null });
-    expect(postMessage).toHaveBeenCalledWith('bot', { thread_id: null, body: 'hello world', name: 'Alice', notify: false });
+    await slash.get('bot-as')!.run({ args: 'Alice  hello world' });
+    expect(postMessage).toHaveBeenCalledWith('bot', { body: 'hello world', name: 'Alice', notify: false });
   });
 
   it('本文が空・名前だけなら投稿せずトーストを出す', async () => {
     const { slash, postMessage } = await setup();
-    await slash.get('bot')!.run({ args: '', threadId: null });
-    await slash.get('bot-as')!.run({ args: 'Alice', threadId: null });
+    await slash.get('bot')!.run({ args: '' });
+    await slash.get('bot-as')!.run({ args: 'Alice' });
     expect(postMessage).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledTimes(2);
   });
 
   it('/bot-notify は notify: true で投稿する', async () => {
     const { slash, postMessage } = await setup();
-    await slash.get('bot-notify')!.run({ args: 'こんにちは', threadId: 't1' });
-    expect(postMessage).toHaveBeenCalledWith('bot', { thread_id: 't1', body: 'こんにちは', name: null, notify: true });
+    await slash.get('bot-notify')!.run({ args: 'こんにちは' });
+    expect(postMessage).toHaveBeenCalledWith('bot', { body: 'こんにちは', name: null, notify: true });
   });
 
   it('/bot-notify は最初の数字の秒数だけ待ってから投稿する', async () => {
     const { slash, postMessage } = await setup();
     vi.useFakeTimers();
     try {
-      const done = slash.get('bot-notify')!.run({ args: '3 hi', threadId: null });
+      const done = slash.get('bot-notify')!.run({ args: '3 hi' });
       expect(toast).toHaveBeenCalledWith('3 秒後に投稿します', 'info');
       await vi.advanceTimersByTimeAsync(2999);
       expect(postMessage).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       await done;
-      expect(postMessage).toHaveBeenCalledWith('bot', { thread_id: null, body: 'hi', name: null, notify: true });
+      expect(postMessage).toHaveBeenCalledWith('bot', { body: 'hi', name: null, notify: true });
     } finally {
       vi.useRealTimers();
     }
@@ -94,11 +94,11 @@ describe('examples/bot', () => {
     const { slash, postMessage } = await setup();
     vi.useFakeTimers();
     try {
-      const done = slash.get('bot-notify')!.run({ args: '999 hi', threadId: null });
+      const done = slash.get('bot-notify')!.run({ args: '999 hi' });
       expect(toast).toHaveBeenCalledWith('60 秒後に投稿します', 'info');
       await vi.advanceTimersByTimeAsync(60_000);
       await done;
-      expect(postMessage).toHaveBeenCalledWith('bot', { thread_id: null, body: 'hi', name: null, notify: true });
+      expect(postMessage).toHaveBeenCalledWith('bot', { body: 'hi', name: null, notify: true });
     } finally {
       vi.useRealTimers();
     }
@@ -106,7 +106,7 @@ describe('examples/bot', () => {
 
   it('/bot-notify は本文が空なら（秒数だけなら）待たずに投稿せずトーストを出す', async () => {
     const { slash, postMessage } = await setup();
-    await slash.get('bot-notify')!.run({ args: '5', threadId: null });
+    await slash.get('bot-notify')!.run({ args: '5' });
     expect(toast).toHaveBeenCalledWith('本文を入力してください', 'error');
     expect(postMessage).not.toHaveBeenCalled();
   });

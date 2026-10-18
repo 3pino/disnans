@@ -3,7 +3,7 @@
 //! Filesystem I/O is blocking and is always run on Tauri's blocking pool. This module accepts
 //! logical keys only; callers cannot provide arbitrary filesystem paths.
 
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value as JsonValue;
 
 use disnans_client_core::{DraftKey, DraftPlace, LocalStore, ServerUrl, StoreError, StoredValue};
@@ -56,14 +56,11 @@ impl StorageKey {
             } => {
                 let server = ServerUrl::parse(&server_url).map_err(|e| e.to_string())?;
                 validate_identifier(&user_id, "userId")?;
-                let place = if place == "main" {
-                    DraftPlace::Main
-                } else if let Some(id) = place.strip_prefix("thread:") {
-                    validate_identifier(id, "thread place")?;
-                    DraftPlace::Thread(id.to_owned())
-                } else {
-                    return Err("place must be 'main' or 'thread:<id>'".into());
-                };
+                // スレッドは廃止。place は "main" だけ（旧スレッドの下書きは読まない）
+                if place != "main" {
+                    return Err("place must be 'main'".into());
+                }
+                let place = DraftPlace::Main;
                 Ok(ValidatedKey::Draft(DraftKey {
                     server,
                     user_id,
@@ -249,15 +246,21 @@ mod tests {
         assert!(matches!(server.validate(), Ok(ValidatedKey::Server)));
 
         let opaque: StorageKey = serde_json::from_str(
-            r#"{"kind":"draft","serverUrl":"https://host/base","userId":"u1","place":"thread:m1"}"#,
+            r#"{"kind":"draft","serverUrl":"https://host/base","userId":"u1","place":"main"}"#,
         )
         .unwrap();
         assert!(matches!(opaque.validate(), Ok(ValidatedKey::Draft(_))));
         let ulid: StorageKey = serde_json::from_str(&format!(
-            r#"{{"kind":"draft","serverUrl":"https://host/base","userId":"{ULID}","place":"thread:{ULID}"}}"#
+            r#"{{"kind":"draft","serverUrl":"https://host/base","userId":"{ULID}","place":"main"}}"#
         ))
         .unwrap();
         assert!(matches!(ulid.validate(), Ok(ValidatedKey::Draft(_))));
+        // 旧スレッドの下書き（thread:…）は受け付けない
+        let thread: StorageKey = serde_json::from_str(
+            r#"{"kind":"draft","serverUrl":"https://host/base","userId":"u1","place":"thread:m1"}"#,
+        )
+        .unwrap();
+        assert!(thread.validate().is_err());
         assert!(
             serde_json::from_str::<StorageKey>(r#"{"kind":"file","path":"/tmp/secret"}"#).is_err()
         );
@@ -268,27 +271,35 @@ mod tests {
         let bad = format!(
             r#"{{"kind":"draft","serverUrl":"https://user:pass@host","userId":"{ULID}","place":"main"}}"#
         );
-        assert!(serde_json::from_str::<StorageKey>(&bad)
-            .unwrap()
-            .validate()
-            .is_err());
+        assert!(
+            serde_json::from_str::<StorageKey>(&bad)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
         let bad = r#"{"kind":"draft","serverUrl":"https://host","userId":"","place":"main"}"#;
-        assert!(serde_json::from_str::<StorageKey>(bad)
-            .unwrap()
-            .validate()
-            .is_err());
+        assert!(
+            serde_json::from_str::<StorageKey>(bad)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
         let bad = format!(
             r#"{{"kind":"draft","serverUrl":"https://host","userId":"{ULID}","place":"thread:"}}"#
         );
-        assert!(serde_json::from_str::<StorageKey>(&bad)
-            .unwrap()
-            .validate()
-            .is_err());
+        assert!(
+            serde_json::from_str::<StorageKey>(&bad)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
         let bad = r#"{"kind":"draft","serverUrl":"https://host","userId":"u\n1","place":"main"}"#;
-        assert!(serde_json::from_str::<StorageKey>(bad)
-            .unwrap()
-            .validate()
-            .is_err());
+        assert!(
+            serde_json::from_str::<StorageKey>(bad)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
     }
 
     #[test]

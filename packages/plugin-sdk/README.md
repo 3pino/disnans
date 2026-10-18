@@ -1,9 +1,10 @@
 # @disnans/plugin-sdk
 
-disnans のプラグインを書くための型定義（ホスト API バージョン 12）。
+disnans のプラグインを書くための型定義（ホスト API バージョン 13）。
 
 - `index.d.ts`: ホスト API の型。グローバルの `disnans` と、名前空間 `Disnans`（`Disnans.Session` など）を宣言する
 - 実行時のコードは入っていない。ホスト API の実体は disnans 本体がグローバルの `disnans` として用意する
+- v13 でスレッドを廃止した。`postMessage` / `sessions.create` / コマンド・＋メニュー・メッセージの操作の `threadId`・`inThread`・`startThread`、`Message.thread_id` / `thread` は無くなった（メッセージはすべてメインチャット）。古い版で書いたものは `minApiVersion` を 13 より前のままにすると、本体が古いときにだけ読み込める
 - v12 では `disnans.call.addButton({ ..., location: 'view' })` を使うと、ボタンを通話画面だけに表示できる（省略時は従来どおり通話バーと通話画面の両方）
 - 作り方のガイドは [`docs/PLUGINS.md`](../../docs/PLUGINS.md)、実例は [`examples/dice/`](../../examples/dice/)
 
@@ -85,11 +86,10 @@ export default class CounterPlugin extends disnans.Plugin {
     this.addSlashCommand({
       name: 'counter',
       description: 'みんなで数えるカウンター',
-      run: async ({ threadId }) => {
+      run: async () => {
         const session = await this.sessions.create<CounterState>({
           state: { schema: 1, count: 0 },
           card: { title: 'カウンター', text: '0' },
-          threadId,
         });
         this.openView('counter', session);
       },

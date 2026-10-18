@@ -3,7 +3,7 @@
 /**
  * `POST /api/plugins/{id}/messages`
  */
-export type PluginPostMessage = { thread_id: string | null, body: string, 
+export type PluginPostMessage = { body: string, 
 /**
  * 省略するとプラグインの表示名。
  */

@@ -5,7 +5,6 @@ import type { PluginInfo } from "./PluginInfo";
 import type { Reaction } from "./Reaction";
 import type { ReadMarker } from "./ReadMarker";
 import type { Session } from "./Session";
-import type { Thread } from "./Thread";
 import type { User } from "./User";
 
 /**
@@ -15,7 +14,7 @@ export type ServerEvent = { "type": "hello", me: User, users: Array<User>, } | {
 /**
  * 送信者本人にだけ入る。
  */
-client_id: string | null, message: Message, } | { "type": "message.updated", message: Message, } | { "type": "message.deleted", message_id: string, thread_id: string | null, } | { "type": "thread.updated", thread: Thread, } | { "type": "reaction.updated", message_id: string, reactions: Array<Reaction>, } | { "type": "user.updated", user: User, } | { "type": "notify", title: string, body: string, message_id: string | null, thread_id: string | null, 
+client_id: string | null, message: Message, } | { "type": "message.updated", message: Message, } | { "type": "message.deleted", message_id: string, } | { "type": "reaction.updated", message_id: string, reactions: Array<Reaction>, } | { "type": "user.updated", user: User, } | { "type": "notify", title: string, body: string, message_id: string | null, 
 /**
  * 「サンプル通知を送信」で送ったもの。アプリを表示中でもシステム通知を出す。
  */

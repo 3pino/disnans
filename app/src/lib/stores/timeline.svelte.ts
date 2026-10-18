@@ -36,7 +36,6 @@ export type PendingMessage = Message & {
   unknown: boolean;
   /** 再送用（アップロードが済んだファイルの ID。送るときに決まる） */
   attachment_ids: string[];
-  start_thread: boolean;
   /** 通知を送らない */
   silent: boolean;
   /** 送るファイル。送信のたびに、まだ上げていないものを上げる */
@@ -47,7 +46,7 @@ export type PendingMessage = Message & {
 
 const PAGE = 50;
 
-/** メインチャット、またはスレッド1つ分のメッセージ */
+/** メインチャットのメッセージ */
 export class Timeline {
   messages = $state<Message[]>([]);
   pending = $state<PendingMessage[]>([]);
@@ -57,15 +56,13 @@ export class Timeline {
   hasMore = $state(true);
   error = $state<string | null>(null);
 
-  constructor(public readonly threadId: string | null) {}
-
   /** 最新のページを取り、手元と突き合わせる（初回・再接続時） */
   async load(): Promise<void> {
     if (this.loading) return;
     this.loading = true;
     this.error = null;
     try {
-      const page = await api.messages({ threadId: this.threadId, limit: PAGE });
+      const page = await api.messages({ limit: PAGE });
       this.mergeLatest(page);
       if (!this.loaded) this.hasMore = page.length >= PAGE;
       this.loaded = true;
@@ -101,7 +98,7 @@ export class Timeline {
     if (!before) return;
     this.loadingOlder = true;
     try {
-      const page = await api.messages({ threadId: this.threadId, before, limit: PAGE });
+      const page = await api.messages({ before, limit: PAGE });
       const ids = new Set(this.messages.map((m) => m.id));
       this.messages = [...page.filter((m) => !ids.has(m.id)), ...this.messages];
       this.hasMore = page.length >= PAGE;

@@ -33,13 +33,9 @@ export function createTauriReadApi(invoke: Invoke, ctx: BridgeContext): ReadApi 
     me: () => call('api_me'),
     users: () => call('api_users'),
     prefs: () => call('api_prefs'),
-    messages: (opts) =>
-      call('api_messages', { threadId: opts.threadId ?? null, before: opts.before ?? null, limit: opts.limit ?? null }),
+    messages: (opts) => call('api_messages', { before: opts.before ?? null, limit: opts.limit ?? null }),
     searchMessages: (opts) =>
       call('api_search_messages', { q: opts.q, before: opts.before ?? null, limit: opts.limit ?? null }),
-    threads: () => call('api_threads'),
-    thread: (id) => call('api_thread', { id }),
-    threadTags: () => call('api_thread_tags'),
     readMarkers: () => call('api_read_markers'),
     plugins: () => call('api_plugins'),
     session: (id) => call('api_session', { id }),

@@ -1,27 +1,25 @@
 import type { Message } from '../protocol/Message';
 
-const MAIN = '__main__';
+/** 入力欄の「返信先」（メインチャットに1つ。送ったら外す） */
+class ReplyTarget {
+  private target = $state<Message | null>(null);
 
-/** 入力欄の「返信先」。メインチャットとスレッドごとに1つ持つ（送ったら外す） */
-class ReplyTargets {
-  private targets = $state<Record<string, Message>>({});
-
-  get(threadId: string | null): Message | null {
-    return this.targets[threadId ?? MAIN] ?? null;
+  get(): Message | null {
+    return this.target;
   }
 
-  set(threadId: string | null, message: Message): void {
-    this.targets[threadId ?? MAIN] = message;
+  set(message: Message): void {
+    this.target = message;
   }
 
-  clear(threadId: string | null): void {
-    delete this.targets[threadId ?? MAIN];
+  clear(): void {
+    this.target = null;
   }
 
   /** メッセージが削除されたら、それを返信先にしている入力欄から外す */
   drop(messageId: string): void {
-    for (const [k, m] of Object.entries(this.targets)) if (m.id === messageId) delete this.targets[k];
+    if (this.target?.id === messageId) this.target = null;
   }
 }
 
-export const reply = new ReplyTargets();
+export const reply = new ReplyTarget();

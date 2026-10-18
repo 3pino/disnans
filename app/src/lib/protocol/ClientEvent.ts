@@ -8,20 +8,16 @@ export type ClientEvent = { "type": "message.send",
 /**
  * 仮表示と確定したメッセージを突き合わせるための、クライアントが決める ID。
  */
-client_id: string, thread_id: string | null, body: string, 
+client_id: string, body: string, 
 /**
  * 事前に `POST /api/files` でアップロードした添付ファイルの ID。
  */
 attachment_ids: Array<string>, 
 /**
- * `true` なら、このメッセージを起点にスレッドを作る。
- */
-start_thread: boolean, 
-/**
- * 返信先のメッセージ ID。同じメインチャット・同じスレッドのメッセージだけ指定できる。
+ * 返信先のメッセージ ID。メインチャットのメッセージだけ指定できる。
  */
 reply_to: string | null, 
 /**
  * `true` なら通知を送らない。
  */
-silent: boolean, } | { "type": "message.edit", message_id: string, body: string, } | { "type": "message.delete", message_id: string, } | { "type": "thread.create", root_message_id: string, } | { "type": "reaction.add", message_id: string, emoji: string, } | { "type": "reaction.remove", message_id: string, emoji: string, } | { "type": "session.emit", session_id: string, name: string, payload: unknown, } | { "type": "plugin.emit", plugin: string, name: string, payload: unknown, } | { "type": "call.join", peer: string, status: CallStatus, } | { "type": "call.leave" } | { "type": "call.update", status: CallStatus, } | { "type": "call.kick", peer: string, } | { "type": "call.emit", name: string, payload: unknown, } | { "type": "ping" };
+silent: boolean, } | { "type": "message.edit", message_id: string, body: string, } | { "type": "message.delete", message_id: string, } | { "type": "reaction.add", message_id: string, emoji: string, } | { "type": "reaction.remove", message_id: string, emoji: string, } | { "type": "session.emit", session_id: string, name: string, payload: unknown, } | { "type": "plugin.emit", plugin: string, name: string, payload: unknown, } | { "type": "call.join", peer: string, status: CallStatus, } | { "type": "call.leave" } | { "type": "call.update", status: CallStatus, } | { "type": "call.kick", peer: string, } | { "type": "call.emit", name: string, payload: unknown, } | { "type": "ping" };

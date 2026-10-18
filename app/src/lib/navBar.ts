@@ -4,21 +4,23 @@ import { moveItem } from './sortable';
 // 項目は本体・プラグインのコマンドの ID（app:open-chat など）。登録されていないもの（外したプラグインなど）は出さないが、並びには残す
 
 export const NAV_CHAT_ID = 'app:open-chat';
-export const NAV_THREADS_ID = 'app:open-threads';
 export const NAV_SETTINGS_ID = 'app:open-settings';
 /** 通話の画面。既定の並びには入れない（利用者が追加する）。コマンドとして登録される（lib/call/commands.ts） */
 export const NAV_CALL_ID = 'app:call-open';
 /** 検索（コマンドとして登録される。既定の表示名は Search） */
 export const NAV_SEARCH_ID = 'app:search';
 
-/** 本体の3つ（チャット・スレッド・設定）。コマンドの登録より前に出るので、登録されていなくても出す */
-export const NAV_BUILTIN_IDS: readonly string[] = [NAV_CHAT_ID, NAV_THREADS_ID, NAV_SETTINGS_ID];
+/** 本体の2つ（チャット・設定）。コマンドの登録より前に出るので、登録されていなくても出す */
+export const NAV_BUILTIN_IDS: readonly string[] = [NAV_CHAT_ID, NAV_SETTINGS_ID];
+
+/** 廃止した項目（スレッドは廃止した）。保存されていても読み捨てる */
+export const NAV_REMOVED_IDS: readonly string[] = ['app:open-threads'];
 
 /** 外せない項目。チャットと設定は、設定画面に戻れるように必ず出す */
 export const NAV_REQUIRED_IDS: readonly string[] = [NAV_CHAT_ID, NAV_SETTINGS_ID];
 
 /** 既定の並び */
-export const DEFAULT_NAV_ITEMS: readonly string[] = [NAV_CHAT_ID, NAV_THREADS_ID, NAV_SETTINGS_ID];
+export const DEFAULT_NAV_ITEMS: readonly string[] = [NAV_CHAT_ID, NAV_SETTINGS_ID];
 
 /**
  * 保存したもの（端末の localStorage）を読む。配列でなければ既定。文字列でないものと重複は捨てる。
@@ -26,14 +28,14 @@ export const DEFAULT_NAV_ITEMS: readonly string[] = [NAV_CHAT_ID, NAV_THREADS_ID
  */
 export function normalizeNavItems(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [...DEFAULT_NAV_ITEMS];
-  const out = [...new Set(raw.filter((x): x is string => typeof x === 'string' && x !== ''))];
+  const out = [...new Set(raw.filter((x): x is string => typeof x === 'string' && x !== '' && !NAV_REMOVED_IDS.includes(x)))];
   for (const id of NAV_REQUIRED_IDS) if (!out.includes(id)) out.push(id);
   return out;
 }
 
-/** 出す項目を、並びの順に返す。本体の3つは常に出し、ほかは登録されている（available に入っている）ものだけ */
+/** 出す項目を、並びの順に返す。本体の2つは常に出し、ほかは登録されている（available に入っている）ものだけ */
 export function visibleNavItems(list: readonly string[], available: ReadonlySet<string>): string[] {
-  return list.filter((id) => available.has(id) || NAV_BUILTIN_IDS.includes(id));
+  return list.filter((id) => !NAV_REMOVED_IDS.includes(id) && (available.has(id) || NAV_BUILTIN_IDS.includes(id)));
 }
 
 /** 項目を末尾に足す。もう入っていれば変えない */
@@ -65,7 +67,6 @@ export function reorderNavItem(list: readonly string[], available: ReadonlySet<s
  */
 export const DEFAULT_NAV_LABELS: Readonly<Record<string, string>> = {
   [NAV_CHAT_ID]: 'Chat',
-  [NAV_THREADS_ID]: 'Threads',
   [NAV_SETTINGS_ID]: 'Settings',
   [NAV_CALL_ID]: 'Call',
   [NAV_SEARCH_ID]: 'Search',

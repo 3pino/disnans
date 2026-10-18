@@ -80,8 +80,6 @@ describe('Tauri read transport', () => {
     await api.me();
     await api.users();
     await api.prefs();
-    await api.threads();
-    await api.threadTags();
     await api.readMarkers();
     await api.plugins();
     const base = { server: 'http://127.0.0.1:8080', devUser: 'alice' };
@@ -89,8 +87,6 @@ describe('Tauri read transport', () => {
       { command: 'api_me', args: { args: base } },
       { command: 'api_users', args: { args: base } },
       { command: 'api_prefs', args: { args: base } },
-      { command: 'api_threads', args: { args: base } },
-      { command: 'api_thread_tags', args: { args: base } },
       { command: 'api_read_markers', args: { args: base } },
       { command: 'api_plugins', args: { args: base } },
     ]);
@@ -100,22 +96,19 @@ describe('Tauri read transport', () => {
     const r = recorder(() => []);
     const api = createTauriReadApi(r.invoke, { server: () => 'http://h', devUser: null });
     await api.messages({});
-    await api.messages({ threadId: 't1', before: 'm9', limit: 50 });
+    await api.messages({ before: 'm9', limit: 50 });
     await api.searchMessages({ q: 'a b' });
-    await api.thread('x/y z');
     await api.session('s1');
     expect(r.calls.map((c) => c.args)).toEqual([
-      { args: { server: 'http://h', devUser: null, threadId: null, before: null, limit: null } },
-      { args: { server: 'http://h', devUser: null, threadId: 't1', before: 'm9', limit: 50 } },
+      { args: { server: 'http://h', devUser: null, before: null, limit: null } },
+      { args: { server: 'http://h', devUser: null, before: 'm9', limit: 50 } },
       { args: { server: 'http://h', devUser: null, q: 'a b', before: null, limit: null } },
-      { args: { server: 'http://h', devUser: null, id: 'x/y z' } },
       { args: { server: 'http://h', devUser: null, id: 's1' } },
     ]);
     expect(r.calls.map((c) => c.command)).toEqual([
       'api_messages',
       'api_messages',
       'api_search_messages',
-      'api_thread',
       'api_session',
     ]);
   });
@@ -133,7 +126,7 @@ describe('Tauri read transport', () => {
   it('turns a bridge rejection into an HttpError (status, code, message)', async () => {
     const bridgeError = { status: 404, code: 'not_found', message: 'そのメッセージはありません' };
     const api = createTauriReadApi(() => Promise.reject(bridgeError), ctx);
-    const err = await api.thread('nope').catch((e: unknown) => e);
+    const err = await api.session('nope').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(HttpError);
     // Error.message is the localized text (errorText), as for HTTP errors
     expect(err).toMatchObject({ status: 404, code: 'not_found', message: '見つかりませんでした' });
@@ -157,18 +150,18 @@ describe('HTTP read transport (unchanged request shape)', () => {
     globalThis.fetch = fake as typeof fetch;
     try {
       const api = createHttpReadApi();
-      await api.messages({ threadId: null, before: 'm1', limit: 20 });
-      await api.messages({ threadId: 't/1' });
+      await api.messages({ before: 'm1', limit: 20 });
+      await api.messages({});
       await api.searchMessages({ q: 'a', limit: 5 });
-      await api.thread('t 1');
+      await api.session('s 1');
     } finally {
       globalThis.fetch = original;
     }
     expect(seen.map((s) => s.url)).toEqual([
       '/api/messages?before=m1&limit=20',
-      '/api/messages?thread_id=t%2F1',
+      '/api/messages',
       '/api/messages/search?q=a&limit=5',
-      '/api/threads/t%201',
+      '/api/sessions/s%201',
     ]);
     expect(seen.every((s) => s.method === 'GET')).toBe(true);
   });

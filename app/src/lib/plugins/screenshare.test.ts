@@ -929,10 +929,7 @@ describe('examples/screenshare', () => {
     expect(snapshot).toHaveBeenCalledOnce();
     // getDisplayMedia（画面の選択のダイアログ）は使わない
     expect(s.getDisplayMedia).not.toHaveBeenCalled();
-    const info = container.querySelector('.screenshare-preview-info')!.textContent;
-    expect(info).toMatch(/1280×720.*JPEG.*1 フレーム 約 \d+ KB.*5 FPS/);
-    expect(info).not.toContain('サンプル');
-    expect(info).not.toContain('disnans の画面');
+    expect(container.querySelector('.screenshare-preview-info')).toBeNull();
     expect(container.querySelector<HTMLImageElement>('.screenshare-preview-img')!.hidden).toBe(false);
     // 開き直すと撮り直す（ダイアログは出ないので毎回でよい）
     container.replaceChildren();
@@ -940,19 +937,6 @@ describe('examples/screenshare', () => {
     await vi.advanceTimersByTimeAsync(10);
     expect(snapshot).toHaveBeenCalledTimes(2);
     expect(s.getDisplayMedia).not.toHaveBeenCalled();
-    restoreImage();
-    s.r.stop();
-  });
-
-  it('設定画面: snapshot が disnans 自身の画面なら、そう書く', async () => {
-    const snapshot = vi.fn(async () => ({ dataUrl: 'data:image/jpeg;base64,/9j/QUJD', width: 1080, height: 1920, source: 'app' as const }));
-    const s = await setup({ display: false, native: { supported: true, snapshot } });
-    const restoreImage = fakeImageLoad(1080, 1920);
-    const container = document.createElement('div');
-    document.body.append(container);
-    s.r.settingTabs[0].display(container);
-    await vi.advanceTimersByTimeAsync(10);
-    expect(container.querySelector('.screenshare-preview-info')!.textContent).toContain('disnans の画面');
     restoreImage();
     s.r.stop();
   });
@@ -966,7 +950,7 @@ describe('examples/screenshare', () => {
     await vi.advanceTimersByTimeAsync(10);
     expect(snapshot).toHaveBeenCalledOnce();
     expect(s.getDisplayMedia).not.toHaveBeenCalled();
-    expect(container.querySelector('.screenshare-preview-info')!.textContent).toContain('プレビューはありません');
+    expect(container.querySelector('.screenshare-preview-info')).toBeNull();
     expect(container.querySelector<HTMLImageElement>('.screenshare-preview-img')!.hidden).toBe(true);
     s.r.stop();
   });
@@ -977,7 +961,6 @@ describe('examples/screenshare', () => {
     document.body.append(container);
     s.r.settingTabs[0].display(container);
     await vi.advanceTimersByTimeAsync(10);
-    expect(container.querySelector('.screenshare-preview-info')!.textContent).toContain('プレビューはありません');
     expect(container.querySelector<HTMLImageElement>('.screenshare-preview-img')!.hidden).toBe(true);
     s.r.stop();
   });

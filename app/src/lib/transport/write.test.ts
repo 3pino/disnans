@@ -24,19 +24,16 @@ describe('Tauri write API: commands and arguments', () => {
     const api = createTauriWriteApi(r.invoke, ctx);
     await api.updateMe({ display_name: 'A' } as never);
     await api.setPrefs({ theme: 'dark' });
-    await api.updateThread('t1', { title: 'x', archived: false } as never);
-    await api.setThreadTags('t1', [{ icon: 'a', label: 'b' }] as never);
     await api.clearAvatar();
-    await api.markRead({ thread_id: null, message_id: 'm1' } as never);
+    await api.markRead({ message_id: 'm1' } as never);
     await api.deletePlugin('p1');
     expect(r.calls.map((c) => c.command)).toEqual([
-      'api_update_me', 'api_set_prefs', 'api_update_thread', 'api_set_thread_tags', 'api_clear_avatar', 'api_mark_read', 'api_delete_plugin',
+      'api_update_me', 'api_set_prefs', 'api_clear_avatar', 'api_mark_read', 'api_delete_plugin',
     ]);
     for (const c of r.calls) {
       expect(c.args).toMatchObject({ args: { server: 'http://127.0.0.1:8080', devUser: 'alice' } });
     }
-    expect(r.calls[2].args).toMatchObject({ args: { id: 't1' } });
-    expect(r.calls[6].args).toMatchObject({ args: { id: 'p1' } });
+    expect(r.calls[4].args).toMatchObject({ args: { id: 'p1' } });
   });
 
   it('avatar and create-plugin send raw bytes; args go in one x-disnans-args header', async () => {

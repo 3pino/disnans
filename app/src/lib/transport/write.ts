@@ -7,11 +7,8 @@ import type { PluginPostMessage } from '../protocol/PluginPostMessage';
 import type { PluginVisibility } from '../protocol/PluginVisibility';
 import type { ReadMarker } from '../protocol/ReadMarker';
 import type { Session } from '../protocol/Session';
-import type { Thread } from '../protocol/Thread';
-import type { ThreadTag } from '../protocol/ThreadTag';
 import type { UpdateMe } from '../protocol/UpdateMe';
 import type { UpdateSession } from '../protocol/UpdateSession';
-import type { UpdateThread } from '../protocol/UpdateThread';
 import type { User } from '../protocol/User';
 import { apiUrl, authHeaders } from '../config';
 import { HttpError, request, toError } from './http';
@@ -32,8 +29,6 @@ export interface WriteApi {
   setAvatar(file: Blob, fileName: string): Promise<User>;
   clearAvatar(): Promise<User>;
   setPrefs(prefs: Record<string, unknown>): Promise<Record<string, unknown>>;
-  updateThread(id: string, body: UpdateThread): Promise<Thread>;
-  setThreadTags(id: string, tags: ThreadTag[]): Promise<Thread>;
   sampleNotification(): Promise<void>;
   markRead(body: MarkRead): Promise<ReadMarker>;
   deletePlugin(id: string): Promise<void>;
@@ -63,8 +58,6 @@ export function createHttpWriteApi(): WriteApi {
     },
     clearAvatar: () => request<User>('DELETE', '/api/me/avatar'),
     setPrefs: (prefs) => request<Record<string, unknown>>('PUT', '/api/me/prefs', prefs),
-    updateThread: (id, body) => request<Thread>('PATCH', `/api/threads/${encodeURIComponent(id)}`, body),
-    setThreadTags: (id, tags) => request<Thread>('PUT', `/api/threads/${encodeURIComponent(id)}/tags`, { tags }),
     sampleNotification: () => request<void>('POST', '/api/notify/sample'),
     markRead: (body) => request<ReadMarker>('PUT', '/api/me/read', body),
     deletePlugin: (id) => request<void>('DELETE', `/api/plugins/${encodeURIComponent(id)}`),
@@ -124,8 +117,6 @@ export function createTauriWriteApi(invoke: Invoke, ctx: BridgeContext, bodyMode
       raw('api_set_avatar', await bytes(file), { fileName, mime: file.type || null }, false),
     clearAvatar: () => call('api_clear_avatar', {}, false),
     setPrefs: (prefs) => call('api_set_prefs', { body: prefs }, false),
-    updateThread: (id, body) => call('api_update_thread', { id, body }, false),
-    setThreadTags: (id, tags) => call('api_set_thread_tags', { id, tags }, false),
     sampleNotification: () => call('api_sample_notification', {}, true),
     markRead: (body) => call('api_mark_read', { body }, false),
     deletePlugin: (id) => call('api_delete_plugin', { id }, false),

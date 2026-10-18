@@ -158,6 +158,11 @@ pub struct WsClient {
 impl WsClient {
     pub async fn send(&mut self, event: ClientEvent) {
         let text = serde_json::to_string(&event).unwrap();
+        self.send_raw(&text).await;
+    }
+
+    /// 生の JSON テキストを送る（古いクライアントの形など、いまの型にない形を試すとき）。
+    pub async fn send_raw(&mut self, text: &str) {
         self.stream.send(WsMessage::text(text)).await.unwrap();
     }
 
@@ -253,10 +258,8 @@ impl WsClient {
 pub fn send(body: &str) -> ClientEvent {
     ClientEvent::MessageSend {
         client_id: format!("c-{body}"),
-        thread_id: None,
         body: body.into(),
         attachment_ids: vec![],
-        start_thread: false,
         reply_to: None,
         silent: false,
     }

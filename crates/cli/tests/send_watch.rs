@@ -307,7 +307,6 @@ fn fake_message(id: &str, body: &str) -> Message {
     Message {
         id: id.into(),
         author_id: "u-alice".into(),
-        thread_id: None,
         reply_to: None,
         reply_preview: None,
         body: body.into(),
@@ -315,7 +314,6 @@ fn fake_message(id: &str, body: &str) -> Message {
         reactions: Vec::new(),
         created_at: 1,
         edited_at: None,
-        thread: None,
         card: None,
         bot: None,
     }
@@ -748,7 +746,6 @@ async fn watch_prints_a_message_sent_by_another_process_once() {
     assert_eq!(created["type"], "message.created");
     assert_eq!(created["message"]["id"], id);
     assert_eq!(created["message"]["body"], "from another process");
-    assert!(created["message"]["thread_id"].is_null());
 
     #[cfg(unix)]
     {
@@ -876,8 +873,6 @@ async fn rejected_error_codes_exit_1_for_the_matching_send() {
     for code in [
         "empty_message",
         "body_too_long",
-        "nested_thread",
-        "thread_not_found",
         "reply_not_found",
         "reply_other_place",
         "invalid_attachment",

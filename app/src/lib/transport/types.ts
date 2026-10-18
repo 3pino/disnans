@@ -2,8 +2,6 @@ import type { Message } from '../protocol/Message';
 import type { PluginInfo } from '../protocol/PluginInfo';
 import type { ReadMarker } from '../protocol/ReadMarker';
 import type { Session } from '../protocol/Session';
-import type { Thread } from '../protocol/Thread';
-import type { ThreadTagUsage } from '../protocol/ThreadTagUsage';
 import type { User } from '../protocol/User';
 
 /**
@@ -14,11 +12,8 @@ export interface ReadApi {
   me(): Promise<User>;
   users(): Promise<User[]>;
   prefs(): Promise<Record<string, unknown>>;
-  messages(opts: { threadId?: string | null; before?: string | null; limit?: number }): Promise<Message[]>;
+  messages(opts: { before?: string | null; limit?: number }): Promise<Message[]>;
   searchMessages(opts: { q: string; before?: string | null; limit?: number }): Promise<Message[]>;
-  threads(): Promise<Thread[]>;
-  thread(id: string): Promise<Thread>;
-  threadTags(): Promise<ThreadTagUsage[]>;
   readMarkers(): Promise<ReadMarker[]>;
   plugins(): Promise<PluginInfo[]>;
   session(id: string): Promise<Session>;

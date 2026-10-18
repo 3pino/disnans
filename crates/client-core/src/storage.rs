@@ -54,10 +54,10 @@ pub enum StoredValue<T> {
     Cleared,
 }
 
+/// 下書きの場所。メインチャットだけ（スレッド廃止。旧スレッドの下書きは読まない）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DraftPlace {
     Main,
-    Thread(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -247,10 +247,6 @@ impl LocalStore {
         hash_part(&mut hasher, key.user_id.as_bytes());
         match &key.place {
             DraftPlace::Main => hash_part(&mut hasher, b"main"),
-            DraftPlace::Thread(id) => {
-                hash_part(&mut hasher, b"thread");
-                hash_part(&mut hasher, id.as_bytes());
-            }
         }
         let name = hasher
             .finalize()
@@ -535,10 +531,9 @@ mod tests {
         let a = key("server-a", "user", DraftPlace::Main);
         let b = key("server-b", "user", DraftPlace::Main);
         let c = key("server-a", "other-user", DraftPlace::Main);
-        let d = key("server-a", "user", DraftPlace::Thread("01ABC".into()));
         store.save_draft(&a, Some("hello")).unwrap();
         assert_eq!(store.load_draft(&a).unwrap().as_deref(), Some("hello"));
-        for other in [&b, &c, &d] {
+        for other in [&b, &c] {
             assert_eq!(store.load_draft(other).unwrap(), None);
         }
         store.save_draft(&a, None).unwrap();

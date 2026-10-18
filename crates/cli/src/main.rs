@@ -200,7 +200,6 @@ async fn run(cli: Cli) -> Result<String, CliError> {
             let client = RestClient::new(server, cli.dev_user.as_deref())?;
             let messages = client
                 .messages(&MessagesQuery {
-                    thread_id: None,
                     before: opts.before,
                     limit: Some(opts.limit),
                 })

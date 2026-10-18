@@ -105,13 +105,9 @@ impl From<WatchItem> for ChatItem {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MessageDraft {
     pub client_id: String,
-    #[serde(default)]
-    pub thread_id: Option<String>,
     pub body: String,
     #[serde(default)]
     pub attachment_ids: Vec<String>,
-    #[serde(default)]
-    pub start_thread: bool,
     #[serde(default)]
     pub reply_to: Option<String>,
     #[serde(default)]
@@ -125,8 +121,7 @@ impl MessageDraft {
         if self.client_id.trim().is_empty() {
             return Err(ReadFailure::invalid_request("clientId が空です"));
         }
-        let empty_id = self.thread_id.as_deref() == Some("")
-            || self.reply_to.as_deref() == Some("")
+        let empty_id = self.reply_to.as_deref() == Some("")
             || self.attachment_ids.iter().any(String::is_empty);
         if empty_id {
             return Err(ReadFailure::invalid_request(
@@ -134,10 +129,8 @@ impl MessageDraft {
             ));
         }
         let request = SendRequest {
-            thread_id: self.thread_id,
             body: self.body,
             attachment_ids: self.attachment_ids,
-            start_thread: self.start_thread,
             reply_to: self.reply_to,
             silent: self.silent,
         };
@@ -297,7 +290,6 @@ fn check_emit_kind(event: &ClientEvent) -> Result<(), ChatCommandError> {
         | ClientEvent::MessageDelete { .. }
         | ClientEvent::ReactionAdd { .. }
         | ClientEvent::ReactionRemove { .. }
-        | ClientEvent::ThreadCreate { .. }
         | ClientEvent::SessionEmit { .. }
         | ClientEvent::PluginEmit { .. }
         | ClientEvent::CallJoin { .. }
@@ -679,10 +671,8 @@ mod tests {
     fn draft(client_id: &str) -> MessageDraft {
         MessageDraft {
             client_id: client_id.into(),
-            thread_id: None,
             body: "hi".into(),
             attachment_ids: vec![],
-            start_thread: false,
             reply_to: None,
             silent: false,
         }
@@ -693,10 +683,6 @@ mod tests {
         let err = draft("  ").into_request().unwrap_err();
         assert_eq!(err.code, "invalid_request");
         assert_eq!(err.status, None);
-
-        let mut d = draft("c1");
-        d.thread_id = Some(String::new());
-        assert_eq!(d.into_request().unwrap_err().code, "invalid_request");
 
         let mut d = draft("c1");
         d.reply_to = Some(String::new());
@@ -710,17 +696,13 @@ mod tests {
     #[test]
     fn valid_draft_maps_every_field_to_send_request() {
         let mut d = draft("c1");
-        d.thread_id = Some("t1".into());
         d.attachment_ids = vec!["a1".into()];
-        d.start_thread = true;
         d.reply_to = Some("m1".into());
         d.silent = true;
         let (client_id, request) = d.into_request().unwrap();
         assert_eq!(client_id, "c1");
-        assert_eq!(request.thread_id.as_deref(), Some("t1"));
         assert_eq!(request.body, "hi");
         assert_eq!(request.attachment_ids, vec!["a1".to_string()]);
-        assert!(request.start_thread);
         assert_eq!(request.reply_to.as_deref(), Some("m1"));
         assert!(request.silent);
     }
@@ -728,8 +710,8 @@ mod tests {
     #[test]
     fn draft_json_is_camel_case_and_rejects_unknown_fields() {
         let ok: MessageDraft = serde_json::from_value(serde_json::json!({
-            "clientId": "c1", "threadId": null, "body": "x", "attachmentIds": [],
-            "startThread": false, "replyTo": null, "silent": true
+            "clientId": "c1", "body": "x", "attachmentIds": [],
+            "replyTo": null, "silent": true
         }))
         .unwrap();
         assert!(ok.silent);

@@ -4,15 +4,10 @@ import type { BotInfo } from "./BotInfo";
 import type { MessageCard } from "./MessageCard";
 import type { Reaction } from "./Reaction";
 import type { ReplyPreview } from "./ReplyPreview";
-import type { ThreadInfo } from "./ThreadInfo";
 
 export type Message = { id: string, author_id: string, 
 /**
- * スレッド内の返信なら、そのスレッド（起点のメッセージ）の ID。メインチャットなら `null`。
- */
-thread_id: string | null, 
-/**
- * 返信なら、返信先のメッセージの ID（同じメインチャット・同じスレッドのメッセージ）。
+ * 返信なら、返信先のメッセージの ID（メインチャットのメッセージ）。
  */
 reply_to: string | null, 
 /**
@@ -23,10 +18,6 @@ reply_preview: ReplyPreview | null,
  * Markdown サブセットの生テキスト。メンションは `<@user_id>`。
  */
 body: string, attachments: Array<Attachment>, reactions: Array<Reaction>, created_at: number, edited_at: number | null, 
-/**
- * このメッセージがスレッドの起点なら入る。
- */
-thread: ThreadInfo | null, 
 /**
  * プラグインのセッションのカードなら入る（本文は空）。
  */

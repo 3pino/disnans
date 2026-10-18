@@ -10,13 +10,11 @@
   import { listenNativeDrop, pointInRect, readDroppedFiles } from '../lib/dropFiles';
 
   let {
-    threadId,
     placeholder,
     header,
     empty,
     active = false,
   }: {
-    threadId: string | null;
     placeholder: string;
     header?: Snippet;
     empty?: Snippet;
@@ -24,7 +22,7 @@
     active?: boolean;
   } = $props();
 
-  const timeline = $derived(client.timeline(threadId));
+  const timeline = $derived(client.timeline());
   let composer: Composer | undefined = $state();
   let dragDepth = $state(0);
   /** Linux: Tauri のドロップ（パス）でファイルをこの領域の上へ持ってきている最中 */
@@ -36,7 +34,7 @@
   });
 
   // Linux では WebKitGTK の HTML5 のドロップで File が届かないため、Tauri のドロップ（パス）で受ける。
-  // ドロップした位置がこのチャット領域の中のときだけ受ける（メインとスレッドは別の領域）
+  // ドロップした位置がこのチャット領域の中のときだけ受ける
   $effect(() => {
     if (!isLinuxDesktop()) return;
     let stop: (() => void) | null = null;
@@ -78,7 +76,7 @@
 <section
   bind:this={section}
   class="chat-view"
-  aria-label={threadId ? 'スレッド' : 'チャット'}
+  aria-label="チャット"
   ondragenter={(e) => {
     if (!hasFiles(e)) return;
     e.preventDefault();
@@ -101,12 +99,12 @@
   }}
 >
   <!-- 検索中は、メインのタイムラインを検索に当たったメッセージだけに絞り込む（入力欄は Composer が検索モードになる） -->
-  {#if threadId === null && ui.searchOpen}
+  {#if ui.searchOpen}
     <SearchResults />
   {:else}
-    <MessageList {timeline} inThread={threadId !== null} {header} {empty} {active} />
+    <MessageList {timeline} {header} {empty} {active} />
   {/if}
-  <Composer bind:this={composer} {threadId} {placeholder} />
+  <Composer bind:this={composer} {placeholder} />
 
   {#if dragDepth > 0 || nativeOver}
     <div class="chat-view-drop-overlay" aria-hidden="true">

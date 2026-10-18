@@ -46,8 +46,8 @@ describe('registry', () => {
     const off = registerCommand(cmd({ id: 'test:roll', name: 'サイコロ', slash: 'test-roll', args: '[n]', icon: 'dice-5', source: 'テスト', run }));
     const slash = findSlashCommand('test-roll')!;
     expect(slash).toMatchObject({ name: 'test-roll', description: 'サイコロ', args: '[n]', icon: 'dice-5', source: 'テスト' });
-    await runSlashCommand('test-roll', '2d6', 't1');
-    expect(run).toHaveBeenCalledWith({ args: '2d6', threadId: 't1', via: 'slash' });
+    await runSlashCommand('test-roll', '2d6');
+    expect(run).toHaveBeenCalledWith({ args: '2d6', via: 'slash' });
     off();
     expect(findSlashCommand('test-roll')).toBeUndefined();
     expect(findCommand('test:roll')).toBeUndefined();
@@ -67,7 +67,7 @@ describe('registry', () => {
         throw new Error('だめ');
       },
     });
-    await expect(runCommand(c, { args: '', threadId: null, via: 'palette' })).rejects.toThrow('失敗する: だめ');
+    await expect(runCommand(c, { args: '', via: 'palette' })).rejects.toThrow('失敗する: だめ');
   });
 });
 
@@ -175,8 +175,8 @@ describe('スラッシュコマンドの別名', () => {
     aliases = { 'test:alias': 'alias-new' };
     expect(findSlashCommand('alias-orig')).toBeUndefined();
     expect(findSlashCommand('alias-new')).toBeDefined();
-    await runSlashCommand('alias-new', 'x', null);
-    expect(run).toHaveBeenCalledWith({ args: 'x', threadId: null, via: 'slash' });
+    await runSlashCommand('alias-new', 'x');
+    expect(run).toHaveBeenCalledWith({ args: 'x', via: 'slash' });
     // 元に戻す
     aliases = {};
     expect(findSlashCommand('alias-orig')).toBeDefined();

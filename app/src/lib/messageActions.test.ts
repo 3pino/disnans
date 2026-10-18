@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from './protocol/Message';
 import { registerMessageAction, resolveMessageActions, type MessageAction, type MessageActionContext } from './messageActions.svelte';
 
-const ctx: MessageActionContext = { message: { id: 'm1', body: 'hi' } as Message, inThread: false, place: null };
+const ctx: MessageActionContext = { message: { id: 'm1', body: 'hi' } as Message };
 const offs: (() => void)[] = [];
 function add(a: Partial<MessageAction> & { id: string }) {
   offs.push(registerMessageAction({ label: a.id, placement: 'both', run: () => {}, ...a }));

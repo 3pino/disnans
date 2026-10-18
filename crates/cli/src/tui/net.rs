@@ -357,7 +357,6 @@ fn spawn_history(
     tokio::spawn(async move {
         let result = rest
             .messages(&MessagesQuery {
-                thread_id: None,
                 before,
                 limit: Some(limit),
             })

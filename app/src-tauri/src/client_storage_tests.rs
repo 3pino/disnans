@@ -13,8 +13,8 @@ use std::{
 };
 
 use crate::client_storage::{
-    client_storage_import, client_storage_read, client_storage_write, ImportArgs, ImportValue,
-    StorageKey, StorageState, WriteArgs,
+    ImportArgs, ImportValue, StorageKey, StorageState, WriteArgs, client_storage_import,
+    client_storage_read, client_storage_write,
 };
 use disnans_client_core::{DraftKey, DraftPlace, LocalStore, ServerUrl, StoredValue};
 use serde_json::json;
@@ -371,19 +371,23 @@ async fn verify_corrupt_and_future_are_preserved(
         let original = fs::read(path).expect("read original bytes");
         assert!(client_storage_read(key.clone()).await.is_err());
         assert_eq!(fs::read(path).unwrap(), original);
-        assert!(client_storage_write(WriteArgs {
-            key: key.clone(),
-            value: json!(replacement),
-        })
-        .await
-        .is_err());
+        assert!(
+            client_storage_write(WriteArgs {
+                key: key.clone(),
+                value: json!(replacement),
+            })
+            .await
+            .is_err()
+        );
         assert_eq!(fs::read(path).unwrap(), original);
-        assert!(client_storage_import(ImportArgs {
-            key: key.clone(),
-            value: ImportValue::Value(replacement.to_owned()),
-        })
-        .await
-        .is_err());
+        assert!(
+            client_storage_import(ImportArgs {
+                key: key.clone(),
+                value: ImportValue::Value(replacement.to_owned()),
+            })
+            .await
+            .is_err()
+        );
         assert_eq!(fs::read(path).unwrap(), original);
     }
 }
@@ -410,12 +414,15 @@ fn core_draft_key() -> DraftKey {
     }
 }
 
+/// 消去の確認に使う、別の利用者の下書き（メインチャットの下書きは 1 つの利用者につき 1 つだけなので）
+const CLEAR_USER_ID: &str = "u-clear";
+
 fn cleared_draft_storage_key() -> StorageKey {
     serde_json::from_value(json!({
         "kind": "draft",
         "serverUrl": SERVER_URL,
-        "userId": USER_ID,
-        "place": "thread:m-clear"
+        "userId": CLEAR_USER_ID,
+        "place": "main"
     }))
     .unwrap()
 }
@@ -423,8 +430,8 @@ fn cleared_draft_storage_key() -> StorageKey {
 fn core_cleared_draft_key() -> DraftKey {
     DraftKey {
         server: ServerUrl::parse(SERVER_URL).unwrap(),
-        user_id: USER_ID.into(),
-        place: DraftPlace::Thread("m-clear".into()),
+        user_id: CLEAR_USER_ID.into(),
+        place: DraftPlace::Main,
     }
 }
 

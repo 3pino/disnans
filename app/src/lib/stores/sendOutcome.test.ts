@@ -10,7 +10,6 @@ function pendingOf(clientId: string): PendingMessage {
     id: clientId,
     client_id: clientId,
     author_id: 'me',
-    thread_id: null,
     reply_to: null,
     reply_preview: null,
     body: 'hello',
@@ -18,14 +17,12 @@ function pendingOf(clientId: string): PendingMessage {
     reactions: [],
     created_at: 0,
     edited_at: null,
-    thread: null,
     card: null,
     bot: null,
     sent: false,
     failed: false,
     unknown: false,
     attachment_ids: [],
-    start_thread: false,
     silent: false,
     files: [],
     busy: false,
@@ -43,7 +40,7 @@ describe('send outcome classification', () => {
 
 describe('timeline pending states', () => {
   it('marks sent-but-unconfirmed messages unknown, not failed', () => {
-    const tl = new Timeline(null);
+    const tl = new Timeline();
     const sent = pendingOf('c1');
     sent.sent = true;
     const queued = pendingOf('c2');
@@ -55,7 +52,7 @@ describe('timeline pending states', () => {
   });
 
   it('does not change a message that is already rejected', () => {
-    const tl = new Timeline(null);
+    const tl = new Timeline();
     const p = pendingOf('c1');
     p.sent = true;
     tl.addPending(p);
@@ -65,7 +62,7 @@ describe('timeline pending states', () => {
   });
 
   it('settles an error by code: rejected codes give failed, others give unknown', () => {
-    const tl = new Timeline(null);
+    const tl = new Timeline();
     const a = pendingOf('a');
     const b = pendingOf('b');
     tl.addPending(a);
@@ -78,7 +75,7 @@ describe('timeline pending states', () => {
   });
 
   it('upgrades unknown to failed on a later rejected error, but never the reverse', () => {
-    const tl = new Timeline(null);
+    const tl = new Timeline();
     const p = pendingOf('c1');
     p.sent = true;
     tl.addPending(p);
@@ -154,10 +151,10 @@ describe('client message delivery (JS path)', () => {
     s.sent.map((x) => JSON.parse(x) as ClientEvent).filter((e) => e.type === 'message.send');
 
   it('a disconnect after sending makes the message unknown and never resends it', () => {
-    client.sendMessage({ threadId: null, body: 'hi', files: [] });
+    client.sendMessage({ body: 'hi', files: [] });
     const s = sockets()[0];
     expect(sentMessages(s)).toHaveLength(1);
-    const pending = client.timeline(null).pending[0];
+    const pending = client.timeline().pending[0];
     expect(pending).toMatchObject({ sent: true, failed: false, unknown: false });
 
     s.drop();
@@ -165,47 +162,47 @@ describe('client message delivery (JS path)', () => {
 
     const totalSent = () => sockets().reduce((n, x) => n + sentMessages(x).length, 0);
     const before = totalSent();
-    client.retry(null, pending.client_id);
+    client.retry(pending.client_id);
     expect(totalSent()).toBe(before);
-    expect(client.timeline(null).pending).toHaveLength(1);
+    expect(client.timeline().pending).toHaveLength(1);
   });
 
   it('a rejected error allows a retry with the same client_id', () => {
-    client.sendMessage({ threadId: null, body: '', files: [] });
+    client.sendMessage({ body: '', files: [] });
     const s = sockets()[0];
-    const clientId = client.timeline(null).pending[0].client_id;
+    const clientId = client.timeline().pending[0].client_id;
     s.receive({ type: 'error', client_id: clientId, code: 'empty_message', message: 'x' });
-    expect(client.timeline(null).pending[0]).toMatchObject({ failed: true, unknown: false });
+    expect(client.timeline().pending[0]).toMatchObject({ failed: true, unknown: false });
 
-    client.retry(null, clientId);
+    client.retry(clientId);
     const again = sentMessages(s);
     expect(again.map((m) => (m.type === 'message.send' ? m.client_id : ''))).toEqual([clientId, clientId]);
   });
 
   it('an unknown error (e.g. internal) does not allow a retry', () => {
-    client.sendMessage({ threadId: null, body: 'x', files: [] });
+    client.sendMessage({ body: 'x', files: [] });
     const s = sockets()[0];
-    const clientId = client.timeline(null).pending[0].client_id;
+    const clientId = client.timeline().pending[0].client_id;
     s.receive({ type: 'error', client_id: clientId, code: 'internal', message: 'x' });
-    expect(client.timeline(null).pending[0]).toMatchObject({ unknown: true, failed: false });
-    client.retry(null, clientId);
+    expect(client.timeline().pending[0]).toMatchObject({ unknown: true, failed: false });
+    client.retry(clientId);
     expect(sentMessages(s)).toHaveLength(1);
   });
 
   it('the echo of the message removes the pending placeholder', () => {
-    client.sendMessage({ threadId: null, body: 'hi', files: [] });
+    client.sendMessage({ body: 'hi', files: [] });
     const s = sockets()[0];
-    const clientId = client.timeline(null).pending[0].client_id;
+    const clientId = client.timeline().pending[0].client_id;
     s.drop();
-    expect(client.timeline(null).pending[0].unknown).toBe(true);
+    expect(client.timeline().pending[0].unknown).toBe(true);
     // 再接続後に同じ client_id のエコーが届けば、仮表示は消える
     sockets()[1]?.open();
     const message = {
-      id: 'm1', author_id: 'me', thread_id: null, reply_to: null, reply_preview: null, body: 'hi', attachments: [],
-      reactions: [], created_at: 0, edited_at: null, thread: null, card: null, bot: null,
+      id: 'm1', author_id: 'me', reply_to: null, reply_preview: null, body: 'hi', attachments: [],
+      reactions: [], created_at: 0, edited_at: null, card: null, bot: null,
     };
     const echo: ServerEvent = { type: 'message.created', client_id: clientId, message } as unknown as ServerEvent;
     (client as unknown as { dispatch(ev: ServerEvent): void }).dispatch(echo);
-    expect(client.timeline(null).pending).toHaveLength(0);
+    expect(client.timeline().pending).toHaveLength(0);
   });
 });

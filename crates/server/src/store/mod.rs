@@ -2,6 +2,7 @@
 //!
 //! 読み込みは `&SqlitePool`、トランザクションの中で使う書き込みは `&mut SqliteConnection` を受け取る。
 
+pub mod devices;
 pub mod files;
 pub mod messages;
 pub mod plugins;

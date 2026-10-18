@@ -109,7 +109,7 @@ function setup(opts: { me?: string; data?: unknown; server?: SessionData } = {})
           suggestArgs: c.suggestArgs,
           icon: c.icon,
           source: c.source,
-          run: ({ args, threadId }) => c.run({ args, threadId, via: 'slash' }),
+          run: ({ args }) => c.run({ args, via: 'slash' }),
         });
       }
       return () => {
@@ -181,10 +181,10 @@ describe('examples/dice', () => {
     expect(r.defaultViewType()).toBe('dice');
 
     // 読めない引数はトースト
-    await slash.get('dice')!.run({ args: 'abc', threadId: null });
+    await slash.get('dice')!.run({ args: 'abc' });
     expect(env.toast).toHaveBeenCalledWith(expect.stringContaining('読めません'), 'error');
 
-    await slash.get('dice')!.run({ args: ' 2d6 ', threadId: null });
+    await slash.get('dice')!.run({ args: ' 2d6 ' });
     expect(env.state.server!.card.text).toBe('A がサイコロ（2d6）を用意しました');
     expect(env.openPanel).toHaveBeenCalledWith('dice', 'dice', 's1');
 
@@ -233,7 +233,7 @@ describe('examples/dice', () => {
     const action = env.actions.get('plugin:dice:roll-2d6')!;
     expect(action.label).toBe('サイコロ（2d6）');
     expect(action.icon).toBe('dices');
-    await action.run({ threadId: 't1' });
+    await action.run();
     expect((env.state.server!.state as DiceState).spec).toBe('2d6');
 
     // コマンド: プラグイン ID を前に付けた ID で、既定のホットキー・スラッシュコマンド・アイコンを持つ
@@ -244,7 +244,7 @@ describe('examples/dice', () => {
     expect(roll.icon).toBe('dice-cube');
     expect(roll.source).toBe('ダイス');
     // ホットキー・パレットからは引数なし → 設定の既定のサイコロ。開いているスレッドに用意する
-    await roll.run({ args: '', threadId: 't2', via: 'hotkey' });
+    await roll.run({ args: '', via: 'hotkey' });
     expect((env.state.server!.state as DiceState).spec).toBe('1d6');
     expect(env.openPanel).toHaveBeenLastCalledWith('dice', 'dice', 's1');
 
@@ -253,7 +253,7 @@ describe('examples/dice', () => {
     expect(d20.defaultHotkey).toBeUndefined();
     expect(d20.slash).toBeUndefined();
     expect(d20.icon).toBe('dice-5');
-    await d20.run({ args: '', threadId: null, via: 'palette' });
+    await d20.run({ args: '', via: 'palette' });
     expect((env.state.server!.state as DiceState).spec).toBe('1d20');
 
     env.r.stop();
@@ -274,7 +274,7 @@ describe('examples/dice', () => {
     const option = [...el.querySelectorAll<HTMLButtonElement>('.segmented-option')].find((b) => b.textContent === '1d20')!;
     option.click();
     await vi.waitFor(() => expect(env.settings()).toMatchObject({ defaultSpec: '1d20' }));
-    await env.slash.get('dice')!.run({ args: '', threadId: null });
+    await env.slash.get('dice')!.run({ args: '' });
     expect((env.state.server!.state as DiceState).spec).toBe('1d20');
 
     // トグル
@@ -301,7 +301,7 @@ describe('examples/dice', () => {
   it('壊れた設定は初期値で読む', async () => {
     const env = setup({ data: { defaultSpec: 'abc', confirmBeforeRoll: 'yes', animate: false } });
     await start(env);
-    await env.slash.get('dice')!.run({ args: '', threadId: null });
+    await env.slash.get('dice')!.run({ args: '' });
     expect((env.state.server!.state as DiceState).spec).toBe('1d6');
     env.r.stop();
   });
@@ -309,7 +309,7 @@ describe('examples/dice', () => {
   it('「振る前に確認する」がオンなら確認し、断ると振らない。ぶつかったらやり直す', async () => {
     const env = setup({ data: { confirmBeforeRoll: true, animate: false } });
     await start(env);
-    await env.slash.get('dice')!.run({ args: '1d6', threadId: null });
+    await env.slash.get('dice')!.run({ args: '1d6' });
     const el = document.createElement('div');
     await env.r.mountView('dice', 's1', el);
 

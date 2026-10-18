@@ -123,13 +123,9 @@ class Ui {
     this.navigate({ panel, ...(!this.isMobile && this.tab === 'settings' ? { tab: 'chat' as const } : {}) });
   }
 
-  openThread(id: string): void {
-    this.openPanel({ kind: 'thread', id });
-  }
-
-  /** メッセージを起点にした返信のツリーを開く。place はそのメッセージのいる場所（スレッドの ID。メインチャットなら null） */
-  openReplyTree(messageId: string, place: string | null): void {
-    this.openPanel({ kind: 'replyTree', messageId, place });
+  /** メッセージを起点にした返信のツリーを開く */
+  openReplyTree(messageId: string): void {
+    this.openPanel({ kind: 'replyTree', messageId });
   }
 
   /** メッセージの集合のパネルを開く（中身は timelinePanels の id で引く） */

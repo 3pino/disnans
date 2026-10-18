@@ -105,7 +105,6 @@ mod tests {
         Message {
             id: "01JXYZ".into(),
             author_id: "01AUTHOR".into(),
-            thread_id: None,
             reply_to: None,
             reply_preview: None,
             body: body.into(),
@@ -113,7 +112,6 @@ mod tests {
             reactions: vec![],
             created_at: 1_800_000_000_000,
             edited_at: None,
-            thread: None,
             card: None,
             bot: None,
         }

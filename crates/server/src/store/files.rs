@@ -113,19 +113,15 @@ pub async fn attach(
     Ok(Ok(()))
 }
 
-/// メッセージ（とスレッドの返信）に付いているファイルの ID。削除の前に、消すファイルを集めるのに使う。
-pub async fn ids_in_message_tree(
+/// メッセージに付いているファイルの ID。削除の前に、消すファイルを集めるのに使う。
+pub async fn ids_in_message(
     conn: &mut SqliteConnection,
     message_id: &str,
 ) -> sqlx::Result<Vec<String>> {
-    sqlx::query_scalar(
-        "SELECT id FROM files
-         WHERE message_id = ? OR message_id IN (SELECT id FROM messages WHERE thread_id = ?)",
-    )
-    .bind(message_id)
-    .bind(message_id)
-    .fetch_all(conn)
-    .await
+    sqlx::query_scalar("SELECT id FROM files WHERE message_id = ?")
+        .bind(message_id)
+        .fetch_all(conn)
+        .await
 }
 
 /// `before` より前にアップロードされ、まだ投稿されていないファイルの行を消し、その ID を返す。

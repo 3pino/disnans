@@ -15,7 +15,7 @@ export type SlashCommandDef = {
   args?: string;
   /** 打っている引数（コマンド名のあと）から候補を返す。選んだ候補の value で引数を置き換える */
   suggestArgs?: (input: string) => SlashArgSuggestion[];
-  run(ctx: { args: string; threadId: string | null }): void | Promise<void>;
+  run(ctx: { args: string }): void | Promise<void>;
   /** 補完に出すアイコン（Svelte の部品か、アイコンの名前）。省略するとアイコンなし */
   icon?: IconRef;
   /** 補完に出す出どころ（プラグイン名など）。本体のコマンドは省略 */
@@ -62,13 +62,13 @@ export function parseSlashInput(body: string): SlashInput {
 /**
  * コマンドを実行する。知らないコマンドや run の失敗は、利用者に見せる文言の Error で reject する
  */
-export async function runSlashCommand(name: string, args: string, threadId: string | null): Promise<void> {
+export async function runSlashCommand(name: string, args: string): Promise<void> {
   const cmd = findSlashCommand(name);
   if (!cmd) {
     throw new Error(`「/${name}」というコマンドはありません（/ で始まる文を送るときは // で始めます）`);
   }
   try {
-    await cmd.run({ args, threadId });
+    await cmd.run({ args });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`/${name}: ${msg}`);

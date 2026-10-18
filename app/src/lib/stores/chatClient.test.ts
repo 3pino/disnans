@@ -77,8 +77,8 @@ const BOB: User = { id: 'bob', login_name: 'bob', display_name: 'Bob', avatar_ur
 
 function msg(id: string, body: string, author = 'me'): Message {
   return {
-    id, author_id: author, thread_id: null, reply_to: null, reply_preview: null, body, attachments: [],
-    reactions: [], created_at: 0, edited_at: null, thread: null, card: null, bot: null,
+    id, author_id: author, reply_to: null, reply_preview: null, body, attachments: [],
+    reactions: [], created_at: 0, edited_at: null, card: null, bot: null,
   } as unknown as Message;
 }
 
@@ -110,8 +110,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const sendText = (body: string) => client.sendMessage({ threadId: null, body, files: [] });
-const pendingOf = () => client.timeline(null).pending;
+const sendText = (body: string) => client.sendMessage({ body, files: [] });
+const pendingOf = () => client.timeline().pending;
 
 describe('chat over Rust: receiving', () => {
   it('starts the chat once and reflects connection state', () => {
@@ -171,7 +171,7 @@ describe('chat over Rust: sending', () => {
   });
 
   it('confirmed removes the placeholder and shows the message', async () => {
-    const tl = client.timeline(null);
+    const tl = client.timeline();
     tl.loaded = true;
     chat.respond = (d) => ({ outcome: 'confirmed', clientId: d.clientId, message: msg('m1', d.body) });
     sendText('hi');
@@ -181,7 +181,7 @@ describe('chat over Rust: sending', () => {
   });
 
   it('echo first, then confirmed: one message, no placeholder (order independent)', async () => {
-    const tl = client.timeline(null);
+    const tl = client.timeline();
     tl.loaded = true;
     let resolve!: (o: SendOutcome) => void;
     chat.respond = () => new Promise<SendOutcome>((r) => (resolve = r));
@@ -197,12 +197,12 @@ describe('chat over Rust: sending', () => {
 
   it('rejected allows a retry with the same client_id', async () => {
     chat.respond = (d) => ({ outcome: 'rejected', clientId: d.clientId, code: 'empty_message', message: 'x' });
-    client.sendMessage({ threadId: null, body: '', files: [] });
+    client.sendMessage({ body: '', files: [] });
     await flush();
     const clientId = pendingOf()[0].client_id;
     expect(pendingOf()[0]).toMatchObject({ failed: true, unknown: false });
     chat.respond = (d) => ({ outcome: 'confirmed', clientId: d.clientId, message: msg('m2', d.body) });
-    client.retry(null, clientId);
+    client.retry(clientId);
     await flush();
     expect(chat.sends.map((d) => d.clientId)).toEqual([clientId, clientId]);
   });
@@ -226,7 +226,7 @@ describe('chat over Rust: sending', () => {
     await flush();
     const clientId = pendingOf()[0].client_id;
     expect(pendingOf()[0]).toMatchObject({ unknown: true, failed: false });
-    client.retry(null, clientId);
+    client.retry(clientId);
     expect(chat.sends).toHaveLength(1);
   });
 
@@ -236,7 +236,7 @@ describe('chat over Rust: sending', () => {
     const clientId = pendingOf()[0].client_id;
     expect(pendingOf()[0]).toMatchObject({ failed: true, unknown: false, sent: false });
     chat.respond = (d) => ({ outcome: 'confirmed', clientId: d.clientId, message: msg('m3', d.body) });
-    client.retry(null, clientId);
+    client.retry(clientId);
     await flush();
     expect(chat.sends).toHaveLength(2);
     expect(pendingOf()).toHaveLength(0);
@@ -248,7 +248,7 @@ describe('chat over Rust: sending', () => {
     await flush();
     const clientId = pendingOf()[0].client_id;
     expect(pendingOf()[0]).toMatchObject({ unknown: true, failed: false });
-    client.retry(null, clientId);
+    client.retry(clientId);
     await flush();
     expect(chat.sends).toHaveLength(1);
   });
@@ -273,7 +273,7 @@ describe('chat over Rust: sending', () => {
 
   it('a duplicate error for an already failed send keeps the same state', async () => {
     chat.respond = (d) => ({ outcome: 'rejected', clientId: d.clientId, code: 'empty_message', message: 'x' });
-    client.sendMessage({ threadId: null, body: '', files: [] });
+    client.sendMessage({ body: '', files: [] });
     await flush();
     const clientId = pendingOf()[0].client_id;
     chat.push({ kind: 'event', generation: 1, event: { type: 'error', client_id: clientId, code: 'empty_message', message: 'x' } });
@@ -289,8 +289,8 @@ describe('chat over Rust: plugin raw message.send', () => {
     });
     chat.respond = () => ({ outcome: 'notSent', reason: 'not connected' });
     const raw: ClientEvent = {
-      type: 'message.send', client_id: 'p1', thread_id: null, body: 'x', attachment_ids: [],
-      start_thread: false, reply_to: null, silent: false,
+      type: 'message.send', client_id: 'p1', body: 'x', attachment_ids: [],
+      reply_to: null, silent: false,
     };
     client.send(raw);
     expect(chat.sends.map((d) => d.clientId)).toEqual(['p1']);
@@ -325,31 +325,29 @@ describe('chat over Rust: start and reconnect', () => {
     expect(chat.starts).toBe(1);
   });
 
-  describe('chat over Rust: edit / delete / reaction / thread create (chat_emit)', () => {
+  describe('chat over Rust: edit / delete / reaction (chat_emit)', () => {
     beforeEach(() => {
-      client.timeline(null).loaded = true;
-      client.timeline(null).messages = [msg('m1', 'old')];
+      client.timeline().loaded = true;
+      client.timeline().messages = [msg('m1', 'old')];
     });
 
     it('goes through chat_emit with the wire JSON, never through the JS socket', async () => {
-      const m = client.timeline(null).messages[0];
+      const m = client.timeline().messages[0];
       client.editMessage(m, 'new');
       client.deleteMessage(m);
       client.toggleReaction(m, '👍');
-      client.openThreadFrom(m);
       await flush();
       expect(chat.emits).toEqual([
         { type: 'message.edit', message_id: 'm1', body: 'new' },
         { type: 'message.delete', message_id: 'm1' },
         { type: 'reaction.add', message_id: 'm1', emoji: '👍' },
-        { type: 'thread.create', root_message_id: 'm1' },
       ]);
       expect(FakeSocket.instances).toHaveLength(0);
     });
 
     it('a failed chat_emit shows a toast and is not resent', async () => {
       chat.emitError = { code: 'not_connected', message: 'x' };
-      const m = client.timeline(null).messages[0];
+      const m = client.timeline().messages[0];
       client.deleteMessage(m);
       await flush();
       expect(chat.emits).toHaveLength(1);
@@ -359,7 +357,7 @@ describe('chat over Rust: start and reconnect', () => {
 
     it('write_failed is shown as unknown (never retried automatically)', async () => {
       chat.emitError = { code: 'write_failed', message: 'x' };
-      client.toggleReaction(client.timeline(null).messages[0], '👍');
+      client.toggleReaction(client.timeline().messages[0], '👍');
       await flush();
       expect(chat.emits).toHaveLength(1);
       expect(ui.toasts.at(-1)?.text).toContain('送信できたか確認できません');
@@ -367,7 +365,7 @@ describe('chat over Rust: start and reconnect', () => {
 
     it('an unknown error shape is treated as write_failed (not success, not retried)', async () => {
       chat.emitError = new Error('ipc broke');
-      client.deleteMessage(client.timeline(null).messages[0]);
+      client.deleteMessage(client.timeline().messages[0]);
       await flush();
       expect(chat.emits).toHaveLength(1);
       expect(ui.toasts.at(-1)?.text).toContain('送信できたか確認できません');
@@ -511,7 +509,7 @@ describe('chat over Rust: start and reconnect', () => {
     it('lagged: the connection stays up (no closed banner) and the history is read again over REST', async () => {
       const f = vi.fn(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }));
       vi.stubGlobal('fetch', f);
-      client.timeline(null).loaded = true;
+      client.timeline().loaded = true;
       chat.push({ kind: 'gap', generation: 1, reason: 'lagged' });
       expect(client.status).toBe('open');
       await flush();
@@ -521,7 +519,7 @@ describe('chat over Rust: start and reconnect', () => {
     it('disconnected: closed until the chat reconnects, then the history is read again', async () => {
       const f = vi.fn(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }));
       vi.stubGlobal('fetch', f);
-      client.timeline(null).loaded = true;
+      client.timeline().loaded = true;
       chat.push({ kind: 'gap', generation: 1, reason: 'disconnected' });
       expect(client.status).toBe('closed');
       chat.push({ kind: 'connecting', attempt: 1 });

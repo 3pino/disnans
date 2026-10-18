@@ -145,8 +145,7 @@ export default class DicePlugin extends Plugin {
         return PRESETS.filter((p) => p.value.startsWith(q));
       },
       // ctx.args は `/dice 2d6` の「2d6」（ショートカット・パレットからは空 → 設定の既定のサイコロ）。
-      // ctx.threadId は入力したスレッドか、ショートカット・パレットなら開いているスレッド
-      run: (ctx) => this.prepare(ctx.args, ctx.threadId),
+      run: (ctx) => this.prepare(ctx.args),
     });
 
     // ショートカットもスラッシュコマンドもないコマンドは、パレットから使う（利用者は設定でショートカットを付けられる）
@@ -154,7 +153,7 @@ export default class DicePlugin extends Plugin {
       id: 'roll-d20',
       name: '20面のサイコロを用意する',
       icon: 'dice-5',
-      run: (ctx) => this.prepare('1d20', ctx.threadId),
+      run: () => this.prepare('1d20'),
     });
 
     // 入力欄の「＋」メニュー。アイコンは Lucide の名前で指定する
@@ -162,7 +161,7 @@ export default class DicePlugin extends Plugin {
       id: 'roll-2d6',
       label: 'サイコロ（2d6）',
       icon: 'dices',
-      run: (ctx) => this.prepare('2d6', ctx.threadId),
+      run: () => this.prepare('2d6'),
     });
 
     // type をプラグイン ID と同じ 'dice' にすると、カードをタップしたときにこの view で開く
@@ -198,9 +197,8 @@ export default class DicePlugin extends Plugin {
   /**
    * サイコロを用意する（`/dice`・「＋」メニュー・ショートカットから）。セッションを作り、パネルを開く。
    * @param {string} args "2d6" など。空なら設定の既定のサイコロ
-   * @param {string | null} threadId
    */
-  async prepare(args, threadId) {
+  async prepare(args) {
     const parsed = parseSpec(args.trim() === '' ? this.settings.defaultSpec : args);
     if ('error' in parsed) {
       ui.toast(parsed.error, 'error');
@@ -215,7 +213,6 @@ export default class DicePlugin extends Plugin {
     const session = await this.sessions.create({
       state,
       card: { title: 'ダイス', text: `${this.app.nameOf(me.id)} がサイコロ（${spec}）を用意しました` },
-      threadId,
     });
     this.openView('dice', session);
   }

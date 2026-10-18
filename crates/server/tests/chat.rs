@@ -5,7 +5,7 @@ mod common;
 use std::time::Duration;
 
 use common::{TestServer, send};
-use disnans_shared::{ApiError, ClientEvent, Message, ServerEvent, Thread, User};
+use disnans_shared::{ApiError, ClientEvent, Message, ServerEvent, User};
 
 const ALICE: &str = "alice@test";
 const BOB: &str = "bob@test";
@@ -100,7 +100,6 @@ async fn send_edit_delete_over_ws() {
     };
     assert_eq!(client_id.as_deref(), Some("c-hello **world**"));
     assert_eq!(message.body, "hello **world**");
-    assert_eq!(message.thread_id, None);
     let ServerEvent::MessageCreated {
         client_id,
         message: seen,
@@ -165,15 +164,10 @@ async fn send_edit_delete_over_ws() {
         })
         .await;
     for client in [&mut alice, &mut bob] {
-        let ServerEvent::MessageDeleted {
-            message_id,
-            thread_id,
-        } = client.recv().await
-        else {
+        let ServerEvent::MessageDeleted { message_id } = client.recv().await else {
             panic!()
         };
         assert_eq!(message_id, message.id);
-        assert_eq!(thread_id, None);
     }
     let history = server.messages("").await;
     assert_eq!(
@@ -194,221 +188,17 @@ async fn send_edit_delete_over_ws() {
     assert!(matches!(alice.recv().await, ServerEvent::Pong));
 }
 
+/// スレッドは廃止した。`thread_id` を付けた履歴の取得は、メインチャットの履歴として返す。
 #[tokio::test]
-async fn threads_cannot_nest() {
+async fn history_ignores_thread_id() {
     let server = TestServer::start().await;
     let mut alice = server.ws(ALICE).await;
-    let mut bob = server.ws(BOB).await;
-    alice.recv().await;
-
-    let root = alice.post("話題").await;
-    bob.recv().await;
-
-    // スレッドを作る: 起点の message.updated と thread.updated が全員に届く
-    bob.send(ClientEvent::ThreadCreate {
-        root_message_id: root.id.clone(),
-    })
-    .await;
-    for client in [&mut alice, &mut bob] {
-        let ServerEvent::MessageUpdated { message } = client.recv().await else {
-            panic!()
-        };
-        assert_eq!(message.thread.as_ref().unwrap().reply_count, 0);
-        let ServerEvent::ThreadUpdated { thread } = client.recv().await else {
-            panic!()
-        };
-        assert_eq!(thread.root.id, root.id);
-    }
-
-    // 2回目は作れない
-    bob.send(ClientEvent::ThreadCreate {
-        root_message_id: root.id.clone(),
-    })
-    .await;
-    assert_eq!(bob.expect_error().await.1, "thread_exists");
-
-    // 返信: スレッドの返信数が増え、起点の投稿者に通知が届く
-    let reply = bob
-        .post_with(ClientEvent::MessageSend {
-            client_id: "r1".into(),
-            thread_id: Some(root.id.clone()),
-            body: "返信".into(),
-            attachment_ids: vec![],
-            start_thread: false,
-            reply_to: None,
-            silent: false,
-        })
+    let posted = alice.post("本文").await;
+    let list = server
+        .messages("?thread_id=01A000000000000000000000M9")
         .await;
-    assert_eq!(reply.thread_id.as_deref(), Some(root.id.as_str()));
-    let ServerEvent::ThreadUpdated { thread } = bob.recv().await else {
-        panic!()
-    };
-    assert_eq!(thread.info.reply_count, 1);
-    assert_eq!(thread.info.last_reply_at, Some(reply.created_at));
-
-    alice
-        .recv_until(|e| matches!(e, ServerEvent::ThreadUpdated { .. }))
-        .await;
-    match alice.recv_any().await {
-        ServerEvent::Notify {
-            title,
-            body,
-            message_id,
-            thread_id,
-            sample,
-            replayed,
-        } => {
-            assert!(!sample);
-            assert!(!replayed);
-            assert_eq!(title, "bob replied to you");
-            assert_eq!(body, "返信");
-            assert_eq!(message_id.as_deref(), Some(reply.id.as_str()));
-            assert_eq!(thread_id.as_deref(), Some(root.id.as_str()));
-        }
-        other => panic!("{other:?}"),
-    }
-    // 返信した本人には通知しない
-    bob.assert_silent(Duration::from_millis(200)).await;
-
-    // 返信を起点にスレッドは作れない
-    alice
-        .send(ClientEvent::ThreadCreate {
-            root_message_id: reply.id.clone(),
-        })
-        .await;
-    assert_eq!(alice.expect_error().await.1, "nested_thread");
-
-    // スレッドの中で、さらにスレッドを始めることもできない
-    alice
-        .send(ClientEvent::MessageSend {
-            client_id: "nest".into(),
-            thread_id: Some(root.id.clone()),
-            body: "nested".into(),
-            attachment_ids: vec![],
-            start_thread: true,
-            reply_to: None,
-            silent: false,
-        })
-        .await;
-    assert_eq!(
-        alice.expect_error().await,
-        (Some("nest".into()), "nested_thread".into())
-    );
-
-    // スレッドのないメッセージには返信できない
-    alice
-        .send(ClientEvent::MessageSend {
-            client_id: "x".into(),
-            thread_id: Some(reply.id.clone()),
-            body: "x".into(),
-            attachment_ids: vec![],
-            start_thread: false,
-            reply_to: None,
-            silent: false,
-        })
-        .await;
-    assert_eq!(alice.expect_error().await.1, "thread_not_found");
-
-    // 送信と同時にスレッドを作る
-    let status = alice
-        .post_with(ClientEvent::MessageSend {
-            client_id: "s".into(),
-            thread_id: None,
-            body: "今日のごはん".into(),
-            attachment_ids: vec![],
-            start_thread: true,
-            reply_to: None,
-            silent: false,
-        })
-        .await;
-    assert_eq!(status.thread.as_ref().unwrap().reply_count, 0);
-    let ServerEvent::ThreadUpdated { thread } = alice.recv().await else {
-        panic!()
-    };
-    assert_eq!(thread.root.id, status.id);
-
-    // 一覧: 最後に動きがあった順
-    let all: Vec<Thread> = server.get_json(ALICE, "/api/threads").await;
-    assert_eq!(
-        all.iter().map(|t| t.root.id.as_str()).collect::<Vec<_>>(),
-        [status.id.as_str(), root.id.as_str()]
-    );
-    assert_eq!(all[1].info.reply_count, 1);
-    // 古いクライアントの kind などのクエリは無視する
-    let res = server
-        .get(ALICE, "/api/threads?kind=nope")
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 200);
-    let ignored: Vec<Thread> = res.json().await.unwrap();
-    assert_eq!(ignored.len(), 2);
-
-    // スレッドに返信すると、一覧の先頭に来る
-    bob.post_with(ClientEvent::MessageSend {
-        client_id: "r2".into(),
-        thread_id: Some(root.id.clone()),
-        body: "もう一つ".into(),
-        attachment_ids: vec![],
-        start_thread: false,
-        reply_to: None,
-        silent: false,
-    })
-    .await;
-    let all: Vec<Thread> = server.get_json(ALICE, "/api/threads").await;
-    assert_eq!(all[0].root.id, root.id);
-    assert_eq!(all[0].info.reply_count, 2);
-
-    // 履歴: メインチャットに返信は含まれず、スレッドの履歴に起点は含まれない
-    let main = server.messages("").await;
-    assert_eq!(
-        main.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
-        [root.id.as_str(), status.id.as_str()]
-    );
-    let replies = server.messages(&format!("?thread_id={}", root.id)).await;
-    assert_eq!(replies.len(), 2);
-    assert!(
-        replies
-            .iter()
-            .all(|m| m.thread_id.as_deref() == Some(root.id.as_str()))
-    );
-
-    let single: Thread = server
-        .get_json(BOB, &format!("/api/threads/{}", root.id))
-        .await;
-    assert_eq!(single.info.reply_count, 2);
-
-    // 起点を消すと返信も消える
-    alice
-        .send(ClientEvent::MessageDelete {
-            message_id: root.id.clone(),
-        })
-        .await;
-    let ServerEvent::MessageDeleted { message_id, .. } = alice
-        .recv_until(|e| matches!(e, ServerEvent::MessageDeleted { .. }))
-        .await
-    else {
-        panic!()
-    };
-    assert_eq!(message_id, root.id);
-    let res = server
-        .get(ALICE, &format!("/api/threads/{}", root.id))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 404);
-    let res = server
-        .get(ALICE, &format!("/api/messages?thread_id={}", root.id))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 404);
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE thread_id = ?")
-        .bind(&root.id)
-        .fetch_one(&server.state.pool)
-        .await
-        .unwrap();
-    assert_eq!(count, 0);
+    let ids: Vec<&str> = list.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, vec![posted.id.as_str()]);
 }
 
 #[tokio::test]

@@ -7,7 +7,7 @@ import { HttpError } from './http';
 const ctx = { server: () => 'http://127.0.0.1:8080', devUser: 'alice' };
 
 const draft: MessageDraft = {
-  clientId: 'c-1', threadId: null, body: 'hi', attachmentIds: [], startThread: false, replyTo: null, silent: false,
+  clientId: 'c-1', body: 'hi', attachmentIds: [], replyTo: null, silent: false,
 };
 
 function fakeChannel() {

@@ -46,7 +46,6 @@ impl TestServer {
                     &messages::MessageRow {
                         id: id.into(),
                         author_id: alice.id.clone(),
-                        thread_id: None,
                         reply_to: None,
                         body: body.into(),
                         created_at: 1,

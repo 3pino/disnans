@@ -4,8 +4,6 @@ import type { PluginInfo } from './protocol/PluginInfo';
 import type { PluginVisibility } from './protocol/PluginVisibility';
 import type { PluginNotify } from './protocol/PluginNotify';
 import type { PluginPostMessage } from './protocol/PluginPostMessage';
-import type { ThreadTag } from './protocol/ThreadTag';
-import type { UpdateThread } from './protocol/UpdateThread';
 import type { UpdateMe } from './protocol/UpdateMe';
 import type { UpdateSession } from './protocol/UpdateSession';
 import type { User } from './protocol/User';
@@ -35,20 +33,12 @@ export const api = {
   prefs: () => reads.prefs(),
   setPrefs: (prefs: Record<string, unknown>) => writes.write.setPrefs(prefs),
   users: () => reads.users(),
-  messages: (opts: { threadId?: string | null; before?: string | null; limit?: number }) => reads.messages(opts),
-  /** 本文の全文検索（メインチャットとスレッドの両方。新しい順。空白で区切った語をすべて含むもの） */
+  messages: (opts: { before?: string | null; limit?: number }) => reads.messages(opts),
+  /** 本文の全文検索（新しい順。空白で区切った語をすべて含むもの） */
   searchMessages: (opts: { q: string; before?: string | null; limit?: number }) => reads.searchMessages(opts),
-  threads: () => reads.threads(),
-  thread: (id: string) => reads.thread(id),
-  /** タイトル・アーカイブを変える（スレッドを立てた人だけ） */
-  updateThread: (id: string, body: UpdateThread) => writes.write.updateThread(id, body),
-  /** タグを置き換える（誰でも） */
-  setThreadTags: (id: string, tags: ThreadTag[]) => writes.write.setThreadTags(id, tags),
-  /** すでに使われているタグ（多い順） */
-  threadTags: () => reads.threadTags(),
   /** 自分にサンプルの通知を送る */
   sampleNotification: () => writes.write.sampleNotification(),
-  /** 既読の位置と未読数（メインチャットが先頭、続いてすべてのスレッド） */
+  /** 既読の位置と未読数（メインチャット） */
   readMarkers: () => reads.readMarkers(),
   /** 既読の位置を進める（戻らない） */
   markRead: (body: MarkRead) => writes.write.markRead(body),

@@ -41,14 +41,6 @@ pub fn inline(input: &str) -> String {
     escape_text(input, false)
 }
 
-/// 本文用。改行ごとに行へ分ける。
-pub fn body_lines(input: &str) -> Vec<String> {
-    escape_text(input, true)
-        .split('\n')
-        .map(str::to_owned)
-        .collect()
-}
-
 pub fn char_width(c: char) -> usize {
     c.width().unwrap_or(0)
 }
@@ -120,6 +112,14 @@ pub fn truncate(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 本文の行（改行で分け、エスケープする）。本文の表示は core の部品を使うので、テストだけがこの形を使う
+    fn body_lines(input: &str) -> Vec<String> {
+        escape_text(input, true)
+            .split('\n')
+            .map(str::to_owned)
+            .collect()
+    }
 
     #[test]
     fn terminal_control_sequences_become_visible_text() {
