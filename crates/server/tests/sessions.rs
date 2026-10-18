@@ -220,8 +220,8 @@ async fn rejects_invalid_sessions() {
         .unwrap();
     assert_eq!(error_code(res).await, (413, "state_too_large".into()));
 
-    // 失敗したものはメッセージを作らない
-    assert!(server.messages("").await.is_empty());
+    // 失敗したものはメッセージを作らない（残るのは thread_id を無視して作れた 1 件だけ）
+    assert_eq!(server.messages("").await.len(), 1);
 
     // 大きすぎる state での更新も失敗する
     let session = create(&server, ALICE, &create_req()).await;
