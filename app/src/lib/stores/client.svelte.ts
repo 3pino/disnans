@@ -20,6 +20,7 @@ import { bootChatTransport } from '../transport/boot';
 import { CALL_CONTROL_TYPES, CHAT_EVENT_TYPES, isChatEmit, type ChatEmitEvent, type ChatItem, type ChatSendEvent, type ChatTransport, type SendOutcome } from '../transport/chat';
 import { replyPreviewOf } from '../reply';
 import { reply } from './reply.svelte';
+import { resumeReconnect } from './chatResume';
 import { EV_AUDIO } from '../call/pure';
 import { AUDIO_MAX_IN_FLIGHT, callLatency } from '../call/latency';
 
@@ -81,13 +82,12 @@ class Client {
     if (chat) {
       this.chat = chat;
       void this.startChat();
-      // Android（rust チャット。既定）: 背景から戻った・ネットワークが変わったら、接続を作り直す。
+      // Android（rust チャット。既定）: ネットワークが変わったら、接続を作り直す。背景から戻ったときは、
+      // 背景が長かったか・接続が切れていたときだけ作り直す（resumeReconnect。S2）。
       // chat_reconnect は接続中に何もしないので、chat_start（強制の作り直し）を使う。新しい接続の hello で履歴も読み直す
       if (isTauri() && isAndroid() && typeof window !== 'undefined') {
         window.addEventListener('online', () => this.restartChat());
-        document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'visible') this.restartChat();
-        });
+        document.addEventListener('visibilitychange', () => this.onVisibilityChanged());
       }
       return;
     }
@@ -432,6 +432,20 @@ class Client {
       ui.toast(`${prefix}: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }
     this.scheduleChatRetry();
+  }
+
+  /** 背景に回った時刻（戻ったときに、背景にいた時間を測る） */
+  private hiddenAt: number | null = null;
+
+  /** 画面の表示が変わった（Android）。隠れたら時刻を覚え、表示に戻ったら resumeReconnect で作り直すか決める */
+  private onVisibilityChanged(): void {
+    if (document.visibilityState !== 'visible') {
+      this.hiddenAt ??= Date.now();
+      return;
+    }
+    const hiddenMs = this.hiddenAt === null ? 0 : Date.now() - this.hiddenAt;
+    this.hiddenAt = null;
+    if (resumeReconnect({ hiddenMs, started: this.chatState === 'started', down: this.chatDown })) this.restartChat();
   }
 
   /** 接続を作り直す（Android の復帰・ネットワーク変化）。starting のあいだは何もしない */

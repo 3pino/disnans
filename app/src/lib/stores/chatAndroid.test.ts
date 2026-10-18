@@ -8,9 +8,15 @@ class FakeChat implements ChatTransport {
   starts = 0;
   reconnects = 0;
   startHold: Promise<void> | null = null;
+  /** 次の start を失敗させる（切れている状態を作る） */
+  failNext = false;
   async start(_onItem: (item: ChatItem) => void): Promise<void> {
     this.starts++;
     if (this.startHold) await this.startHold;
+    if (this.failNext) {
+      this.failNext = false;
+      throw new Error('つながりません');
+    }
   }
   async send(_d: MessageDraft): Promise<SendOutcome> {
     return { outcome: 'notSent', reason: 'x' };
@@ -79,22 +85,58 @@ afterEach(() => {
 });
 
 describe('Android chat: resume and network change restart the chat (chat_start, not chat_reconnect)', () => {
-  it('visible again restarts the chat once, with no JS socket', async () => {
+  it('visible again after a long time in the background restarts the chat once, with no JS socket', async () => {
     const e = env(ANDROID_UA, true);
     ({ client } = await import('./client.svelte'));
     const chat = new FakeChat();
     client.start(chat);
     await flush();
     expect(chat.starts).toBe(1);
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
     e.doc.visibilityState = 'hidden';
     e.fireDoc('visibilitychange');
     expect(chat.starts).toBe(1);
+    now += 31_000;
     e.doc.visibilityState = 'visible';
     e.fireDoc('visibilitychange');
     await flush();
     expect(chat.starts).toBe(2);
     expect(chat.reconnects).toBe(0);
     expect(FakeSocket.instances).toBe(0);
+  });
+
+  it('a quick switch away and back (under 30 s) keeps the connection and does not restart it (S2)', async () => {
+    const e = env(ANDROID_UA, true);
+    ({ client } = await import('./client.svelte'));
+    const chat = new FakeChat();
+    client.start(chat);
+    await flush();
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    e.doc.visibilityState = 'hidden';
+    e.fireDoc('visibilitychange');
+    now += 5_000;
+    e.doc.visibilityState = 'visible';
+    e.fireDoc('visibilitychange');
+    await flush();
+    expect(chat.starts).toBe(1);
+  });
+
+  it('visible again restarts the chat when it is down (a failed start is retried at once, not after 30 s)', async () => {
+    const e = env(ANDROID_UA, true);
+    ({ client } = await import('./client.svelte'));
+    const chat = new FakeChat();
+    chat.failNext = true;
+    client.start(chat);
+    await flush();
+    expect(chat.starts).toBe(1);
+    e.doc.visibilityState = 'hidden';
+    e.fireDoc('visibilitychange');
+    e.doc.visibilityState = 'visible';
+    e.fireDoc('visibilitychange');
+    await flush();
+    expect(chat.starts).toBe(2);
   });
 
   it('online restarts the chat (network change)', async () => {
