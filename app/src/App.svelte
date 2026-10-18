@@ -13,6 +13,7 @@
   import { startViewportSync, startZoomGuard } from './lib/viewport';
   import { client } from './lib/stores/client.svelte';
   import { ui } from './lib/stores/ui.svelte';
+  import { orientation } from './lib/stores/orientation.svelte';
   import { notifications } from './lib/stores/notifications.svelte';
   import { startShareReceiver } from './lib/share';
   import { pluginHost } from './lib/plugins/host.svelte';
@@ -31,6 +32,7 @@
     if (!bootReady || setup) return;
     client.start();
     pluginHost.start();
+    orientation.start();
     void notifications.init();
     void startShareReceiver();
   });

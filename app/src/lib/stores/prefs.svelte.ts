@@ -3,7 +3,7 @@ import { getItem, setItem } from '../storage';
 import { normalizeEnterKeys, type EnterAction, type EnterCombo, type EnterKeyPrefs } from '../enterKeys';
 import { normalizeHotkeys, type HotkeyOverrides } from '../commands.svelte';
 import { normalizeSlashAliases, setSlashAlias, type SlashAliases } from '../slashAlias';
-import { normalizeComposerMenu, type ComposerMenuPrefs } from '../composerMenu';
+import { migrateComposerMenu, normalizeComposerMenu, type ComposerMenuPrefs } from '../composerMenu';
 import { normalizeMessageLayout, type MessageLayout } from '../messageLayout';
 import { client } from './client.svelte';
 import { ui } from './ui.svelte';
@@ -26,12 +26,18 @@ function loadCache(): Raw {
   }
 }
 
+/** composerMenu を新しい版へ移す（移した値を返す。保存は呼び出し側）。ほかの項目はそのまま */
+function migrateRaw(v: Raw): { value: Raw; changed: boolean } {
+  const m = migrateComposerMenu(v.composerMenu);
+  return { value: { ...v, composerMenu: m.value }, changed: m.changed };
+}
+
 /**
  * ユーザーごとの設定（ホットキー・スラッシュコマンドの別名・Enter キーの動作など）。サーバー（/api/me/prefs）に置き、同じユーザーの端末で共有する。
  * 中身は JSON のオブジェクトで、知らない項目（新しい版が足したものなど）もそのまま残して保存する
  */
 class Prefs {
-  private raw = $state.raw<Raw>(loadCache());
+  private raw = $state.raw<Raw>(migrateRaw(loadCache()).value);
   /** 保存中の数（その間に届いた prefs.updated は、自分の保存の知らせなので無視する） */
   private saving = 0;
   private started = false;
@@ -68,8 +74,11 @@ class Prefs {
 
   private apply(v: unknown): void {
     if (!isObject(v)) return;
-    this.raw = v;
-    setItem(CACHE_KEY, JSON.stringify(v));
+    const m = migrateRaw(v);
+    this.raw = m.value;
+    setItem(CACHE_KEY, JSON.stringify(m.value));
+    // 古い版の保存値を移したときは、サーバーにも書き直す（一度きり。移したあとの値は版の印を持つ）
+    if (m.changed && this.saving === 0) void this.update('composerMenu', m.value.composerMenu);
   }
 
   /** 1項目を変えて保存する */

@@ -14,6 +14,7 @@ permissions = [
   "allow-status",
   "allow-request-permission",
   "allow-open-battery-settings",
+  "allow-set-orientation",
   "allow-take-launch-target",
   "allow-register-listener",
   "allow-remove-listener",

@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import {
+  CALL_JOIN_COMMAND_ID,
   addComposerMenuCommand,
+  composerMenuAvailable,
   composerMenuItems,
+  migrateComposerMenu,
   normalizeComposerMenu,
   removeComposerMenuEntry,
   reorderComposerMenuEntry,
@@ -138,5 +141,59 @@ describe('コマンドを「＋」メニューに追加する（再発防止）'
     const added = addComposerMenuCommand(none, available, 'cmd:app:open-settings');
     const reloaded = normalizeComposerMenu(JSON.parse(JSON.stringify(added)));
     expect(ids(composerMenuItems(available, reloaded))).toEqual(ids(composerMenuItems(available, added)));
+  });
+});
+
+describe('migrateComposerMenu（通話に参加 → 通話に参加する）', () => {
+  it('版のない保存値（既定で「通話に参加」が出ていた）には、ファイルの直後に通話に参加するを入れ、版の印を付ける', () => {
+    const r = migrateComposerMenu(undefined);
+    expect(r.changed).toBe(true);
+    expect(r.value).toEqual({ order: ['builtin:file', CALL_JOIN_COMMAND_ID], hidden: [], v: 2 });
+  });
+
+  it('並び順に「通話に参加」があれば、その位置に置き換える（ほかの並びは変えない）', () => {
+    const r = migrateComposerMenu({ order: ['action:plugin:dice:roll', 'action:app:call-join', 'builtin:file'], hidden: ['action:plugin:poll:new'] });
+    expect(r.value).toEqual({ order: ['action:plugin:dice:roll', CALL_JOIN_COMMAND_ID, 'builtin:file'], hidden: ['action:plugin:poll:new'], v: 2 });
+    expect(r.changed).toBe(true);
+  });
+
+  it('隠していた「通話に参加」は入れない（印は消す）', () => {
+    const r = migrateComposerMenu({ order: ['builtin:file'], hidden: ['action:app:call-join', 'action:plugin:dice:roll'] });
+    expect(r.value).toEqual({ order: ['builtin:file'], hidden: ['action:plugin:dice:roll'], v: 2 });
+  });
+
+  it('並び順が空で、隠していなければ、ファイルの直後に入る', () => {
+    expect(migrateComposerMenu({ order: [], hidden: [] }).value.order).toEqual(['builtin:file', CALL_JOIN_COMMAND_ID]);
+  });
+
+  it('並び順にファイルがなければ先頭に入る', () => {
+    expect(migrateComposerMenu({ order: ['action:plugin:dice:roll'], hidden: [] }).value.order).toEqual([CALL_JOIN_COMMAND_ID, 'action:plugin:dice:roll']);
+  });
+
+  it('コマンドがすでに並び順にあれば、二重に入れない', () => {
+    expect(migrateComposerMenu({ order: ['builtin:file', CALL_JOIN_COMMAND_ID, 'action:app:call-join'], hidden: [] }).value.order).toEqual(['builtin:file', CALL_JOIN_COMMAND_ID]);
+  });
+
+  it('版の印があれば何もしない（二度目以降は保存し直さない）', () => {
+    const v = { order: ['builtin:file'], hidden: [], v: 2 };
+    expect(migrateComposerMenu(v)).toEqual({ value: v, changed: false });
+  });
+
+  it('知らない項目は残す', () => {
+    const r = migrateComposerMenu({ order: [], hidden: [], other: 'x' });
+    expect(r.value).toMatchObject({ other: 'x', v: 2 });
+  });
+
+  it('移行のあと、「＋」メニューに通話に参加するが出る（旧い項目は登録されないので出ない）', () => {
+    const { value } = migrateComposerMenu(undefined);
+    const available = [
+      { id: 'builtin:file', kind: 'builtin' as const, label: 'ファイル' },
+      { id: 'cmd:app:call-join', kind: 'command' as const, label: '通話に参加する' },
+    ];
+    expect(ids(composerMenuItems(available, normalizeComposerMenu(value)))).toEqual(['builtin:file', 'cmd:app:call-join']);
+  });
+
+  it('アプリの「＋」の操作には、通話に参加は登録されていない（composerMenuAvailable に出ない）', () => {
+    expect(composerMenuAvailable(() => {}).map((x) => x.id)).not.toContain('action:app:call-join');
   });
 });

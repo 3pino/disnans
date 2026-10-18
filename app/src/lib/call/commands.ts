@@ -5,7 +5,6 @@ import VolumeX from '@lucide/svelte/icons/volume-x';
 import Headphones from '@lucide/svelte/icons/headphones';
 import AudioLines from '@lucide/svelte/icons/audio-lines';
 import Settings from '@lucide/svelte/icons/settings';
-import { registerComposerAction } from '../composerActions';
 import { APP_COMMAND_PREFIX, type AppCommand } from '../commands.svelte';
 import { ui } from '../stores/ui.svelte';
 import { call } from './instance.svelte';
@@ -52,9 +51,4 @@ export function callCommands(): AppCommand[] {
       run: () => ui.openSettingsSub('call'),
     },
   ];
-}
-
-/** 入力欄の「＋」メニューの項目を登録する */
-export function registerCallComposerAction(): () => void {
-  return registerComposerAction({ id: `${APP_COMMAND_PREFIX}call-join`, label: '通話に参加', icon: Headphones, run: () => call.join() });
 }

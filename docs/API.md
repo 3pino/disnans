@@ -24,7 +24,7 @@
 | PATCH | `/api/me` | 表示名の変更（body: `UpdateMe`） | `User` |
 | PUT | `/api/me/avatar` | アバターの設定（multipart、フィールド名 `file`） | `User` |
 | DELETE | `/api/me/avatar` | 自分で設定したアバターを消し、Tailscale のプロフィール画像に戻す | `User` |
-| GET | `/api/me/read` | 自分の既読の位置と未読数（メインチャットが先頭、続いてすべてのスレッド） | `ReadMarker[]` |
+| GET | `/api/me/read` | 自分の既読の位置と未読数（メインチャットの 1 件を配列で返す） | `ReadMarker[]` |
 | PUT | `/api/me/read` | 既読の位置を進める（body: `MarkRead`） | `ReadMarker` |
 | GET | `/api/me/prefs` | 自分の設定（ホットキー・Enter キーの動作など。まだなければ `{}`） | JSON オブジェクト |
 | PUT | `/api/me/prefs` | 自分の設定をまるごと置き換える（body: JSON オブジェクト） | JSON オブジェクト |
@@ -37,12 +37,7 @@
 端末 ID はクライアントが作る（1〜64 文字、英数字とハイフン。認証ではなく、自分の端末だけに使う）。端末の一覧・設定の変更は他の端末にイベントで知らせない。設定の大きさは `/api/me/prefs` と同じ上限（64 KB）。
 | GET | `/api/users` | メンバー一覧 | `User[]` |
 | GET | `/api/avatars/{id}` | 自分で設定したアバターの画像（WebP） | バイナリ |
-| GET | `/api/messages?thread_id=&before=&limit=` | メッセージ履歴 | `Message[]` |
-| GET | `/api/threads` | スレッド一覧 | `Thread[]` |
-| GET | `/api/threads/{id}` | スレッド1件 | `Thread` |
-| PATCH | `/api/threads/{id}` | タイトル・アーカイブを変える（body: `UpdateThread` = `{ title?, archived? }`。指定した項目だけ変わる）。**スレッドを立てた人だけ**（他人は `403 forbidden`）。`title` は前後の空白を除いて100文字まで（`title_too_long`）、空文字なら消す | `Thread` |
-| PUT | `/api/threads/{id}/tags` | タグをまるごと置き換える（body: `SetThreadTags` = `{ tags: ThreadTag[] }`）。**誰でもできる** | `Thread` |
-| GET | `/api/thread-tags` | すでに使われているタグと、使っているスレッドの数（多い順） | `ThreadTagUsage[]` |
+| GET | `/api/messages?before=&limit=` | メッセージ履歴 | `Message[]` |
 | POST | `/api/files` | ファイルのアップロード（multipart、フィールド名 `file`） | `Attachment` |
 | GET | `/api/files/{id}` | ファイル本体 | バイナリ |
 | GET | `/api/files/{id}/thumb` | サムネイル（WebP） | バイナリ |
@@ -52,8 +47,8 @@
 | DELETE | `/api/plugins/{id}` | プラグイン・テーマの削除 | `204` |
 | GET | `/api/plugins/{id}/files/{name}` | 配布されたファイル（`manifest.json` / `main.js` / `styles.css` / `theme.css` / `icon.svg`） | ファイル本体 |
 | POST | `/api/plugins/{id}/notify` | プラグインから通知を送る（body: `PluginNotify`） | `204` |
-| POST | `/api/plugins/{id}/messages` | プラグインがボットとしてメッセージを投稿する（body: `PluginPostMessage` = `{ thread_id?, body, name?, notify? }`）。`author_id` は呼び出した人で、`bot: { plugin, name }` が付く。`name` は前後の空白を除いて40文字まで（省略するとプラグインの名前）。本文の検査は通常のメッセージと同じ。プラグインがない（見えない）と `404`、スレッドがないと `404 thread_not_found`。配信は通常の投稿と同じ（`message.created`）。通知は `notify: true` のときだけ送る（v6。省略は `false` で、通知は一切送らない）。`true` なら通常の宛先（メンション・スレッドの参加者）に加えて投稿した本人にも送り、文言はボットの名前で作る（`{名前} からのメッセージ`、`{名前} さんからのメンション` など）。ボットのメッセージの編集は `bot_not_editable` | `Message` |
-| POST | `/api/sessions` | セッションを作り、カードを流す（body: `CreateSession`） | `Session` |
+| POST | `/api/plugins/{id}/messages` | プラグインがボットとしてメッセージを投稿する（body: `PluginPostMessage` = `{ body, name?, notify? }`）。`author_id` は呼び出した人で、`bot: { plugin, name }` が付く。`name` は前後の空白を除いて40文字まで（省略するとプラグインの名前）。本文の検査は通常のメッセージと同じ。プラグインがない（見えない）と `404`。配信は通常の投稿と同じ（`message.created`）。通知は `notify: true` のときだけ送る（v6。省略は `false` で、通知は一切送らない）。`true` なら通常の宛先（メンション・スレッドの参加者）に加えて投稿した本人にも送り、文言はボットの名前で作る（`{名前} からのメッセージ`、`{名前} さんからのメンション` など）。ボットのメッセージの編集は `bot_not_editable` | `Message` |
+| POST | `/api/sessions` | セッションを作り、カードを流す（body: `CreateSession` = `{ plugin, state, card }`） | `Session` |
 | GET | `/api/sessions/{id}` | セッション1件 | `Session` |
 | PUT | `/api/sessions/{id}` | セッションの更新（body: `UpdateSession`） | `Session` |
 | GET | `/api/ws` | WebSocket | — |
@@ -74,42 +69,32 @@
 - 保存したら、そのユーザーのすべての接続に `prefs.updated` を送る（保存した端末にも届く）
 
 ### メッセージ履歴
-- `thread_id` を省略するとメインチャット、指定するとそのスレッドの返信（起点のメッセージは含まない）
+- メインチャットの履歴だけを返す。`thread_id` は廃止した（付けても無視する）
 - `before`（メッセージ ID）より古いものを、新しい順に最大 `limit` 件（既定 50、最大 200）取り、**古い順に並べて**返す
 
 ### メッセージの検索
-- `GET /api/messages/search?q=&before=&limit=` で、本文を全文検索する。メインチャットとスレッドの返信の両方が対象で、**新しい順**に返す（`Message[]`。並べ替えは `before` と同じく ID で行う）
+- `GET /api/messages/search?q=&before=&limit=` で、本文を全文検索する。メインチャットが対象で、**新しい順**に返す（`Message[]`。並べ替えは `before` と同じく ID で行う）
 - `q` は空白で区切った語をすべて含むものを探す（AND）。大文字・小文字は区別しない。前後の空白は除く。空なら `[]`。200 文字を超えたら `400 query_too_long`
 - 索引は SQLite の FTS5（trigram）。3 文字以上の語はこの索引で引き、2 文字以下の語を含むときは `LIKE` で探す（件数が多いと遅くなる）
-- 削除済みのメッセージは出ない（スレッドの起点を消すと、返信も消える）。どこのメッセージかは `thread_id` でわかる（メインチャットなら `null`）
+- 削除済みのメッセージは出ない
 - 本文の中身だけを見る。メンションは `<@ID>` のまま入っているので、表示名では探せない
 - `limit` と `before` の決め方は、メッセージ履歴と同じ（既定 50、最大 200）
 
 ### 既読の位置と未読数
-- 場所（メインチャットかスレッド1つ）ごとに、ユーザーの「ここまで読んだ位置」（メッセージ ID）を保存する。ID（ULID）の文字列の大小で前後を比べ、位置以下の ID のメッセージを既読とみなす
+- メインチャットの、ユーザーの「ここまで読んだ位置」（メッセージ ID）を保存する。ID（ULID）の文字列の大小で前後を比べ、位置以下の ID のメッセージを既読とみなす
 - `unread_count` は、位置より新しい他人のメッセージの数（自分のメッセージと削除されたメッセージは数えない）
 - 一度も既読にしていない場所の位置は、アカウントを作った時刻の位置（実在するメッセージの ID ではない）。それより前のメッセージは未読にしない
 - マイグレーション 0008 を当てた時点のメッセージは、全員について既読にする
 - `PUT` は位置を進めるだけで、戻さない（古い ID なら何もせず、いまの位置を返す）
-  - `message_id` が ULID の形でなければ `400 invalid_message_id`、スレッドがなければ `404 not_found`
+  - `message_id` が ULID の形でなければ `400 invalid_message_id`
   - 位置が進んだら、自分のすべての接続（送った端末を含む）に `read.updated` を送る
-- スレッドの起点を削除すると、そのスレッドの位置も消える
-
-### スレッドのタイトル・タグ・アーカイブ
-- `ThreadInfo`（`Message.thread` と `Thread.info`）に `created_by`（スレッドを立てた人）・`title`（なければ `null`）・`tags`（表示の順）・`archived` が入る。`created_by` は、`thread.create` を送った人、または `start_thread: true` で送った人
-- `ThreadTag` は `{ label, icon }`。`label` は前後の空白を除いて1〜24文字（絵文字も可）、`icon` は Lucide のアイコン名（英小文字・数字・ハイフン、48文字まで）か `null`。同じ（label, icon）の重複は1つにまとめる。10個まで（`too_many_tags`）。不正なら `400 invalid_tag`
-- 変更すると、起点のメッセージの `message.updated` と `thread.updated` を全員に配信する
-- アーカイブされたスレッドにも、ふつうに返信できる（一覧での見せ方をクライアントが変えるだけ）
-- マイグレーション 0010: `threads` に `created_by` / `title` / `archived`、`thread_tags` テーブルを追加（既存のスレッドの `created_by` は起点の投稿者）
+- マイグレーション 0012 でスレッドを廃止した。スレッドの既読の位置は消し、メインチャットの位置は残す
 
 ### 返信
-- `message.send` の `reply_to`（省略は `null`）に返信先のメッセージ ID を入れる。返信先は**同じ場所**（`thread_id` が同じ。スレッドの中なら、そのスレッドの起点のメッセージも可）のメッセージだけ。なければ `reply_not_found`、場所が違うと `reply_other_place`
+- `message.send` の `reply_to`（省略は `null`）に返信先のメッセージ ID を入れる。返信先はメインチャットのメッセージだけ。なければ `reply_not_found`
 - `Message.reply_to` に返信先の ID、`Message.reply_preview` に要約（`author_id`・本文の冒頭100文字・`has_attachments`・`bot`）が入る。返信先が削除されると `reply_preview` は `null` になり、`reply_to` は残る（外部キーなし。クライアントは「削除されたメッセージ」と表示する）。要約は読み込みのたびにその時点の内容で作る（編集に追従する）
 - 返信先の作者に通知を送る（タイトルは `{名前} replied to you`。自分自身・すでにメンション等で通知する人には送らない）
-
-### スレッド一覧
-- スレッドに種類はない。クエリ文字列は受け取らない（付いていても無視する）
-- 最後に動きがあった順（`last_reply_at`、なければ起点の `created_at`）の降順
+- マイグレーション 0012 で、スレッドの返信はメインチャットに移し、返信先が空だったものは起点への返信（`reply_to`）にした
 
 ### ファイル
 - 上限なし（サーバー側でストリーミングして保存する）
@@ -147,39 +132,38 @@
 
 ### セッションとカード（SPEC 9.5）
 - 作成: プラグインが配布済みかは問わない（開発中のプラグインでも使える）。`plugin` の形式だけ確かめる
-  - カードのメッセージ（本文は空文字、`card` 付き）を `thread_id` のスレッド（`null` ならメインチャット）に作り、`message.created` を全員に配信する（スレッドなら `thread.updated` も）。通知は出さない
-  - スレッドがなければ `404 thread_not_found`
+  - カードのメッセージ（本文は空文字、`card` 付き）をメインチャットに作り、`message.created` を全員に配信する。通知は出さない
+  - `thread_id` は廃止した。付けても無視する
 - `state` は任意の JSON。JSON にして 1 MB まで（超えたら `413 state_too_large`）。カードの `title` は 200 文字、`text` は 2000 文字まで（`400 invalid_card`）
 - 更新: `version` が現在の値と一致しなければ `409 version_conflict`。成功すると `version` が 1 増え、`session.updated` を全員に配信する
   - `card` を指定するとカードも書き換え、`message.updated` も配信する（新しいメッセージは流さない。`edited_at` も変えない）
 - カードのメッセージ
   - 編集はできない（`400 card_not_editable`）
   - 削除は作成者だけ。削除するとセッションも消える
-  - リアクションやスレッドはふつうのメッセージと同じ
+  - リアクションはふつうのメッセージと同じ
 - だれでも読み書きできる（友達同士の前提。チート対策はしない）
 
 ### プラグインからの通知
 - `user_ids` の各ユーザーに `notify` を送る。自分宛ても送る。存在しないユーザーは無視し、重複は1回にまとめる
 - `title` はプラグインの `name`（配布されていなければ ID）。`body` は 1〜500 文字（`400 invalid_body`）
-- `session_id` を指定すると、そのカードのメッセージの `message_id` / `thread_id` を `notify` に入れる。セッションがなければ `404 not_found`
+- `session_id` を指定すると、そのカードのメッセージの `message_id` を `notify` に入れる。セッションがなければ `404 not_found`
 
 ## WebSocket
 
 `ClientEvent` / `ServerEvent` を JSON テキストフレームでやりとりする。
 
 - 接続直後にサーバーが `hello` を送る
-- メッセージの作成・更新・削除、リアクション、スレッドの変化は**全員に**配信する
+- メッセージの作成・更新・削除、リアクションは**全員に**配信する
 - `message.created` の `client_id` は、送信者本人の接続にだけ入れる
 - `notify` は対象者にだけ送る
   - メンションされた（`<@user_id>`。タイトルは `{名前} mentioned you`）
-  - メインチャット（スレッドの外）の投稿は、**投稿者以外の全員**（タイトルは送り主の名前だけ。メンション・返信に当たる人には、それぞれの文言を優先して1回だけ送る）。ボットの投稿（`notify: true`）も同じく全員に送り、タイトルはボットの名前。投稿者本人にもボットの名前で1件だけ送る。この一般の通知は再送（接続し直したときの送り直し）の対象にしない
-  - 自分が起点のスレッド、または自分が返信したスレッドに、他人が返信した
+  - メインチャットの投稿は、**投稿者以外の全員**（タイトルは送り主の名前だけ。メンション・返信に当たる人には、それぞれの文言を優先して1回だけ送る）。ボットの投稿（`notify: true`）も同じく全員に送り、タイトルはボットの名前。投稿者本人にもボットの名前で1件だけ送る。この一般の通知は再送（接続し直したときの送り直し）の対象にしない
   - 自分のメッセージに、他人が返信した（`reply_to`）
   - `POST /api/notify/sample` で自分に送った（`sample: true`。クライアントは表示中でもシステム通知を出す）
 - `notify` はそのユーザーのすべての接続に送る。Android アプリは WebView とは別に、通知用の常駐サービスからも接続する
 - `message.send` の `silent: true`（省略は `false`）は、通知を一切送らない（配信は普通の投稿と同じ）
-- スレッドは `thread.create`（既存のメッセージを起点にする）か、`message.send` の `start_thread: true`（送信と同時に起点にする）で作る。スレッドの中の返信からは作れない
-- 編集・削除は本人のメッセージだけ。スレッドの起点を削除すると、スレッドの返信もすべて削除する
+- 編集・削除は本人のメッセージだけ
+- 古いクライアントの `message.send` に付いている `thread_id` / `start_thread` は無視し、メインチャットに入れる。`thread.create` は知らない形として `invalid_event` で断る
 - プラグインの配布・更新・削除（`plugin.updated` / `plugin.removed`）と、セッションの更新（`session.updated`）は全員に配信する（自分だけのプラグイン・テーマのイベントは持ち主にだけ）
 - `session.emit` は保存せず、送信した接続以外の全員（同じユーザーの別の接続を含む）に `session.event` として中継する。`from` は送信者のユーザー ID
   - セッションがなければ `not_found`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）

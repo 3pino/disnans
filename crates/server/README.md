@@ -72,7 +72,7 @@ cargo test -p disnans-server
 | `src/auth.rs` / `src/tailscale.rs` | 認証ミドルウェア、LocalAPI の whois |
 | `src/routes/` | REST のハンドラー |
 | `src/ws.rs` / `src/hub.rs` | WebSocket と、接続への配信 |
-| `src/chat.rs` | メッセージ・スレッド・リアクションの操作 |
+| `src/chat.rs` | メッセージ・リアクションの操作 |
 | `src/notify.rs` | 通知（`Notifier` で送り方を抽象化。今は WebSocket だけ） |
 | `src/files.rs` / `src/image_proc.rs` | ファイルの保存、画像の WebP 変換、未投稿ファイルの掃除 |
 | `src/plugins.rs` | プラグインの配布・更新・削除（manifest の検証、ファイルの入れ替え、アナウンス） |

@@ -15,6 +15,7 @@
 - `allow-status`
 - `allow-request-permission`
 - `allow-open-battery-settings`
+- `allow-set-orientation`
 - `allow-take-launch-target`
 - `allow-register-listener`
 - `allow-remove-listener`
@@ -76,6 +77,31 @@ Enables the open_battery_settings command without any pre-configured scope.
 <td>
 
 Denies the open_battery_settings command without any pre-configured scope.
+
+</td>
+</tr>
+<tr>
+<td>
+
+`notifier:allow-set-orientation`
+
+</td>
+<td>
+
+Enables the set_orientation command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:deny-set-orientation`
+
+</td>
+<td>
+
+Denies the set_orientation command without any pre-configured scope.
 
 </td>
 </tr>

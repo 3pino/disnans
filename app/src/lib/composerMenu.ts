@@ -39,6 +39,13 @@ export type ComposerMenuPrefs = {
 export const BUILTIN_FILE_ID = 'builtin:file';
 export const DEFAULT_COMPOSER_MENU: Readonly<ComposerMenuPrefs> = Object.freeze({ order: [], hidden: [] });
 
+/** 以前は「＋」メニューの既定の項目だった「通話に参加」（登録した操作の id）。いまは出さず、コマンド「通話に参加する」に置き換えた */
+export const LEGACY_CALL_JOIN_ACTION_ID = 'action:app:call-join';
+/** 「通話に参加する」コマンドの「＋」メニューの id */
+export const CALL_JOIN_COMMAND_ID = 'cmd:app:call-join';
+/** composerMenu の移行の版。これより古い（版のない）保存値は、読むときに移行する */
+export const COMPOSER_MENU_VERSION = 2;
+
 /** 保存したもの（サーバーの設定の composerMenu）を読む。文字列でないものと重複は捨てる。知らない id は残す（入れ直したプラグインのため） */
 export function normalizeComposerMenu(raw: unknown): ComposerMenuPrefs {
   const strings = (v: unknown): string[] => {
@@ -48,6 +55,34 @@ export function normalizeComposerMenu(raw: unknown): ComposerMenuPrefs {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { order: [], hidden: [] };
   const o = raw as Record<string, unknown>;
   return { order: strings(o.order), hidden: strings(o.hidden) };
+}
+
+/**
+ * 保存した composerMenu を新しい版に移す（一度だけ）。版のない保存値は、既定で「通話に参加」が出ていた扱いにする。
+ * 出していた（隠していない）なら「通話に参加する」コマンドを、「ファイルを添付」の直後（並び順にあれば同じ位置）に入れる。
+ * 隠していたなら、何も入れない。どちらでも、旧い「通話に参加」の項目の印は消す。
+ * changed は、版を書き込む必要があるとき true（保存し直す）。移行後の値は版の印を持つので、二度は変えない
+ */
+export function migrateComposerMenu(raw: unknown): { value: Record<string, unknown>; changed: boolean } {
+  const base: Record<string, unknown> = raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
+  if (base.v === COMPOSER_MENU_VERSION) return { value: base, changed: false };
+  const prefs = normalizeComposerMenu(base);
+  const callJoinOn = !prefs.hidden.includes(LEGACY_CALL_JOIN_ACTION_ID);
+  let order = prefs.order.filter((id) => id !== LEGACY_CALL_JOIN_ACTION_ID);
+  if (callJoinOn && !order.includes(CALL_JOIN_COMMAND_ID)) {
+    // 並び順が空なら、既定の並び（ファイルを添付が先頭）を書き出してから入れる
+    const list = prefs.order.length > 0 ? prefs.order.filter((id) => id !== LEGACY_CALL_JOIN_ACTION_ID) : [BUILTIN_FILE_ID];
+    const legacyAt = prefs.order.indexOf(LEGACY_CALL_JOIN_ACTION_ID);
+    if (legacyAt >= 0) {
+      // 並び順に「通話に参加」があれば、その位置に置き換える
+      order = [...order.slice(0, legacyAt), CALL_JOIN_COMMAND_ID, ...order.slice(legacyAt)];
+    } else {
+      const at = list.indexOf(BUILTIN_FILE_ID);
+      order = [...list.slice(0, at + 1), CALL_JOIN_COMMAND_ID, ...list.slice(at + 1)];
+    }
+  }
+  const value = { ...base, order, hidden: prefs.hidden.filter((id) => id !== LEGACY_CALL_JOIN_ACTION_ID), v: COMPOSER_MENU_VERSION };
+  return { value, changed: true };
 }
 
 /**

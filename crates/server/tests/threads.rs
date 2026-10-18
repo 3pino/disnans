@@ -1,4 +1,4 @@
-//! 返信・silent と、スレッドの廃止（古いクライアントへの互換）の結合テスト。
+//! 返信・silent と、スレッドの廃止（古いクライアントの送信の互換・API が消えていること）の結合テスト。
 
 mod common;
 
@@ -83,31 +83,27 @@ async fn silent_sends_no_notification() {
     bob.assert_silent(Duration::from_millis(300)).await;
 }
 
+/// スレッドの API は消した。存在しないパスと同じ普通の 404 になる。
 #[tokio::test]
-async fn thread_api_is_gone() {
+async fn thread_routes_are_plain_not_found() {
     let server = TestServer::start().await;
-    for path in [
-        "/api/threads",
-        "/api/threads/01A000000000000000000000M1",
-        "/api/thread-tags",
+    for (method, path) in [
+        ("GET", "/api/threads"),
+        ("GET", "/api/threads/01A000000000000000000000M1"),
+        ("PUT", "/api/threads/01A000000000000000000000M1"),
+        ("PUT", "/api/threads/01A000000000000000000000M1/tags"),
+        ("GET", "/api/thread-tags"),
     ] {
-        let res = server.get(ALICE, path).send().await.unwrap();
-        assert_eq!(res.status(), 410, "{path}");
-        assert_eq!(
-            res.json::<ApiError>().await.unwrap().code,
-            "threads_removed"
-        );
+        let req = match method {
+            "GET" => server.get(ALICE, path),
+            _ => server.put_json(ALICE, path, &serde_json::json!({ "tags": [] })),
+        };
+        let res = req.send().await.unwrap();
+        let status = res.status();
+        let code = res.json::<ApiError>().await.unwrap().code;
+        assert_eq!(status, 404, "{path}");
+        assert_eq!(code, "not_found", "{path}");
     }
-    let res = server
-        .put_json(
-            ALICE,
-            "/api/threads/01A000000000000000000000M1/tags",
-            &serde_json::json!({ "tags": [] }),
-        )
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 410);
 }
 
 /// 廃止したメッセージ（thread.create）は、知らない形として断る。

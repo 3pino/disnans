@@ -48,6 +48,8 @@
   import { isAndroid, isTauri } from '../lib/platform';
   import { saveServerUrl } from '../lib/desktopStorage';
   import { notifications } from '../lib/stores/notifications.svelte';
+  import { orientation } from '../lib/stores/orientation.svelte';
+  import type { OrientationMode } from '../lib/orientation';
 
   // 表示名は、カードの名前を押したときだけその場で編集する
   let editingName = $state(false);
@@ -92,6 +94,12 @@
   ];
 
   // メッセージの表示。既定はリスト（Slack 風）
+  const orientationOptions: { value: OrientationMode; label: string }[] = [
+    { value: 'portrait', label: '向きを固定' },
+    { value: 'media', label: 'メディアのみ自動回転' },
+    { value: 'auto', label: '自動回転' },
+  ];
+
   const messageLayouts: { value: MessageLayout; label: string }[] = [
     { value: 'list', label: 'リスト' },
     { value: 'bubble', label: '吹き出し' },
@@ -321,6 +329,14 @@
         <SegmentedButton class="settings-theme-picker" label="テーマ" options={themes} value={ui.theme} onchange={(v) => ui.setTheme(v)} />
         <ThemeSettings />
         {#if isTauri() && isAndroid()}
+          <span class="field-label">画面の向き</span>
+          <SegmentedButton
+            class="settings-orientation-picker"
+            label="画面の向き"
+            options={orientationOptions}
+            value={orientation.mode}
+            onchange={(v) => orientation.set(v)}
+          />
           <SettingRow name="ナビゲーションバーを隠す" description="画面の下端からスワイプすると一時的に表示します" class="settings-hide-nav-bar-row">
             {#snippet control()}
               <Toggle checked={ui.hideNavigationBar} label="ナビゲーションバーを隠す" onchange={(on) => ui.setHideNavigationBar(on)} />

@@ -7,13 +7,12 @@ mod notify;
 mod plugins;
 mod reads;
 mod sessions;
-mod threads;
 mod users;
 
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn_with_state;
-use axum::routing::{any, delete, get, post, put};
+use axum::routing::{delete, get, post, put};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
@@ -57,11 +56,6 @@ pub fn router(state: SharedState) -> Router {
         .route("/avatars/{id}", get(users::avatar))
         .route("/messages", get(messages::list))
         .route("/messages/search", get(messages::search))
-        // スレッドは廃止した（古いクライアントのために 410 を返す）
-        .route("/threads", any(threads::gone))
-        .route("/threads/{id}", any(threads::gone))
-        .route("/threads/{id}/tags", any(threads::gone))
-        .route("/thread-tags", any(threads::gone))
         // ファイルサイズの上限はなし（ストリーミングでディスクに書く）
         .route(
             "/files",

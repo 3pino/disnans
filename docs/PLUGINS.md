@@ -114,7 +114,7 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `13`（v13 でスレッドを廃止した。`threadId` などの指定は無視され、メッセージはメインチャットに入る。`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまは `13`（`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 
 ダイスの manifest:
@@ -562,7 +562,7 @@ const off = this.onBroadcast('presence', (payload, from) => { /* ... */ });
 
 ### ステータス欄（addStatusBarItem、v3）
 
-画面の最上部の共通の枠（トップバーのスロット。通話のバーも同じ枠に出ます）に、プラグイン共通の**常時表示の帯**として要素を足します。画面（チャット・設定・スレッド）を切り替えても出ています。
+画面の最上部の共通の枠（トップバーのスロット。通話のバーも同じ枠に出ます）に、プラグイン共通の**常時表示の帯**として要素を足します。画面（チャット・設定）を切り替えても出ています。
 
 ```js
 const el = this.addStatusBarItem(); // 空の <div>。外すときに自動で消える

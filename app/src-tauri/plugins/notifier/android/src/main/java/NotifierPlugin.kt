@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
@@ -48,6 +49,11 @@ class StartCallArgs {
 @InvokeArg
 class SetAudioOutputArgs {
   lateinit var id: String
+}
+
+@InvokeArg
+class SetOrientationArgs {
+  lateinit var mode: String
 }
 
 @TauriPlugin(
@@ -307,6 +313,26 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     } catch (ex: Exception) {
       invoke.reject(ex.message)
     }
+  }
+
+  /**
+   * 画面の向き。`portrait` は自動回転が ON でも縦に固定、`user` はシステムの設定に従う。
+   * 選んだ値は常駐サービスの設定と同じ SharedPreferences に残し、次の起動では MainActivity が WebView の読み込みの前に使う。
+   */
+  @Command
+  fun setOrientation(invoke: Invoke) {
+    val args = invoke.parseArgs(SetOrientationArgs::class.java)
+    val (name, orientation) = when (args.mode) {
+      "portrait" -> "portrait" to ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+      "user" -> "user" to ActivityInfo.SCREEN_ORIENTATION_USER
+      else -> {
+        invoke.reject("invalid_orientation")
+        return
+      }
+    }
+    prefs.orientation = name
+    activity.runOnUiThread { activity.requestedOrientation = orientation }
+    invoke.resolve()
   }
 
   private var askedBluetooth = false

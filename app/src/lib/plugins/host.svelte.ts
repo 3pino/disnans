@@ -22,6 +22,7 @@ import { holdBackground } from './background';
 import { audio } from './audio';
 import { pipApi, screenCaptureApi } from './nativeScreen';
 import { setImmersive } from '../systemBars';
+import { orientation } from '../stores/orientation.svelte';
 import { callApi } from '../call/instance.svelte';
 import { loadLucide, registerIcon } from '../icons.svelte';
 import { API_VERSION, errorMessage, type HostServices, type Manifest, type PluginClass } from './types';
@@ -247,7 +248,11 @@ class PluginHost {
         toast: (t, k) => ui.toast(t, k),
         confirm: (o) => ui.confirm(o),
         onBack: (run) => ui.addPluginBack(run),
-        setImmersive: (on) => setImmersive(on),
+        setImmersive: (on) => setImmersive(on).then((ok) => {
+          // 没入モードの間は、画面の向きの設定（メディアのみ自動回転）で全画面として扱う
+          if (ok) orientation.setImmersive(on);
+          return ok;
+        }),
       }),
       VersionConflictError,
       audio,

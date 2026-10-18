@@ -39,3 +39,15 @@ export async function setImmersive(on: boolean): Promise<boolean> {
   await invoke('plugin:system-bars|set_immersive', { on });
   return true;
 }
+
+/**
+ * Android の画面の向き。`portrait` は自動回転が ON でも縦に固定し、`user` はシステムの設定に従う。
+ * 選んだ値は端末に保存され、次の起動では WebView の読み込みの前に使われる。
+ * デスクトップやブラウザでは何もせず false
+ */
+export async function setScreenOrientation(mode: 'portrait' | 'user'): Promise<boolean> {
+  if (!isTauri() || !isAndroid()) return false;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('plugin:notifier|set_orientation', { mode });
+  return true;
+}
