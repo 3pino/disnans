@@ -333,8 +333,11 @@ fn message_rows_with(
                         } else {
                             Deco::REACTION
                         });
-                        let text = format!(" {} {} ", sanitize::inline(&r.emoji), r.count);
+                        let cap = Deco(deco.0 | Deco::CAP);
+                        let text = format!("{} {}", sanitize::inline(&r.emoji), r.count);
+                        cells.push(('\u{e0b6}', cap));
                         cells.extend(text.chars().map(|c| (c, deco)));
+                        cells.push(('\u{e0b4}', cap));
                     }
                     for line in markdown::wrap_cells(&cells, inner) {
                         content.push(markdown::cells_to_content(&line, RowKind::Meta));
@@ -619,7 +622,7 @@ mod tests {
         let rows = message_rows(&m, &[], 60, None, None);
         let text: Vec<&str> = rows.iter().map(|r| r.text.as_str()).collect();
         assert!(text[0].ends_with("[添付: photo.png (1.5 KB)]"), "{text:?}");
-        assert!(text.iter().any(|l| l.ends_with(" 👍 2 ")));
+        assert!(text.iter().any(|l| l.ends_with("\u{e0b6}👍 2\u{e0b4}")));
         assert!(text.iter().any(|l| l.ends_with("(編集済み)")));
         assert_eq!(text.len(), 3);
     }

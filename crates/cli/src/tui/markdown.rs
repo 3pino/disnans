@@ -25,6 +25,8 @@ impl Deco {
     pub const REACTION: u16 = 512;
     pub const REACTION_MINE: u16 = 1024;
     /// リストの記号（薄く出す）。
+    /// リアクションの丸い端（前景色が背景色、背景は既定）。
+    pub const CAP: u16 = 4096;
     pub const MARKER: u16 = 2048;
 
     pub fn has(self, flag: u16) -> bool {
@@ -102,12 +104,21 @@ fn blocks(list: &[Block], name_of: &dyn Fn(&str) -> String, blank_between: bool)
                 start,
                 items,
             } => {
+                // 番号なし・ありで本文の列がそろうよう、記号は右揃えで最低 3 桁にする。
+                let last = start + items.len().saturating_sub(1) as u64;
+                let width = if *ordered {
+                    (format!("{last}. ").len()).max(3)
+                } else {
+                    3
+                };
                 for (n, item) in items.iter().enumerate() {
-                    let marker = if *ordered {
+                    let raw = if *ordered {
                         format!("{}. ", start + n as u64)
                     } else {
                         "• ".to_owned()
                     };
+                    let pad = width.saturating_sub(sanitize::display_width(&raw));
+                    let marker = format!("{}{raw}", " ".repeat(pad));
                     let indent = " ".repeat(sanitize::display_width(&marker));
                     if item.lines.is_empty() {
                         out.push(MdLine {
@@ -321,10 +332,10 @@ mod tests {
     #[test]
     fn quotes_lists_and_fences_get_leads_that_repeat_when_wrapped() {
         assert_eq!(texts("> abcdef ghij", 8), ["▎ abcdef", "▎ ghij"]);
-        assert_eq!(texts("- a\n- b", 20), ["• a", "• b"]);
+        assert_eq!(texts("- a\n- b", 20), [" • a", " • b"]);
         assert_eq!(texts("1. x\n2. y", 20), ["1. x", "2. y"]);
         assert_eq!(texts("```\nlet a = 1;\n```", 20), ["│ let a = 1;"]);
-        assert_eq!(texts("- abcdef ghij", 8), ["• abcdef", "  ghij"]);
+        assert_eq!(texts("- abcdef ghij", 9), [" • abcdef", "   ghij"]);
     }
 
     #[test]
