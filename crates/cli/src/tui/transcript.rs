@@ -144,15 +144,16 @@ fn day_text(day: view::Day) -> String {
 
 /// 一覧の全行（日付の区切りと、各メッセージの行）。日付はゾーンで決める。
 /// `messages` は古い順。続きの判定（名前を省くこと）はしない（TUI は従来どおり毎回出す）。
-pub fn timeline(
+pub fn timeline_for(
     messages: &[Message],
     users: &[User],
     width: usize,
     zone: Option<&TimeZone>,
     gfx: Option<(u16, u16)>,
+    me: Option<&str>,
 ) -> Vec<Row> {
     let calendar = ZoneCalendar { zone };
-    let ctx = view::Context::new(users, None, &calendar);
+    let ctx = view::Context::new(users, me, &calendar);
     let mut rows = Vec::new();
     let mut day: Option<view::Day> = None;
     let mut previous: Option<&Message> = None;
@@ -180,17 +181,40 @@ pub fn timeline(
     rows
 }
 
+#[cfg(test)]
+pub fn timeline(
+    messages: &[Message],
+    users: &[User],
+    width: usize,
+    zone: Option<&TimeZone>,
+    gfx: Option<(u16, u16)>,
+) -> Vec<Row> {
+    timeline_for(messages, users, width, zone, gfx, None)
+}
+
+#[cfg(test)]
+pub fn message_rows(
+    message: &Message,
+    users: &[User],
+    width: usize,
+    zone: Option<&TimeZone>,
+    gfx: Option<(u16, u16)>,
+) -> Vec<Row> {
+    message_rows_for(message, users, width, zone, gfx, None)
+}
+
 /// 1メッセージ分の行。`width` は履歴の表示幅（桁）。
 /// 先頭行は `アイコン 名前 本文`、続く行は本文の開始位置にそろえる。
-pub fn message_rows(
+pub fn message_rows_for(
     message: &Message,
     users: &[User],
     width: usize,
     _zone: Option<&TimeZone>,
     gfx: Option<(u16, u16)>,
+    me: Option<&str>,
 ) -> Vec<Row> {
     let calendar = view::UtcCalendar;
-    let ctx = view::Context::new(users, None, &calendar);
+    let ctx = view::Context::new(users, me, &calendar);
     let model = view::message_rows(message, &ctx);
     message_rows_with(message, &model, users, width, gfx, false)
 }

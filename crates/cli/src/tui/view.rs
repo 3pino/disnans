@@ -619,6 +619,74 @@ mod tests {
         }));
     }
 
+    /// 画像の要求・平均色・配置まで、描画の経路を通しで確かめる。
+    #[test]
+    fn avatars_and_thumbnails_are_requested_colored_and_placed() {
+        let mut app = app();
+        app.enable_images((8, 16));
+        let mut bob = user("u2", "Bob");
+        bob.avatar_url = Some("/api/avatars/abc".into());
+        app.update(Event::Net(NetEvent::Connected {
+            generation: 1,
+            me: user("u1", "Alice"),
+            users: vec![user("u1", "Alice"), bob],
+        }));
+        let mut m = message("m1", "u2", "こんにちは");
+        m.attachments.push(disnans_shared::Attachment {
+            id: "att1".into(),
+            file_name: "p.png".into(),
+            mime: "image/png".into(),
+            size: 10,
+            width: Some(100),
+            height: Some(100),
+            has_thumb: true,
+        });
+        app.messages.push(m);
+        render(&mut app, 60, 20);
+        let mut wanted = app.take_image_requests();
+        wanted.sort();
+        assert_eq!(wanted, ["/api/avatars/abc", "/api/files/att1/thumb"]);
+        let img = |color| {
+            Box::new(crate::tui::picture::Prepared {
+                png: vec![],
+                rgba: image::RgbaImage::new(2, 2),
+                color,
+            })
+        };
+        for (key, color) in [
+            ("/api/avatars/abc", (10, 200, 30)),
+            ("/api/files/att1/thumb", (0, 0, 0)),
+        ] {
+            app.update(Event::Net(NetEvent::Image {
+                key: key.into(),
+                result: Ok(img(color)),
+            }));
+        }
+        render(&mut app, 60, 20);
+        assert_eq!(app.author_color("u2"), Some((10, 200, 30)));
+        let keys: Vec<&str> = app.placements.iter().map(|p| p.key.as_str()).collect();
+        assert!(keys.contains(&"/api/avatars/abc"), "{keys:?}");
+        assert!(keys.contains(&"/api/files/att1/thumb"), "{keys:?}");
+    }
+
+    #[test]
+    fn my_reactions_are_marked_mine() {
+        let mut app = app();
+        connect(&mut app);
+        let mut m = message("m1", "u2", "x");
+        m.reactions.push(disnans_shared::Reaction {
+            emoji: "👍".into(),
+            user_ids: vec!["u1".into()],
+        });
+        app.messages.push(m);
+        let rows = app.rows();
+        assert!(
+            rows.iter()
+                .flat_map(|r| r.decos.iter())
+                .any(|(_, _, d)| d.has(Deco::REACTION_MINE))
+        );
+    }
+
     #[test]
     fn shows_status_names_and_bodies() {
         let mut app = app();

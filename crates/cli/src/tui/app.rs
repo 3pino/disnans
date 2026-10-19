@@ -329,22 +329,24 @@ impl App {
     }
 
     pub fn rows(&self) -> Vec<Row> {
-        transcript::timeline(
+        transcript::timeline_for(
             &self.messages,
             &self.users,
             self.viewport.0,
             self.zone.as_ref(),
             self.gfx,
+            self.me.as_ref().map(|u| u.id.as_str()),
         )
     }
 
     fn message_height(&self, message: &Message) -> usize {
-        transcript::message_rows(
+        transcript::message_rows_for(
             message,
             &self.users,
             self.viewport.0,
             self.zone.as_ref(),
             self.gfx,
+            self.me.as_ref().map(|u| u.id.as_str()),
         )
         .len()
     }
