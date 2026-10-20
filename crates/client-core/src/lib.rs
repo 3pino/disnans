@@ -4,6 +4,7 @@
 //! blocking context. The WebSocket client (`ChatConnection`, `ChatWatch`, `ChatSession`) is behind the `ws`
 //! feature; the desktop GUI does not enable it yet.
 
+pub mod dev_plugins;
 mod platform;
 mod rest;
 mod rest_api;

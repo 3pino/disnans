@@ -48,16 +48,30 @@ pub enum Command {
 pub enum PluginAction {
     /// ディレクトリのプラグイン・テーマを配布（同じ id なら更新）する。
     Publish(PluginPublishArgs),
-    /// 自分に見えるプラグイン・テーマの一覧。
-    List(JsonOption),
+    /// 開発中（開発用フォルダ）と配布済みのプラグイン・テーマの一覧。
+    List(PluginListArgs),
     /// プラグイン・テーマを削除する。
     Remove(PluginRemoveArgs),
+    /// 開発用フォルダ（GUI の設定と同じ、このデバイスの `pluginsDevDir`）を表示・設定する。
+    Devdir(PluginDevdirArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PluginListArgs {
+    /// 結果を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]
 pub struct PluginPublishArgs {
-    /// manifest.json などがあるディレクトリ。
-    pub dir: std::path::PathBuf,
+    /// 配布するプラグインの id（開発用フォルダ内の manifest.json の id で探す）。
+    #[arg(required_unless_present = "dir", conflicts_with = "dir")]
+    pub id: Option<String>,
+
+    /// id の代わりに、manifest.json などがあるディレクトリを直接指定する。
+    #[arg(long, value_name = "PATH")]
+    pub dir: Option<std::path::PathBuf>,
 
     /// 自分だけのものとして配布する。
     #[arg(long, conflicts_with = "public")]
@@ -70,6 +84,21 @@ pub struct PluginPublishArgs {
     /// manifest の id / version を表示するだけで、配布しない。
     #[arg(long)]
     pub dry_run: bool,
+
+    /// 結果を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PluginDevdirArgs {
+    /// 設定するフォルダ（絶対パスに直して保存する。存在しなければ終了 2）。省略すると今の値を表示する。
+    #[arg(value_name = "PATH", conflicts_with = "clear")]
+    pub path: Option<std::path::PathBuf>,
+
+    /// 未設定に戻す。
+    #[arg(long)]
+    pub clear: bool,
 
     /// 結果を JSON で標準出力へ書く。
     #[arg(long)]

@@ -2,10 +2,14 @@
 
 use std::path::Path;
 
-use disnans_client_core::{ReadFailure, RestClient, ServerUrl};
+use disnans_client_core::dev_plugins::{self, ManifestInfo, parse_manifest};
+use disnans_client_core::view::settings::device_defaults;
+use disnans_client_core::{LocalStore, ReadFailure, RestClient, ServerUrl, Surface, host_os};
 use serde_json::{Value, json};
 
-use crate::args::{PluginAction, PluginPublishArgs, PluginRemoveArgs};
+use crate::args::{
+    PluginAction, PluginDevdirArgs, PluginListArgs, PluginPublishArgs, PluginRemoveArgs,
+};
 use crate::{CliError, output};
 
 /// 配布できるファイル名（サーバーと同じ。ここに無いものは送らない）。
@@ -19,35 +23,14 @@ const FILES: [&str; 5] = [
 /// サーバーの合計上限（5 MB）。超えるものは送る前に断る。
 const MAX_TOTAL: usize = 5 * 1024 * 1024;
 
-/// manifest から読んだ、表示用の情報。
-#[derive(Debug, PartialEq, Eq)]
-struct Local {
-    id: String,
-    version: String,
-    name: String,
-    kind: String,
-}
-
 fn usage(message: impl Into<String>) -> CliError {
     CliError::Usage(message.into())
 }
 
-/// `manifest.json` の id / version / name / type を読む（細かい検査はサーバーが行う）。
+type Local = ManifestInfo;
+
 fn read_manifest(bytes: &[u8]) -> Result<Local, CliError> {
-    let value: Value = serde_json::from_slice(bytes)
-        .map_err(|e| usage(format!("manifest.json を読めません: {e}")))?;
-    let text = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_owned);
-    let need = |key: &str| {
-        text(key)
-            .filter(|v| !v.is_empty())
-            .ok_or_else(|| usage(format!("manifest.json に `{key}` がありません")))
-    };
-    Ok(Local {
-        id: need("id")?,
-        version: need("version")?,
-        name: need("name")?,
-        kind: text("type").unwrap_or_else(|| "plugin".into()),
-    })
+    parse_manifest(bytes).map_err(usage)
 }
 
 /// ディレクトリから配布するファイルを集める。戻り値は（結合したデータ, 名前と範囲, manifest）。
@@ -107,43 +90,160 @@ pub async fn run(
 ) -> Result<String, CliError> {
     match action {
         PluginAction::Publish(args) => publish(server, dev_user, args).await,
-        PluginAction::List(opts) => {
-            let client = RestClient::new(server, dev_user)?;
-            let list = client
-                .get_value("/api/plugins")
-                .await
-                .map_err(CliError::Plugin)?;
-            if opts.json {
-                Ok(output::json_value(&list)?)
-            } else {
-                Ok(human_list(&list))
-            }
-        }
+        PluginAction::List(opts) => list(server, dev_user, opts).await,
+        PluginAction::Devdir(args) => devdir(server, dev_user, args).await,
         PluginAction::Remove(args) => remove(server, dev_user, args).await,
     }
 }
 
-fn human_list(list: &Value) -> String {
-    let Some(items) = list.as_array().filter(|a| !a.is_empty()) else {
-        return "プラグインはありません".to_owned();
+/// 開発用フォルダ = このマシンの GUI（Surface::Tauri）のデバイス設定 `pluginsDevDir`（唯一の出どころ）。
+/// GUI のデバイス ID が無ければ作らず、未設定として扱う。
+async fn resolve_dev_dir(client: &RestClient) -> Option<String> {
+    let id = LocalStore::open_default()
+        .ok()?
+        .existing_device_id(Surface::Tauri)
+        .ok()??;
+    let prefs = client.get_device_prefs(&id).await.ok()?;
+    prefs
+        .get("prefs")
+        .and_then(|p| p.get("pluginsDevDir"))
+        .and_then(Value::as_str)
+        .filter(|d| !d.trim().is_empty())
+        .map(str::to_owned)
+}
+
+/// GUI の既定のデバイス名（OS 名）。
+fn default_device_name() -> &'static str {
+    match host_os() {
+        "windows" => "Windows",
+        "linux" => "Linux",
+        "android" => "Android",
+        "macos" => "macOS",
+        "ios" => "iOS",
+        _ => "このデバイス",
+    }
+}
+
+async fn devdir(
+    server: ServerUrl,
+    dev_user: Option<&str>,
+    args: PluginDevdirArgs,
+) -> Result<String, CliError> {
+    let client = RestClient::new(server, dev_user)?;
+    let show = |dir: Option<&str>, json: bool| -> Result<String, CliError> {
+        if json {
+            Ok(output::json_value(&json!({ "dir": dir }))?)
+        } else {
+            Ok(dir.map_or("未設定".to_owned(), output::escape_human))
+        }
     };
+    if args.path.is_none() && !args.clear {
+        return show(resolve_dev_dir(&client).await.as_deref(), args.json);
+    }
+    let value = match &args.path {
+        Some(path) => {
+            let abs = std::path::absolute(path)
+                .map_err(|e| usage(format!("パスを解決できません: {e}")))?;
+            if !abs.is_dir() {
+                return Err(usage(format!("フォルダがありません: {}", abs.display())));
+            }
+            let text = abs
+                .to_str()
+                .ok_or_else(|| usage("パスが UTF-8 ではありません"))?
+                .to_owned();
+            Value::String(text)
+        }
+        None => Value::Null,
+    };
+    // 書き込みだけ、GUI と同じ方法でデバイスを作る（登録 → GET → 1 キーだけ変えて PUT）。
+    let store = LocalStore::open_default()?;
+    let id = store.device_id(Surface::Tauri)?;
+    client
+        .put_device(&id, default_device_name())
+        .await
+        .map_err(CliError::Plugin)?;
+    let mut prefs = match client.get_device_prefs(&id).await {
+        Ok(body) => match body.get("prefs") {
+            Some(Value::Object(map)) => Value::Object(map.clone()),
+            _ => device_defaults(),
+        },
+        Err(e) if e.status == Some(404) => device_defaults(),
+        Err(e) => return Err(CliError::Plugin(e)),
+    };
+    prefs["pluginsDevDir"] = value.clone();
+    client
+        .put_device_prefs(&id, &prefs)
+        .await
+        .map_err(CliError::Plugin)?;
+    show(value.as_str(), args.json)
+}
+
+async fn list(
+    server: ServerUrl,
+    dev_user: Option<&str>,
+    opts: PluginListArgs,
+) -> Result<String, CliError> {
+    let client = RestClient::new(server, dev_user)?;
+    let remote = client
+        .get_value("/api/plugins")
+        .await
+        .map_err(CliError::Plugin)?;
+    let mut rows: Vec<Value> = Vec::new();
+    match resolve_dev_dir(&client).await {
+        None => eprintln!(
+            "開発用フォルダが未設定です（`disnans plugin devdir <PATH>` か GUI の設定で指定）"
+        ),
+        Some(dir) => match dev_plugins::list(&dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    match entry.manifest {
+                        Ok(m) => rows.push(json!({
+                            "id": m.id, "version": m.version, "type": m.kind,
+                            "source": "dev", "name": m.name, "folder": entry.folder,
+                        })),
+                        Err(e) => eprintln!("{}: {e}", entry.folder),
+                    }
+                }
+            }
+            Err(e) => eprintln!("{e}"),
+        },
+    }
+    for item in remote.as_array().into_iter().flatten() {
+        let get = |k: &str| item.get(k).cloned().unwrap_or(Value::Null);
+        rows.push(json!({
+            "id": get("id"), "version": get("version"), "type": get("type"),
+            "source": get("visibility"), "name": get("name"),
+        }));
+    }
+    rows.sort_by(|a, b| {
+        a["id"].as_str().cmp(&b["id"].as_str()).then_with(|| {
+            // 同じ id は dev を先に
+            (a["source"] != "dev").cmp(&(b["source"] != "dev"))
+        })
+    });
+    if opts.json {
+        return Ok(output::json_value(&rows)?);
+    }
+    if rows.is_empty() {
+        return Ok("プラグインはありません".to_owned());
+    }
     let field = |item: &Value, key: &str| {
         output::escape_human(item.get(key).and_then(Value::as_str).unwrap_or(""))
     };
-    items
+    Ok(rows
         .iter()
-        .map(|item| {
+        .map(|r| {
             format!(
                 "{}\t{}\t{}\t{}\t{}",
-                field(item, "id"),
-                field(item, "version"),
-                field(item, "type"),
-                field(item, "visibility"),
-                field(item, "name")
+                field(r, "id"),
+                field(r, "version"),
+                field(r, "type"),
+                field(r, "source"),
+                field(r, "name")
             )
         })
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n"))
 }
 
 /// 既存の公開状態（なければ `public`）。
@@ -163,9 +263,19 @@ async fn publish(
     dev_user: Option<&str>,
     args: PluginPublishArgs,
 ) -> Result<String, CliError> {
-    let (data, files, local) = collect(&args.dir)?;
-    let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
     let client = RestClient::new(server, dev_user)?;
+    let dir = match (&args.dir, &args.id) {
+        (Some(dir), _) => dir.clone(),
+        (None, Some(id)) => {
+            let base = resolve_dev_dir(&client).await.ok_or_else(|| {
+                usage("開発用フォルダが未設定です: `disnans plugin devdir <PATH>` か GUI の設定で指定してください（パスで送るなら --dir <PATH>）")
+            })?;
+            dev_plugins::find_by_id(&base, id).map_err(usage)?
+        }
+        (None, None) => return Err(usage("id か --dir を指定してください")),
+    };
+    let (data, files, local) = collect(&dir)?;
+    let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
     // 範囲の指定がなければ、既存の状態を保つ（なければ public）。
     let visibility = if args.private {
         "private".to_owned()

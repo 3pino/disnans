@@ -364,9 +364,30 @@ async fn plugin_publish_list_and_remove_keep_visibility_and_report_errors() {
         run_cli_async(client.path().to_owned(), args)
     };
 
+    // 開発用フォルダ: 未設定は「未設定」、存在しないパスは 2、設定すると GUI と同じ prefs に入る。
+    let shown = assert_success_json(&run(vec!["plugin", "devdir", "--json"]).await);
+    assert!(shown["dir"].is_null());
+    let empty = tempfile::tempdir().unwrap();
+    let empty_path = empty.path().to_str().unwrap().to_owned();
+    let bad = run(vec!["plugin", "devdir", "/no/such/dir"]).await;
+    assert_eq!(bad.status.code(), Some(2));
+    let set = assert_success_json(&run(vec!["plugin", "devdir", &empty_path, "--json"]).await);
+    assert_eq!(set["dir"], empty_path.as_str());
+    let shown = assert_success_json(&run(vec!["plugin", "devdir", "--json"]).await);
+    assert_eq!(shown["dir"], empty_path.as_str());
+
     // --dry-run は送らない。
-    let dry =
-        assert_success_json(&run(vec!["plugin", "publish", &path, "--dry-run", "--json"]).await);
+    let dry = assert_success_json(
+        &run(vec![
+            "plugin",
+            "publish",
+            "--dir",
+            &path,
+            "--dry-run",
+            "--json",
+        ])
+        .await,
+    );
     assert_eq!(
         (
             dry["id"].as_str(),
@@ -379,25 +400,62 @@ async fn plugin_publish_list_and_remove_keep_visibility_and_report_errors() {
     assert!(list.as_array().unwrap().is_empty());
 
     // 新規は private 指定で配布し、指定なしで更新しても private のまま。
-    let first =
-        assert_success_json(&run(vec!["plugin", "publish", &path, "--private", "--json"]).await);
+    let first = assert_success_json(
+        &run(vec![
+            "plugin",
+            "publish",
+            "--dir",
+            &path,
+            "--private",
+            "--json",
+        ])
+        .await,
+    );
     assert_eq!(first["visibility"], "private");
     std::fs::write(
         dir.path().join("manifest.json"),
         r#"{"id":"dice","version":"1.1.0","name":"Dice"}"#,
     )
     .unwrap();
-    let second = assert_success_json(&run(vec!["plugin", "publish", &path, "--json"]).await);
+    let second =
+        assert_success_json(&run(vec!["plugin", "publish", "--dir", &path, "--json"]).await);
     assert_eq!(second["visibility"], "private");
     let list = assert_success_json(&run(vec!["plugin", "list", "--json"]).await);
     assert_eq!(list[0]["version"], "1.1.0");
-    assert_eq!(list[0]["visibility"], "private");
+    assert_eq!(list[0]["source"], "private");
 
     // main.js が無ければ接続前に使い方の誤り(2)。
     std::fs::remove_file(dir.path().join("main.js")).unwrap();
-    let missing = run(vec!["plugin", "publish", &path]).await;
+    let missing = run(vec!["plugin", "publish", "--dir", &path]).await;
     assert_eq!(missing.status.code(), Some(2));
     assert!(missing.stdout.is_empty());
+
+    // id 指定: 開発用フォルダの manifest の id で引く。一覧には dev と配布済みの両方が出る。
+    std::fs::write(dir.path().join("main.js"), "export default {};").unwrap();
+    let base = tempfile::tempdir().unwrap();
+    std::fs::create_dir(base.path().join("any-folder")).unwrap();
+    for name in ["manifest.json", "main.js"] {
+        std::fs::copy(
+            dir.path().join(name),
+            base.path().join("any-folder").join(name),
+        )
+        .unwrap();
+    }
+    let dev = base.path().to_str().unwrap().to_owned();
+    assert_success_json(&run(vec!["plugin", "devdir", &dev, "--json"]).await);
+    let by_id =
+        assert_success_json(&run(vec!["plugin", "publish", "dice", "--dry-run", "--json"]).await);
+    assert_eq!(by_id["id"], "dice");
+    let unknown = run(vec!["plugin", "publish", "nope"]).await;
+    assert_eq!(unknown.status.code(), Some(2));
+    let list = assert_success_json(&run(vec!["plugin", "list", "--json"]).await);
+    let sources: Vec<_> = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["source"].as_str().unwrap())
+        .collect();
+    assert_eq!(sources, ["dev", "private"]);
 
     let removed = assert_success_json(&run(vec!["plugin", "remove", "dice", "--json"]).await);
     assert_eq!(removed["removed"], true);

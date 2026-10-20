@@ -249,6 +249,12 @@ impl LocalStore {
         Ok(id)
     }
 
+    /// このデバイスの surface のデバイス ID。まだ作られていなければ `None`（作らない）。
+    pub fn existing_device_id(&self, surface: Surface) -> Result<Option<String>, StoreError> {
+        let path = self.config_dir.join(DEVICES_FILE);
+        Ok(read_devices_file(&path)?.and_then(|f| f.ids.get(surface_name(surface)).cloned()))
+    }
+
     fn read_config(&self) -> Result<Option<ConfigFile>, StoreError> {
         let path = self.config_dir.join("config.json");
         let bytes = match fs::read(path) {
