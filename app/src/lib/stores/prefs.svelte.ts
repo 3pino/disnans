@@ -9,6 +9,7 @@ import { normalizeNavItems, normalizeNavLabels } from '../navBar';
 import { parseCallSettings, type CallSettingsData } from '../call/pure';
 import { CALL_USER_KEYS, USER_KEYS, legacyUserValues, normalizeTheme, reportSettingsError, type Raw, type ThemeChoice } from '../settingsModel';
 import { client } from './client.svelte';
+import { createRefreshGate } from '../refreshGate';
 
 /** 起動したときにすぐ使えるように、最後に読んだものをデバイスにも置いておく */
 const CACHE_KEY = 'disnans.prefs';
@@ -45,6 +46,11 @@ export class Prefs {
   private saving = 0;
   private started = false;
   private listeners = new Set<() => void>();
+  private gate: { allow(): boolean };
+
+  constructor(now?: () => number) {
+    this.gate = createRefreshGate(now);
+  }
 
   /** コマンド ID → ホットキーの一覧（空の一覧は「なし」。項目がなければ既定）。古い1つだけの形も読む */
   readonly hotkeys = $derived<HotkeyOverrides>(normalizeHotkeys(this.raw.hotkeys));
@@ -81,6 +87,20 @@ export class Prefs {
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  /**
+   * サーバーから読み直す（ウィンドウに戻ったとき）。接続を始める前・保存の途中・最短 REFRESH_MIN_MS の間隔の内は何もしない。
+   * 以前の値の取り込みはしない（load の仕事）。
+   */
+  async refresh(): Promise<void> {
+    if (!this.started || this.saving !== 0 || !this.gate.allow()) return;
+    try {
+      const v = await api.prefs();
+      if (this.saving === 0) this.apply(v);
+    } catch (e) {
+      console.warn('設定を読めませんでした', e);
+    }
   }
 
   private async load(): Promise<void> {

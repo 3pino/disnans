@@ -23,6 +23,59 @@ beforeEach(() => {
 });
 
 describe('Prefs（ユーザーごとの設定）', () => {
+  it('読み直し（refresh）はサーバーの値を取り込み、間隔（5 秒）の内は読まない。接続前・保存中も読まない', async () => {
+    let t = 0;
+    apiMock.prefs.mockResolvedValue({ ...BASE, theme: 'light' });
+    const p = new Prefs(() => t);
+    await p.refresh(); // 接続を始める前は何もしない
+    expect(apiMock.prefs).not.toHaveBeenCalled();
+    p.start(); // client は未接続なので、ここでは読まない
+    await LOAD(p);
+    expect(apiMock.prefs).toHaveBeenCalledTimes(1);
+
+    apiMock.prefs.mockResolvedValue({ ...BASE, theme: 'dark' });
+    await p.refresh(); // 最初の読み直しは通る
+    expect(apiMock.prefs).toHaveBeenCalledTimes(2);
+    expect(p.theme).toBe('dark');
+    t = 4_999;
+    await p.refresh(); // 間隔の内
+    expect(apiMock.prefs).toHaveBeenCalledTimes(2);
+    t = 5_000;
+    await p.refresh();
+    expect(apiMock.prefs).toHaveBeenCalledTimes(3);
+  });
+
+  it('保存の途中の読み直しは、サーバーの古い値で上書きしない', async () => {
+    apiMock.prefs.mockResolvedValue({ ...BASE });
+    let t = 0;
+    const p = new Prefs(() => t);
+    p.start();
+    await LOAD(p);
+    let release!: (v: Record<string, unknown>) => void;
+    apiMock.setPrefs.mockImplementationOnce(() => new Promise((r) => (release = r)));
+    p.setTheme('dark');
+    t = 10_000;
+    apiMock.prefs.mockResolvedValue({ ...BASE, theme: 'light' });
+    await p.refresh();
+    expect(p.theme).toBe('dark');
+    release({ ...BASE, theme: 'dark' });
+  });
+
+  it('ほかの読み直しの失敗は記録だけ（設定の値はそのまま）', async () => {
+    apiMock.prefs.mockResolvedValue({ ...BASE, theme: 'light' });
+    let t = 0;
+    const p = new Prefs(() => t);
+    p.start();
+    await LOAD(p);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    apiMock.prefs.mockRejectedValueOnce(new Error('オフライン'));
+    t = 6_000;
+    await p.refresh();
+    expect(p.theme).toBe('light');
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('サーバーに無い項目だけ、以前のデバイスの値を一度取り込む（ある値は上書きしない）', async () => {
     localStorage.setItem('disnans.theme', 'dark');
     localStorage.setItem('disnans.navBarItems', JSON.stringify(['chat', 'settings', 'app:open-settings']));

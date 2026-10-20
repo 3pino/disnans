@@ -5,6 +5,7 @@ import { createDeviceApi, type DeviceApi } from '../transport/device';
 import { tauriInvoke } from '../transport/tauri';
 import { normalizeOrientationMode, type OrientationMode } from '../orientation';
 import { DEVICE_DEFAULTS, legacyDeviceValues, normalizeDevicePrefs, reportSettingsError, type Raw } from '../settingsModel';
+import { createRefreshGate } from '../refreshGate';
 
 /** デバイスごとの設定の起動時キャッシュ（サーバーの値を受けるたびに書き直す。起動直後に使える） */
 export const DEVICE_CACHE_KEY = 'disnans.devicePrefs';
@@ -35,6 +36,8 @@ export type DeviceDeps = {
   get: (key: string) => string | null;
   set: (key: string, value: string | null) => void;
   defaultName: () => string;
+  /** 時刻（ミリ秒）。読み直しの間引きに使う。省くと Date.now */
+  now?: () => number;
 };
 
 /**
@@ -55,8 +58,10 @@ export class DeviceSettings {
   /** 送っていない（送信中の）書き込みの数 */
   private pending = 0;
   private listeners = new Set<() => void>();
+  private gate: { allow(): boolean };
 
   constructor(private deps: DeviceDeps) {
+    this.gate = createRefreshGate(deps.now);
     let cached: unknown = null;
     try {
       cached = JSON.parse(deps.get(DEVICE_CACHE_KEY) ?? 'null') as unknown;
@@ -149,15 +154,21 @@ export class DeviceSettings {
     }
   }
 
-  /** サーバーから読み直す（設定画面を開いたとき）。書き込みの途中なら読まない */
-  async refresh(): Promise<void> {
+  /**
+   * サーバーから読み直す（設定画面を開いたとき、ウィンドウに戻ったとき）。
+   * 書き込みの途中は読まない。最短 REFRESH_MIN_MS の間隔（それより頻繁な呼び出しは何もしない）。
+   * quiet なら、失敗を利用者に知らせず記録だけにする（オフラインで戻ったときの連続の通知を避ける）。
+   */
+  async refresh(opts: { quiet?: boolean } = {}): Promise<void> {
     const api = this.deps.api;
     if (!api || !this.id || this.pending > 0) return;
+    if (!this.gate.allow()) return;
     try {
       const view = await api.read(this.id);
       if (this.pending === 0 && view.saved) this.apply(view.prefs);
     } catch (e) {
-      reportSettingsError(`デバイスの設定を読めませんでした: ${errorText(e)}`);
+      if (opts.quiet) console.warn('デバイスの設定を読めませんでした', e);
+      else reportSettingsError(`デバイスの設定を読めませんでした: ${errorText(e)}`);
     }
   }
 

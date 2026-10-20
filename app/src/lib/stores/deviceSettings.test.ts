@@ -37,6 +37,7 @@ function deps(over: Partial<DeviceDeps> & { api?: DeviceApi | null; local?: Retu
     get: local.get,
     set: local.set,
     defaultName: () => 'Linux',
+    now: over.now,
   };
   return { d, local };
 }
@@ -164,6 +165,58 @@ describe('DeviceSettings（Tauri: サーバーのデバイスの設定）', () =
     await s.refresh();
     expect(s.deviceKind).toBe('laptop');
     await vi.waitFor(() => expect(api.write).toHaveBeenCalled());
+  });
+
+  it('読み直しは最短 5 秒の間隔（連続で呼んでも読むのは1回）。間隔が過ぎたら読む', async () => {
+    let t = 10_000;
+    const { api } = fakeApi({ prefs: { deviceKind: 'tablet' } });
+    const s = new DeviceSettings(deps({ api, now: () => t }).d);
+    await s.start();
+    expect(api.read).toHaveBeenCalledTimes(1); // 起動の読み込み（間引きの対象外）
+    await s.refresh();
+    await s.refresh({ quiet: true });
+    expect(api.read).toHaveBeenCalledTimes(2);
+    t += 4_999;
+    await s.refresh();
+    expect(api.read).toHaveBeenCalledTimes(2);
+    t += 1;
+    await s.refresh();
+    expect(api.read).toHaveBeenCalledTimes(3);
+  });
+
+  it('読み直しで、サーバーの値の変更（ほかの口での変更）を取り込む', async () => {
+    let t = 0;
+    const { api, peek } = fakeApi({ prefs: { pluginsDevDir: '/old' } });
+    const s = new DeviceSettings(deps({ api, now: () => t }).d);
+    await s.start();
+    expect(s.pluginsDevDir).toBe('/old');
+    // CLI が サーバーの値を変えた
+    const server = peek() as Record<string, unknown>;
+    server.pluginsDevDir = '/new';
+    t = 6_000;
+    await s.refresh({ quiet: true });
+    expect(s.pluginsDevDir).toBe('/new');
+  });
+
+  it('読み直しの失敗は、quiet のとき知らせない（記録だけ）', async () => {
+    let t = 0;
+    const reported: string[] = [];
+    setSettingsErrorHandler((x) => reported.push(x));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { api } = fakeApi({ prefs: {} });
+    const s = new DeviceSettings(deps({ api, now: () => t }).d);
+    await s.start();
+    api.read.mockRejectedValueOnce(new Error('オフライン'));
+    t = 6_000;
+    await s.refresh({ quiet: true });
+    expect(reported).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+    api.read.mockRejectedValueOnce(new Error('オフライン'));
+    t = 12_000;
+    await s.refresh();
+    expect(reported[0]).toContain('デバイスの設定を読めませんでした');
+    warn.mockRestore();
+    setSettingsErrorHandler((x) => console.error(x));
   });
 
   it('名前を変えたら、登録し直す', async () => {

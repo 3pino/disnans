@@ -16,6 +16,8 @@
   import { orientation } from './lib/stores/orientation.svelte';
   import { presence } from './lib/stores/presence.svelte';
   import { deviceSettings } from './lib/stores/deviceSettings.svelte';
+  import { prefs } from './lib/stores/prefs.svelte';
+  import { onForeground } from './lib/foreground';
   import { notifications } from './lib/stores/notifications.svelte';
   import { startShareReceiver } from './lib/share';
   import { pluginHost } from './lib/plugins/host.svelte';
@@ -40,6 +42,12 @@
     void notifications.init();
     void startShareReceiver();
   });
+
+  // ウィンドウに戻ったら、ほかの口（CLI など）で変わった設定を読み直す（間引きは各 store の中）
+  onMount(() => onForeground(() => {
+    void deviceSettings.refresh({ quiet: true });
+    void prefs.refresh();
+  }));
 
   onMount(() => {
     if (!desktopStorageEnabled) return;
