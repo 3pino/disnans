@@ -1,6 +1,6 @@
 <script lang="ts">
   // 範囲のスライダー（ネイティブの input[type=range]）。値は min〜max の数（例: 音量は 0〜200 の％）。
-  // 見た目はグローバルの .slider（styles/components.css）。右に今の値を format で出す。
+  // 見た目はグローバルの .slider（@3pino/design-system の components.css）。右に今の値を format で出す。
   // oninput は動かしている間、onchange は離したときに呼ぶ（保存は離したときにする、など）
   let {
     value = $bindable(0),

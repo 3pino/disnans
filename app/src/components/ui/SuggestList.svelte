@@ -1,7 +1,7 @@
 <script lang="ts" generics="T">
   import type { Snippet } from 'svelte';
 
-  // 入力欄の補完候補の一覧（メンションなど）。見た目はグローバルの .suggest-list（styles/components.css）、位置は class で使う側が決める。
+  // 入力欄の補完候補の一覧（メンションなど）。見た目はグローバルの .suggest-list（@3pino/design-system の components.css）、位置は class で使う側が決める。
   // キー操作は、入力欄の keydown から keydown() を呼んでもらって処理する
   let {
     items,

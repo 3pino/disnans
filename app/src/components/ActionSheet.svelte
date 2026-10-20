@@ -109,7 +109,7 @@
     place-items: center;
     color: var(--text-muted);
   }
-  /* 項目の見た目は .menu-item（styles/components.css）。指で押しやすいよう大きくする */
+  /* 項目の見た目は .menu-item（@3pino/design-system の components.css）。指で押しやすいよう大きくする */
   .action-sheet-items > :global(.action-sheet-item) {
     gap: 14px;
     height: 50px;

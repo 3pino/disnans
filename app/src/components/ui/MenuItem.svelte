@@ -3,7 +3,7 @@
   import Icon from './Icon.svelte';
   import type { IconRef } from '../../lib/icons.svelte';
 
-  // メニューの1項目。見た目はグローバルの .menu-item（styles/components.css）
+  // メニューの1項目。見た目はグローバルの .menu-item（@3pino/design-system の components.css）
   let {
     icon,
     iconSize = 18,

@@ -4,7 +4,7 @@
   import type { IconRef } from '../../lib/icons.svelte';
 
   // 設定の1行。左にアイコン（任意）・名前と説明、右に操作（control）を置く。
-  // 見た目はグローバルの .setting-row（styles/components.css）。プラグイン向けの ui.setting も同じ DOM を作る
+  // 見た目はグローバルの .setting-row（@3pino/design-system の components.css）。プラグイン向けの ui.setting も同じ DOM を作る
   // onclick を渡すと、行全体が1つの ghost ボタンになる（名前が読み上げの名前。control は飾りだけにする。中にボタンは置けない）
   let {
     name,

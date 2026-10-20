@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte';
   import Divider from './Divider.svelte';
 
-  // 設定画面のセクション（区切り線 + 見出し）。見た目はグローバルの .setting-section（styles/components.css）。
+  // 設定画面のセクション（区切り線 + 見出し）。見た目はグローバルの .setting-section（@3pino/design-system の components.css）。
   // 区切り線（Divider）は、前にもセクションがあるときだけ出る
   let { title, class: className = '', children }: { title: string; class?: string; children?: Snippet } = $props();
 </script>

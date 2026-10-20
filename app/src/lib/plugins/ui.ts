@@ -1,5 +1,5 @@
 // disnans.ui: 本体と同じ見た目の部品を DOM で作る。
-// 見た目の正はグローバルのクラス（styles/components.css）。Svelte の部品（components/ui/）と同じ DOM になるようにする
+// 見た目の正はグローバルのクラス（@3pino/design-system の components.css）。Svelte の部品（components/ui/）と同じ DOM になるようにする
 
 import { createIcon } from '../icons.svelte';
 import { PluginError } from './errors';

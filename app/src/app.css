@@ -1,11 +1,6 @@
-/* 本体のスタイルの入り口。デザインの共有部分は styles/ にある（docs/DESIGN.md）。
-   - tokens.css: 色・文字・余白・角丸などのトークン
-   - base.css: リセットと全体の方針
-   - components.css: 共通の部品のクラス
+/* 本体のスタイルの入り口。デザインは共有パッケージ @3pino/design-system（docs/DESIGN.md）。
    このファイルには、disnans 本体だけのグローバルなスタイルを置く */
-@import './styles/tokens.css';
-@import './styles/base.css';
-@import './styles/components.css';
+@import '@3pino/design-system';
 
 /* メッセージ検索で、本文の中のヒット箇所を強調する（SearchResults が CSS.highlights に登録する） */
 ::highlight(search-hit) {

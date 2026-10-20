@@ -4,7 +4,7 @@
   import Icon from './Icon.svelte';
   import type { IconRef } from '../../lib/icons.svelte';
 
-  // 見た目はグローバルの .icon-btn（styles/components.css）。枠のない、アイコンだけのボタンなので label（aria-label）は必須。
+  // 見た目はグローバルの .icon-btn（@3pino/design-system の components.css）。枠のない、アイコンだけのボタンなので label（aria-label）は必須。
   // アイコンは icon（名前か Svelte の部品）で渡すか、中身（children）に書く
   let {
     label,

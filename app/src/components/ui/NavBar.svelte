@@ -16,7 +16,7 @@
   import Icon from './Icon.svelte';
 
   // タブのバー（アイコン + ラベル、選択中は強調、右上にバッジ）。本体の下のナビゲーションに使う。
-  // 見た目はグローバルの .nav-bar（styles/components.css）。プラグイン向けの ui.navbar も同じ DOM を作る
+  // 見た目はグローバルの .nav-bar（@3pino/design-system の components.css）。プラグイン向けの ui.navbar も同じ DOM を作る
 
   let {
     items,

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
-  // ポップアップのメニュー。見た目はグローバルの .menu（styles/components.css）、位置は class で使う側が決める。
+  // ポップアップのメニュー。見た目はグローバルの .menu（@3pino/design-system の components.css）、位置は class で使う側が決める。
   // onclose を渡すと、外側を押したら閉じる透明な幕を出す。
   // 開いたときに画面の下からはみ出すなら、位置の基準（ボタン）の上側に出す（親の既定の位置は top: 100% + 6px を想定）
   let {

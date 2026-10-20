@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte';
   import { onMount } from 'svelte';
 
-  // モーダルダイアログ。見た目はグローバルの .modal（styles/components.css）
+  // モーダルダイアログ。見た目はグローバルの .modal（@3pino/design-system の components.css）
   let { title, onclose, children, width = 420 }: { title: string; onclose: () => void; children: Snippet; width?: number } =
     $props();
   let box: HTMLDivElement | undefined = $state();

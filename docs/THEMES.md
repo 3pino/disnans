@@ -74,7 +74,7 @@ theme-sakura/
 
 ## theme.css の書き方
 
-本体の色や大きさは、`:root` の CSS 変数（トークン）になっています（[`app/src/styles/tokens.css`](../app/src/styles/tokens.css)）。
+本体の色や大きさは、`:root` の CSS 変数（トークン）になっています（[`@3pino/design-system` の `tokens.css`](https://github.com/3pino/design-system/blob/master/src/tokens.css)）。
 テーマは基本的に **この変数を上書きするだけ** にします。ボタンや入力欄など、本体の部品はすべて変数から色を取るので、変数を変えれば全体が変わります。
 
 本体はライト・ダークを次の3つのセレクターで書いています。テーマも**同じ3つ**を書きます（同じ詳細度なので、後ろにあるテーマが勝ちます）。
