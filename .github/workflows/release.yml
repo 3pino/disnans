@@ -1,10 +1,19 @@
 # タグ（v0.1.1 など）を push すると、全プラットフォームをビルドして GitHub Releases に公開する。
 # タグのバージョンは app/src-tauri/tauri.conf.json の version と一致させること。
+#
+# キャッシュの温め: タグのワークフローが作ったキャッシュは、ほかのタグからは使えない（使えるのは master のものだけ）。
+# そこで master（週 1 回・手動・このファイルの変更時）で同じビルドを「公開しないで」走らせ、master にキャッシュを置く。
+# タグのときはキャッシュを保存しない（使い回せず、容量の上限 10GB を圧迫するだけ）。
 name: Release
 
 on:
   push:
     tags: ["v*"]
+    branches: [master]
+    paths: [.github/workflows/release.yml]
+  schedule:
+    - cron: "0 18 * * 0"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,6 +23,7 @@ env:
 
 jobs:
   create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create.outputs.release_id }}
@@ -46,10 +56,11 @@ jobs:
 
   desktop:
     needs: create-release
+    # 温め（create-release を飛ばしたとき）でも動かす
+    if: ${{ !failure() && !cancelled() }}
     strategy:
       fail-fast: false
-      # 各ジョブが latest.json を読んで書き換えるので、同時に動かすと競合する
-      max-parallel: 1
+      # latest.json は各ジョブでは書かず、publish でまとめて作る（並列にできる）
       matrix:
         # AppImage を古い glibc の環境でも動かすため、Linux は古めの Ubuntu でビルドする
         os: [ubuntu-22.04, windows-latest]
@@ -62,9 +73,14 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+      # 同梱する CLI はリポジトリ直下の target、本体は app/src-tauri/target でビルドする。両方を残す
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: app/src-tauri -> target
+          workspaces: |
+            . -> target
+            app/src-tauri -> target
+          shared-key: release-desktop
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: Linux の依存ライブラリ
         if: runner.os == 'Linux'
         run: |
@@ -79,8 +95,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
+          # 温めのときは空。リリースへの添付をしない（ビルドだけ）
           releaseId: ${{ needs.create-release.outputs.release_id }}
           updaterJsonPreferNsis: true
+          uploadUpdaterJson: false
       # 公開（publish）の前に、同梱した CLI を確かめる。失敗すると desktop が失敗し、公開に進まない。
       - name: "Linux: .deb に CLI（/usr/bin/disnans）が入っているか確かめる"
         if: runner.os == 'Linux'
@@ -192,6 +210,7 @@ jobs:
 
   android:
     needs: create-release
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     env:
       NDK_VERSION: 29.0.14206865
@@ -212,6 +231,8 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri -> target
+          shared-key: release-android
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: NDK をインストール
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
@@ -230,6 +251,7 @@ jobs:
           DISNANS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: npx tauri android build --apk --target aarch64
       - name: リリースに追加
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.create-release.outputs.version }}
@@ -238,10 +260,31 @@ jobs:
           cp app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "$APK"
           gh release upload "$TAG" "$APK"
 
+  # サーバー（server.yml）のキャッシュを温める。タグのときは server.yml がビルドするので動かさない
+  server-warm:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: release-server
+      - run: cargo build --release --locked -p disnans-server
+
   publish:
-    needs: [desktop, android]
+    needs: [create-release, desktop, android]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+      - name: latest.json を作って添付する（各デスクトップのジョブの .sig から）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          scripts/release-latest-json.sh "$TAG" "$VERSION" "${{ github.repository }}"
+          gh release upload "$TAG" latest.json --clobber --repo ${{ github.repository }}
       - name: リリースを公開
         env:
           GH_TOKEN: ${{ github.token }}

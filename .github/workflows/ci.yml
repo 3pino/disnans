@@ -5,6 +5,11 @@ on:
     branches: [master, wip]
   pull_request:
 
+# デバッグ情報を作らない（ビルドとリンクが速くなり、キャッシュも小さくなる。scripts/check-rust.sh と同じ）
+env:
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+
 jobs:
   server:
     runs-on: ubuntu-latest
@@ -14,6 +19,8 @@ jobs:
         with:
           components: clippy
       - uses: swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - name: 生成した TypeScript の型がコミット済みか確認
@@ -28,6 +35,8 @@ jobs:
         with:
           components: clippy
       - uses: swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
       - run: cargo clippy -p disnans-client-core -p disnans-cli --all-targets --locked -- -D warnings
       - run: cargo test -p disnans-client-core -p disnans-cli --locked
 
@@ -61,6 +70,8 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri -> target
+          # master のものだけ保存する（wip からも master のキャッシュは使える。容量の上限 10GB を二重に使わない）
+          save-if: ${{ github.ref == 'refs/heads/master' }}
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -94,6 +105,8 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri -> target
+          # master のものだけ保存する（wip からも master のキャッシュは使える。容量の上限 10GB を二重に使わない）
+          save-if: ${{ github.ref == 'refs/heads/master' }}
       # tauri::generate_context! が読む frontendDist（app/dist は Git に入らない）を先に作る
       - uses: actions/setup-node@v5
         with:

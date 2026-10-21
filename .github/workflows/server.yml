@@ -26,7 +26,11 @@ jobs:
         with:
           ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
+      # キャッシュは release.yml の server-warm が master に置いたものを使う。タグでは保存しない
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: release-server
+          save-if: false
       - run: cargo build --release --locked -p disnans-server
       - name: リリースに添付
         env:
