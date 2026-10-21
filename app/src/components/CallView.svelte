@@ -181,6 +181,9 @@
     display: flex;
     align-items: center;
     flex: none;
+    /* 見出しの左端を、下の本文（.call-view-body）の余白にそろえる */
+    padding-left: var(--space-7);
+    padding-right: var(--space-7);
   }
   .call-view-title {
     display: inline-flex;
@@ -206,6 +209,9 @@
   .call-view-empty {
     margin: 40px 0;
     text-align: center;
+    /* 案内の文で、内容ではないので選べないようにする */
+    -webkit-user-select: none;
+    user-select: none;
   }
   .call-grid {
     display: grid;
