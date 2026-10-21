@@ -11,12 +11,16 @@ use super::commands::Mode;
 use super::graphics::Placement;
 use super::markdown::Deco;
 use super::sanitize;
-use super::transcript::{self, Row, RowKind};
+use super::transcript::{Row, RowKind};
+use super::ui::theme::{self, Theme};
+
+fn t() -> &'static Theme {
+    theme::current()
+}
 
 pub const MIN_WIDTH: u16 = 20;
 pub const MIN_HEIGHT: u16 = 8;
 const MAX_INPUT_ROWS: usize = 5;
-const BLUE: Color = Color::Rgb(90, 150, 255);
 const BUTTON_W: u16 = 8;
 const PLACEHOLDER: &str = "ここにテキストを入力";
 
@@ -61,7 +65,7 @@ pub fn status_text(app: &App) -> String {
 /// 入力欄の上に出す1行。送信の状態・通知・履歴の取得失敗を優先順に出す。
 pub fn message_line(app: &App) -> Option<(String, Color)> {
     match &app.send {
-        SendState::Sending { .. } => return Some(("送信中…".into(), Color::Yellow)),
+        SendState::Sending { .. } => return Some(("送信中…".into(), t().warning)),
         SendState::Unknown {
             client_id, detail, ..
         } if app.notice.is_none() => {
@@ -72,7 +76,7 @@ pub fn message_line(app: &App) -> Option<(String, Color)> {
                     sanitize::inline(detail),
                     sanitize::inline(client_id)
                 ),
-                Color::Red,
+                t().danger,
             ));
         }
         _ => {}
@@ -83,11 +87,11 @@ pub fn message_line(app: &App) -> Option<(String, Color)> {
                 "リアクション（絵文字）: {}▏",
                 sanitize::inline(app.react_input.as_str())
             ),
-            Color::Yellow,
+            t().warning,
         ));
     }
     if app.mode == Mode::Select {
-        return Some(("メッセージを選択中".into(), Color::Yellow));
+        return Some(("メッセージを選択中".into(), t().warning));
     }
     if let Some((title, body)) = &app.alert {
         return Some((
@@ -96,11 +100,11 @@ pub fn message_line(app: &App) -> Option<(String, Color)> {
                 sanitize::inline(title),
                 sanitize::inline(body)
             ),
-            Color::Cyan,
+            t().info,
         ));
     }
     if let Some(notice) = &app.notice {
-        return Some((notice.clone(), Color::Yellow));
+        return Some((notice.clone(), t().warning));
     }
     if let Some(id) = &app.reply_to {
         let target = app.messages.iter().find(|m| &m.id == id);
@@ -114,10 +118,10 @@ pub fn message_line(app: &App) -> Option<(String, Color)> {
                 sanitize::inline(who),
                 sanitize::truncate(&sanitize::inline(excerpt), 30)
             ),
-            Color::Cyan,
+            t().info,
         ));
     }
-    app.history_error.clone().map(|e| (e, Color::Red))
+    app.history_error.clone().map(|e| (e, t().danger))
 }
 
 struct Regions {
@@ -182,15 +186,6 @@ pub fn history_size(area: Rect, app: &App) -> (usize, usize) {
     (usize::from(r.history.width), usize::from(r.history.height))
 }
 
-const ACCENT_COLORS: [Color; transcript::ACCENTS] = [
-    Color::Cyan,
-    Color::Green,
-    Color::Magenta,
-    Color::Yellow,
-    Color::LightBlue,
-    Color::LightRed,
-];
-
 /// 先頭の `cells` 桁ぶんの文字を空白にする（その上にアバター画像を重ねるとき）。
 fn blank_first_cells(text: &str, cells: usize) -> String {
     let mut used = 0;
@@ -224,24 +219,24 @@ fn deco_style(deco: Deco, base: Style) -> Style {
         style = style.add_modifier(Modifier::CROSSED_OUT);
     }
     if deco.has(Deco::CODE) {
-        style = style.fg(Color::Rgb(230, 190, 120));
+        style = style.fg(t().code);
     }
     if deco.has(Deco::LINK) {
-        style = style.fg(BLUE).add_modifier(Modifier::UNDERLINED);
+        style = style.fg(t().accent).add_modifier(Modifier::UNDERLINED);
     }
     if deco.has(Deco::QUOTE) {
-        style = style.fg(Color::DarkGray);
+        style = style.fg(t().text_muted);
     }
     if deco.has(Deco::MENTION) {
-        style = style.fg(BLUE).add_modifier(Modifier::BOLD);
+        style = style.fg(t().accent).add_modifier(Modifier::BOLD);
     }
     if deco.has(Deco::MARKER) {
-        style = style.fg(Color::DarkGray);
+        style = style.fg(t().text_muted);
     }
     let pill = if deco.has(Deco::REACTION_MINE) {
-        Some(Color::Rgb(30, 80, 150))
+        Some(t().accent_bg)
     } else if deco.has(Deco::REACTION) {
-        Some(Color::Rgb(60, 60, 70))
+        Some(t().surface_2)
     } else {
         None
     };
@@ -249,11 +244,11 @@ fn deco_style(deco: Deco, base: Style) -> Style {
         style = if deco.has(Deco::CAP) {
             style.fg(bg)
         } else {
-            style.fg(Color::White).bg(bg)
+            style.fg(t().on_accent).bg(bg)
         };
     }
     if deco.has(Deco::HIGHLIGHT) {
-        style = style.bg(Color::Rgb(90, 80, 20));
+        style = style.bg(t().mark);
     }
     style
 }
@@ -300,7 +295,7 @@ fn row_line(
     match row.kind {
         RowKind::Separator => Line::from(Span::styled(
             row.text.clone(),
-            Style::new().fg(Color::DarkGray),
+            Style::new().fg(t().text_muted),
         )),
         kind => {
             let (lead, _) = row.text.split_at(row.prefix.min(row.text.len()));
@@ -310,7 +305,7 @@ fn row_line(
                 lead.to_owned()
             };
             let rest_style = match kind {
-                RowKind::Meta => Style::new().fg(Color::DarkGray),
+                RowKind::Meta => Style::new().fg(t().text_muted),
                 _ => Style::new(),
             };
             let lead_style = Style::new().fg(color).add_modifier(Modifier::BOLD);
@@ -324,11 +319,11 @@ fn row_line(
             if let Some(note) = note {
                 spans.push(Span::styled(
                     note.to_owned(),
-                    Style::new().fg(Color::DarkGray),
+                    Style::new().fg(t().text_muted),
                 ));
             }
             if selected {
-                let mark = Style::new().bg(Color::Rgb(45, 45, 75));
+                let mark = Style::new().bg(t().surface);
                 for span in &mut spans {
                     span.style = span.style.patch(mark);
                 }
@@ -342,7 +337,7 @@ fn row_line(
 fn author_color(app: &App, row: &Row) -> Color {
     match app.author_color(&row.author_id) {
         Some((r, g, b)) => Color::Rgb(r, g, b),
-        None => ACCENT_COLORS[usize::from(row.accent) % ACCENT_COLORS.len()],
+        None => t().palette[usize::from(row.accent) % t().palette.len()],
     }
 }
 
@@ -424,9 +419,12 @@ fn navbar_line(width: u16) -> Line<'static> {
             style,
         )
     };
-    let disabled = Style::new().fg(Color::DarkGray).add_modifier(Modifier::DIM);
+    let disabled = Style::new().fg(t().text_muted).add_modifier(Modifier::DIM);
     Line::from(vec![
-        item("Chat", Style::new().fg(BLUE).add_modifier(Modifier::BOLD)),
+        item(
+            "Chat",
+            Style::new().fg(t().accent).add_modifier(Modifier::BOLD),
+        ),
         item("Settings", disabled),
     ])
 }
@@ -489,7 +487,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(Color::DarkGray))
+        .border_style(Style::new().fg(t().text_muted))
         .padding(Padding::horizontal(1));
     let box_area = Rect {
         width: r.input.width.saturating_sub(BUTTON_W),
@@ -510,17 +508,17 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         && !app.input_locked();
     let (border, label) = if focused {
         (
-            Style::new().fg(BLUE).add_modifier(Modifier::BOLD),
+            Style::new().fg(t().accent).add_modifier(Modifier::BOLD),
             Style::new()
-                .fg(BLUE)
+                .fg(t().accent)
                 .add_modifier(Modifier::BOLD | Modifier::REVERSED),
         )
     } else if can_send {
-        (Style::new().fg(BLUE), Style::new().fg(BLUE))
+        (Style::new().fg(t().accent), Style::new().fg(t().accent))
     } else {
         (
-            Style::new().fg(Color::DarkGray),
-            Style::new().fg(Color::DarkGray),
+            Style::new().fg(t().text_muted),
+            Style::new().fg(t().text_muted),
         )
     };
     frame.render_widget(
@@ -537,7 +535,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let lines: Vec<Line> = if app.input.is_empty() {
         vec![Line::from(Span::styled(
             PLACEHOLDER,
-            Style::new().fg(Color::DarkGray),
+            Style::new().fg(t().text_muted),
         ))]
     } else {
         input_rows
@@ -568,7 +566,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             },
             usize::from(r.hint.width),
         ))
-        .style(Style::new().fg(Color::DarkGray)),
+        .style(Style::new().fg(t().text_muted)),
         r.hint,
     );
     frame.render_widget(Paragraph::new(navbar_line(r.navbar.width)), r.navbar);

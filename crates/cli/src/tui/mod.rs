@@ -11,6 +11,7 @@ mod sanitize;
 mod terminal;
 mod textbuf;
 mod transcript;
+mod ui;
 mod view;
 
 pub use net::run;

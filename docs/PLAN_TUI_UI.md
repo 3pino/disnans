@@ -1,6 +1,6 @@
 # TUI の UI 部品の設計案
 
-状態: 案（コード未着手）。決めてほしい点は末尾。関連: [PLUGIN_UI.md](PLUGIN_UI.md)（GUI の `disnans.ui`）、[PLAN_SHARED_VIEW.md](PLAN_SHARED_VIEW.md)、[FEEDBACKS.md](../FEEDBACKS.md)。
+状態: 決定済み（末尾）。段階 1（Theme）は実装済み。関連: [PLUGIN_UI.md](PLUGIN_UI.md)（GUI の `disnans.ui`）、[PLAN_SHARED_VIEW.md](PLAN_SHARED_VIEW.md)、[FEEDBACKS.md](../FEEDBACKS.md)。
 
 ## 結論（先に）
 
@@ -75,11 +75,15 @@ GUI のテーマ（`theme.css`）をそのまま TUI でも使えるのがゴー
 
 各段で、画面の出力（バッファの文字と Style）を比べるテストを付ける（最近の「テストが経路を見ていない」の反省から、描画結果まで見る）。
 
-## 6) 未決事項（ユーザーに決めてほしい）
+## 6) 決定事項（ユーザー回答）
 
-1. TUI でプラグインの UI を出す予定があるか（ある → 木を core に置く案 B を早めに設計。ない → A のまま）。
-2. Nerd Font を前提にしてよいか（アイコン・ピルの端。無い環境の代替文字を用意するか）。
-3. ライト/ダークの扱い（ダーク固定か、`theme.css` のどちらを読むか、端末の背景色を問い合わせて切り替えるか）。
-4. テーマの置き場（専用の `theme.toml` か、GUI のテーマプラグインの `theme.css` をそのまま読むか。後者なら同じ見た目が共有できる）。
-5. マウス対応（クリックでフォーカス・ボタン）をやるか。
-6. 設定画面で変えた値の保存先（GUI と同じデバイス設定 `/api/me/devices/{id}/prefs`、surface は `tui`）でよいか。
+1. **プラグイン UI はいずれ TUI にも出す想定**で設計する。部品の名前・props・イベントは、core の宣言的な木へ持ち上げられる形にする。木の置き場は `client-core` の `view::ui`（描画に依存しない）。今すぐ移さないが、段階 3 以降の部品は「状態 + props（データ）+ 描画」を分けて書く。
+2. Nerd Font 前提（アイコン・ピルの端に使う。代替文字は用意しない）。
+3. ライト/ダークは**テーマに従う**（`theme.css` の `:root` と、ダーク用の `prefers-color-scheme`/`data-theme` の値の選び方は、テーマの読み込みの実装時に決める）。
+4. テーマは **GUI の `theme.css` を読む**（専用の `theme.toml` は作らない）。
+5. **マウスに対応する**（クリック = `Activate`、ホイール = スクロール、フォーカスの移動）。入力は `Action` に写像する。段階 2 でキーと一緒に設計する。
+6. 設定はサーバーのデバイス設定（`/api/me/devices/{id}/prefs`、surface は `tui`）に保存する。ユーザー共通の設定は GUI と同じ `/api/me/prefs`。
+
+## 7) 進み具合
+
+- 段階 1: `tui/ui/theme.rs`（`Theme`、`DEFAULT`、`current()`）を追加し、`view.rs` の色をすべてトークン経由に置換した（見た目は変えていない）。次は `theme.css` の読み込み（oklch → sRGB、`var()`、`color-mix`）。
