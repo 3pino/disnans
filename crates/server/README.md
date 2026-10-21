@@ -11,6 +11,7 @@ disnans のサーバー（axum + SQLite）。API は [`docs/API.md`](../../docs/
 | `DISNANS_DEV` | なし | `1` で開発モード（whois を使わない。下記） |
 | `DISNANS_IMAGE_MAX_EDGE` | `800` | 保存する静止画の長辺の最大ピクセル数（これより大きい画像は縮小する） |
 | `DISNANS_TAILSCALE_SOCKET` | `/var/run/tailscale/tailscaled.sock`（なければ snap 版の `/var/snap/tailscale/common/socket/tailscaled.sock`） | tailscaled の LocalAPI のソケット |
+| `DISNANS_BACKUP` | なし | `0` で内蔵のバックアップ（`data/backup/`）を止める |
 | `DISNANS_LOCAL_BIND` | なし | ループバックの待ち受け（例 `127.0.0.1:8080`）。Tailscale Serve 経由の接続用。ループバック以外は起動時に拒否 |
 | `DISNANS_AUTO_UPDATE` | なし | `1` で自動更新を有効にする（下記。Linux x86_64 だけ） |
 | `RUST_LOG` | `info,disnans_server=debug` | ログの出し方（`tracing-subscriber` の書式） |
@@ -68,11 +69,26 @@ cargo test -p disnans-server
 
 `/dav/` で、共有フォルダを WebDAV として見せる（エクスプローラーやファイルマネージャーからネットワークドライブとしてつなぐ）。設計は [`docs/PLAN_FILES.md`](../../docs/PLAN_FILES.md)。
 
-- 第 1 段は読み取り専用。直下に `attachments/` があり、投稿された添付がそのまま並ぶ（同名は `名前 (ID).拡張子`）。
-- 許可するメソッド: OPTIONS, PROPFIND, GET, HEAD, LOCK, UNLOCK。PUT・DELETE・MKCOL・MOVE・COPY・PROPPATCH は 405。
+- 直下に `attachments/` があり、投稿された添付がそのまま並ぶ（同名は `名前 (ID).拡張子`）。読み取り専用。
+- それ以外は共有フォルダ（`data/shared/`、全員で同じもの）。作成・上書き・移動・コピー・削除ができる。
+- 許可するメソッド: OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY, LOCK, UNLOCK。PROPPATCH は 405。`attachments/` への書き込み・削除・改名は 403。
+- 名前: `..`・区切り文字・Windows で使えない文字（`: * ? " < > |`）・予約名（CON・NUL・COM1 など）・末尾の `.` や空白は拒否。`.disnans-` で始まる名前は内部用。
+- シンボリックリンクは辿らない（途中のどこかがリンクなら拒否）。一覧にも出さない。
+- 書き込みは一時ファイル（`.disnans-tmp-*`）に書いてから rename する。上書きでも既存の実体の中身は書き換えない（バックアップのハードリンクを守るため）。
 - 認証は `/api` と同じ（whois。Tailscale Serve 経由なら Serve のヘッダーを、接続元がループバックのときだけ信じる）。
 - Serve の例: `tailscale serve --https=443 --set-path /dav http://127.0.0.1:8080/dav`（`DISNANS_LOCAL_BIND=127.0.0.1:8080` が要る）。
 - CORS は `/api` だけに付ける（`/dav` の OPTIONS は WebDAV の `DAV:` と `Allow` を返す必要があるため）。
+
+## バックアップ
+
+`<データ>/backup/` に、DB と共有フォルダと添付の実体を組で残す（既定で有効。`DISNANS_BACKUP=0` で止める）。
+
+- 組の名前は時刻（UTC、`YYYYMMDD-HHMMSS-mmm`）: `disnans-<時刻>.db`（DB を VACUUM INTO で複製）、`shared-<時刻>/`（共有フォルダ）、`files-<時刻>/`（添付の実体）。
+- 共有フォルダと添付の実体はハードリンクで写す（コピーしない）。ファイルの中身は書き換えないので、上書き・削除をしてもバックアップの中身は古いまま残る。
+- 取る時: 自動更新で入れ替える直前、と、前回から 24 時間たったとき（起動の数分後から 10 分ごとに確認）。
+- 残す数: 20 組。古い組の DB とフォルダは消す。
+- 含まないもの: アバター（上書きで書き換えるため、ハードリンクでは守れない）、プラグイン（`data/plugins/`）、一時ファイル。
+- 注意: 外から（エディタなどで）直接ファイルの中身を書き換えると、バックアップも変わる。disnans の経路で書けば安全。
 
 ## 自動更新
 

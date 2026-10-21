@@ -6,7 +6,9 @@
 //! 失敗は警告のログだけで、次の周期に再試行する。同じ版で [`MAX_FAILURES`] 回失敗したら、その版は再起動まで諦める。
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -140,7 +142,12 @@ pub struct Updater {
     exe: PathBuf,
     /// 同じ版での失敗回数
     failures: Mutex<HashMap<String, u32>>,
+    /// 入れ替える直前に呼ぶ（バックアップ用）。
+    before_swap: Option<BeforeSwap>,
 }
+
+/// 入れ替えの直前の処理。
+pub type BeforeSwap = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 impl Updater {
     pub fn new(api_url: String, current: &str, exe: PathBuf) -> Result<Self, String> {
@@ -155,7 +162,14 @@ impl Updater {
             current: current.to_owned(),
             exe,
             failures: Mutex::new(HashMap::new()),
+            before_swap: None,
         })
+    }
+
+    /// 入れ替える直前に、この処理を呼ぶ（新しいバイナリが確かめられたあと、今のバイナリを残す前）。
+    pub fn with_before_swap(mut self, f: BeforeSwap) -> Self {
+        self.before_swap = Some(f);
+        self
     }
 
     /// 1 回の確認。新しい版に入れ替えたら、その版の文字列を返す。新しい版がなければ None。
@@ -249,6 +263,9 @@ impl Updater {
     async fn stage_and_swap(&self, bytes: &[u8], tmp: &Path, version: &str) -> Result<(), String> {
         write_executable(tmp, bytes).map_err(|e| format!("一時ファイルを書けません: {e}"))?;
         check_version(tmp, version).await?;
+        if let Some(before) = &self.before_swap {
+            before().await;
+        }
         let prev = self.prev_path();
         std::fs::copy(&self.exe, &prev).map_err(|e| format!("今のバイナリを残せません: {e}"))?;
         std::fs::rename(tmp, &self.exe).map_err(|e| format!("置き換えられません: {e}"))?;
@@ -341,6 +358,23 @@ pub fn spawn_update_task(state: SharedState, api_url: String) {
             tracing::warn!("自動更新を始められません: {e}");
             return;
         }
+    };
+    // 入れ替える直前に、DB と共有フォルダと添付のバックアップを取る（DISNANS_BACKUP=0 なら取らない）
+    let updater = if crate::backup::enabled() {
+        let for_backup = state.clone();
+        updater.with_before_swap(Box::new(move || {
+            let st = for_backup.clone();
+            Box::pin(async move {
+                match crate::backup::run(&st).await {
+                    Ok(ts) => tracing::info!("入れ替えの前にバックアップしました（{ts}）"),
+                    Err(e) => tracing::warn!(
+                        "入れ替えの前のバックアップに失敗しました（入れ替えは続けます）: {e}"
+                    ),
+                }
+            })
+        }))
+    } else {
+        updater
     };
     tracing::info!(
         "自動更新を有効にしました（{} 秒後から、{} 分ごとに確認）",

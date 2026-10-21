@@ -65,6 +65,16 @@ impl Config {
         self.data_dir.join("avatars")
     }
 
+    /// 共有フォルダ（WebDAV の `/dav/`）。全員で共有する 1 つのフォルダ。
+    pub fn shared_dir(&self) -> PathBuf {
+        self.data_dir.join("shared")
+    }
+
+    /// バックアップの置き場所（`backup/`。DB のマイグレーション前のものも同じ場所）。
+    pub fn backup_dir(&self) -> PathBuf {
+        self.data_dir.join("backup")
+    }
+
     /// アップロード中の一時ファイル。
     pub fn tmp_dir(&self) -> PathBuf {
         self.data_dir.join("tmp")

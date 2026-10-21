@@ -109,28 +109,29 @@ async fn range_reads_work() {
 }
 
 #[tokio::test]
-async fn writes_are_refused_and_nothing_changes() {
+async fn writes_into_attachments_are_refused_and_nothing_changes() {
     let server = TestServer::start().await;
     post_attachment(&server, "keep.txt", b"keep").await;
 
-    // 書き込み系は許可していないメソッド（405）
+    // 添付（仮想）の中は書けない・消せない・動かせない（403）
     for (m, path) in [
         ("PUT", "/dav/attachments/new.txt"),
-        ("PUT", "/dav/new.txt"),
         ("DELETE", "/dav/attachments/keep.txt"),
-        ("MKCOL", "/dav/newdir"),
+        ("DELETE", "/dav/attachments"),
+        ("MKCOL", "/dav/attachments/newdir"),
+        ("MKCOL", "/dav/attachments"),
         ("MOVE", "/dav/attachments/keep.txt"),
-        ("COPY", "/dav/attachments/keep.txt"),
+        // PROPPATCH は許可していない（405）
         ("PROPPATCH", "/dav/attachments/keep.txt"),
     ] {
-        let res = dav(&server, m, path)
-            .header("Destination", server.url("/dav/moved.txt"))
-            .body("x")
-            .send()
-            .await
-            .unwrap();
+        let mut req = dav(&server, m, path).header("Destination", server.url("/dav/moved.txt"));
+        if m == "PUT" || m == "PROPPATCH" {
+            req = req.body("x");
+        }
+        let res = req.send().await.unwrap();
+        // 207 は、フォルダを消すときに中身が一つずつ拒否されたという意味（中身は残る）
         assert!(
-            res.status() == 405 || res.status() == 403,
+            matches!(res.status().as_u16(), 403 | 405 | 207),
             "{m} {path} -> {}",
             res.status()
         );
@@ -148,7 +149,7 @@ async fn writes_are_refused_and_nothing_changes() {
         .unwrap();
     let body = res.text().await.unwrap();
     assert!(
-        body.contains("keep.txt") && !body.contains("new.txt") && !body.contains("moved.txt"),
+        body.contains("keep.txt") && !body.contains("new.txt"),
         "{body}"
     );
 }
@@ -190,9 +191,14 @@ async fn lock_and_unlock_are_available_for_windows_clients() {
 }
 
 #[tokio::test]
-async fn options_advertises_only_the_read_methods_and_dav_class() {
+async fn options_advertises_the_methods_and_dav_class() {
     let server = TestServer::start().await;
-    let res = dav(&server, "OPTIONS", "/dav/").send().await.unwrap();
+    post_attachment(&server, "opt.txt", b"o").await;
+    // 添付（ファイル）には読み取りと書き込みの印が付く。フォルダには PROPFIND など
+    let res = dav(&server, "OPTIONS", "/dav/attachments/opt.txt")
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 200);
     let allow = res
         .headers()
@@ -201,12 +207,17 @@ async fn options_advertises_only_the_read_methods_and_dav_class() {
         .to_str()
         .unwrap()
         .to_owned();
-    assert!(
-        allow.contains("PROPFIND") && allow.contains("LOCK"),
-        "{allow}"
-    );
-    assert!(
-        !allow.contains("PUT") && !allow.contains("DELETE"),
-        "{allow}"
-    );
+    assert!(allow.contains("GET") && allow.contains("LOCK"), "{allow}");
+    assert!(!allow.contains("PROPPATCH"), "{allow}");
+    let res = dav(&server, "OPTIONS", "/dav/").send().await.unwrap();
+    assert_eq!(res.status(), 200);
+    assert!(res.headers().get("dav").is_some(), "DAV: ヘッダーがある");
+    let allow = res
+        .headers()
+        .get("allow")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(allow.contains("PROPFIND"), "{allow}");
 }

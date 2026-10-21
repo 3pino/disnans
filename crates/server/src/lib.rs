@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod avatars;
+pub mod backup;
 pub mod calls;
 pub mod chat;
 pub mod config;
@@ -50,7 +51,12 @@ pub async fn build(
     let notifier = Arc::new(WsNotifier::new(hub.clone()));
     let state: SharedState = Arc::new(AppState::new(config, pool, hub, notifier));
 
+    std::fs::create_dir_all(state.config.shared_dir())?;
     files::spawn_cleanup_task(state.clone());
     calls::spawn_sweep_task(state.clone());
+    // 内蔵のバックアップ（既定で有効。DISNANS_BACKUP=0 で止める）
+    if backup::enabled() {
+        backup::spawn_daily_task(state.clone());
+    }
     Ok((routes::router(state.clone()), state))
 }

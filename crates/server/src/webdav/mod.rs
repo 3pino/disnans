@@ -1,10 +1,11 @@
 //! WebDAV（共有フォルダを、ネットワークドライブとしてエクスプローラー等からつなぐ）。
 //!
-//! 第 1 段は読み取り専用。`/dav/` の直下に `attachments/`（投稿された添付）だけがあり、書き込みは拒否する。
+//! `/dav/` の直下に `attachments/`（投稿された添付。読み取り専用）と、共有フォルダ（`data/shared/`）がある。
 //! 設計は `docs/PLAN_FILES.md`。プロトコルの処理は dav-server クレートに任せる。
 
 pub mod fs;
 pub mod identity;
+pub mod names;
 pub mod tree;
 
 use std::sync::Arc;
@@ -19,8 +20,11 @@ use dav_server::{DavHandler, DavMethodSet, memls::MemLs};
 use crate::auth::{self, CurrentUser};
 use crate::state::SharedState;
 
-/// dav-server に許可するメソッド。書き込み系（PUT・DELETE・MKCOL・MOVE・COPY・PROPPATCH）は入れない（405）。
-const METHODS: &[&str] = &["OPTIONS", "PROPFIND", "GET", "HEAD", "LOCK", "UNLOCK"];
+/// dav-server に許可するメソッド。PROPPATCH は入れない（405）。書き込みは fs.rs の決まりで守る。
+const METHODS: &[&str] = &[
+    "OPTIONS", "PROPFIND", "GET", "HEAD", "PUT", "MKCOL", "DELETE", "MOVE", "COPY", "LOCK",
+    "UNLOCK",
+];
 /// URL の先頭（`/dav`）。dav-server に渡す前に取り除く。
 const PREFIX: &str = "/dav";
 

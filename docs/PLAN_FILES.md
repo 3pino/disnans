@@ -1,6 +1,6 @@
 # 添付ファイルのファイルシステム化（設計案）
 
-状態: 第 1 段を実装済み（読み取り専用の `attachments/`）。Windows の制約は記憶ベースなので、実機で確かめる（末尾の「要確認」）。
+状態: 第 1 段（読み取り専用の `attachments/`）と第 2 段（共有フォルダへの書き込み、バックアップ）を実装済み。Windows の制約は記憶ベースなので、実機で確かめる（末尾の「要確認」）。
 
 ## 方針
 
@@ -45,14 +45,17 @@
 
 ## 4. 共有フォルダの保存先と容量
 
-- 保存先: `data/shared/`（実ファイル）。DB には持たない（メタデータはファイルシステムから）。第 2 段で作る。
+- 保存先: `data/shared/`（実ファイル）。DB には持たない（メタデータはファイルシステムから）。
 - 容量の上限は無い。
 - `attachments/` の実体は今の `data/files/` のまま（二重に持たない）。
-- **バックアップの扱いは未決**。今の `deploy.sh` は DB しか複製しない。`data/shared/` を含めるかは、大きくなるため別の仕組みが要る。
+- バックアップ（決定済み）: `data/backup/` に、DB・共有フォルダ・添付の実体を組で残す。共有フォルダと添付はハードリンク（中身は書き換えない）で、20 組まで。自動更新の直前と、1 日 1 回。詳細は `crates/server/README.md`。
+- 書き込みの決まり: 一時ファイルに書いてから rename（上書きでも既存の実体は書き換えない）。パスの検査（`..`・区切り・Windows の禁止名・予約名）。シンボリックリンクは辿らない。
 
-## 5a. 実装の状態（第 1 段）
+## 5a. 実装の状態
 
-- `crates/server/src/webdav/`: `identity.rs`（Serve のヘッダー、RFC 2047 の Q 符号化を復号）、`tree.rs`（仮想フォルダの中身）、`fs.rs`（dav-server の `DavFileSystem`、読み取りのみ）、`mod.rs`（`/dav` のルーター、メソッドの許可）。
+- `crates/server/src/webdav/`: `identity.rs`（Serve のヘッダー、RFC 2047 の Q 符号化を復号）、`tree.rs`（仮想フォルダの中身）、`names.rs`（名前の決まり）、`fs.rs`（dav-server の `DavFileSystem`。読み取りと、共有フォルダへの書き込み）、`mod.rs`（`/dav` のルーター、メソッドの許可）。
+- `crates/server/src/backup.rs`: バックアップの組、ハードリンク、20 組の保存、定期と自動更新の直前。
+- 第 2 段の書き込み: PUT（一時ファイルから rename）、MKCOL、DELETE（再帰）、MOVE、COPY（添付から共有フォルダへのコピーも可）。PROPPATCH は未対応（405）。
 - dav-server 0.11（features は hyper のみ。LOCK は `MemLs`）。
 - CORS は `/api` だけに付け、`/dav` の OPTIONS は dav-server が答える（`DAV: 1,2,3` と `Allow`）。
 - テスト: `tests/webdav_http.rs`（PROPFIND・GET・Range・書き込みの拒否・LOCK・OPTIONS・存在しないパス）、`tests/webdav.rs`（投稿された添付だけが見える）、`tree.rs` と `identity.rs` の単体テスト。
@@ -79,14 +82,13 @@
 ## 8. 段階分け
 
 - **第 1 段**: 読み取り専用の `attachments/` だけを WebDAV で見せる（書き込みは無い）。Serve の確認、Windows の実機確認。
-- **第 2 段**: 共有フォルダの中の作成・移動・削除・アップロード（`data/shared/`）、バックアップ方針。
+- **第 2 段**（実装済み）: 共有フォルダの中の作成・移動・削除・アップロード（`data/shared/`）、バックアップ。
 - **第 3 段**: プラグイン SDK と REST、CLI。
 
 ## ユーザーに決めてほしいこと
 
 1. 50MB の上限を Windows 側で上げてもらうか（レジストリ変更）。
-2. 共有フォルダのバックアップ（`data/shared/` を含めるか、容量が増えたときの扱い）。未決のまま。
-3. HTTPS にする（Tailscale の証明書の準備）ことで良いか。
+2. HTTPS にする（Tailscale の証明書の準備）ことで良いか。
 
 ## 要確認
 
