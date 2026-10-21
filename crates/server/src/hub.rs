@@ -73,6 +73,11 @@ impl Hub {
         self.lock().remove(&id);
     }
 
+    /// すべての接続を外す。送信の口が閉じ、書き込みのタスクが終わって WebSocket の close を送る（再起動の前に使う）。
+    pub fn close_all(&self) {
+        self.lock().clear();
+    }
+
     /// 全員に配信する。
     pub fn broadcast(&self, event: &ServerEvent) {
         self.deliver(event, |_, _| true);

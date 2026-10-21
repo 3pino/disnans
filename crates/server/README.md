@@ -11,6 +11,7 @@ disnans のサーバー（axum + SQLite）。API は [`docs/API.md`](../../docs/
 | `DISNANS_DEV` | なし | `1` で開発モード（whois を使わない。下記） |
 | `DISNANS_IMAGE_MAX_EDGE` | `800` | 保存する静止画の長辺の最大ピクセル数（これより大きい画像は縮小する） |
 | `DISNANS_TAILSCALE_SOCKET` | `/var/run/tailscale/tailscaled.sock`（なければ snap 版の `/var/snap/tailscale/common/socket/tailscaled.sock`） | tailscaled の LocalAPI のソケット |
+| `DISNANS_AUTO_UPDATE` | なし | `1` で自動更新を有効にする（下記。Linux x86_64 だけ） |
 | `RUST_LOG` | `info,disnans_server=debug` | ログの出し方（`tracing-subscriber` の書式） |
 
 ## 開発
@@ -61,6 +62,23 @@ cargo test -p disnans-server
 - Tailscale の IP 以外（`0.0.0.0` など）で待ち受けないこと。whois で特定できない接続は `401` になるが、
   インターネットに公開する想定はない
 - バックアップは `DISNANS_DATA_DIR` を丸ごと取ればよい（SQLite は WAL モード。止めてから取るのが確実）
+
+## 自動更新
+
+`DISNANS_AUTO_UPDATE=1` のときだけ動く（既定は無効。開発やテストでは動かない）。Linux x86_64 だけ対応。
+
+- 起動の 1 分後と、その後 10 分ごとに、GitHub の最新リリース（`https://api.github.com/repos/3pino/disnans/releases/latest`。トークン不要、User-Agent を送る。未認証の上限 60 回/時に対して 6 回/時）を見る。取得先は本番では固定で、環境変数では変えられない。
+- 自分の版（`CARGO_PKG_VERSION`）より新しい版で、プレリリースでないときだけ進む。下げない。
+- 資産 `disnans-server_linux-x64` と `disnans-server_linux-x64.sha256` を取る。sha256 が合わなければ入れない。
+- 実行ファイルと同じディレクトリの一時ファイルに書き、実行権限を付け、`--version` が `disnans-server <版>` と答えるか確かめる。答えなければ入れない。
+- 今のバイナリを `disnans-server.prev` に残してから、`rename` で原子的に置き換える。
+- 置き換えたら、WebSocket の接続を閉じ、HTTP の接続を穏やかに止め、**終了コード 75** で終わる。
+- **前提**: systemd のユニットが `Restart=on-failure`（既定の `scripts/deploy.sh` の書き方）であること。非 0 の終了で systemd が起動し直す。`SuccessExitStatus=75` や `RestartPreventExitStatus=75` を入れないこと。`Restart=always` でも動く。
+- **通話は再起動で一瞬切れる**。通話中でも入れ替える（ユーザーの決定）。再起動は数秒程度。
+- 失敗（通信・sha256 の不一致・`--version` の不一致など）はログに警告を出すだけで、次の周期に再試行する。同じ版で 3 回失敗したら、その版は再起動まで諦める。
+- ログ（`disnans_server::update` ほか）: 有効化、入れ替えた版、失敗の理由。
+
+確認の手順（本番の前に）: 次の版を入れ替えたあと、`disnans-server.prev` が残っていること、`journalctl --user -u disnans` で「再起動のため終了コード 75」と起動し直しが見えることを確かめる。元に戻すときは `.prev` を元の名前に戻す。
 
 ## 構成
 

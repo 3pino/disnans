@@ -11,6 +11,7 @@ use crate::hub::Hub;
 use crate::notify::Notifier;
 use crate::presence::Presence;
 use crate::tailscale::Tailscale;
+use crate::update::Restart;
 
 pub struct AppState {
     pub config: Config,
@@ -22,6 +23,8 @@ pub struct AppState {
     /// セッションを開いている人の一覧（メモリだけ）。
     pub presence: Presence,
     pub tailscale: Tailscale,
+    /// 自動更新の入れ替えのあとの再起動の要求。
+    pub restart: Restart,
     /// 書き込みを1つずつ行うためのロック。
     ///
     /// 少人数なので並列に書く必要はない。直列にすると SQLite のロックの競合を避けられ、
@@ -47,6 +50,7 @@ impl AppState {
             calls: Calls::new(),
             presence: Presence::default(),
             tailscale,
+            restart: Restart::default(),
             write_lock: Mutex::new(()),
         }
     }

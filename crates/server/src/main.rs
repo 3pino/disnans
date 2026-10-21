@@ -1,10 +1,19 @@
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use disnans_server::config::Config;
+use disnans_server::update::RESTART_EXIT_CODE;
 use tracing_subscriber::EnvFilter;
+
+/// 再起動の要求のあと、接続が閉じきらないときに待つ上限。
+const RESTART_GRACE: Duration = Duration::from_secs(5);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if matches!(std::env::args().nth(1).as_deref(), Some("--version" | "-V")) {
+        println!("disnans-server {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
@@ -21,21 +30,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing::info!(data_dir = %config.data_dir.display(), "データディレクトリ");
 
     let bind = config.bind;
-    let (app, _state) = disnans_server::build(config).await?;
+    let (app, state) = disnans_server::build(config).await?;
+    // 自動更新は設定で有効にしたときだけ（既定は無効）。取得先は本番の固定値
+    if std::env::var("DISNANS_AUTO_UPDATE").is_ok_and(|v| v == "1") {
+        disnans_server::update::spawn_update_task(
+            state.clone(),
+            disnans_server::update::RELEASE_API_URL.into(),
+        );
+    }
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!("{bind} で待ち受けます");
-    axum::serve(
+    let serve = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
+    .with_graceful_shutdown(shutdown_signal(state.clone()));
+    // 自動更新で入れ替えたあとは、接続が閉じきらなくても一定の時間で終える
+    let forced = async {
+        state.restart.wait().await;
+        tokio::time::sleep(RESTART_GRACE).await;
+    };
+    tokio::select! {
+        result = serve => result?,
+        _ = forced => tracing::warn!("接続が閉じきらないので、そのまま終了します"),
+    }
+
+    if state.restart.requested() {
+        tracing::info!("再起動のため終了コード {RESTART_EXIT_CODE} で終わります");
+        std::process::exit(RESTART_EXIT_CODE);
+    }
     Ok(())
 }
 
-/// Ctrl+C か SIGTERM で終了する。
-async fn shutdown_signal() {
+/// Ctrl+C か SIGTERM、または自動更新の再起動の要求で終了する。
+async fn shutdown_signal(state: disnans_server::state::SharedState) {
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;
     };
@@ -54,6 +83,7 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+        _ = state.restart.wait() => {},
     }
     tracing::info!("終了します");
 }

@@ -18,6 +18,7 @@ pub mod sessions;
 pub mod state;
 pub mod store;
 pub mod tailscale;
+pub mod update;
 pub mod ws;
 
 use std::sync::Arc;

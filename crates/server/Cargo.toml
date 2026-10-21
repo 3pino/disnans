@@ -1,6 +1,6 @@
 [package]
 name = "disnans-server"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 
 [dependencies]
@@ -16,6 +16,7 @@ percent-encoding = "2.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.5", features = ["util"] }
