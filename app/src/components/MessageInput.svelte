@@ -113,6 +113,10 @@
    */
   function resize() {
     if (!ta || !mirror) return;
+    // 画面に出ていない（親が display: none など）ときは測れない（幅も高さも 0 になる）。
+    // ここで高さを 0 にすると、表示に戻ったあとも 0 のまま残り、プレースホルダーが下にずれる。
+    // 表示に戻って幅が付いたときに、下の ResizeObserver が測り直す
+    if (!ta.isConnected || ta.clientWidth === 0) return;
     const cs = getComputedStyle(ta);
     for (const p of MIRROR_PROPS) mirror.style.setProperty(p, cs.getPropertyValue(p));
     mirror.style.width = `${ta.clientWidth}px`;
@@ -125,14 +129,22 @@
     caret.textContent = '​';
     mirror.replaceChildren(document.createTextNode(text.slice(0, pos)), caret, document.createTextNode(text.slice(pos) + '​'));
 
-    const full = mirror.scrollHeight;
+    const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+    const padTop = parseFloat(cs.paddingTop) || 0;
+    const padBottom = parseFloat(cs.paddingBottom) || 0;
+    const measured = mirror.scrollHeight;
+    // 写しを測れなかった（0。レイアウトされていない瞬間）ときは、決めた高さを外して既定（rows=1）に任せる。
+    // 0px を入れると、入力欄が潰れてプレースホルダーが下にずれる
+    if (measured === 0) {
+      ta.style.height = '';
+      return;
+    }
+    // 少なくとも 1 行分の高さは保つ
+    const full = Math.max(measured, Math.ceil(lineHeight + padTop + padBottom));
     ta.style.height = Math.min(full, limit) + 'px';
 
     // 内側でスクロールしているときは、フォーカスがあるあいだだけ、キャレットの行を見える位置に保つ
     if (full > limit && document.activeElement === ta) {
-      const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
-      const padTop = parseFloat(cs.paddingTop) || 0;
-      const padBottom = parseFloat(cs.paddingBottom) || 0;
       // 写しの上端が、入力欄の上端と同じ座標（offsetTop は写しの内側の位置）
       const top = caret.offsetTop;
       if (top < ta.scrollTop + padTop) ta.scrollTop = top - padTop;
@@ -143,6 +155,19 @@
   $effect(() => {
     void text;
     resize();
+  });
+
+  // 幅が変わったら測り直す（表示に戻った・ウィンドウの幅が変わった＝折り返しが変わる）。高さの変化では呼ばない（resize 自身が高さを変えるため）
+  $effect(() => {
+    if (!ta || typeof ResizeObserver === 'undefined') return;
+    let lastWidth = ta.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (!ta || ta.clientWidth === lastWidth) return;
+      lastWidth = ta.clientWidth;
+      resize();
+    });
+    ro.observe(ta);
+    return () => ro.disconnect();
   });
 
   function updateSuggest() {
