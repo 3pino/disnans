@@ -87,6 +87,15 @@ async fn attachments_are_in_the_backup_by_link_too() {
 }
 
 #[tokio::test]
+async fn avatars_and_plugins_are_in_the_set_too() {
+    let server = TestServer::start().await;
+    let ts = backup::run(&server.state).await.unwrap();
+    for kind in ["shared", "files", "avatars", "plugins"] {
+        assert!(set_dir(&server, &ts, kind).is_dir(), "{kind} がある");
+    }
+}
+
+#[tokio::test]
 async fn each_run_gets_its_own_set() {
     let server = TestServer::start().await;
     let first = backup::run(&server.state).await.unwrap();

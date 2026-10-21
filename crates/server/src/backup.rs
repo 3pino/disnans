@@ -2,7 +2,7 @@
 //!
 //! 置き場所は `<データ>/backup/`。1 回のバックアップは同じ時刻（`YYYYMMDD-HHMMSS-mmm`、UTC）の組:
 //! - `disnans-<時刻>.db`（DB を VACUUM INTO で複製）
-//! - `shared-<時刻>/`（共有フォルダ）と `files-<時刻>/`（添付の実体）。どちらも**ハードリンク**で作る
+//! - `shared-<時刻>/`（共有フォルダ）、`files-<時刻>/`（添付の実体）、`avatars-<時刻>/`、`plugins-<時刻>/`。どれも**ハードリンク**で作る
 //!
 //! ハードリンクなので、中身はコピーされず、同じ実体を指す。ファイルの中身は書き換えない
 //! （書き込みは必ず一時ファイルを rename する）ので、上書きや削除をしてもバックアップの中身は古いまま残る。
@@ -19,6 +19,8 @@ use crate::webdav::names::is_internal;
 
 /// 残す世代の数。
 pub const KEEP: usize = 20;
+/// 組に入るフォルダの種類（データ `data/` の下の場所と同じ名前）。
+const FOLDER_KINDS: [&str; 4] = ["shared", "files", "avatars", "plugins"];
 /// 定期のバックアップの間隔。
 pub const INTERVAL: Duration = Duration::from_secs(24 * 3600);
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(120);
@@ -50,21 +52,26 @@ pub async fn run(state: &SharedState) -> Result<String, String> {
         .await
         .map_err(|e| format!("DB を複製できません: {e}"))?;
 
-    // 共有フォルダと添付の実体は、ハードリンクで組にする（ほかの場所の入れ替えを待たない）
-    let shared_src = state.config.shared_dir();
-    let shared_dst = dir.join(format!("shared-{ts}"));
-    let files_src = state.config.files_dir();
-    let files_dst = dir.join(format!("files-{ts}"));
+    // フォルダは、ハードリンクで組にする（中身は書き換えない作り方なので、リンクで十分）
+    let sources = [
+        state.config.shared_dir(),
+        state.config.files_dir(),
+        state.config.avatars_dir(),
+        state.config.plugins_dir(),
+    ];
+    let set_dir = dir.clone();
+    let set_ts = ts.clone();
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        snapshot_tree(&shared_src, &shared_dst)?;
-        snapshot_tree(&files_src, &files_dst)?;
+        for (kind, src) in FOLDER_KINDS.iter().zip(sources.iter()) {
+            snapshot_tree(src, &set_dir.join(format!("{kind}-{set_ts}")))?;
+        }
         Ok(())
     })
     .await
     .map_err(|e| format!("バックアップが止まりました: {e}"))??;
 
     prune(&dir, KEEP).map_err(|e| format!("古いバックアップを消せません: {e}"))?;
-    tracing::info!(backup = %ts, "バックアップを作りました（DB・共有フォルダ・添付）");
+    tracing::info!(backup = %ts, "バックアップを作りました（DB・共有フォルダ・添付・アバター・プラグイン）");
     Ok(ts)
 }
 
@@ -125,7 +132,7 @@ pub fn prune(dir: &Path, keep: usize) -> std::io::Result<()> {
     let old = stamps.len().saturating_sub(keep);
     for ts in &stamps[..old] {
         std::fs::remove_file(dir.join(format!("disnans-{ts}.db")))?;
-        for kind in ["shared", "files"] {
+        for kind in FOLDER_KINDS {
             let folder = dir.join(format!("{kind}-{ts}"));
             if folder.exists() {
                 std::fs::remove_dir_all(folder)?;

@@ -57,7 +57,19 @@ fn convert(tmp: &Path, dest: &Path) -> AppResult<()> {
     // アニメーションは最初のフレームを使う
     let image = image_proc::decode(tmp, format).map_err(|_| invalid())?;
     let encoded = image_proc::avatar(&image).map_err(|_| invalid())?;
-    std::fs::write(dest, &encoded.data)?;
+    // 一時ファイルに書いてから名前を差し替える（バックアップのハードリンクを守るため、実体は書き換えない）
+    let tmp_out = dest.with_file_name(format!(
+        "{}{}",
+        crate::webdav::names::TMP_PREFIX,
+        db::new_id()
+    ));
+    if let Err(e) = std::fs::write(&tmp_out, &encoded.data) {
+        let _ = std::fs::remove_file(&tmp_out);
+        return Err(e.into());
+    }
+    std::fs::rename(&tmp_out, dest).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp_out);
+    })?;
     Ok(())
 }
 
