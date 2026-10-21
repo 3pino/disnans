@@ -52,6 +52,9 @@ pub async fn middleware(
 ) -> AppResult<Response> {
     let profile = if state.config.dev {
         dev_profile(&req)
+    } else if let Some(p) = crate::webdav::identity::serve_profile(addr.ip(), req.headers()) {
+        // Tailscale Serve 経由（接続元はループバック）。Serve が付けたヘッダーで利用者を決める
+        p
     } else {
         state
             .tailscale

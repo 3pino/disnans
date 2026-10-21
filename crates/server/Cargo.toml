@@ -6,6 +6,8 @@ edition.workspace = true
 [dependencies]
 disnans-shared = { path = "../shared" }
 axum = { version = "0.8", features = ["ws", "multipart", "macros"] }
+bytes = "1"
+dav-server = { version = "0.11", default-features = false, features = ["hyper"] }
 futures-util = "0.3"
 http-body-util = "0.1"
 hyper = { version = "1.11", features = ["client", "http1"] }

@@ -41,6 +41,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!("{bind} で待ち受けます");
+    // Tailscale Serve 経由の接続（接続元はループバック）用。ループバックのアドレスだけ許す
+    if let Some(local) = local_bind()? {
+        let listener = tokio::net::TcpListener::bind(local).await?;
+        tracing::info!("{local} で待ち受けます（Tailscale Serve 用。ループバックだけ）");
+        let app = app.clone();
+        tokio::spawn(async move {
+            let served = axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await;
+            if let Err(e) = served {
+                tracing::error!("ループバックの待ち受けが止まりました: {e}");
+            }
+        });
+    }
     let serve = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
@@ -61,6 +77,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         std::process::exit(RESTART_EXIT_CODE);
     }
     Ok(())
+}
+
+/// `DISNANS_LOCAL_BIND`（任意）。ループバックのアドレスでなければ起動時に失敗する。
+fn local_bind() -> Result<Option<SocketAddr>, String> {
+    let Some(v) = std::env::var("DISNANS_LOCAL_BIND")
+        .ok()
+        .filter(|v| !v.is_empty())
+    else {
+        return Ok(None);
+    };
+    let addr: SocketAddr = v
+        .parse()
+        .map_err(|e| format!("DISNANS_LOCAL_BIND が不正です（{v}）: {e}"))?;
+    if !addr.ip().is_loopback() {
+        return Err(format!(
+            "DISNANS_LOCAL_BIND はループバックのアドレスにしてください（{v}）"
+        ));
+    }
+    Ok(Some(addr))
 }
 
 /// Ctrl+C か SIGTERM、または自動更新の再起動の要求で終了する。

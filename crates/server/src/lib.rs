@@ -19,6 +19,7 @@ pub mod state;
 pub mod store;
 pub mod tailscale;
 pub mod update;
+pub mod webdav;
 pub mod ws;
 
 use std::sync::Arc;

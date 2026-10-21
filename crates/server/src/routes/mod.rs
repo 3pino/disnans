@@ -81,14 +81,16 @@ pub fn router(state: SharedState) -> Router {
         .route("/sessions/{id}", get(sessions::get).put(sessions::update))
         .route("/ws", get(ws::handler))
         .fallback(|| async { AppError::not_found("API が見つかりません") })
-        .layer(from_fn_with_state(state.clone(), auth::middleware));
-
-    Router::new()
-        .nest("/api", api)
-        .layer(TraceLayer::new_for_http())
+        .layer(from_fn_with_state(state.clone(), auth::middleware))
         // どのオリジンからのリクエストも許可する。開発中のフロントエンドや Tauri の WebView は
         // サーバーと別のオリジンになるため。認証はネットワーク（Tailscale）の層で行っており、
         // Cookie なども使わないので、オリジンを制限しても守れるものはない。
-        .layer(CorsLayer::permissive())
+        // /dav には付けない（CORS の層は OPTIONS に自分で答えてしまい、WebDAV の DAV: や Allow を返せなくなる）。
+        .layer(CorsLayer::permissive());
+
+    Router::new()
+        .nest("/api", api)
+        .merge(crate::webdav::router(state.clone()))
+        .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

@@ -11,6 +11,7 @@ disnans のサーバー（axum + SQLite）。API は [`docs/API.md`](../../docs/
 | `DISNANS_DEV` | なし | `1` で開発モード（whois を使わない。下記） |
 | `DISNANS_IMAGE_MAX_EDGE` | `800` | 保存する静止画の長辺の最大ピクセル数（これより大きい画像は縮小する） |
 | `DISNANS_TAILSCALE_SOCKET` | `/var/run/tailscale/tailscaled.sock`（なければ snap 版の `/var/snap/tailscale/common/socket/tailscaled.sock`） | tailscaled の LocalAPI のソケット |
+| `DISNANS_LOCAL_BIND` | なし | ループバックの待ち受け（例 `127.0.0.1:8080`）。Tailscale Serve 経由の接続用。ループバック以外は起動時に拒否 |
 | `DISNANS_AUTO_UPDATE` | なし | `1` で自動更新を有効にする（下記。Linux x86_64 だけ） |
 | `RUST_LOG` | `info,disnans_server=debug` | ログの出し方（`tracing-subscriber` の書式） |
 
@@ -62,6 +63,16 @@ cargo test -p disnans-server
 - Tailscale の IP 以外（`0.0.0.0` など）で待ち受けないこと。whois で特定できない接続は `401` になるが、
   インターネットに公開する想定はない
 - バックアップは `DISNANS_DATA_DIR` を丸ごと取ればよい（SQLite は WAL モード。止めてから取るのが確実）
+
+## 共有フォルダ（WebDAV）
+
+`/dav/` で、共有フォルダを WebDAV として見せる（エクスプローラーやファイルマネージャーからネットワークドライブとしてつなぐ）。設計は [`docs/PLAN_FILES.md`](../../docs/PLAN_FILES.md)。
+
+- 第 1 段は読み取り専用。直下に `attachments/` があり、投稿された添付がそのまま並ぶ（同名は `名前 (ID).拡張子`）。
+- 許可するメソッド: OPTIONS, PROPFIND, GET, HEAD, LOCK, UNLOCK。PUT・DELETE・MKCOL・MOVE・COPY・PROPPATCH は 405。
+- 認証は `/api` と同じ（whois。Tailscale Serve 経由なら Serve のヘッダーを、接続元がループバックのときだけ信じる）。
+- Serve の例: `tailscale serve --https=443 --set-path /dav http://127.0.0.1:8080/dav`（`DISNANS_LOCAL_BIND=127.0.0.1:8080` が要る）。
+- CORS は `/api` だけに付ける（`/dav` の OPTIONS は WebDAV の `DAV:` と `Allow` を返す必要があるため）。
 
 ## 自動更新
 

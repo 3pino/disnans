@@ -1,56 +1,73 @@
 # 添付ファイルのファイルシステム化（設計案）
 
-状態: 設計のみ。コードはまだ無い。Windows の制約は記憶ベースなので、実装前に実機で確かめる（末尾の「要確認」）。
+状態: 第 1 段を実装済み（読み取り専用の `attachments/`）。Windows の制約は記憶ベースなので、実機で確かめる（末尾の「要確認」）。
 
 ## 方針
 
-- サーバーが WebDAV を話し、エクスプローラー（Windows）やファイルマネージャー（Linux）からネットワークドライブとしてつなぐ。
-- 各ユーザーに「ホーム」がある。ホームの中には消せない `attachments/`（今の添付ファイルを見せる仮想フォルダ）と、自由に操作できる領域がある。
-- プラグインからも同じ操作ができる（SDK の `disnans.files`）。
-- CLI/TUI からも扱える（`disnans files`）。
+- **共有フォルダは 1 つ**。サーバーの `data/shared/`（既存のデータベースと同じ扱い）。全員が同じものを見る。ユーザーごとのフォルダ・「自分の」領域・容量の上限は無い。
+- サーバーが WebDAV を話し、エクスプローラー（Windows）やファイルマネージャー（Linux）からネットワークドライブとしてつなぐ。URL は `/dav/`（共有フォルダの直下）。
+- `/dav/` の直下に、消せない・中身を変えられない仮想フォルダ `attachments/` がある。中身は投稿された添付ファイルを平らに並べたもの（`attachments/<ファイル名>`）。
+- それ以外（`attachments/` の外）は、第 2 段で誰でも作成・移動・削除できる。
+- つなぐ人は tailnet のメンバーで、disnans のユーザーであること（今の認証と同じ。whois、または Serve のヘッダー）。
+- プラグインと CLI からの扱いは後の段階（6, 7）。
 
 ## 1. 認証
 
 - Tailscale の whois は接続元 IP で決まるので、WebDAV でもそのまま使える（HTTP の認証方式に依存しない）。
 - 問題は Windows の WebClient（WebDAV のミニリダイレクター）側の制約:
-  - 既定では、Basic 認証は HTTPS でだけ送る（`BasicAuthLevel`）。平文の HTTP で使うにはレジストリの変更が要る。→ **採用案: HTTPS にする**。Tailscale の証明書（`tailscale cert`、MagicDNS・HTTPS 有効時。公的に信頼される証明書）を使えば、レジストリを触らずに済む。Basic 認証は要らない（whois で決める）ので、認証欄は空でもよいか、ダミーの値で通すかを Windows 側で確かめる。
-  - ファイルサイズの上限は既定で約 50MB（`FileSizeLimitInBytes`）。これ以上の書き込みはレジストリの変更が要る。→ 第 1 段では「50MB を超えるファイルは Web UI / CLI から」と案内する。
-  - ポートは 443 が安全（非標準のポートは URL に書く必要がある）。Tailscale Serve で 443 → 内部の 8080 に中継する案が手軽。
+  - 既定では、Basic 認証は HTTPS でだけ送る（`BasicAuthLevel`）。平文の HTTP で使うにはレジストリの変更が要る。
+  - ファイルサイズの上限は既定で約 50MB（`FileSizeLimitInBytes`）。これ以上の書き込みはレジストリの変更が要る。第 1 段は読み取りだけなので影響は無い（第 2 段の課題）。
+  - ポートは 443 が安全（非標準のポートは URL に書く必要がある）。
 - Linux（gvfs の dav/davs、davfs2）は HTTP・HTTPS とも問題なし。
 
-## 2. URL とホームの範囲
+### 採用: Tailscale Serve で TLS を終端する
 
-- URL: `https://<ホスト>/dav/`。ユーザーは自分のホームだけ見える（`/dav/` 直下が自分のホーム）。
-- 他人のホームや共有フォルダは第 1 段では無し。第 2 段で「共有フォルダ」（指定したユーザーとの共有）を検討。
-- 別ユーザーのパスにアクセスしたら 404（存在を隠す）。
+- 本番では `tailscale serve --https=443 --set-path /dav http://127.0.0.1:<port>/dav` のように、Serve が TLS（Tailscale の証明書）を終端し、disnans へ中継する。disnans 自身は TLS を持たない。
+- **接続元がループバックになる**: Serve 経由の接続元は 127.0.0.1 / ::1 なので、whois で人を決められない。そこで Serve が付ける `Tailscale-User-Login` / `Tailscale-User-Name` / `Tailscale-User-Profile-Pic` を使う（`webdav::identity::serve_profile`）。
+- **信じる条件は「接続元がループバックのとき」だけ**。外から（Tailscale の IP など）来たヘッダーは、クライアントが勝手に付けられるので無視して whois を使う。
+- 待ち受け: `DISNANS_BIND`（Tailscale の IP、外向け）に加えて、`DISNANS_LOCAL_BIND`（任意、例 `127.0.0.1:8080`）でループバックも待ち受ける。ループバック以外のアドレスは起動時に拒否する。
+- 注意: この信頼は `/api` にも効く（Serve 経由の Web アプリも同じ認証になる）。サーバーのホストで動く他のプロセスは、ループバックに偽のヘッダーを送れるので、ホストは信頼できるものだけにする。
+- 未確認: Serve がヘッダーを外からの同名のものと入れ替えること、タグ付きノード（利用者なし）のときにヘッダーが付くか（付かなければ 401）。実機で確かめる。
+
+## 2. URL と範囲
+
+- URL: `https://<ホスト>/dav/`。`/dav/` の直下が共有フォルダ。
+- 認証は「tailnet のメンバーで、disnans のユーザーであること」。見え方はユーザーによらず同じ。
 
 ## 3. attachments/ の中身
 
-- ホーム直下の `attachments/` は、DB のメッセージの添付を見せる読み取り専用の仮想フォルダ。
-- 並び: `attachments/<年>/<月>/<チャンネル>/<ファイル名>`（チャンネルはメイン、スレッドは無い）。
-- 見えるものは「自分が見られるチャンネルの添付すべて」（今の API と同じ権限）。自分が上げたものだけにはしない。
-- ファイル名の衝突: `<元のファイル名>` の後ろに短い ID を付ける（`photo (01H...).png`）。
-- 元メッセージとの対応: 1 ファイルに対して 1 エントリ。投稿が消えたら、そのエントリも消える。
-- 削除・改名・移動・作成は仮想フォルダの中では拒否（405 または 403）。PUT・MKCOL・MOVE・DELETE は `attachments/` 配下で拒否する。
+- `/dav/attachments/` は、DB のメッセージの添付を見せる読み取り専用の仮想フォルダ。平らに並べる（年・月で分けない）。並びは投稿の順。
+- 見えるもの: 投稿されたメッセージに付いた添付だけ（投稿前のアップロードは出ない）。チャンネルは無く、主チャットは全員が見るので、全員の投稿の添付が見える。
+- ファイル名の衝突: 同じ名前（大文字小文字を区別しない）が複数あれば、全部に末尾 8 文字の ID を付ける（`photo (RSTVWXYZ).png`）。それでも重なれば ID 全体を使う。ファイルを消すと、残りの名前が戻ることがある。
+- ファイル名は `sanitize_file_name` で安全な形にする（パスの区切り・制御文字は除く）。幹は 180 文字までに切る。
+- 元メッセージとの対応: 1 ファイルに 1 エントリ。投稿（メッセージ）が消えると、そのエントリも消える（`files` の行が消える）。
+- 第 1 段は読み取り専用: PROPFIND / GET / HEAD / OPTIONS と LOCK / UNLOCK だけ。PUT・MKCOL・MOVE・COPY・DELETE・PROPPATCH は 403 で拒否する。
 
-## 4. 自由領域の保存先と容量
+## 4. 共有フォルダの保存先と容量
 
-- 保存先: `data/homes/<user_id>/`（実ファイル）。DB には持たない（メタデータはファイルシステムから）。
-- 容量の上限: ユーザーごと（既定案 1 GB。`DISNANS_HOME_QUOTA` で変更）。超えたら 507 Insufficient Storage。
-- バックアップ: 今の `deploy.sh` は DB しか複製しない。`data/homes/` も含めるか決める必要がある（大きくなるので、別の仕組みが要る）。
+- 保存先: `data/shared/`（実ファイル）。DB には持たない（メタデータはファイルシステムから）。第 2 段で作る。
+- 容量の上限は無い。
 - `attachments/` の実体は今の `data/files/` のまま（二重に持たない）。
+- **バックアップの扱いは未決**。今の `deploy.sh` は DB しか複製しない。`data/shared/` を含めるかは、大きくなるため別の仕組みが要る。
+
+## 5a. 実装の状態（第 1 段）
+
+- `crates/server/src/webdav/`: `identity.rs`（Serve のヘッダー、RFC 2047 の Q 符号化を復号）、`tree.rs`（仮想フォルダの中身）、`fs.rs`（dav-server の `DavFileSystem`、読み取りのみ）、`mod.rs`（`/dav` のルーター、メソッドの許可）。
+- dav-server 0.11（features は hyper のみ。LOCK は `MemLs`）。
+- CORS は `/api` だけに付け、`/dav` の OPTIONS は dav-server が答える（`DAV: 1,2,3` と `Allow`）。
+- テスト: `tests/webdav_http.rs`（PROPFIND・GET・Range・書き込みの拒否・LOCK・OPTIONS・存在しないパス）、`tests/webdav.rs`（投稿された添付だけが見える）、`tree.rs` と `identity.rs` の単体テスト。
+- 未確認（実機）: Windows の WebClient での接続、Serve のヘッダーの実際の値。
 
 ## 5. WebDAV の実装
 
 - 必要なメソッド: OPTIONS, PROPFIND, GET/HEAD, PUT, DELETE, MKCOL, MOVE, COPY, LOCK, UNLOCK。
 - Windows は書き込みに LOCK/UNLOCK が要る。LOCK を持たないと読み取り専用になる。
-- 候補: `dav-server` クレート（hyper 1 系、`FileSystem` と `DavLockSystem` の trait を実装する。LOCK はメモリ上の実装で足りる）。axum 0.8 が使う http/hyper 1 系と合う。依存の大きさと、default-features を切れるかは実際に確かめる（warp 連携などの機能は要らない）。
-- 代替: 自前で PROPFIND（XML）と数種類のメソッドを書く。依存は増えないが、Windows の挙動に合わせる手間が大きい。
+- 採用: `dav-server` クレート（hyper 1 系）。features は最小（`memls` のみ。LOCK のメモリ実装）。ファイルシステムは自前の trait 実装で持つ（localfs は使わない）。追加する行は chief が Cargo.toml に入れる。版と feature 名は入れたあとに確認する。
 
 ## 6. プラグインからのアクセス
 
-- SDK の案: `disnans.files.list(path)`、`read(path)`、`write(path, data)`、`mkdir(path)`、`remove(path)`、`move(from, to)`。パスはホームからの相対（`attachments/` は読み取りだけ）。
-- 権限: マニフェストで宣言する（`"permissions": ["files"]`）。宣言していないプラグインは呼べない。ユーザーには導入時に知らせる（既存の仕組みに合わせる）。
+- SDK の案: `disnans.files.list(path)`、`read(path)`、`write(path, data)`、`mkdir(path)`、`remove(path)`、`move(from, to)`。パスは共有フォルダからの相対（`attachments/` は読み取りだけ）。
+- 権限: マニフェストで宣言する（`"permissions": ["files"]`）。宣言していないプラグインは呼べない。
 - REST: `GET/PUT/DELETE /api/files/*path`（WebDAV と同じ中身を別の入口で見せる）。
 - プラグインの API 版（apiVersion）を上げる必要がある。
 
@@ -61,20 +78,18 @@
 
 ## 8. 段階分け
 
-- **第 1 段**: 読み取り専用の `attachments/` だけを WebDAV で見せる（書き込みは無い）。HTTPS と Tailscale 証明書の確認、Windows の実機確認。
-- **第 2 段**: 自由領域（作成・移動・削除・アップロード）、容量の上限、バックアップ方針。
+- **第 1 段**: 読み取り専用の `attachments/` だけを WebDAV で見せる（書き込みは無い）。Serve の確認、Windows の実機確認。
+- **第 2 段**: 共有フォルダの中の作成・移動・削除・アップロード（`data/shared/`）、バックアップ方針。
 - **第 3 段**: プラグイン SDK と REST、CLI。
-- 共有フォルダは第 4 段以降で検討。
 
 ## ユーザーに決めてほしいこと
 
-1. 容量の上限（既定 1 GB で良いか）と、50MB の上限を Windows 側で上げてもらうか（レジストリ変更）。
-2. 自由領域は本当に必要か（第 1 段は `attachments/` だけで良いか）。
-3. 他人との共有（共有フォルダ）を将来やるか。
-4. 自由領域のバックアップ（容量が増えたときの扱い）。
-5. HTTPS にする（Tailscale の証明書の準備）ことで良いか。
+1. 50MB の上限を Windows 側で上げてもらうか（レジストリ変更）。
+2. 共有フォルダのバックアップ（`data/shared/` を含めるか、容量が増えたときの扱い）。未決のまま。
+3. HTTPS にする（Tailscale の証明書の準備）ことで良いか。
 
 ## 要確認
 
 - Windows の BasicAuthLevel、FileSizeLimitInBytes の既定値、非標準ポートの扱い、Tailscale 証明書での WebClient の挙動（実機で確かめる）。
-- `dav-server` の現行版と、default-features を切ったときの依存の数。
+- Serve のヘッダー名と、タグ付きノードでの挙動（実機で確かめる）。
+- `dav-server` の現行版と、features を絞ったときの依存の数。

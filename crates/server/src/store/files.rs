@@ -131,3 +131,31 @@ pub async fn delete_orphans(pool: &SqlitePool, before: i64) -> sqlx::Result<Vec<
         .fetch_all(pool)
         .await
 }
+
+/// 投稿された添付（メッセージに付いたファイル）の一覧。WebDAV の `attachments/` 用。
+/// 投稿前のアップロードは含まない（`message_id` が無いもの）。並びは投稿の時刻と ID。
+pub async fn posted_items(pool: &SqlitePool) -> sqlx::Result<Vec<crate::webdav::tree::Item>> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: String,
+        file_name: String,
+        size: i64,
+        posted_at: i64,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT f.id AS id, f.file_name AS file_name, f.size AS size, m.created_at AS posted_at
+         FROM files f JOIN messages m ON m.id = f.message_id
+         ORDER BY m.created_at, f.id",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| crate::webdav::tree::Item {
+            file_id: r.id,
+            file_name: r.file_name,
+            size: r.size.max(0) as u64,
+            posted_at_ms: r.posted_at,
+        })
+        .collect())
+}
