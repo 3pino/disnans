@@ -20,7 +20,7 @@ jobs:
           components: clippy
       - uses: swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/master' }}
+          save-if: ${{ github.ref == 'refs/heads/wip' }}
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - name: 生成した TypeScript の型がコミット済みか確認
@@ -36,7 +36,7 @@ jobs:
           components: clippy
       - uses: swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/master' }}
+          save-if: ${{ github.ref == 'refs/heads/wip' }}
       - run: cargo clippy -p disnans-client-core -p disnans-cli --all-targets --locked -- -D warnings
       - run: cargo test -p disnans-client-core -p disnans-cli --locked
 
@@ -70,8 +70,8 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri -> target
-          # master のものだけ保存する（wip からも master のキャッシュは使える。容量の上限 10GB を二重に使わない）
-          save-if: ${{ github.ref == 'refs/heads/master' }}
+          # wip のものだけ保存する（master へは下の promote が進めるだけで、CI は動かない）
+          save-if: ${{ github.ref == 'refs/heads/wip' }}
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -105,8 +105,8 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri -> target
-          # master のものだけ保存する（wip からも master のキャッシュは使える。容量の上限 10GB を二重に使わない）
-          save-if: ${{ github.ref == 'refs/heads/master' }}
+          # wip のものだけ保存する（master へは下の promote が進めるだけで、CI は動かない）
+          save-if: ${{ github.ref == 'refs/heads/wip' }}
       # tauri::generate_context! が読む frontendDist（app/dist は Git に入らない）を先に作る
       - uses: actions/setup-node@v5
         with:
@@ -155,3 +155,27 @@ jobs:
           Write-Host "harness の終了コード: $harnessExit"
           node check-cli-path-results.mjs cli-path-results.txt
           if ($LASTEXITCODE -ne 0) { throw '期待と違う結果があります' }
+
+  # wip の CI がすべて通ったら、master をその commit まで進める（早送りだけ。master が先にあれば何もしない）。
+  # GITHUB_TOKEN での更新はワークフローを起動しないので、master で CI は二重に動かない。
+  promote:
+    if: github.ref == 'refs/heads/wip' && github.event_name == 'push'
+    needs: [server, client-windows, app, app-windows, app-linux, nsis-hook]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: master を早送りする
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          # master から見たこの commit: ahead=進める、identical/behind=すでに含む（古い実行が後から終わった）、diverged=早送りできない
+          status=$(gh api "repos/$REPO/compare/master...$SHA" --jq .status)
+          echo "master...$SHA: $status"
+          case "$status" in
+            ahead) gh api -X PATCH "repos/$REPO/git/refs/heads/master" -f sha="$SHA" -F force=false > /dev/null && echo "master を $SHA に進めました" ;;
+            identical|behind) echo "master はすでにこの commit を含みます" ;;
+            *) echo "::error::master と分岐しているので早送りできません（$status）"; exit 1 ;;
+          esac
