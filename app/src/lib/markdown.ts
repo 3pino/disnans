@@ -10,6 +10,8 @@ export type Inline =
   | { type: 'highlight'; children: Inline[] }
   | { type: 'code'; text: string }
   | { type: 'link'; href: string; text: string }
+  /** 共有フォルダのファイル（`[別名](パス)`・`[[パス|別名]]`）。embed は先頭に `!` が付いたもの。alias は省略されたら null */
+  | { type: 'fileLink'; path: string; alias: string | null; embed: boolean }
   | { type: 'mention'; userId: string };
 
 /** リストの1項目。1行目以降の段落行は lines に、入れ子のブロック（リスト・引用など）は children に入る */
@@ -180,6 +182,8 @@ function parseList(lines: string[], start: number, first: RegExpExecArray): { bl
 const URL_Y = /https?:\/\/[^\s<>"'`]+/iy;
 const MENTION_Y = /<@([A-Za-z0-9_-]{1,64})>/y;
 const HTTP_HREF = /^https?:\/\/[^\s<>"'`]+$/i;
+/** 制御文字（Rust の char::is_control と同じ範囲） */
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 const ASCII_PUNCT = /[!-\/:-@\[-`{-~]/;
 /** `_` の強調では、英数字と `_` の隣は単語の途中とみなす（snake_case・a__b__c） */
 const UNDERSCORE_WORD = /[\p{L}\p{N}_]/u;
@@ -231,7 +235,13 @@ function atomAt(s: string, i: number): Atom | null {
     if (close > i + 1) return { len: close - i + 1, node: { type: 'code', text: s.slice(i + 1, close) } };
     return null;
   }
-  if (c === '[') return linkAt(s, i);
+  if (c === '[') return bracketAt(s, i, false);
+  if (c === '!') {
+    // `![...]` の埋め込み（ファイル）。そのほかの `!` は文字のまま
+    if (s[i + 1] !== '[') return null;
+    const atom = bracketAt(s, i + 1, true);
+    return atom ? { ...atom, len: atom.len + 1 } : null;
+  }
   if (c === '<') {
     MENTION_Y.lastIndex = i;
     const m = MENTION_Y.exec(s);
@@ -250,13 +260,21 @@ function atomAt(s: string, i: number): Atom | null {
   return null;
 }
 
-/** [文字](https://...) を読む。href が http(s) でなければ null（素のテキストになる） */
-function linkAt(s: string, i: number): Atom | null {
+/** `[` で始まるリンク・ファイルの記法を、位置 i（`[`）で読む。長さ（`[` から）と中身を返す */
+function bracketAt(s: string, i: number, embed: boolean): Atom | null {
+  return s[i + 1] === '[' ? wikiAt(s, i, embed) : linkAt(s, i, embed);
+}
+
+/**
+ * `[文字](href)` を読む。href が http(s) なら普通のリンク、共有フォルダの相対パスならファイルのリンク。
+ * それ以外（ほかのスキーム・空）は null（素のテキストになる）。埋め込みは http(s) には付かない
+ */
+function linkAt(s: string, i: number, embed: boolean): Atom | null {
   const close = s.indexOf(']', i + 1);
   if (close === -1 || close === i + 1 || s[close + 1] !== '(') return null;
   const text = s.slice(i + 1, close);
   if (text.trim() === '' || text.includes('[')) return null;
-  // 括弧の対応を見て、リンクの閉じ ) を探す（URL 内の (…) を許す）
+  // 括弧の対応を見て、リンクの閉じ ) を探す（URL・パス内の (…) を許す）
   let depth = 0;
   let k = close + 2;
   for (; k < s.length; k++) {
@@ -268,8 +286,47 @@ function linkAt(s: string, i: number): Atom | null {
   }
   if (k >= s.length) return null;
   const href = s.slice(close + 2, k);
-  if (!HTTP_HREF.test(href)) return null;
-  return { len: k + 1 - i, node: { type: 'link', href, text } };
+  const len = k + 1 - i;
+  if (HTTP_HREF.test(href)) {
+    if (embed) return null;
+    return { len, node: { type: 'link', href, text } };
+  }
+  if (isFilePath(href)) return { len, node: { type: 'fileLink', path: href, alias: text, embed } };
+  return null;
+}
+
+/**
+ * `[[パス]]` または `[[パス|別名]]` を読む（位置 i は 1 つ目の `[`）。
+ * パスは `|` か `]]` まで。`|` `[` `]` や改行を含むものは使えない（素のテキストになる）
+ */
+function wikiAt(s: string, i: number, embed: boolean): Atom | null {
+  const restStart = i + 2;
+  const rest = s.slice(restStart);
+  const close = rest.indexOf(']]');
+  if (close === -1) return null;
+  const body = rest.slice(0, close);
+  const pipe = body.indexOf('|');
+  const path = pipe === -1 ? body : body.slice(0, pipe);
+  const alias = pipe === -1 ? null : body.slice(pipe + 1);
+  if (!isFilePath(path) || /[[\]|]/.test(path)) return null;
+  if (alias !== null && (alias.trim() === '' || /[[\]]/.test(alias) || CONTROL.test(alias))) return null;
+  return { len: restStart + close + 2 - i, node: { type: 'fileLink', path, alias, embed } };
+}
+
+/**
+ * 共有フォルダの相対パスとして読めるか。スキーム（`https:`・`mailto:` など）・絶対パス・`#` `?` の始まり・
+ * 前後の空白・制御文字・`..` の区切りは使えない
+ */
+function isFilePath(p: string): boolean {
+  if (p === '' || p.trim() !== p || CONTROL.test(p)) return false;
+  if (/^[/#?]/.test(p) || hasScheme(p)) return false;
+  return !p.split(/[/\\]/).includes('..');
+}
+
+/** `スキーム:` で始まるか（英字で始まり、英数字・`+` `-` `.` が続いたあとに `:`） */
+function hasScheme(p: string): boolean {
+  const colon = p.indexOf(':');
+  return colon > 0 && /^[A-Za-z][A-Za-z0-9+.-]*$/.test(p.slice(0, colon));
 }
 
 /** 閉じ記号として使えるか（直前が空白でない、単語の途中でない、など） */

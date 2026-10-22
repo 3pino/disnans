@@ -17,15 +17,42 @@ use serde::{Deserialize, Serialize};
     rename_all_fields = "camelCase"
 )]
 pub enum Inline {
-    Text { text: String },
-    Bold { children: Vec<Inline> },
-    Italic { children: Vec<Inline> },
-    Underline { children: Vec<Inline> },
-    Strike { children: Vec<Inline> },
-    Highlight { children: Vec<Inline> },
-    Code { text: String },
-    Link { href: String, text: String },
-    Mention { user_id: String },
+    Text {
+        text: String,
+    },
+    Bold {
+        children: Vec<Inline>,
+    },
+    Italic {
+        children: Vec<Inline>,
+    },
+    Underline {
+        children: Vec<Inline>,
+    },
+    Strike {
+        children: Vec<Inline>,
+    },
+    Highlight {
+        children: Vec<Inline>,
+    },
+    Code {
+        text: String,
+    },
+    Link {
+        href: String,
+        text: String,
+    },
+    /// 共有フォルダのファイルへのリンク（`[別名](パス)`・`[[パス|別名]]`）。`embed` は先頭に `!` が付いた埋め込み（`![別名](パス)`・`![[パス]]`）。
+    /// `path` は共有フォルダの相対パス（`attachments/photo.png`）。`alias` は省略されたら `None`（`[[パス]]`）。
+    /// 表示の本文では、サーバーが ID を今の名前に戻している（`docs/API.md`「本文のリンク」）。
+    FileLink {
+        path: String,
+        alias: Option<String>,
+        embed: bool,
+    },
+    Mention {
+        user_id: String,
+    },
 }
 
 /// リストの 1 項目。1 行目以降の段落行は `lines` に、入れ子のブロックは `children` に入る
@@ -516,7 +543,15 @@ fn atom_at(s: &str, i: usize) -> Option<Atom> {
                 None
             }
         }
-        b'[' => link_at(s, i),
+        b'[' => bracket_at(s, i, false).map(|(len, node)| Atom::Node { len, node }),
+        b'!' => {
+            // `![...]` の埋め込み（ファイル）。そのほかの `!` は文字のまま
+            if bytes.get(i + 1) != Some(&b'[') {
+                return None;
+            }
+            let (len, node) = bracket_at(s, i + 1, true)?;
+            Some(Atom::Node { len: len + 1, node })
+        }
         b'<' => {
             let (id, end) = mention_at(s, i)?;
             Some(Atom::Node {
@@ -550,8 +585,18 @@ fn atom_at(s: &str, i: usize) -> Option<Atom> {
     }
 }
 
-/// `[文字](https://...)` を読む。href が http(s) でなければ None（素のテキストになる）
-fn link_at(s: &str, i: usize) -> Option<Atom> {
+/// `[` で始まるリンク・ファイルの記法を、位置 i（`[`）で読む。長さ（`[` から）と中身を返す
+fn bracket_at(s: &str, i: usize, embed: bool) -> Option<(usize, Inline)> {
+    if s.as_bytes().get(i + 1) == Some(&b'[') {
+        wiki_at(s, i, embed)
+    } else {
+        link_at(s, i, embed)
+    }
+}
+
+/// `[文字](href)` を読む。href が http(s) なら普通のリンク、共有フォルダの相対パスならファイルのリンク。
+/// それ以外（ほかのスキーム・空）は None（素のテキストになる）。埋め込みは http(s) には付かない
+fn link_at(s: &str, i: usize, embed: bool) -> Option<(usize, Inline)> {
     let bytes = s.as_bytes();
     let close = s[i + 1..].find(']')? + i + 1;
     if close == i + 1 || bytes.get(close + 1) != Some(&b'(') {
@@ -561,7 +606,7 @@ fn link_at(s: &str, i: usize) -> Option<Atom> {
     if js_trim(text).is_empty() || text.contains('[') {
         return None;
     }
-    // 括弧の対応を見て、リンクの閉じ ) を探す（URL 内の (…) を許す）
+    // 括弧の対応を見て、リンクの閉じ ) を探す（URL・パス内の (…) を許す）
     let mut depth = 0usize;
     let mut k = close + 2;
     let mut found = None;
@@ -581,16 +626,83 @@ fn link_at(s: &str, i: usize) -> Option<Atom> {
     }
     let end = found?;
     let href = &s[close + 2..end];
-    if !is_http_href(href) {
+    let len = end + 1 - i;
+    if is_http_href(href) {
+        if embed {
+            return None;
+        }
+        Some((
+            len,
+            Inline::Link {
+                href: href.to_owned(),
+                text: text.to_owned(),
+            },
+        ))
+    } else if is_file_path(href) {
+        Some((
+            len,
+            Inline::FileLink {
+                path: href.to_owned(),
+                alias: Some(text.to_owned()),
+                embed,
+            },
+        ))
+    } else {
+        None
+    }
+}
+
+/// `[[パス]]` または `[[パス|別名]]` を読む（位置 i は 1 つ目の `[`）。
+/// パスは `|` か `]]` まで。`|` `[` `]` や改行を含むものは使えない（素のテキストになる）
+fn wiki_at(s: &str, i: usize, embed: bool) -> Option<(usize, Inline)> {
+    let rest_start = i + 2;
+    let rest = &s[rest_start..];
+    let close = rest.find("]]")?;
+    let body = &rest[..close];
+    let (path, alias) = match body.find('|') {
+        Some(p) => (&body[..p], Some(&body[p + 1..])),
+        None => (body, None),
+    };
+    if !is_file_path(path) || path.contains(['[', ']', '|']) {
         return None;
     }
-    Some(Atom::Node {
-        len: end + 1 - i,
-        node: Inline::Link {
-            href: href.to_owned(),
-            text: text.to_owned(),
+    if let Some(a) = alias
+        && (js_trim(a).is_empty() || a.contains(['[', ']']) || a.chars().any(char::is_control))
+    {
+        return None;
+    }
+    Some((
+        rest_start + close + 2 - i,
+        Inline::FileLink {
+            path: path.to_owned(),
+            alias: alias.map(str::to_owned),
+            embed,
         },
-    })
+    ))
+}
+
+/// 共有フォルダの相対パスとして読めるか。スキーム（`https:`・`mailto:` など）・絶対パス・`#` `?` の始まり・
+/// 前後の空白・制御文字・`..` の区切りは使えない
+fn is_file_path(p: &str) -> bool {
+    if p.is_empty() || js_trim(p) != p || p.chars().any(char::is_control) {
+        return false;
+    }
+    if p.starts_with(['/', '#', '?']) || has_scheme(p) {
+        return false;
+    }
+    !p.split(['/', '\\']).any(|seg| seg == "..")
+}
+
+/// `スキーム:` で始まるか（英字で始まり、英数字・`+` `-` `.` が続いたあとに `:`）
+fn has_scheme(p: &str) -> bool {
+    let Some(colon) = p.find(':') else {
+        return false;
+    };
+    let head = &p[..colon];
+    head.starts_with(|c: char| c.is_ascii_alphabetic())
+        && head
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
 }
 
 /// `^https?://[^\s<>"'`]+$`（大文字小文字は問わない）
@@ -834,5 +946,150 @@ mod attach_tests {
         add_to_messages(&mut list);
         assert_eq!(list[0]["markdown"], blocks_value("x"));
         assert_eq!(list[1]["markdown"], blocks_value(""));
+    }
+}
+
+#[cfg(test)]
+mod file_link_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn file(path: &str, alias: Option<&str>, embed: bool) -> Inline {
+        Inline::FileLink {
+            path: path.to_owned(),
+            alias: alias.map(str::to_owned),
+            embed,
+        }
+    }
+
+    fn text(t: &str) -> Inline {
+        Inline::Text { text: t.to_owned() }
+    }
+
+    #[test]
+    fn markdown_style_file_link_with_alias() {
+        assert_eq!(
+            parse_inline("[写真](attachments/photo.png)", 0),
+            vec![file("attachments/photo.png", Some("写真"), false)]
+        );
+    }
+
+    #[test]
+    fn wiki_style_with_and_without_alias() {
+        assert_eq!(
+            parse_inline("[[attachments/photo.png|写真]]", 0),
+            vec![file("attachments/photo.png", Some("写真"), false)]
+        );
+        assert_eq!(
+            parse_inline("[[docs/a.pdf]]", 0),
+            vec![file("docs/a.pdf", None, false)]
+        );
+    }
+
+    #[test]
+    fn leading_bang_makes_it_an_embed() {
+        assert_eq!(
+            parse_inline("![写真](attachments/photo.png)", 0),
+            vec![file("attachments/photo.png", Some("写真"), true)]
+        );
+        assert_eq!(
+            parse_inline("![[attachments/photo.png]]", 0),
+            vec![file("attachments/photo.png", None, true)]
+        );
+    }
+
+    #[test]
+    fn path_may_contain_balanced_parentheses_and_spaces() {
+        assert_eq!(
+            parse_inline("[a](attachments/photo (2).png)", 0),
+            vec![file("attachments/photo (2).png", Some("a"), false)]
+        );
+    }
+
+    #[test]
+    fn surrounding_text_and_emphasis_are_kept() {
+        assert_eq!(
+            parse_inline("見て **[[attachments/x|y]]** ね", 0),
+            vec![
+                text("見て "),
+                Inline::Bold {
+                    children: vec![file("attachments/x", Some("y"), false)],
+                },
+                text(" ね"),
+            ]
+        );
+    }
+
+    #[test]
+    fn http_links_and_images_stay_as_they_were() {
+        assert_eq!(
+            parse_inline("[x](https://a.com/p)", 0),
+            vec![Inline::Link {
+                href: "https://a.com/p".into(),
+                text: "x".into()
+            }]
+        );
+        // 埋め込みは共有フォルダのファイルだけ。http(s) の `![..](..)` は `!` の文字と普通のリンク
+        assert_eq!(
+            parse_inline("![x](https://a.com/p.png)", 0),
+            vec![
+                text("!"),
+                Inline::Link {
+                    href: "https://a.com/p.png".into(),
+                    text: "x".into()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn other_schemes_absolute_and_unsafe_paths_stay_text() {
+        for input in [
+            "[x](javascript:alert(1))",
+            "[x](mailto:a@b.c)",
+            "[x](/etc/passwd)",
+            "[x](../secret)",
+            "[x](#top)",
+            "[x]( attachments/a)",
+            "[[C:/x]]",
+            "[[../x]]",
+            "[[]]",
+            "[[attachments/x|]]",
+            "[[attachments/x|a]b]]",
+            "[[a|[b]]",
+            "![x](javascript:alert(1))",
+        ] {
+            assert_eq!(parse_inline(input, 0), vec![text(input)], "{input}");
+        }
+    }
+
+    #[test]
+    fn code_is_not_a_file_link() {
+        assert_eq!(
+            parse_inline("`[[attachments/x]]`", 0),
+            vec![Inline::Code {
+                text: "[[attachments/x]]".into()
+            }]
+        );
+        let blocks = parse("```\n[[attachments/x]]\n```");
+        assert_eq!(
+            blocks,
+            vec![Block::Code {
+                lang: String::new(),
+                text: "[[attachments/x]]".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn file_link_serializes_with_its_type_and_fields() {
+        assert_eq!(
+            serde_json::to_value(file("docs/a.pdf", None, false)).unwrap(),
+            json!({"type": "fileLink", "path": "docs/a.pdf", "alias": null, "embed": false})
+        );
+        assert_eq!(
+            serde_json::to_value(file("attachments/p.png", Some("p"), true)).unwrap(),
+            json!({"type": "fileLink", "path": "attachments/p.png", "alias": "p", "embed": true})
+        );
     }
 }

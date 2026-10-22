@@ -182,6 +182,11 @@ fn inline_cells(items: &[Inline], deco: Deco, name_of: &dyn Fn(&str) -> String) 
                     out.extend(cells(&shown, style));
                 }
             }
+            // 仮の表示: 共有フォルダのファイルは別名か、なければパスを文字で出す（開く・埋め込みは後で）
+            Inline::FileLink { path, alias, .. } => {
+                let shown = alias.as_deref().unwrap_or(path);
+                out.extend(cells(&sanitize::escape_text(shown, false), deco));
+            }
             Inline::Mention { user_id } => {
                 let shown = format!("@{}", name_of(user_id));
                 out.extend(cells(&shown, deco.with(Deco::MENTION)));

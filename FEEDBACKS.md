@@ -77,13 +77,6 @@
 - 現状・メモ: V0〜V5 は完了（GUI は Rust の Markdown の木を使い、設定項目の定義は client-core に一か所）。残りは V6（TS 側に残る重複の削除。GUI が core の定義・行データを読むようになってから）。
 - 詳細: [docs/PLAN_SHARED_VIEW.md](docs/PLAN_SHARED_VIEW.md)
 
-### h1.call-view-title svelte-12xmncn が左によりすぎている
-- 状態: 修正済み（次の版で確認）
-- メモ: すこし左にpadding 
-
-### 「今通話にいる人はいません」の文字が選択できてしまう
-- 状態: 修正済み（次の版で確認）
-
 ### ファイルシステムとしてアクセスできるような状態にしたい
 - 状態: 進行中（第 1 段は v0.2.24 で公開、第 2 段は次の版）
 - 設計: [docs/PLAN_FILES.md](docs/PLAN_FILES.md)。WebDAV（Windows: `\\cucum-ubu24.tail695e9a.ts.net@SSL@8445\dav`、Linux: `davs://cucum-ubu24.tail695e9a.ts.net:8445/dav`）。第 1 段=読み取り専用の attachments/、第 2 段=共有フォルダへの書き込みとバックアップ、第 3 段=REST・プラグイン・CLI（作業中）。

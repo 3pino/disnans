@@ -498,6 +498,138 @@
           "text": "   "
         }
       ]
+    },
+    {
+      "name": "file_link_alias",
+      "input": "[写真](attachments/photo.png)",
+      "expected": [
+        {
+          "type": "fileLink",
+          "path": "attachments/photo.png",
+          "alias": "写真",
+          "embed": false
+        }
+      ]
+    },
+    {
+      "name": "file_link_wiki_alias",
+      "input": "[[attachments/photo.png|写真]]",
+      "expected": [
+        {
+          "type": "fileLink",
+          "path": "attachments/photo.png",
+          "alias": "写真",
+          "embed": false
+        }
+      ]
+    },
+    {
+      "name": "file_link_wiki_no_alias",
+      "input": "[[docs/a.pdf]]",
+      "expected": [
+        {
+          "type": "fileLink",
+          "path": "docs/a.pdf",
+          "alias": null,
+          "embed": false
+        }
+      ]
+    },
+    {
+      "name": "file_link_embed_alias",
+      "input": "![写真](attachments/photo.png)",
+      "expected": [
+        {
+          "type": "fileLink",
+          "path": "attachments/photo.png",
+          "alias": "写真",
+          "embed": true
+        }
+      ]
+    },
+    {
+      "name": "file_link_embed_wiki",
+      "input": "![[attachments/photo.png]]",
+      "expected": [
+        {
+          "type": "fileLink",
+          "path": "attachments/photo.png",
+          "alias": null,
+          "embed": true
+        }
+      ]
+    },
+    {
+      "name": "file_link_parens_in_path",
+      "input": "[a](attachments/photo (2).png)",
+      "expected": [
+        {
+          "type": "fileLink",
+          "path": "attachments/photo (2).png",
+          "alias": "a",
+          "embed": false
+        }
+      ]
+    },
+    {
+      "name": "file_link_inside_bold",
+      "input": "見て **[[attachments/x|y]]** ね",
+      "expected": [
+        {
+          "type": "text",
+          "text": "見て "
+        },
+        {
+          "type": "bold",
+          "children": [
+            {
+              "type": "fileLink",
+              "path": "attachments/x",
+              "alias": "y",
+              "embed": false
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " ね"
+        }
+      ]
+    },
+    {
+      "name": "file_link_unsafe_stays_text",
+      "input": "[x](/etc/passwd) [y](../z) [[C:/x]] [[a|]]",
+      "expected": [
+        {
+          "type": "text",
+          "text": "[x](/etc/passwd) [y](../z) [[C:/x]] [[a|]]"
+        }
+      ]
+    },
+    {
+      "name": "file_link_http_unchanged",
+      "input": "![x](https://a.com/p.png)",
+      "expected": [
+        {
+          "type": "text",
+          "text": "!"
+        },
+        {
+          "type": "link",
+          "href": "https://a.com/p.png",
+          "text": "x"
+        }
+      ]
+    },
+    {
+      "name": "file_link_in_code_is_text",
+      "input": "`[[attachments/x]]`",
+      "expected": [
+        {
+          "type": "code",
+          "text": "[[attachments/x]]"
+        }
+      ]
     }
   ],
   "blocks": [
@@ -1389,6 +1521,17 @@
               "children": []
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "file_link_in_fence_is_code",
+      "input": "```\n[[attachments/x]]\n```",
+      "expected": [
+        {
+          "type": "code",
+          "lang": "",
+          "text": "[[attachments/x]]"
         }
       ]
     }
