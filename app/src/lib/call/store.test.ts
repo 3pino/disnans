@@ -447,6 +447,60 @@ describe('参加と音声', () => {
     expect(a.sent).toHaveLength(0);
   });
 
+  it('スピーカーミュートを入れるとミュートも入り、外すとスピーカーミュートが入れたミュートも外れる', async () => {
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await connect(a, b);
+    a.store.toggleDeafen();
+    expect(a.store.deafened).toBe(true);
+    expect(a.store.muted).toBe(true);
+    a.store.toggleDeafen();
+    expect(a.store.deafened).toBe(false);
+    expect(a.store.muted).toBe(false);
+  });
+
+  it('先に自分でミュートしていたら、スピーカーミュートを外してもミュートのまま', async () => {
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await connect(a, b);
+    a.store.toggleMute();
+    a.store.toggleDeafen();
+    expect(a.store.muted).toBe(true);
+    expect(a.store.deafened).toBe(true);
+    a.store.toggleDeafen();
+    expect(a.store.deafened).toBe(false);
+    expect(a.store.muted).toBe(true);
+  });
+
+  it('スピーカーミュート中にミュートを外すと、スピーカーミュートも外れる（ミュートなしのスピーカーミュートは作らない）', async () => {
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await connect(a, b);
+    a.store.toggleDeafen();
+    a.store.toggleMute();
+    expect(a.store.muted).toBe(false);
+    expect(a.store.deafened).toBe(false);
+    // もう一度: 外したあとにスピーカーミュートを入れ直すと、ミュートも入る
+    a.store.toggleDeafen();
+    expect(a.store.muted).toBe(true);
+    expect(a.store.deafened).toBe(true);
+  });
+
+  it('どの順の操作でも、スピーカーミュート中はミュートが入っている（全 64 通り）', async () => {
+    for (let bits = 0; bits < 64; bits++) {
+      const a = makeClient('u1');
+      const b = makeClient('u2');
+      await connect(a, b);
+      for (let i = 0; i < 6; i++) {
+        if ((bits >> i) & 1) a.store.toggleDeafen();
+        else a.store.toggleMute();
+        if (a.store.deafened) expect(a.store.muted, `操作 ${bits.toString(2)} の ${i} 手目`).toBe(true);
+      }
+      a.store.leave();
+      b.store.leave();
+    }
+  });
+
   it('ミュート・スピーカーミュート・デバイスの種類は参加者に共有される', async () => {
     const a = makeClient('u1', { device: 'smartphone' });
     const b = makeClient('u2');

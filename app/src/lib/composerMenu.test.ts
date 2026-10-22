@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CALL_JOIN_COMMAND_ID,
   addComposerMenuCommand,
@@ -195,5 +195,24 @@ describe('migrateComposerMenu（通話に参加 → 通話に参加する）', (
 
   it('アプリの「＋」の操作には、通話に参加は登録されていない（composerMenuAvailable に出ない）', () => {
     expect(composerMenuAvailable(() => {}).map((x) => x.id)).not.toContain('action:app:call-join');
+  });
+});
+
+describe('「写真を撮る」（本体の＋メニューの項目）', () => {
+  it('「写真を撮る」は本体の項目で、既定では「ファイルを添付」の次に出る（takePhoto を呼ぶ）', () => {
+    const takePhoto = vi.fn();
+    const items = composerMenuAvailable(() => {}, takePhoto);
+    expect(items.slice(0, 2).map((x) => x.id)).toEqual(['builtin:file', 'builtin:camera']);
+    expect(ids(composerMenuItems(items, none))).toEqual(['builtin:file', 'builtin:camera']);
+    items[1]!.run();
+    expect(takePhoto).toHaveBeenCalledOnce();
+  });
+
+  it('並び順を保存していた人にも、「写真を撮る」は末尾に出る（隠したものは出ない）', () => {
+    const items = composerMenuAvailable(() => {});
+    const saved = { order: ['builtin:file'], hidden: [] };
+    expect(ids(composerMenuItems(items, saved)).slice(0, 2)).toEqual(['builtin:file', 'builtin:camera']);
+    const hidden = { order: ['builtin:file'], hidden: ['builtin:camera'] };
+    expect(ids(composerMenuItems(items, hidden))).not.toContain('builtin:camera');
   });
 });

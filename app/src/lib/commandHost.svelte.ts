@@ -21,6 +21,8 @@ import {
 } from './commands.svelte';
 import { isAndroid } from './platform';
 import { prefs } from './stores/prefs.svelte';
+import { cameraRequest } from './stores/cameraRequest.svelte';
+import Camera from '@lucide/svelte/icons/camera';
 import { ui } from './stores/ui.svelte';
 import { callCommands } from './call/commands';
 import { startCall } from './call/instance.svelte';
@@ -102,6 +104,16 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       // Android でも開ける（ナビゲーションバーの「コマンドパレットを開く」から）
       run: () => {
         host.paletteOpen = !host.paletteOpen;
+      },
+    },
+    {
+      id: id('take-photo'),
+      name: '写真を撮る',
+      icon: Camera,
+      description: 'カメラで写真を撮って、チャットに添付する',
+      run: async () => {
+        await showChat();
+        cameraRequest.request();
       },
     },
     {

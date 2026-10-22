@@ -185,8 +185,10 @@ export class CallStore {
   linkDown = $state(false);
   joining = $state(false);
   muted = $state(false);
-  /** 相手の声を全部消している（スピーカーミュート） */
+  /** 相手の声を全部消している（スピーカーミュート）。消しているあいだは、ミュートも入っている（不変条件） */
   deafened = $state(false);
+  /** スピーカーミュートを入れたときに、ミュートも一緒に入れた（外すときに一緒に外す）。自分で先に入れていたら false */
+  private muteByDeafen = false;
   /** 選べる出力先 */
   outputs = $state.raw<Disnans.AudioOutput[]>([]);
   barButtons = $state.raw<BarButton[]>([]);
@@ -681,6 +683,7 @@ export class CallStore {
         this.aliveAt = this.deps.now();
         this.muted = this.settings.joinMuted;
         this.deafened = false;
+        this.muteByDeafen = false;
         this.applyMute();
         this.joined = true;
         this.listed = false;
@@ -718,6 +721,7 @@ export class CallStore {
     this.listed = false;
     this.linkDown = false;
     this.deafened = false;
+    this.muteByDeafen = false;
     this.outputs = [];
     this.stopWorker();
     this.entries.clear();
@@ -873,6 +877,8 @@ export class CallStore {
       return;
     }
     this.muted = !this.muted;
+    // ミュートを外したら、スピーカーミュートも外す（ミュートなしでスピーカーミュートにはしない）
+    if (!this.muted && this.deafened) this.setDeafened(false);
     this.applyMute();
     this.sendStatus();
     this.refresh();
@@ -888,10 +894,26 @@ export class CallStore {
       this.deps.toast('通話に参加していません', 'error');
       return;
     }
-    this.deafened = !this.deafened;
-    for (const e of this.entries.values()) this.applyEntryAudio(e);
+    this.setDeafened(!this.deafened);
+    this.applyMute();
     this.sendStatus();
     this.refresh();
+  }
+
+  /**
+   * スピーカーミュートを入れる／外す。入れるときはミュートも入れ、外すときは、スピーカーミュートが入れたミュートだけ外す。
+   * 送信・通知の更新は呼び出し側（toggleMute / toggleDeafen）が行う
+   */
+  private setDeafened(on: boolean): void {
+    if (on && !this.deafened) {
+      this.muteByDeafen = !this.muted;
+      this.muted = true;
+    } else if (!on && this.deafened) {
+      if (this.muteByDeafen) this.muted = false;
+      this.muteByDeafen = false;
+    }
+    this.deafened = on;
+    for (const e of this.entries.values()) this.applyEntryAudio(e);
   }
 
   /** 相手1人を、自分の側だけで消音する／戻す */

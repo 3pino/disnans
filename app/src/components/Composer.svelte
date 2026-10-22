@@ -21,6 +21,8 @@
   import { getServerUrl } from '../lib/config';
   import { getDesktopSharedStorage, isDesktopStorageSupported } from '../lib/desktopStorage';
   import ImageCropDialog from './ImageCropDialog.svelte';
+  import CameraCapture from './CameraCapture.svelte';
+  import { cameraRequest } from '../lib/stores/cameraRequest.svelte';
   import { readImageInfo, canCropImage, type CropRect, type ImageInfo } from '../lib/imageCrop';
   import { shareInbox } from '../lib/stores/shareInbox.svelte';
   import { composerMenuAvailable, composerMenuItems, type ComposerMenuItem } from '../lib/composerMenu';
@@ -176,6 +178,13 @@
     return canCropImage(s.info);
   }
 
+  // 「写真を撮る」（カメラのモーダル）。依頼を取り出したら開く。撮った写真は添付に加える
+  let cameraOpen = $state(false);
+  $effect(() => {
+    if (!draftReady) return;
+    if (cameraRequest.pending) untrack(() => (cameraOpen = cameraRequest.take()));
+  });
+
   // 共有で受け取ったものを、メインチャットの入力欄が拾う
   $effect(() => {
     if (!draftReady || !input) return;
@@ -195,7 +204,10 @@
   // 「＋」メニューの項目。並び順と出す項目は利用者の設定（設定 > 一般 > ＋メニュー）
   const actions = $derived(
     composerMenuItems(
-      composerMenuAvailable(() => fileEl?.click()).filter((a) => !a.when || a.when()),
+      composerMenuAvailable(
+        () => fileEl?.click(),
+        () => (cameraOpen = true),
+      ).filter((a) => !a.when || a.when()),
       prefs.composerMenu,
     ).map((x) => x.entry),
   );
@@ -475,6 +487,16 @@
       if (files.length) addFiles(files);
     }}
   />
+
+  {#if cameraOpen}
+    <CameraCapture
+      onphoto={(file) => {
+        cameraOpen = false;
+        addFiles([file]);
+      }}
+      onclose={() => (cameraOpen = false)}
+    />
+  {/if}
 
   {#if cropping && cropping.info}
     {@const target = cropping}

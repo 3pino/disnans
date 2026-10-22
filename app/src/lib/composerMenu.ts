@@ -1,4 +1,5 @@
 import Paperclip from '@lucide/svelte/icons/paperclip';
+import Camera from '@lucide/svelte/icons/camera';
 import type { IconRef } from './icons.svelte';
 import { composerActions } from './composerActions';
 import { commandList, runCommand } from './commands.svelte';
@@ -37,6 +38,7 @@ export type ComposerMenuPrefs = {
 };
 
 export const BUILTIN_FILE_ID = 'builtin:file';
+export const BUILTIN_CAMERA_ID = 'builtin:camera';
 export const DEFAULT_COMPOSER_MENU: Readonly<ComposerMenuPrefs> = Object.freeze({ order: [], hidden: [] });
 
 /** 以前は「＋」メニューの既定の項目だった「通話に参加」（登録した操作の id）。いまは出さず、コマンド「通話に参加する」に置き換えた */
@@ -89,9 +91,10 @@ export function migrateComposerMenu(raw: unknown): { value: Record<string, unkno
  * 「＋」メニューの項目。本体の「ファイルを添付」→ 登録された操作 → アプリのコマンド（登録順）。
  * pickFiles は本体の「ファイルを添付」が使う
  */
-export function composerMenuAvailable(pickFiles: () => void): ComposerMenuItem[] {
+export function composerMenuAvailable(pickFiles: () => void, takePhoto: () => void = () => {}): ComposerMenuItem[] {
   return [
     { id: BUILTIN_FILE_ID, kind: 'builtin', label: 'ファイルを添付', icon: Paperclip, run: () => pickFiles() },
+    { id: BUILTIN_CAMERA_ID, kind: 'builtin', label: '写真を撮る', icon: Camera, run: () => takePhoto() },
     ...composerActions().map(
       (a): ComposerMenuItem => ({
         id: `action:${a.id}`,

@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <!-- 通話: マイク（WebView の getUserMedia がアプリの許可を求める）と、通話中のフォアグラウンドサービス -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 写真を撮る（WebView の getUserMedia の video。実行時の許可は WebChromeClient が求める） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- 通話中だけ CPU を起こしておく（画面を消しても音声が止まらないように） -->
