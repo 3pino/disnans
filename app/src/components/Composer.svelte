@@ -22,7 +22,11 @@
   import { getDesktopSharedStorage, isDesktopStorageSupported } from '../lib/desktopStorage';
   import ImageCropDialog from './ImageCropDialog.svelte';
   import CameraCapture from './CameraCapture.svelte';
+  import AttachPanel from './AttachPanel.svelte';
+  import { attachPanel } from '../lib/stores/attachPanel.svelte';
   import { cameraRequest } from '../lib/stores/cameraRequest.svelte';
+  import { isAndroid } from '../lib/platform';
+  import { type RecentImage } from '../lib/recentImages';
   import { readImageInfo, canCropImage, type CropRect, type ImageInfo } from '../lib/imageCrop';
   import { shareInbox } from '../lib/stores/shareInbox.svelte';
   import { composerMenuAvailable, composerMenuItems, type ComposerMenuItem } from '../lib/composerMenu';
@@ -180,10 +184,33 @@
 
   // 「写真を撮る」（カメラのモーダル）。依頼を取り出したら開く。撮った写真は添付に加える
   let cameraOpen = $state(false);
+  /** Android は標準のカメラアプリを開く（隠しの input の capture）。戻ると撮った写真が添付に入る */
+  let cameraEl: HTMLInputElement | undefined = $state();
+  let imageEl: HTMLInputElement | undefined = $state();
+  function takePhoto() {
+    if (isAndroid()) cameraEl?.click();
+    else cameraOpen = true;
+  }
   $effect(() => {
     if (!draftReady) return;
-    if (cameraRequest.pending) untrack(() => (cameraOpen = cameraRequest.take()));
+    if (cameraRequest.pending) untrack(() => (cameraRequest.take() ? takePhoto() : undefined));
   });
+
+  function onpanelrecent(image: RecentImage) {
+    attachPanel.hide();
+    void image.load().then(
+      (file) => addFiles([file]),
+      (e: unknown) => ui.toast(`添付できませんでした: ${e instanceof Error ? e.message : String(e)}`, 'error'),
+    );
+  }
+
+  /** 隠しの input で選んだものを添付に加える（同じものを続けて選べるよう、値は空にする） */
+  function onpicked(e: Event & { currentTarget: HTMLInputElement }) {
+    const files = [...(e.currentTarget.files ?? [])];
+    e.currentTarget.value = '';
+    attachPanel.hide();
+    if (files.length) addFiles(files);
+  }
 
   // 共有で受け取ったものを、メインチャットの入力欄が拾う
   $effect(() => {
@@ -206,7 +233,7 @@
     composerMenuItems(
       composerMenuAvailable(
         () => fileEl?.click(),
-        () => (cameraOpen = true),
+        () => takePhoto(),
       ).filter((a) => !a.when || a.when()),
       prefs.composerMenu,
     ).map((x) => x.entry),
@@ -409,6 +436,25 @@
     </div>
   {/if}
 
+  {#if attachPanel.open}
+    <AttachPanel
+      oncamera={() => {
+        attachPanel.hide();
+        takePhoto();
+      }}
+      onimage={() => {
+        attachPanel.hide();
+        imageEl?.click();
+      }}
+      onfile={() => {
+        attachPanel.hide();
+        fileEl?.click();
+      }}
+      onrecent={onpanelrecent}
+      onclose={() => attachPanel.hide()}
+    />
+  {/if}
+
   <div class="composer-row" class:composer-row-hidden={searching}>
     <div class="composer-plus">
       <IconButton
@@ -475,18 +521,10 @@
     </button>
   </div>
 
-  <input
-    bind:this={fileEl}
-    type="file"
-    class="composer-file-input"
-    multiple
-    hidden
-    onchange={(e) => {
-      const files = [...(e.currentTarget.files ?? [])];
-      e.currentTarget.value = '';
-      if (files.length) addFiles(files);
-    }}
-  />
+  <input bind:this={fileEl} type="file" class="composer-file-input" multiple hidden onchange={onpicked} />
+  <input bind:this={imageEl} type="file" accept="image/*" class="composer-file-input" multiple hidden onchange={onpicked} />
+  <!-- Android の標準カメラ（Tauri が capture を ACTION_IMAGE_CAPTURE にする。accept は正確に image/*） -->
+  <input bind:this={cameraEl} type="file" accept="image/*" capture="environment" class="composer-file-input" hidden onchange={onpicked} />
 
   {#if cameraOpen}
     <CameraCapture

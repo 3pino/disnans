@@ -93,7 +93,7 @@ export function migrateComposerMenu(raw: unknown): { value: Record<string, unkno
  */
 export function composerMenuAvailable(pickFiles: () => void, takePhoto: () => void = () => {}): ComposerMenuItem[] {
   return [
-    { id: BUILTIN_FILE_ID, kind: 'builtin', label: 'ファイルを添付', icon: Paperclip, run: () => pickFiles() },
+    { id: BUILTIN_FILE_ID, kind: 'builtin', label: 'ファイルを選択', icon: Paperclip, run: () => pickFiles() },
     { id: BUILTIN_CAMERA_ID, kind: 'builtin', label: '写真を撮る', icon: Camera, run: () => takePhoto() },
     ...composerActions().map(
       (a): ComposerMenuItem => ({

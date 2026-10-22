@@ -19,6 +19,14 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- 標準のカメラアプリを探せるようにする（Android 11 以降は宣言がないと resolveActivity が null になり、
+         WebView の <input capture> がカメラを開かずにファイルの選択へ落ちる） -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
     <application>
         <!--
           共有メニューに disnans を出す。MainActivity は tauri android init の生成物（gen/）なので触らず、

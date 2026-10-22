@@ -22,7 +22,9 @@ import {
 import { isAndroid } from './platform';
 import { prefs } from './stores/prefs.svelte';
 import { cameraRequest } from './stores/cameraRequest.svelte';
+import { attachPanel } from './stores/attachPanel.svelte';
 import Camera from '@lucide/svelte/icons/camera';
+import Paperclip from '@lucide/svelte/icons/paperclip';
 import { ui } from './stores/ui.svelte';
 import { callCommands } from './call/commands';
 import { startCall } from './call/instance.svelte';
@@ -114,6 +116,16 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       run: async () => {
         await showChat();
         cameraRequest.request();
+      },
+    },
+    {
+      id: id('add-files'),
+      name: 'ファイルを追加',
+      icon: Paperclip,
+      description: '入力欄の添付パネルを開く（カメラ・画像・ファイル・最近の画像）',
+      run: async () => {
+        await showChat();
+        attachPanel.show();
       },
     },
     {

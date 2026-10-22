@@ -14,7 +14,7 @@ import {
   type ComposerMenuPrefs,
 } from './composerMenu';
 
-const file: ComposerMenuEntry = { id: 'builtin:file', kind: 'builtin', label: 'ファイルを添付' };
+const file: ComposerMenuEntry = { id: 'builtin:file', kind: 'builtin', label: 'ファイルを選択' };
 const dice: ComposerMenuEntry = { id: 'action:plugin:dice:roll', kind: 'action', label: 'サイコロ', source: 'Dice' };
 const poll: ComposerMenuEntry = { id: 'action:plugin:poll:new', kind: 'action', label: '投票' };
 const cmdA: ComposerMenuEntry = { id: 'cmd:app:open-settings', kind: 'command', label: '設定を開く' };
@@ -71,7 +71,7 @@ describe('composerMenuItems', () => {
   it('同じ id が2つあれば、先のものだけ使う', () => {
     const dup = { ...dice, label: '別のサイコロ' };
     const items = composerMenuItems([file, dice, dup], none);
-    expect(items.map((x) => x.entry.label)).toEqual(['ファイルを添付', 'サイコロ']);
+    expect(items.map((x) => x.entry.label)).toEqual(['ファイルを選択', 'サイコロ']);
   });
 });
 
