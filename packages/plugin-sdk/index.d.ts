@@ -1,5 +1,5 @@
 /**
- * disnans プラグインの型定義（ホスト API バージョン 14）。
+ * disnans プラグインの型定義（ホスト API バージョン 15）。
  *
  * プラグインの main.js は ES モジュールで、`Plugin` を継承したクラスを `export default` する。
  * ホスト API はグローバルの `disnans` から取る（`import` は使わない）。
@@ -46,6 +46,11 @@ declare global {
       apiVersion?: number;
       /** Lucide のアイコン名（例: `dice-5`。英小文字・数字・ハイフン、64 文字まで）。画像にしたいときは `icon.svg` を同梱する */
       icon?: string;
+      /**
+       * 使う権限（v15）。`"files"` は共有フォルダ（`this.files`）。入れていないと、その API は `permission_denied` で失敗する。
+       * 知らない名前は無視される
+       */
+      permissions?: string[];
     };
 
     /** 後始末の関数 */
@@ -62,7 +67,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 14） */
+      /** ホスト API のバージョン（いまは 15） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -307,7 +312,7 @@ declare global {
      * 本体が投げる例外（API v14）。`code` は機械向けの語。
      * サーバーのエラーは、サーバーの code をそのまま使う（例: `not_found`）。本体側の失敗は次のどれか:
      * `disconnected`（サーバーに届かなかった）、`not_loaded`（読み込まれていない）、`invalid_argument`（値が正しくない）、
-     * `not_found`（指定されたものがない）、`stopped`（外された・もう使えない）、`unsupported`（この環境では使えない）、`failed`（そのほか）
+     * `not_found`（指定されたものがない）、`stopped`（外された・もう使えない）、`unsupported`（この環境では使えない）、`permission_denied`（権限がない・v15）、`failed`（そのほか）
      */
     class PluginError extends Error {
       readonly code: string;
@@ -337,6 +342,8 @@ declare global {
       readonly app: App;
       readonly manifest: Manifest;
       readonly sessions: Sessions;
+      /** 共有フォルダ（v15）。manifest.json の permissions に `"files"` が必要 */
+      readonly files: Files;
 
       /** 読み込んだときに呼ばれる。ここで add* / register* する */
       onload(): void | Promise<void>;
@@ -684,6 +691,51 @@ declare global {
     // ---- セッション ----
 
     type Card = { title: string; text: string };
+
+    /** 共有フォルダの項目（`/api/shared`。API v15）。サーバーの SharedEntry と同じ形（`size`・`modified` は数）。 */
+    type SharedEntry = {
+      /** 名前（最後の区切りの後ろ） */
+      name: string;
+      /** 共有フォルダからの相対パス（`docs/a.txt`） */
+      path: string;
+      kind: 'file' | 'dir';
+      /** ファイルの大きさ（バイト）。フォルダは 0 */
+      size: number;
+      /** 更新された時刻（ミリ秒、UNIX 時間） */
+      modified: number;
+      /** 添付の種類（`attachments/` の中だけ） */
+      mime: string | null;
+      /** 添付のメッセージ ID（`attachments/` の中だけ） */
+      message_id: string | null;
+    };
+
+    /**
+     * 共有フォルダ（v15）。全員で共有する 1 つのフォルダ。パスは相対で、区切りは `/`。
+     * `..`・空の区切り・`.`・Windows で使えない文字などは本体かサーバーが拒否する（`forbidden`）。
+     * `attachments/` は読み取り専用（投稿された添付が並ぶ）。
+     * すべて manifest.json の permissions に `"files"` が必要（なければ `permission_denied`）。
+     * 失敗は PluginError で、code はサーバーの code（`not_found` `forbidden` `exists` `parent_missing` `too_large` `insufficient_storage`）。
+     */
+    interface Files {
+      /** フォルダの中身（省略か空文字で直下） */
+      list(path?: string): Promise<SharedEntry[]>;
+      /** 1 つの項目の情報（なければ `not_found`） */
+      stat(path: string): Promise<SharedEntry>;
+      /** ファイルの中身（Blob。文字なら `(await files.read(p)).text()`）。フォルダは `invalid_argument` */
+      read(path: string): Promise<Blob>;
+      /** 作成・上書き。親のフォルダがなければ `parent_missing` */
+      write(path: string, data: Blob | ArrayBuffer | string): Promise<SharedEntry>;
+      /** フォルダを作る */
+      mkdir(path: string): Promise<SharedEntry>;
+      /** 削除（フォルダは中身ごと） */
+      remove(path: string): Promise<void>;
+      /** 移動・名前の変更 */
+      move(from: string, to: string): Promise<SharedEntry>;
+      /** コピー */
+      copy(from: string, to: string): Promise<SharedEntry>;
+      /** 共有フォルダの変更（どの端末の変更でも）。cb は `{ path }`（変わった項目の相対パス）。解除関数を返す。プラグインが外れると自動で解除 */
+      onChange(cb: (ev: { path: string }) => void): Cleanup;
+    }
 
     interface Sessions {
       /** セッションを作り、カードをチャットに流す */

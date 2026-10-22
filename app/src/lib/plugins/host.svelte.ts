@@ -15,7 +15,8 @@ import type { ServerEvent } from '../protocol/ServerEvent';
 import { client } from '../stores/client.svelte';
 import { ui } from '../stores/ui.svelte';
 import { devFolderSupported, readDevPlugin, scanDevFolder } from './dev';
-import { manifestOf, parsePackageManifest, PLUGIN_FILES } from './manifest';
+import { manifestOf, parsePackageManifest, permissionsOf, PLUGIN_FILES } from './manifest';
+import { sharedApi } from '../transport/shared';
 import { THEME_STYLE_SELECTOR, themeHost } from './themes.svelte';
 import { PluginBase, PluginRuntime, type ViewHandle } from './runtime';
 import { toPluginUser } from './sessions';
@@ -132,7 +133,7 @@ type Loaded = {
 };
 
 /** 読み込むべきもの */
-type Wanted = { sig: string; manifest: Manifest; load: () => Promise<{ main: string; styles: string | null }> };
+type Wanted = { sig: string; manifest: Manifest; load: () => Promise<{ main: string; styles: string | null; permissions: string[] }> };
 
 /** main.js（ES モジュール）を Blob URL から import する */
 async function importModule(id: string, code: string): Promise<{ default?: unknown }> {
@@ -223,6 +224,15 @@ class PluginHost {
     closePanel: (plugin) => ui.forgetPanel((p) => p.kind === 'plugin' && p.plugin === plugin),
     toast: (text, kind) => ui.toast(text, kind),
     storage: { get: (k) => getItem(k), set: (k, v) => setItem(k, v) },
+    files: {
+      api: sharedApi,
+      onChanged: (cb) => {
+        this.fileListeners.add(cb);
+        return () => {
+          this.fileListeners.delete(cb);
+        };
+      },
+    },
     pluginIcon: (id) => this.pluginIcon(id),
     registerIcon: (name, svg) => registerIcon(name, svg),
     registerStatusItem: (pluginId, el) => {
@@ -287,6 +297,9 @@ class PluginHost {
     }
   }
 
+  /** 共有フォルダの変更を受け取る相手（プラグインごとの購読が、ここに入る） */
+  private fileListeners = new Set<(path: string) => void>();
+
   private onEvent(ev: ServerEvent): void {
     switch (ev.type) {
       case 'hello':
@@ -305,6 +318,9 @@ class PluginHost {
         break;
       case 'session.updated':
         for (const l of this.loaded.values()) l.runtime.sessions.applyUpdate(ev.session);
+        break;
+      case 'files.changed':
+        for (const cb of [...this.fileListeners]) cb(ev.path);
         break;
       case 'plugin.event':
         this.loaded.get(ev.plugin)?.runtime.dispatchBroadcast(ev.name, ev.payload, ev.from);
@@ -516,6 +532,8 @@ class PluginHost {
         load: async () => ({
           main: await api.pluginFile(p.id, 'main.js', p.hash),
           styles: p.files.includes('styles.css') ? await api.pluginFile(p.id, 'styles.css', p.hash) : null,
+          // 権限は PluginInfo に無いので、配布された manifest.json から読む
+          permissions: permissionsOf(await api.pluginFile(p.id, 'manifest.json', p.hash)),
         }),
       });
     }
@@ -524,7 +542,7 @@ class PluginHost {
       const m = d.manifest;
       if (!m || d.kind !== 'plugin' || d.error || d.main === null || this.disabled.includes(m.id)) continue;
       const main = d.main;
-      out.set(m.id, { sig: `dev:${d.folder}:${d.stamp}`, manifest: m, load: async () => ({ main, styles: d.styles }) });
+      out.set(m.id, { sig: `dev:${d.folder}:${d.stamp}`, manifest: m, load: async () => ({ main, styles: d.styles, permissions: m.permissions ?? [] }) });
     }
     return out;
   }
@@ -580,7 +598,7 @@ class PluginHost {
 
     // プラグインはアイコンを名前（Lucide）で使うことが多いので、先に読み込み始める
     void loadLucide();
-    let files: { main: string; styles: string | null };
+    let files: { main: string; styles: string | null; permissions: string[] };
     let mod: { default?: unknown };
     try {
       files = await w.load();
@@ -600,7 +618,7 @@ class PluginHost {
       // テーマ（あれば）が後ろに来るように、その前に入れる
       document.head.insertBefore(style, document.head.querySelector(THEME_STYLE_SELECTOR));
     }
-    const runtime = new PluginRuntime(Object.freeze({ ...w.manifest }), this.services);
+    const runtime = new PluginRuntime(Object.freeze({ ...w.manifest, permissions: files.permissions }), this.services);
     this.loaded.set(id, { runtime, sig: w.sig, style });
     try {
       await runtime.start(mod.default as PluginClass);

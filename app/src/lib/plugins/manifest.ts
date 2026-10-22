@@ -44,6 +44,11 @@ export function parsePackageManifest(text: string): { manifest: Manifest; kind: 
   if (api !== undefined && (typeof api !== 'number' || !Number.isInteger(api) || api < 1 || api < min)) {
     throw new Error('manifest.json の apiVersion は 1 以上の整数で、minApiVersion 以上にしてください');
   }
+  // 使う権限（任意。配列の文字列。知らないものは読んでも無視する＝新しい権限を先に書けるように）
+  const perms = o.permissions;
+  if (perms !== undefined && (!Array.isArray(perms) || perms.some((p) => typeof p !== 'string'))) {
+    throw new Error('manifest.json の permissions は文字列の配列にしてください');
+  }
   const icon = o.icon;
   if (icon !== undefined && (typeof icon !== 'string' || !MANIFEST_ICON_RE.test(icon))) {
     throw new Error('manifest.json の icon は Lucide のアイコン名（英小文字・数字・ハイフン。例: "dice-5"）にしてください');
@@ -60,7 +65,20 @@ export function parsePackageManifest(text: string): { manifest: Manifest; kind: 
   };
   if (icon !== undefined) m.icon = icon;
   if (api !== undefined) m.apiVersion = api;
+  if (perms !== undefined) m.permissions = [...new Set(perms as string[])];
   return { manifest: m, kind: type };
+}
+
+/**
+ * manifest.json の permissions だけを読む（読めなければ空）。
+ * サーバーの PluginInfo には入っていないので、読み込みのときに manifest.json の中身から取る
+ */
+export function permissionsOf(text: string): string[] {
+  try {
+    return parsePackageManifest(text).manifest.permissions ?? [];
+  } catch {
+    return [];
+  }
 }
 
 /** サーバーの PluginInfo から manifest を作る */

@@ -2,6 +2,7 @@ import { parseHotkey } from './hotkey';
 import { SLASH_NAME_RE } from '../slashCommands.svelte';
 import { SessionsImpl, type SessionImpl } from './sessions';
 import { PluginError } from './errors';
+import { PluginFiles, hasPermission, PERMISSION_FILES } from './files';
 import { errorMessage, type Cleanup, type HostTimelineEntry, type HostTimelineHandle, type HostServices, type Manifest, type PluginClass } from './types';
 
 /** パネルの上部（題名・アイコン）。null は既定（プラグイン名・プラグインのアイコン）、空文字列は出さない */
@@ -44,6 +45,10 @@ export class PluginBase implements Disnans.Plugin {
   }
   get sessions(): Disnans.Sessions {
     return rt(this).sessions;
+  }
+  /** 共有フォルダ（権限 "files" が manifest.json の permissions にあるときだけ使える） */
+  get files(): Disnans.Files {
+    return rt(this).files;
   }
 
   onload(): void | Promise<void> {}
@@ -128,6 +133,7 @@ export class PluginBase implements Disnans.Plugin {
 export class PluginRuntime {
   instance: Disnans.Plugin | null = null;
   readonly sessions: SessionsImpl;
+  readonly files: PluginFiles;
   readonly views = new Map<string, (session: Disnans.Session<unknown>) => Disnans.View>();
   cardRenderer: Disnans.CardRenderer | null = null;
   readonly settingTabs: Disnans.SettingTab[] = [];
@@ -147,6 +153,12 @@ export class PluginRuntime {
     readonly services: HostServices,
   ) {
     this.sessions = new SessionsImpl(manifest.id, services);
+    this.files = new PluginFiles(hasPermission(manifest.permissions, PERMISSION_FILES), services.files.api, (cb) => {
+      // 外したら（stop）、変更の受け取りも外す
+      const off = services.files.onChanged(cb);
+      this.register(off);
+      return off;
+    });
   }
 
   get id(): string {

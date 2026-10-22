@@ -38,7 +38,8 @@ async function setup() {
     storage: { get: () => null, set: () => {} },
     pluginIcon: () => 'bot',
     registerIcon: () => () => {},
-    changed: () => {},
+    files: { api: {} as never, onChanged: () => () => {} },
+changed: () => {},
   } as unknown as HostServices;
   const r = new PluginRuntime({ id: 'bot', name: 'ボット', version: '0.1.0', description: '', author: '', minApiVersion: 6 }, services);
   const mod = (await import('../../../../examples/bot/main.js')) as { default: PluginClass };

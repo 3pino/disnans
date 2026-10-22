@@ -61,6 +61,7 @@ function setup(known: Message[]) {
     storage: { get: (k: string) => store.get(k) ?? null, set: (k: string, v: string | null) => void (v === null ? store.delete(k) : store.set(k, v)) },
     pluginIcon: () => 'puzzle',
     registerIcon: () => () => {},
+    files: { api: {} as never, onChanged: () => () => {} },
     changed: () => {},
   } as unknown as HostServices;
   const r = new PluginRuntime({ id: 'read-later', name: 'あとで読む', version: '0.1.0', description: '', author: '', minApiVersion: 9 }, services);

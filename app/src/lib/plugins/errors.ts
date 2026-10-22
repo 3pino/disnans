@@ -13,6 +13,7 @@ import { errorMessage } from './types';
  *   - `not_found`: 本体の中に、指定されたもの（view の種類など）がない
  *   - `stopped`: プラグインが外された、またはセッションがもう使えない
  *   - `unsupported`: この環境では使えない（例: 画面を撮る機能が無い環境）
+ *   - `permission_denied`: manifest.json の permissions に無い権限の API を呼んだ（例: 共有フォルダは "files"）
  *   - `failed`: 上のどれでもない、本体側の失敗
  */
 export const LOCAL_ERROR_CODES = [
@@ -22,6 +23,7 @@ export const LOCAL_ERROR_CODES = [
   'not_found',
   'stopped',
   'unsupported',
+  'permission_denied',
   'failed',
 ] as const;
 

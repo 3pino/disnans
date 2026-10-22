@@ -2,6 +2,7 @@
 // ホスト API の型は SDK の型定義（packages/plugin-sdk/index.d.ts）を正とし、ここで本体の実装と突き合わせる
 
 import type { ClientEvent } from '../protocol/ClientEvent';
+import type { SharedApi } from '../transport/shared';
 import type { CreateSession } from '../protocol/CreateSession';
 import type { PluginNotify } from '../protocol/PluginNotify';
 import type { PluginPostMessage } from '../protocol/PluginPostMessage';
@@ -15,7 +16,7 @@ import type { Message } from '../protocol/Message';
 import type { TimelineEntry, TimelineHandle, TimelineSpec } from '../stores/timelinePanel.svelte';
 
 /** ホスト API のバージョン。index.d.ts を変えたら上げる */
-export const API_VERSION = 14;
+export const API_VERSION = 15;
 
 export type Manifest = Disnans.Manifest;
 export type Cleanup = Disnans.Cleanup;
@@ -38,6 +39,8 @@ export type HostTimelineHandle = TimelineHandle;
  */
 export interface HostServices {
   app: Disnans.App;
+  /** 共有フォルダ（disnans.Plugin の files。権限は各プラグインの PluginFiles が見る） */
+  files: { api: SharedApi; onChanged: (cb: (path: string) => void) => () => void };
   api: {
     createSession(body: CreateSession): Promise<SessionData>;
     getSession(id: string): Promise<SessionData>;

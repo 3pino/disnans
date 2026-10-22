@@ -77,7 +77,8 @@ describe('view を開いた・閉じた（プレゼンスの open / close）', (
       app: {},
       presence: (id: string, open: boolean) => void presenceCalls.push([id, open]),
       closePanel: vi.fn(),
-      changed: vi.fn(),
+      files: { api: {} as never, onChanged: () => () => {} },
+changed: vi.fn(),
     } as unknown as HostServices;
     const r = new PluginRuntime(manifest, services);
     class P extends PluginBase {}

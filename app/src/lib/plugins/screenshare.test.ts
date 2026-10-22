@@ -448,6 +448,7 @@ function makeCall() {
     panel,
     button: () => buttonOpts,
     fire: (name: string, peer: string, userKey: 'a' | 'b', payload: unknown) => handlers.get(name)!({ peer, user: users[userKey], payload }),
+    files: { api: {} as never, onChanged: () => () => {} },
     changed: () => change(),
   };
 }
@@ -514,6 +515,7 @@ async function setup(opts: { display: boolean; native?: Partial<Disnans.ScreenCa
       return () => el.remove();
     },
     holdBackground: async () => Object.assign(() => {}, { update: () => {} }),
+    files: { api: {} as never, onChanged: () => () => {} },
     changed: () => {},
   } as unknown as HostServices;
   const r = new PluginRuntime(

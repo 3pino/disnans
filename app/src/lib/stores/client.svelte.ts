@@ -646,6 +646,7 @@ class Client {
       }
       case 'plugin.updated':
       case 'plugin.removed':
+      case 'files.changed':
       case 'session.updated':
       case 'session.event':
       case 'plugin.event':

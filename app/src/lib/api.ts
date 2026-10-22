@@ -11,6 +11,7 @@ import { apiUrl, authHeaders } from './config';
 import { qs, request, toError } from './transport/http';
 import { bootReadApi, bootWriteApi } from './transport/boot';
 import type { UploadHandle } from './transport/upload';
+import { sharedApi } from './transport/shared';
 
 export { HttpError } from './transport/http';
 export type { UploadHandle } from './transport/upload';
@@ -59,6 +60,9 @@ export const api = {
   },
   pluginPostMessage: (id: string, body: PluginPostMessage) => writes.write.pluginPostMessage(id, body),
   pluginNotify: (id: string, body: PluginNotify) => writes.write.pluginNotify(id, body),
+
+  // ---- 共有フォルダ（/api/shared。HTTP のみ。プラグインの files も同じ） ----
+  shared: sharedApi,
 
   // ---- セッション ----
   createSession: (body: CreateSession) => writes.write.createSession(body),

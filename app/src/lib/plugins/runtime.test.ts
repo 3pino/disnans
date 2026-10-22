@@ -107,7 +107,8 @@ function fakeServices() {
       registerStatusItem: () => () => {},
       presence: vi.fn(),
       holdBackground: async () => Object.assign(() => {}, { update: () => {} }),
-      changed: vi.fn(),
+      files: { api: {} as never, onChanged: () => () => {} },
+changed: vi.fn(),
     } as unknown as HostServices,
   };
   return s;

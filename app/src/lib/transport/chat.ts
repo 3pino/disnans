@@ -119,6 +119,7 @@ export const CHAT_EVENT_TYPES: ReadonlySet<string> = new Set([
   'plugin.updated',
   'plugin.removed',
   'plugin.event',
+  'files.changed',
   'prefs.updated',
   'call.state',
   'call.event',

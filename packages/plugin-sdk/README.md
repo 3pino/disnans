@@ -1,10 +1,11 @@
 # @disnans/plugin-sdk
 
-disnans のプラグインを書くための型定義（ホスト API バージョン 14）。
+disnans のプラグインを書くための型定義（ホスト API バージョン 15）。
 
 - `index.d.ts`: ホスト API の型。グローバルの `disnans` と、名前空間 `Disnans`（`Disnans.Session` など）を宣言する
 - 実行時のコードは入っていない。ホスト API の実体は disnans 本体がグローバルの `disnans` として用意する
 - v12 では `disnans.call.addButton({ ..., location: 'view' })` を使うと、ボタンを通話画面だけに表示できる（省略時は従来どおり通話バーと通話画面の両方）
+- v15 で共有フォルダ（`this.files`。`list` / `stat` / `read` / `write` / `mkdir` / `remove` / `move` / `copy` / `onChange`）を使えるようにした。使うには manifest.json の `permissions` に `"files"` を入れ、`minApiVersion` を `15` にする（→ [`docs/PLUGINS.md`](../../docs/PLUGINS.md) の「共有フォルダ」）
 - v14 で本体の例外は `disnans.PluginError`（`code` 付き）にそろえた。`disnans.VersionConflictError` はその一種。v13 でスレッドの API を削除した。manifest の `apiVersion`（任意）と、削除・変更の警告は [`docs/PLUGINS.md`](../../docs/PLUGINS.md) の「互換」を見る
 - 作り方のガイドは [`docs/PLUGINS.md`](../../docs/PLUGINS.md)、実例は [`examples/dice/`](../../examples/dice/)
 
@@ -147,6 +148,7 @@ export default defineConfig({
 | 型 | 内容 |
 |---|---|
 | `Disnans.Host` | グローバルの `disnans`（`Plugin`, `ui`, `PluginError`, `VersionConflictError`, `apiVersion`） |
+| `Disnans.Files` / `Disnans.SharedEntry` | 共有フォルダ（`this.files`、v15。権限 `files` が要る） |
 | `Disnans.Plugin` | 継承するクラス。`add*` / `register*` / `sessions` / `notify` / `loadData` など |
 | `Disnans.Session<S>` | セッション。`state` の型を `S` で指定する |
 | `Disnans.View` | パネルに出す画面（`onOpen` / `onClose` / `title`） |

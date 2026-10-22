@@ -114,9 +114,10 @@ export default class HelloPlugin extends Plugin {
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまの版は `14`（`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまの版は `15`（`14` 以下の本体には `this.files`（共有フォルダ）がない。共有フォルダを使うなら `15`。`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
 | `apiVersion` | | このプラグインを作った（対象の）ホスト API のバージョン。省略すると `minApiVersion` とみなす。`minApiVersion` 以上の整数。本体がこれより新しく、その後に削除・意味を変えた API があると、読み込んだうえで設定の一覧に警告が出る（→ [互換](#互換apiversion-と削除の警告)） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
+| `permissions` | | 使う権限の配列（v15）。`"files"` で共有フォルダ（`this.files`）。入れていないと、その API は `permission_denied` で失敗する。知らない名前は無視される（→ [共有フォルダ](#共有フォルダfilesv15)） |
 
 ダイスの manifest:
 
@@ -255,7 +256,8 @@ app/node_modules/.bin/tsc -p examples/dice
 | `disnans.call.*` | 本体の通話の状態の読み取りと、参加者どうしのデータの送受信、通話のバーのボタン（v8）、通話の画面の領域と送信待ちの量（v10。→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)） |
 | `disnans.ui.onBack(handler)` / `ui.setImmersive(on)` | 戻る操作（Android の戻るジェスチャー・PC の Alt+←）で閉じる層を足す／Android で全画面（システムバーを隠す没入モード）にする（v9。→ [画面共有のためのネイティブ API](#画面共有のためのネイティブ-apiv9)） |
 | `disnans.screenCapture.*` / `disnans.pip.*` | Android の画面のキャプチャ（MediaProjection）と、ピクチャーインピクチャー（v9。同上）。Linux の画面のキャプチャは portal / PipeWire（v12）。ダイアログなしの静止画 `screenCapture.snapshot()`（v11。デスクトップでも使える） |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 14） |
+| `this.files` | 共有フォルダ（v15。権限 `files` が要る。→ [共有フォルダ](#共有フォルダfilesv15)） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 15） |
 
 ### コマンド（パレット・ホットキー・スラッシュコマンド）
 
@@ -529,6 +531,7 @@ async roll() {
 | `not_found` | 指定されたもの（view の種類など）が本体にない |
 | `stopped` | プラグインが外された、またはセッションがもう使えない |
 | `unsupported` | この環境では使えない（例: 画面を撮る機能のない環境） |
+| `permission_denied` | manifest.json の `permissions` に無い権限の API を呼んだ（例: 共有フォルダは `files`）（v15） |
 | `failed` | 上のどれでもない、本体側の失敗 |
 | そのほか | サーバーのエラーは、サーバーの code をそのまま使う（例: `not_found`、`invalid_plugin_id`） |
 
@@ -724,6 +727,47 @@ async resetSettings(containerEl) {
 
 - `display` は表示のたびに空の `containerEl` で呼ばれます
 - 部品の `onChange` で、すぐに `saveData` します（「保存」ボタンは要りません）
+
+### 共有フォルダ（files、v15）
+
+全員で共有する 1 つのフォルダ（サーバーの `/api/shared`。WebDAV と同じ中身）を読み書きします。型は [`index.d.ts`](../packages/plugin-sdk/index.d.ts) の `Files` / `SharedEntry`。
+
+使うには manifest.json に権限と版を書きます。
+
+```json
+{
+  "id": "notes",
+  "name": "メモ",
+  "version": "1.0.0",
+  "description": "共有フォルダにメモを残す",
+  "author": "me",
+  "minApiVersion": 15,
+  "permissions": ["files"]
+}
+```
+
+```js
+const { Plugin } = disnans;
+export default class extends Plugin {
+  async onload() {
+    const list = await this.files.list('notes');        // フォルダの中身（省略か空で直下）
+    await this.files.mkdir('notes');                    // フォルダを作る
+    await this.files.write('notes/a.txt', 'こんにちは'); // 作成・上書き（Blob・ArrayBuffer・文字列）
+    const text = await (await this.files.read('notes/a.txt')).text();
+    this.files.onChange(({ path }) => {                 // 変わったパス（どの端末の変更でも）
+      if (path.startsWith('notes/')) this.refresh();
+    });
+  }
+}
+```
+
+- 操作: `list(path?)`・`stat(path)`・`read(path)`（Blob）・`write(path, data)`・`mkdir(path)`・`remove(path)`（フォルダは中身ごと）・`move(from, to)`・`copy(from, to)`。`onChange(cb)` は解除関数を返します（プラグインを外すと自動で解除）
+- パスは共有フォルダからの相対（`docs/a.txt`）。区切りは `/`。空の区切り・`.`・`..` は `invalid_argument`。`read` はファイルだけ（フォルダは `invalid_argument`）
+- `attachments/` は読み取り専用（投稿された添付が並ぶ。`message_id`・`mime` が入る）
+- `SharedEntry` の `size`・`modified`（ミリ秒）は数です
+- 失敗は `disnans.PluginError` で、`code` はサーバーの code（`not_found`・`forbidden`・`exists`・`parent_missing`・`too_large`・`insufficient_storage`）。権限がなければ `permission_denied`
+- 権限を入れていないプラグインは、どの操作も `permission_denied` で失敗します（`onChange` は同期で投げます）
+- 作るとき `minApiVersion` を `15` にしてください（`14` 以下の本体には `this.files` がありません）
 
 ### loadData / saveData
 

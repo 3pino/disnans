@@ -130,7 +130,8 @@ function setup(opts: { me?: string; data?: unknown; server?: SessionData } = {})
     registerStatusItem: () => () => {},
     presence: vi.fn(),
     holdBackground: async () => Object.assign(() => {}, { update: () => {} }),
-    changed: () => {},
+    files: { api: {} as never, onChanged: () => () => {} },
+changed: () => {},
   } as unknown as HostServices;
 
   const r = new PluginRuntime(
