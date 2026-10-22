@@ -80,6 +80,11 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
 
     let mut by_id: HashMap<String, MessageRow> =
         rows.into_iter().map(|r| (r.id.clone(), r)).collect();
+    // 本文のリンク（保存は ID）を、表示では今の名前に戻す
+    let names = {
+        let bodies: Vec<&str> = by_id.values().map(|r| r.body.as_str()).collect();
+        crate::links::to_wire(pool, &bodies).await?
+    };
     Ok(ids
         .iter()
         .filter_map(|id| by_id.remove(id))
@@ -95,7 +100,7 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
             author_id: row.author_id,
             reply_preview: row.reply_to.as_ref().and_then(|to| previews.remove(to)),
             reply_to: row.reply_to,
-            body: row.body,
+            body: crate::links::render(&row.body, &names),
             created_at: row.created_at,
             edited_at: row.edited_at,
         })
@@ -251,10 +256,17 @@ async fn reply_previews_for(
     .bind(json_ids(&targets))
     .fetch_all(pool)
     .await?;
+    let names = {
+        let bodies: Vec<&str> = found.iter().map(|r| r.body.as_str()).collect();
+        crate::links::to_wire(pool, &bodies).await?
+    };
     Ok(found
         .into_iter()
         .map(|r| {
-            let text = r.body.split_whitespace().collect::<Vec<_>>().join(" ");
+            let text = crate::links::render(&r.body, &names)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
             let body = if text.chars().count() > PREVIEW_CHARS {
                 let mut cut: String = text.chars().take(PREVIEW_CHARS).collect();
                 cut.push('…');

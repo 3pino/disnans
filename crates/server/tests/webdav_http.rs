@@ -109,39 +109,65 @@ async fn range_reads_work() {
 }
 
 #[tokio::test]
-async fn writes_into_attachments_are_refused_and_nothing_changes() {
+async fn attachments_accept_writes_and_keep_the_reserved_folder() {
     let server = TestServer::start().await;
     post_attachment(&server, "keep.txt", b"keep").await;
 
-    // 添付（仮想）の中は書けない・消せない・動かせない（403）
-    for (m, path) in [
-        ("PUT", "/dav/attachments/new.txt"),
-        ("DELETE", "/dav/attachments/keep.txt"),
-        ("DELETE", "/dav/attachments"),
-        ("MKCOL", "/dav/attachments/newdir"),
-        ("MKCOL", "/dav/attachments"),
-        ("MOVE", "/dav/attachments/keep.txt"),
-        // PROPPATCH は許可していない（405）
-        ("PROPPATCH", "/dav/attachments/keep.txt"),
-    ] {
-        let mut req = dav(&server, m, path).header("Destination", server.url("/dav/moved.txt"));
-        if m == "PUT" || m == "PROPPATCH" {
-            req = req.body("x");
-        }
-        let res = req.send().await.unwrap();
-        // 207 は、フォルダを消すときに中身が一つずつ拒否されたという意味（中身は残る）
-        assert!(
-            matches!(res.status().as_u16(), 403 | 405 | 207),
-            "{m} {path} -> {}",
-            res.status()
-        );
-    }
-
+    // 中身の差し替え（同じ名前）と、新しい添付（直接作る）
+    let res = dav(&server, "PUT", "/dav/attachments/keep.txt")
+        .body("changed")
+        .send()
+        .await
+        .unwrap();
+    assert!(res.status().is_success(), "{}", res.status());
+    let res = dav(&server, "PUT", "/dav/attachments/new.txt")
+        .body("fresh")
+        .send()
+        .await
+        .unwrap();
+    assert!(res.status().is_success(), "{}", res.status());
     let res = dav(&server, "GET", "/dav/attachments/keep.txt")
         .send()
         .await
         .unwrap();
-    assert_eq!(res.bytes().await.unwrap().as_ref(), b"keep");
+    assert_eq!(res.text().await.unwrap(), "changed");
+
+    // 名前の変更（attachments の中だけ）
+    let res = dav(&server, "MOVE", "/dav/attachments/new.txt")
+        .header("Destination", server.url("/dav/attachments/renamed.txt"))
+        .send()
+        .await
+        .unwrap();
+    assert!(res.status().is_success(), "MOVE {}", res.status());
+    assert_eq!(
+        dav(&server, "GET", "/dav/attachments/new.txt")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+
+    // 予約のフォルダそのもの・フォルダの作成・PROPPATCH は拒否
+    for (m, path) in [
+        ("MKCOL", "/dav/attachments/newdir"),
+        ("DELETE", "/dav/attachments"),
+        ("DELETE", "/dav/attachments/"),
+        ("DELETE", "/dav"),
+        ("PROPPATCH", "/dav/attachments/keep.txt"),
+    ] {
+        let mut req = dav(&server, m, path);
+        if m == "PUT" || m == "PROPPATCH" {
+            req = req.body("x");
+        }
+        let res = req.send().await.unwrap();
+        assert!(
+            matches!(res.status().as_u16(), 403 | 405),
+            "{m} {path} -> {}",
+            res.status()
+        );
+    }
+    // 添付のフォルダを消そうとして、中身も消えていないこと
     let res = dav(&server, "PROPFIND", "/dav/attachments/")
         .header("Depth", "1")
         .send()
@@ -149,11 +175,26 @@ async fn writes_into_attachments_are_refused_and_nothing_changes() {
         .unwrap();
     let body = res.text().await.unwrap();
     assert!(
-        body.contains("keep.txt") && !body.contains("new.txt"),
+        body.contains("keep.txt") && body.contains("renamed.txt"),
         "{body}"
     );
-}
 
+    // 共有フォルダへは移動できない（コピーだけ）
+    let res = dav(&server, "MOVE", "/dav/attachments/renamed.txt")
+        .header("Destination", server.url("/dav/moved.txt"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403, "MOVE 先が共有フォルダ");
+    assert_eq!(
+        dav(&server, "GET", "/dav/attachments/renamed.txt")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+}
 #[tokio::test]
 async fn paths_outside_the_listing_are_not_found() {
     let server = TestServer::start().await;

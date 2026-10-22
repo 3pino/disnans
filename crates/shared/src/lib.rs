@@ -33,7 +33,7 @@ pub enum SharedKind {
 }
 
 /// 共有フォルダの 1 つの項目（`/api/shared`）。`path` は共有フォルダからの相対（`docs/a.txt`）。
-/// `attachments/` の中の項目（投稿された添付）には `message_id` と `mime` が入る（読み取り専用）。
+/// `attachments/` の中の項目（添付）には `file_id` と `mime` が入る。投稿されたものは `message_id` も入る。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct SharedEntry {
@@ -46,8 +46,10 @@ pub struct SharedEntry {
     pub modified: i64,
     /// 添付の種類（添付のときだけ）。
     pub mime: Option<String>,
-    /// 添付のメッセージ（添付のときだけ）。
+    /// 添付のメッセージ（投稿された添付だけ）。
     pub message_id: Option<String>,
+    /// 添付の ID（`attachments/` の項目だけ。`disnans:file/<ID>` で参照する）。
+    pub file_id: Option<String>,
 }
 
 /// フォルダの中身（`GET /api/shared/...` がフォルダのとき）。
@@ -95,6 +97,9 @@ pub struct Attachment {
     pub height: Option<u32>,
     /// サムネイル（`/api/files/{id}/thumb`）があるか。
     pub has_thumb: bool,
+    /// 削除された添付（`attachments/` から消された。本体はない。`file_name` は消される直前の別名）。
+    #[serde(default)]
+    pub deleted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

@@ -3,7 +3,7 @@
 use axum::Json;
 use axum::body::Body;
 use axum::extract::{Multipart, Path, Request, State};
-use axum::http::{HeaderValue, header};
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
 use disnans_shared::Attachment;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
@@ -11,10 +11,11 @@ use tokio::io::AsyncWriteExt;
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
+use crate::attachments::{self, Naming};
 use crate::auth::CurrentUser;
 use crate::db;
 use crate::error::{AppError, AppResult};
-use crate::files::{self, Stored};
+use crate::files;
 use crate::state::SharedState;
 use crate::store::files::{self as file_store, FileRow};
 
@@ -35,9 +36,10 @@ pub async fn upload(
             .unwrap_or("application/octet-stream")
             .to_owned();
 
-        let ulid = db::new_ulid();
-        let id = ulid.to_string();
-        let tmp = state.config.tmp_dir().join(&id);
+        let tmp = state
+            .config
+            .tmp_dir()
+            .join(format!("{}.upload", db::new_ulid()));
 
         // 一時ファイルに書く。失敗したら消す
         let written = async {
@@ -54,35 +56,17 @@ pub async fn upload(
             return Err(err);
         }
 
-        let dest = files::file_path(&state.config, &id);
-        let thumb = files::thumb_path(&state.config, &id);
-        let tmp_for_task = tmp.clone();
-        let max_edge = state.config.image_max_edge;
-        let stored: Stored = tokio::task::spawn_blocking(move || {
-            files::store_upload(&tmp_for_task, &dest, &thumb, file_name, mime, max_edge)
-        })
-        .await
-        .map_err(AppError::internal)?
-        .inspect_err(|_| {
-            let _ = std::fs::remove_file(&tmp);
-        })?;
-
-        let row = FileRow {
-            id,
-            uploader_id: user.id,
-            message_id: None,
-            file_name: stored.file_name,
-            mime: stored.mime,
-            size: stored.size as i64,
-            width: stored.width.map(i64::from),
-            height: stored.height.map(i64::from),
-            has_thumb: stored.has_thumb,
-            created_at: ulid.timestamp_ms() as i64,
-        };
-        if let Err(err) = file_store::insert(&state.pool, &row).await {
-            files::remove_stored(&state.config, std::slice::from_ref(&row.id)).await;
-            return Err(err.into());
-        }
+        // 別名はここで 1 回だけ決める（同じ名前があれば `name (2).ext`…）
+        let row = attachments::create(
+            &state,
+            &user.id,
+            tmp,
+            &file_name,
+            mime,
+            Naming::Unique,
+            false,
+        )
+        .await?;
         tracing::info!(id = %row.id, mime = %row.mime, size = row.size, "ファイルを保存しました");
         return Ok(Json(row.into()));
     }
@@ -119,9 +103,17 @@ pub async fn thumb(
 }
 
 async fn find(state: &SharedState, id: &str) -> AppResult<FileRow> {
-    file_store::get(&state.pool, id)
+    let row = file_store::get(&state.pool, id)
         .await?
-        .ok_or_else(|| AppError::not_found("ファイルが見つかりません"))
+        .ok_or_else(|| AppError::not_found("ファイルが見つかりません"))?;
+    if row.deleted_at.is_some() {
+        return Err(AppError::new(
+            StatusCode::GONE,
+            "deleted",
+            "削除されたファイルです",
+        ));
+    }
+    Ok(row)
 }
 
 pub(crate) async fn serve(

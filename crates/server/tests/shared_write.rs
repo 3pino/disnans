@@ -139,25 +139,22 @@ async fn move_and_copy_work_inside_the_shared_folder() {
 }
 
 #[tokio::test]
-async fn the_attachments_folder_is_reserved_and_read_only() {
+async fn the_attachments_folder_is_reserved_but_its_files_can_change() {
     let server = TestServer::start().await;
     send(&server, "PUT", "/dav/x.txt", "x").await;
-    // 作る・消す・動かす・コピーする（いずれも成功しない）
+    // フォルダそのもの・共有への移動は不可
     for (m, path, dest) in [
         ("MKCOL", "/dav/attachments", None),
         ("PUT", "/dav/attachments", None),
         ("DELETE", "/dav/attachments", None),
         ("MOVE", "/dav/x.txt", Some("/dav/attachments/x.txt")),
-        ("COPY", "/dav/x.txt", Some("/dav/attachments/y.txt")),
         ("MOVE", "/dav/attachments", Some("/dav/moved")),
-        ("PUT", "/dav/attachments/new.txt", None),
     ] {
         let mut req = dav(&server, m, path).body("z");
         if let Some(d) = dest {
             req = req.header("Destination", server.url(d));
         }
         let status = req.send().await.unwrap().status().as_u16();
-        // 207 は、フォルダを消すときに中身が一つずつ拒否されたという意味
         assert!(
             (400..500).contains(&status) || status == 207,
             "{m} {path} -> {status}"
@@ -168,8 +165,20 @@ async fn the_attachments_folder_is_reserved_and_read_only() {
         "予約の名前の実体は作られない"
     );
     assert_eq!(get(&server, "/dav/x.txt").await, (200, "x".into()));
-}
 
+    // 添付の中へはコピーで入る（新しい添付）
+    let res = dav(&server, "COPY", "/dav/x.txt")
+        .header("Destination", server.url("/dav/attachments/x-copy.txt"))
+        .send()
+        .await
+        .unwrap();
+    assert!(res.status().is_success(), "COPY {}", res.status());
+    assert_eq!(
+        get(&server, "/dav/attachments/x-copy.txt").await,
+        (200, "x".into())
+    );
+    assert_eq!(get(&server, "/dav/x.txt").await, (200, "x".into()));
+}
 #[tokio::test]
 async fn dangerous_names_are_refused_and_nothing_escapes_the_shared_folder() {
     let server = TestServer::start().await;

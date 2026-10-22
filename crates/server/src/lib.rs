@@ -1,5 +1,7 @@
 //! disnans のサーバー。API は `docs/API.md` を参照。
 
+pub mod attachment_names;
+pub mod attachments;
 pub mod auth;
 pub mod avatars;
 pub mod backup;
@@ -11,6 +13,7 @@ pub mod error;
 pub mod files;
 pub mod hub;
 pub mod image_proc;
+pub mod links;
 pub mod notify;
 pub mod plugins;
 pub mod presence;

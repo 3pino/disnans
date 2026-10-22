@@ -8,4 +8,8 @@ width: number | null, height: number | null,
 /**
  * サムネイル（`/api/files/{id}/thumb`）があるか。
  */
-has_thumb: boolean, };
+has_thumb: boolean, 
+/**
+ * 削除された添付（`attachments/` から消された。本体はない。`file_name` は消される直前の別名）。
+ */
+deleted: boolean, };

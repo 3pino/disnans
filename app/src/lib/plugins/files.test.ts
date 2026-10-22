@@ -17,6 +17,7 @@ const entry = (path: string, kind: 'file' | 'dir' = 'file', over: Partial<Shared
   modified: 1_700_000_000_000,
   mime: null,
   message_id: null,
+  file_id: null,
   ...over,
 });
 

@@ -148,6 +148,7 @@ mod tests {
             width: None,
             height: None,
             has_thumb: false,
+            deleted: false,
         });
         let rendered = human_messages(&[msg], &[]);
         assert!(rendered.contains("[カード: 題\\u{1B}[2J — 本文\\n2]"));

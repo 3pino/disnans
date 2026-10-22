@@ -1,21 +1,21 @@
 //! 共有フォルダのファイルシステム（WebDAV と REST `/api/shared` で共通に使う）。
 //!
 //! 場所は 2 つに分かれる:
-//! - `attachments/`（ルートの直下の名前が予約）: 投稿された添付を [`tree`] で見せる仮想フォルダ。読み取りだけ。
+//! - `attachments/`（ルートの直下の名前が予約）: 添付の一覧（DB）。中身・名前・有無を変えられる
+//!   （[`crate::attachments`] が DB とファイルをそろえる）。直下だけで、中にフォルダは作れない。
 //! - それ以外（`data/shared/` の中）: 実際のファイル。作成・上書き・移動・コピー・削除ができる。
 //!
 //! 安全のための決まり:
 //! - パスは区切りごとに [`valid_name`] を通す（`..`・区切り文字・Windows で使えない名前は拒否）。
 //! - シンボリックリンクは辿らない（途中のどの要素もリンクなら拒否）。一覧にも出さない。
-//! - 書き込みは必ず一時ファイルに書いてから rename する。上書きでも既存の実体の中身は書き換えない
-//!   （バックアップはハードリンクなので、中身を書き換えるとバックアップも変わってしまうため）。
-//! - 変更した項目ごとに `files.changed` を流す（WebDAV でも REST でも）。
+//! - 共有フォルダへの書き込みは必ず一時ファイルに書いてから rename する。上書きでも既存の実体の中身は
+//!   書き換えない（バックアップはハードリンクなので、中身を書き換えるとバックアップも変わるため）。
+//! - 変更は `files.changed` で知らせる（WebDAV でも REST でも）。
 //!
 //! 公開の関数は、パスを「区切りの列」で受け取る（WebDAV の DavPath も REST のパスも、ここで区切りにする）。
 
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::{Buf, Bytes};
@@ -26,22 +26,20 @@ use dav_server::fs::{
 };
 use disnans_shared::ServerEvent;
 use futures_util::stream;
-use sqlx::SqlitePool;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-use crate::config::Config;
-use crate::files;
-use crate::hub::Hub;
-use crate::state::AppState;
+use crate::attachments::{self, Put};
+use crate::db;
+use crate::state::SharedState;
 use crate::store::files as store_files;
 use crate::webdav::names::{TMP_PREFIX, is_internal, valid_name};
 use crate::webdav::tree::{self, ATTACHMENTS_DIR, Entry, Item};
 
+/// 共有フォルダへのアクセス。利用者（REST では本人、WebDAV では認証された本人）ごとに作る。
 #[derive(Clone)]
 pub struct SharedFs {
-    pub config: Config,
-    pub pool: SqlitePool,
-    hub: Arc<Hub>,
+    state: SharedState,
+    user_id: String,
 }
 
 /// 項目の情報（大きさ・更新時刻・種類）。
@@ -77,13 +75,6 @@ impl Meta {
         }
     }
 
-    fn of_entry(entry: &Entry<'_>) -> Self {
-        match entry {
-            Entry::Dir => Meta::dir(),
-            Entry::File(item) => Meta::of_item(item),
-        }
-    }
-
     /// 更新時刻（ミリ秒、UNIX 時間）。
     pub fn modified_ms(&self) -> i64 {
         self.modified
@@ -110,17 +101,31 @@ impl DavMetaData for Meta {
 pub struct Listed {
     pub name: String,
     pub meta: Meta,
-    /// 添付のときだけ（添付したメッセージ）。
+    /// 添付のときだけ（添付の ID）。
+    pub file_id: Option<String>,
+    /// 投稿された添付のときだけ（添付したメッセージ）。
     pub message_id: Option<String>,
     /// 添付のときだけ（種類）。
     pub mime: Option<String>,
+}
+
+impl Listed {
+    fn dir(name: &str) -> Self {
+        Listed {
+            name: name.to_owned(),
+            meta: Meta::dir(),
+            file_id: None,
+            message_id: None,
+            mime: None,
+        }
+    }
 }
 
 /// ファイルの中身を読むための場所（実際のファイル、または添付の実体）。
 #[derive(Debug, Clone)]
 pub struct ReadTarget {
     pub path: PathBuf,
-    /// 添付のときだけ（保存されている種類）。共有フォルダのファイルは拡張子で決まる。
+    /// 添付のときだけ（保存されている種類）。共有フォルダのファイルは `None`。
     pub mime: Option<String>,
 }
 
@@ -133,7 +138,7 @@ pub fn rel(segs: &[String]) -> String {
 enum Area {
     /// 共有フォルダそのもの
     Root,
-    /// `attachments/` の中（仮想。読み取りだけ）
+    /// `attachments/` の中（添付）
     Attachments(Vec<String>),
     /// 実際のファイルの場所（区切りの列。空でない）
     Shared(Vec<String>),
@@ -144,6 +149,16 @@ fn area(segs: &[String]) -> Area {
         None => Area::Root,
         Some(first) if first == ATTACHMENTS_DIR => Area::Attachments(segs.to_vec()),
         Some(_) => Area::Shared(segs.to_vec()),
+    }
+}
+
+/// 添付の名前（`attachments/<名前>` の形だけ。フォルダの中のフォルダは無い）。
+fn attachment_name(segs: &[String]) -> Option<&str> {
+    match segs {
+        [root, name] if root == ATTACHMENTS_DIR && valid_name(name) && !is_internal(name) => {
+            Some(name)
+        }
+        _ => None,
     }
 }
 
@@ -169,29 +184,56 @@ pub fn io_err(e: &std::io::Error) -> FsError {
     }
 }
 
-/// 仮想フォルダの中身を、データベースの一覧から引く。
-fn virtual_entry<'a>(items: &'a [Item], segs: &[String]) -> Option<Entry<'a>> {
-    let refs: Vec<&str> = segs.iter().map(String::as_str).collect();
-    tree::find(items, &refs)
+/// アプリのエラーを dav-server のエラーに変える（添付の操作）。
+fn app_err(e: crate::error::AppError) -> FsError {
+    match e.status.as_u16() {
+        404 => FsError::NotFound,
+        409 => FsError::Exists,
+        403 => FsError::Forbidden,
+        _ => FsError::GeneralFailure,
+    }
+}
+
+/// 拡張子から種類を決める（WebDAV で作ったファイル用。分からなければ octet-stream）。
+pub fn guess_mime(name: &str) -> String {
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    let mime = match ext.as_str() {
+        "txt" | "log" | "md" => "text/plain",
+        "csv" => "text/csv",
+        "json" => "application/json",
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "mp4" => "video/mp4",
+        "mp3" => "audio/mpeg",
+        "zip" => "application/zip",
+        _ => "application/octet-stream",
+    };
+    mime.to_owned()
 }
 
 impl SharedFs {
-    pub fn new(state: &AppState) -> Self {
+    pub fn new(state: &SharedState, user_id: &str) -> Self {
         SharedFs {
-            config: state.config.clone(),
-            pool: state.pool.clone(),
-            hub: state.hub.clone(),
+            state: state.clone(),
+            user_id: user_id.to_owned(),
         }
     }
 
     async fn items(&self) -> FsResult<Vec<Item>> {
-        store_files::posted_items(&self.pool)
+        store_files::attachment_items(&self.state.pool)
             .await
             .map_err(|_| FsError::GeneralFailure)
     }
 
     fn notify(&self, segs: &[String]) {
-        self.hub
+        self.state
+            .hub
             .broadcast(&ServerEvent::FilesChanged { path: rel(segs) });
     }
 
@@ -203,7 +245,7 @@ impl SharedFs {
         } else {
             FsError::NotFound
         };
-        let mut p = self.config.shared_dir();
+        let mut p = self.state.config.shared_dir();
         for s in segs {
             if !valid_name(s) {
                 return Err(refuse);
@@ -266,6 +308,7 @@ impl SharedFs {
             out.push(Listed {
                 name,
                 meta: Meta::of_std(&m),
+                file_id: None,
                 message_id: None,
                 mime: None,
             });
@@ -273,18 +316,22 @@ impl SharedFs {
         Ok(out)
     }
 
+    /// 添付の 1 つを、一覧（DB）から引く。
+    async fn attachment(&self, name: &str) -> FsResult<Option<Item>> {
+        Ok(self
+            .items()
+            .await?
+            .into_iter()
+            .find(|i| i.name.to_lowercase() == name.to_lowercase()))
+    }
+
     /// 項目の一覧（フォルダの中身）。フォルダでなければ NotFound。
     pub async fn list(&self, segs: &[String]) -> FsResult<Vec<Listed>> {
         match area(segs) {
             Area::Root => {
-                let mut out = vec![Listed {
-                    name: ATTACHMENTS_DIR.into(),
-                    meta: Meta::dir(),
-                    message_id: None,
-                    mime: None,
-                }];
+                let mut out = vec![Listed::dir(ATTACHMENTS_DIR)];
                 // 直下の実際の名前のうち、予約の `attachments` は見せない
-                for e in self.shared_entries(&self.config.shared_dir())? {
+                for e in self.shared_entries(&self.state.config.shared_dir())? {
                     if e.name != ATTACHMENTS_DIR {
                         out.push(e);
                     }
@@ -298,15 +345,19 @@ impl SharedFs {
                 Ok(children
                     .into_iter()
                     .map(|c| {
-                        let (message_id, mime) = match &c.entry {
-                            Entry::File(item) => {
-                                (Some(item.message_id.clone()), Some(item.mime.clone()))
-                            }
-                            Entry::Dir => (None, None),
+                        let (file_id, message_id, mime, meta) = match &c.entry {
+                            Entry::File(item) => (
+                                Some(item.file_id.clone()),
+                                item.message_id.clone(),
+                                Some(item.mime.clone()),
+                                Meta::of_item(item),
+                            ),
+                            Entry::Dir => (None, None, None, Meta::dir()),
                         };
                         Listed {
                             name: c.name,
-                            meta: Meta::of_entry(&c.entry),
+                            meta,
+                            file_id,
                             message_id,
                             mime,
                         }
@@ -327,12 +378,7 @@ impl SharedFs {
     /// 1 つの項目の情報。区切りが空なら共有フォルダそのもの。
     pub async fn stat(&self, segs: &[String]) -> FsResult<Listed> {
         let Some((name, parent)) = segs.split_last() else {
-            return Ok(Listed {
-                name: String::new(),
-                meta: Meta::dir(),
-                message_id: None,
-                mime: None,
-            });
+            return Ok(Listed::dir(""));
         };
         // 親の一覧から探す（添付の情報も一覧のほうが揃っている）
         self.list(parent)
@@ -347,15 +393,12 @@ impl SharedFs {
         match area(segs) {
             Area::Root => Err(FsError::Forbidden),
             Area::Attachments(segs) => {
-                let items = self.items().await?;
-                match virtual_entry(&items, &segs) {
-                    Some(Entry::File(item)) => Ok(ReadTarget {
-                        path: files::file_path(&self.config, &item.file_id),
-                        mime: Some(item.mime.clone()),
-                    }),
-                    Some(Entry::Dir) => Err(FsError::Forbidden),
-                    None => Err(FsError::NotFound),
-                }
+                let name = attachment_name(&segs).ok_or(FsError::NotFound)?;
+                let item = self.attachment(name).await?.ok_or(FsError::NotFound)?;
+                Ok(ReadTarget {
+                    path: crate::files::file_path(&self.state.config, &item.file_id),
+                    mime: Some(item.mime),
+                })
             }
             Area::Shared(segs) => {
                 let p = self.real_path(&segs, false)?;
@@ -371,10 +414,9 @@ impl SharedFs {
         }
     }
 
-    /// フォルダを作る（既にあれば Exists）。
+    /// フォルダを作る（既にあれば Exists）。`attachments` の中には作れない。
     pub async fn make_dir(&self, segs: &[String]) -> FsResult<()> {
         match area(segs) {
-            // `attachments` の中も、その名前そのものも作れない
             Area::Root | Area::Attachments(_) => Err(FsError::Forbidden),
             Area::Shared(segs) => {
                 let (target, _parent) = self.new_target(&segs)?;
@@ -385,17 +427,72 @@ impl SharedFs {
         }
     }
 
-    /// 共有フォルダのファイルへの書き込み（作成・上書き）。`options` は PUT の形。
-    /// 戻り値に書き込み、最後に `flush` すると本来の名前になり、`files.changed` が流れる。
+    /// 書き込み（作成・上書き）。`options` は PUT の形。
+    /// 戻り値に書き込み、最後に `flush` すると本来の場所に入り、`files.changed` が流れる。
+    /// `attachments/<名前>` は、同じ名前があれば中身を差し替え、なければ新しい添付にする。
     pub async fn write_file(
         &self,
         segs: &[String],
         options: OpenOptions,
     ) -> FsResult<Box<dyn DavFile>> {
-        let Area::Shared(segs) = area(segs) else {
-            return Err(FsError::Forbidden);
-        };
-        let (target, parent) = self.writable_target(&segs)?;
+        match area(segs) {
+            Area::Shared(segs) => self.write_shared(&segs, options).await,
+            Area::Attachments(segs) => {
+                let name = attachment_name(&segs).ok_or(FsError::Forbidden)?.to_owned();
+                let existing = self.attachment(&name).await?;
+                if options.create_new && existing.is_some() {
+                    return Err(FsError::Exists);
+                }
+                let tmp = self
+                    .state
+                    .config
+                    .tmp_dir()
+                    .join(format!("{}.upload", db::new_ulid()));
+                // 一部だけ書き換える PUT（Content-Range など）は、今の中身を写してから
+                let keep = existing.as_ref().filter(|_| !options.truncate);
+                let prepared = match keep {
+                    Some(item) => {
+                        let src = crate::files::file_path(&self.state.config, &item.file_id);
+                        tokio::fs::copy(&src, &tmp).await.map(|_| ())
+                    }
+                    None => tokio::fs::File::create(&tmp).await.map(|_| ()),
+                };
+                prepared.map_err(|e| {
+                    let _ = std::fs::remove_file(&tmp);
+                    io_err(&e)
+                })?;
+                let file = tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&tmp)
+                    .await
+                    .map_err(|e| {
+                        let _ = std::fs::remove_file(&tmp);
+                        io_err(&e)
+                    })?;
+                let mode = if options.create_new {
+                    Put::CreateOnly
+                } else {
+                    Put::Overwrite
+                };
+                Ok(Box::new(WriteFile {
+                    file,
+                    tmp,
+                    dest: Dest::Attachment { name, mode },
+                    committed: false,
+                    state: self.state.clone(),
+                    user_id: self.user_id.clone(),
+                }) as Box<dyn DavFile>)
+            }
+            Area::Root => Err(FsError::Forbidden),
+        }
+    }
+
+    async fn write_shared(
+        &self,
+        segs: &[String],
+        options: OpenOptions,
+    ) -> FsResult<Box<dyn DavFile>> {
+        let (target, parent) = self.writable_target(segs)?;
         let exists = match std::fs::symlink_metadata(&target) {
             Ok(_) => true,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
@@ -428,68 +525,113 @@ impl SharedFs {
         Ok(Box::new(WriteFile {
             file,
             tmp,
-            target,
+            dest: Dest::Shared {
+                target,
+                path: rel(segs),
+            },
             committed: false,
-            notify: Some((self.hub.clone(), segs)),
+            state: self.state.clone(),
+            user_id: self.user_id.clone(),
         }) as Box<dyn DavFile>)
     }
 
     /// 削除。フォルダは `recursive` のときだけ中身ごと消す（そうでなければ空のときだけ）。
+    /// `attachments/<名前>` は添付を消す（投稿されていれば「削除された」になる）。
     pub async fn remove(&self, segs: &[String], recursive: bool) -> FsResult<()> {
-        let segs = match area(segs) {
-            Area::Root | Area::Attachments(_) => return Err(FsError::Forbidden),
-            Area::Shared(segs) => segs,
-        };
-        let p = self.real_path(&segs, true)?;
-        let m = std::fs::symlink_metadata(&p).map_err(|e| io_err(&e))?;
-        if m.is_dir() {
-            if recursive {
-                remove_tree(&p)?;
-            } else {
-                std::fs::remove_dir(&p).map_err(|e| io_err(&e))?;
+        match area(segs) {
+            Area::Root => Err(FsError::Forbidden),
+            Area::Attachments(segs) => {
+                let name = attachment_name(&segs).ok_or(FsError::Forbidden)?;
+                let item = self.attachment(name).await?.ok_or(FsError::NotFound)?;
+                attachments::remove(&self.state, &item.file_id)
+                    .await
+                    .map_err(app_err)
             }
-        } else {
-            std::fs::remove_file(&p).map_err(|e| io_err(&e))?;
+            Area::Shared(segs) => {
+                let p = self.real_path(&segs, true)?;
+                let m = std::fs::symlink_metadata(&p).map_err(|e| io_err(&e))?;
+                if m.is_dir() {
+                    if recursive {
+                        remove_tree(&p)?;
+                    } else {
+                        std::fs::remove_dir(&p).map_err(|e| io_err(&e))?;
+                    }
+                } else {
+                    std::fs::remove_file(&p).map_err(|e| io_err(&e))?;
+                }
+                self.notify(&segs);
+                Ok(())
+            }
         }
-        self.notify(&segs);
-        Ok(())
     }
 
-    /// 移動（名前の変更も）。両方とも共有フォルダの中。添付は動かせない。
-    /// `overwrite` が false で同名のファイルがあれば `Exists`（true なら差し替える）。フォルダへは常に上書きしない。
+    /// 移動（名前の変更も）。`attachments/` の中どうし（別名だけ変わる）か、共有フォルダの中どうし。
+    /// `attachments/` と共有フォルダの間は動かせない（コピーする）。
+    /// `overwrite` が false で同名のものがあれば `Exists`。
     pub async fn rename(&self, from: &[String], to: &[String], overwrite: bool) -> FsResult<()> {
-        let (Area::Shared(from), Area::Shared(to)) = (area(from), area(to)) else {
-            return Err(FsError::Forbidden);
-        };
-        let src = self.real_path(&from, true)?;
-        let (dst, _parent) = self.writable_target(&to)?;
-        check_destination(&dst, overwrite)?;
-        std::fs::rename(&src, &dst).map_err(|e| io_err(&e))?;
-        self.notify(&from);
-        self.notify(&to);
-        Ok(())
+        match (area(from), area(to)) {
+            (Area::Attachments(from), Area::Attachments(to)) => {
+                let from_name = attachment_name(&from).ok_or(FsError::Forbidden)?;
+                let to_name = attachment_name(&to).ok_or(FsError::Forbidden)?;
+                let item = self.attachment(from_name).await?.ok_or(FsError::NotFound)?;
+                attachments::rename(&self.state, &item.file_id, to_name, overwrite)
+                    .await
+                    .map_err(app_err)
+            }
+            (Area::Shared(from), Area::Shared(to)) => {
+                let src = self.real_path(&from, true)?;
+                let (dst, _parent) = self.writable_target(&to)?;
+                check_destination(&dst, overwrite)?;
+                std::fs::rename(&src, &dst).map_err(|e| io_err(&e))?;
+                self.notify(&from);
+                self.notify(&to);
+                Ok(())
+            }
+            // 共有フォルダと添付の間は、コピーしてから消す
+            _ => Err(FsError::Forbidden),
+        }
     }
 
-    /// コピー（ファイルだけ）。元は共有フォルダのファイル、または添付。`overwrite` の決まりは `rename` と同じ。
+    /// コピー。元は共有フォルダのファイル、または添付。先は共有フォルダ、または `attachments/` の中（新しい添付）。
+    /// `overwrite` の決まりは `rename` と同じ（添付の中身を差し替える形になる）。
     pub async fn copy(&self, from: &[String], to: &[String], overwrite: bool) -> FsResult<()> {
-        let Area::Shared(to) = area(to) else {
-            return Err(FsError::Forbidden);
-        };
-        let src = self.read_target(from).await?.path;
-        let (dst, parent) = self.writable_target(&to)?;
-        check_destination(&dst, overwrite)?;
-        let tmp = parent.join(format!("{TMP_PREFIX}{}", ulid::Ulid::new()));
-        if let Err(e) = tokio::fs::copy(&src, &tmp).await {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(io_err(&e));
+        match area(to) {
+            Area::Shared(to) => {
+                let src = self.read_target(from).await?.path;
+                let (dst, parent) = self.writable_target(&to)?;
+                check_destination(&dst, overwrite)?;
+                let tmp = parent.join(format!("{TMP_PREFIX}{}", ulid::Ulid::new()));
+                if let Err(e) = tokio::fs::copy(&src, &tmp).await {
+                    let _ = std::fs::remove_file(&tmp);
+                    return Err(io_err(&e));
+                }
+                // 一時ファイルを作ってから名前を差し替える
+                tokio::fs::rename(&tmp, &dst).await.map_err(|e| {
+                    let _ = std::fs::remove_file(&tmp);
+                    io_err(&e)
+                })?;
+                self.notify(&to);
+                Ok(())
+            }
+            Area::Attachments(to) => {
+                let name = attachment_name(&to).ok_or(FsError::Forbidden)?.to_owned();
+                let target = self.read_target(from).await?;
+                let mime = match target.mime {
+                    Some(m) => m,
+                    None => guess_mime(&name),
+                };
+                let mode = if overwrite {
+                    Put::Overwrite
+                } else {
+                    Put::CreateOnly
+                };
+                attachments::copy_in(&self.state, &self.user_id, &target.path, &name, mime, mode)
+                    .await
+                    .map_err(app_err)?;
+                Ok(())
+            }
+            Area::Root => Err(FsError::Forbidden),
         }
-        // 同じく、一時ファイルを作ってから名前を差し替える
-        tokio::fs::rename(&tmp, &dst).await.map_err(|e| {
-            let _ = std::fs::remove_file(&tmp);
-            io_err(&e)
-        })?;
-        self.notify(&to);
-        Ok(())
     }
 }
 
@@ -573,22 +715,31 @@ impl DavFile for ReadFile {
     }
 }
 
-/// 書き込み中のファイル。一時ファイルに書き、`flush`（書き終わり）で本来の名前に rename する。
+/// 書き込みの行き先。
+#[derive(Debug)]
+enum Dest {
+    /// 共有フォルダのファイル（`target` に rename する。`path` は通知の相対パス）。
+    Shared { target: PathBuf, path: String },
+    /// 添付（別名 `name`。`mode` の決まりで作る・差し替える）。
+    Attachment { name: String, mode: Put },
+}
+
+/// 書き込み中のファイル。一時ファイルに書き、`flush`（書き終わり）で行き先に入れる。
 /// 途中で終わったら（コミットされなかったら）一時ファイルを消す。
 struct WriteFile {
     file: tokio::fs::File,
     tmp: PathBuf,
-    target: PathBuf,
+    dest: Dest,
     committed: bool,
-    /// コミットしたときに流す通知の宛先と、共有フォルダからの区切り。
-    notify: Option<(Arc<Hub>, Vec<String>)>,
+    state: SharedState,
+    user_id: String,
 }
 
 impl std::fmt::Debug for WriteFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WriteFile")
             .field("tmp", &self.tmp)
-            .field("target", &self.target)
+            .field("dest", &self.dest)
             .field("committed", &self.committed)
             .finish()
     }
@@ -643,11 +794,24 @@ impl DavFile for WriteFile {
             }
             self.file.flush().await.map_err(|e| io_err(&e))?;
             self.file.sync_all().await.map_err(|e| io_err(&e))?;
-            // 上書きでも、古い実体は触らず名前だけを差し替える（バックアップのハードリンクを守る）
-            std::fs::rename(&self.tmp, &self.target).map_err(|e| io_err(&e))?;
-            self.committed = true;
-            if let Some((hub, segs)) = &self.notify {
-                hub.broadcast(&ServerEvent::FilesChanged { path: rel(segs) });
+            match &self.dest {
+                Dest::Shared { target, path } => {
+                    // 上書きでも、古い実体は触らず名前だけを差し替える（バックアップのハードリンクを守る）
+                    std::fs::rename(&self.tmp, target).map_err(|e| io_err(&e))?;
+                    self.committed = true;
+                    self.state
+                        .hub
+                        .broadcast(&ServerEvent::FilesChanged { path: path.clone() });
+                }
+                Dest::Attachment { name, mode } => {
+                    // 変換して、中身を差し替える or 新しい添付にする（一時ファイルは消費される）
+                    let mime = guess_mime(name);
+                    let tmp = self.tmp.clone();
+                    attachments::put(&self.state, &self.user_id, tmp, name, mime, *mode)
+                        .await
+                        .map_err(app_err)?;
+                    self.committed = true;
+                }
             }
             Ok(())
         })
@@ -768,16 +932,30 @@ mod tests {
             area(&["attachments".into()]),
             Area::Attachments(_)
         ));
-        assert!(matches!(
-            area(&["attachments".into(), "a".into()]),
-            Area::Attachments(_)
-        ));
         assert!(matches!(area(&["docs".into()]), Area::Shared(_)));
+    }
+
+    #[test]
+    fn attachments_hold_only_one_level_of_plain_names() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            attachment_name(&s(&["attachments", "a.txt"])),
+            Some("a.txt")
+        );
+        assert_eq!(attachment_name(&s(&["attachments", "a", "b"])), None);
+        assert_eq!(attachment_name(&s(&["attachments", "CON"])), None);
+        assert_eq!(attachment_name(&s(&["attachments", ".disnans-x"])), None);
     }
 
     #[test]
     fn change_paths_are_relative_and_slash_separated() {
         assert_eq!(rel(&["docs".into(), "a.txt".into()]), "docs/a.txt");
         assert_eq!(rel(&[]), "");
+    }
+
+    #[test]
+    fn mime_is_guessed_from_the_extension() {
+        assert_eq!(guess_mime("a.PNG"), "image/png");
+        assert_eq!(guess_mime("noext"), "application/octet-stream");
     }
 }

@@ -212,7 +212,7 @@ async fn overwrite_move_copy_and_recursive_delete() {
 }
 
 #[tokio::test]
-async fn attachments_are_listed_read_and_copied_but_never_changed() {
+async fn attachments_can_be_listed_read_written_renamed_and_copied() {
     let server = TestServer::start().await;
     let a = post_attachment(&server, "report.txt", "text/plain", b"hello").await;
 
@@ -222,9 +222,13 @@ async fn attachments_are_listed_read_and_copied_but_never_changed() {
     assert_eq!(e.name, "report.txt");
     assert_eq!(e.path, "attachments/report.txt");
     assert_eq!(e.mime.as_deref(), Some("text/plain"));
-    assert!(e.message_id.is_some(), "添付はメッセージの ID を持つ");
+    assert_eq!(e.file_id.as_deref(), Some(a.id.as_str()));
+    assert!(
+        e.message_id.is_some(),
+        "投稿された添付はメッセージの ID を持つ"
+    );
 
-    // 読める（保存されている種類で）
+    // 読める
     let res = req(
         &server,
         reqwest::Method::GET,
@@ -236,62 +240,61 @@ async fn attachments_are_listed_read_and_copied_but_never_changed() {
     assert_eq!(res.status(), 200);
     assert_eq!(res.bytes().await.unwrap().as_ref(), b"hello");
 
-    // 変えられない（403）
+    // 中身を差し替えると、同じ ID のまま中身が変わる
+    let res = put(&server, "/api/shared/attachments/report.txt", "changed").await;
+    assert_eq!(res.status(), 200);
+    let entry: SharedEntry = res.json().await.unwrap();
+    assert_eq!(entry.file_id.as_deref(), Some(a.id.as_str()));
+    assert_eq!(
+        read(&server, "/api/shared/attachments/report.txt").await,
+        "changed"
+    );
+
+    // 名前を変える（attachments の中だけ）
+    let res = op(
+        &server,
+        json!({"op": "move", "from": "attachments/report.txt", "to": "attachments/final.txt"}),
+    )
+    .await;
+    assert_eq!(res.status(), 200);
+    assert_eq!(
+        read(&server, "/api/shared/attachments/final.txt").await,
+        "changed"
+    );
+    // 共有フォルダへは移動できない（コピーだけ）
+    let res = op(
+        &server,
+        json!({"op": "move", "from": "attachments/final.txt", "to": "moved.txt"}),
+    )
+    .await;
+    assert_eq!(res.status(), 403);
+    // フォルダは作れない・消せない
     for res in [
-        put(&server, "/api/shared/attachments/new.txt", "x").await,
-        req(
-            &server,
-            reqwest::Method::DELETE,
-            "/api/shared/attachments/report.txt",
-        )
-        .send()
-        .await
-        .unwrap(),
-        req(&server, reqwest::Method::DELETE, "/api/shared/attachments")
-            .send()
-            .await
-            .unwrap(),
         op(&server, json!({"op": "mkdir", "path": "attachments/x"})).await,
-        op(
-            &server,
-            json!({"op": "move", "from": "attachments/report.txt", "to": "moved.txt"}),
-        )
-        .await,
         op(&server, json!({"op": "mkdir", "path": "attachments"})).await,
     ] {
         assert_eq!(res.status(), 403, "{}", res.status());
     }
     assert_eq!(
-        listing(&server, "/api/shared/attachments")
+        req(&server, reqwest::Method::DELETE, "/api/shared/attachments")
+            .send()
             .await
-            .entries
-            .len(),
-        1
+            .unwrap()
+            .status(),
+        403
     );
 
     // 添付から共有フォルダへはコピーできる
     let res = op(
         &server,
-        json!({"op": "copy", "from": "attachments/report.txt", "to": "copy.txt"}),
+        json!({"op": "copy", "from": "attachments/final.txt", "to": "copy.txt"}),
     )
     .await;
     assert_eq!(res.status(), 200);
     let copied: SharedEntry = res.json().await.unwrap();
     assert_eq!(copied.path, "copy.txt");
-    assert_eq!(
-        req(&server, reqwest::Method::GET, "/api/shared/copy.txt")
-            .send()
-            .await
-            .unwrap()
-            .bytes()
-            .await
-            .unwrap()
-            .as_ref(),
-        b"hello"
-    );
-    let _ = a;
+    assert_eq!(read(&server, "/api/shared/copy.txt").await, "changed");
 }
-
 #[tokio::test]
 async fn names_and_paths_are_checked() {
     let server = TestServer::start().await;

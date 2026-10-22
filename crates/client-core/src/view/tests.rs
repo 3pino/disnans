@@ -295,6 +295,7 @@ fn attachments_report_kind_and_a_thumb_only_when_it_is_safe_and_sized() {
         width: w,
         height: h,
         has_thumb: thumb,
+        deleted: false,
     };
     let mut m = msg("m1", "bob", "", T0);
     m.attachments = vec![

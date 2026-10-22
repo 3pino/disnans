@@ -39,13 +39,13 @@
 | GET | `/api/avatars/{id}` | 自分で設定したアバターの画像（WebP） | バイナリ |
 | GET | `/api/messages?before=&limit=` | メッセージ履歴 | `Message[]` |
 | POST | `/api/files` | ファイルのアップロード（multipart、フィールド名 `file`） | `Attachment` |
-| GET | `/api/files/{id}` | ファイル本体 | バイナリ |
+| GET | `/api/files/{id}` | ファイル本体（削除された添付は `410`、code `deleted`） | バイナリ |
 | GET | `/api/files/{id}/thumb` | サムネイル（WebP） | バイナリ |
 | GET | `/api/shared` | 共有フォルダの直下の一覧 | `SharedListing` |
 | GET | `/api/shared/{パス}` | フォルダなら一覧、ファイルなら中身（`Range` 可、ファイルの種類は拡張子で決まる） | `SharedListing` / バイナリ |
 | PUT | `/api/shared/{パス}` | 本文をそのパスのファイルにする（作成・上書き。本文は任意の大きさ）。親のフォルダがなければ `409 parent_missing` | `SharedEntry` |
 | DELETE | `/api/shared/{パス}` | 削除（フォルダは中身ごと） | `204` |
-| POST | `/api/shared` | フォルダの作成・移動・コピー（body: `SharedOp` = `{ op: "mkdir", path }` / `{ op: "move", from, to }` / `{ op: "copy", from, to }`）。結果の項目を返す | `SharedEntry` |
+| POST | `/api/shared` | フォルダの作成・移動・コピー（body: `SharedOp` = `{ op: "mkdir", path }` / `{ op: "move", from, to, overwrite? }` / `{ op: "copy", from, to, overwrite? }`。`overwrite` は省略で `false`）。結果の項目を返す | `SharedEntry` |
 | POST | `/api/notify/sample` | 自分にサンプルの `notify` を送る（通知の動作確認用）。送り先は、リクエストと同じ IP アドレス（デバイス）からの接続だけ | `204` |
 | GET | `/api/plugins` | 自分に見えるプラグイン・テーマの一覧（みんなのものと自分だけのもの。ID 順） | `PluginInfo[]` |
 | POST | `/api/plugins` | プラグイン・テーマの配布・更新（multipart、フィールド名 `file` を複数、`visibility`） | `PluginInfo` |
@@ -107,17 +107,34 @@
 - 長辺 480px のサムネイルを作る
 - アニメーション GIF / WebP は変換せずそのまま保存する
 - 投稿されていないファイルは、一定時間（24時間）後に削除してよい
+- 添付の別名（`attachments/` での名前、`Attachment.file_name`）は、アップロードの時に 1 回だけ決まる。同じ名前（大文字小文字を区別しない）が生きている添付にあれば `name (2).ext`、`name (3).ext`…。後から自動では変わらない。別名は生きている添付の中で一意
+- 本文のリンク（設計は `docs/PLAN_FILES.md` の 3b 節）: 書き方は `[別名](attachments/名前)`・`[[attachments/名前|別名]]`（別名は省略可で `[[attachments/名前]]`）。先頭に `!` を付けた `![別名](パス)`・`![[パス]]` は埋め込み。パスは共有フォルダの中のパス。
+  - サーバーが見るのはパスの位置だけ（`](` の後、対にならない `)` まで。`[[` の後、`|` か `]]` まで）。`attachments/` で始まるものだけを対象にし、そのほかのパスは文字のまま
+  - 送信・編集の本文では、パスを添付の ID（`disnans:file/<ID>`）に置き換えて保存する。見つからない・削除済み・書けない名前（`|` `]` や改行を含む、区切りを含む、括弧が対にならない）は `400 invalid_link`。リンクできるのは投稿された添付か、`attachments/` の中の添付だけ（投稿前のアップロードは不可）
+  - 取得・ブロードキャスト・編集の応答の本文では、ID を今の名前に戻す（`attachments/<今の名前>`）。削除された添付は消される直前の名前。改名しても本文のリンクは切れない
+  - 本文の `disnans:file/<ID>` を直接書いても有効（表示は今の名前）
+  - 検索は保存された本文（ID の形）に対して行うので、ファイル名では見つからない
+- 本文の添付の参照は `disnans:file/<ID>`。取得は `GET /api/files/{id}`（メッセージへの所属は見ない）
+- 削除された添付: `attachments/` から消されると、投稿されていた添付は本体が消え、メッセージの `Attachment` に `deleted: true` が付く（`file_name` は消される直前の別名。`size` などは残る）。`GET /api/files/{id}` は `410`（code `deleted`）
+- 投稿されていない直接の添付（`attachments/` の中に作ったもの）は、消されるまで残る（24時間の掃除の対象外）。だれでもメッセージに付けられる
 
 ### 共有フォルダ（`/api/shared`）
 
 WebDAV（`/dav/`）と同じ中身・同じ規則。全員で共有する 1 つのフォルダ（`data/shared/`）。
 
 - パスは共有フォルダからの相対（`docs/a.txt`）。区切りごとに名前を検査する: `..`・区切り文字・Windows で使えない文字（`: * ? " < > |`）・予約名（CON・NUL・COM1 など）・末尾の `.` や空白・`.disnans-` で始まる名前は拒否（`403`）
-- 直下の `attachments/` は読み取り専用の仮想フォルダ（投稿された添付が並ぶ。`message_id` と `mime` が入る）。ここへの作成・上書き・削除・移動は `403`。添付からのコピーは可
+- 直下の `attachments/` は添付の一覧（投稿された添付と、直接作った添付が並ぶ。`file_id` と `mime` が入り、投稿されたものは `message_id` も入る）。
+  - `attachments/<名前>` への PUT は、同じ名前があればその添付（同じ ID）の中身を差し替え、なければ新しい添付にする。変換（画像は WebP、サムネイル）は通常のアップロードと同じ
+  - 名前の変更（`move`、`attachments/` の中だけ）は ID と中身が同じまま。宛先が同じ名前なら `409 exists`（`overwrite: true` なら、宛先の添付を消して入れる）
+  - 削除（`DELETE`）は誰でもできる（上の「削除された添付」）
+  - `attachments/` と共有フォルダの間の移動は `403`（コピーを使う）。コピーは可（共有 → `attachments/` は新しい添付になる）
+  - フォルダの作成・フォルダの削除・`attachments` そのものの移動は `403`
+  - 同じ名前のフォルダは `attachments/` の中には作れない（中はファイルだけ）
 - 書き込みは一時ファイルに書いてから差し替える（上書きでも既存の実体は書き換えない）
 - シンボリックリンクは辿らず、一覧にも出さない
 - 変更（作成・上書き・移動・コピー・削除）は、WebDAV でも REST でも `files.changed`（`{ path }`、変わった項目の相対パス）を全員に配信する。フォルダの一覧はその親を読み直す
-- 失敗の `code`: `not_found`（404）、`forbidden`（403）、`exists`（409、同名がある）、`parent_missing`（409）、`too_large` / `insufficient_storage`
+- 失敗の `code`: `not_found`（404）、`forbidden`（403）、`exists`（409、同名がある）、`parent_missing`（409）、`too_large` / `insufficient_storage`、`deleted`（410、削除された添付）
+- WebDAV の `DELETE /dav/` と `DELETE /dav/attachments` は `403`（フォルダごと消させない）
 
 ### プラグイン・テーマ
 - ファイルは `<data_dir>/plugins/<id>/` に置く。みんなのものは誰でも配布・更新・削除できる
@@ -193,7 +210,7 @@ WebDAV（`/dav/`）と同じ中身・同じ規則。全員で共有する 1 つ�
   - 参加・退出・更新のたびに `call.state { members }` を**全員に**配る。接続した直後も、通話中なら送る
   - `call.kick { peer }` で参加者を外す（参加者だけが送れる。自分は外せない: `invalid_kick`、いない人: `peer_not_found`）。外された接続に `call.kicked { by }` を送り、一覧から外して `call.state` を配る
   - `call.emit { name, payload }` は、参加者だけが送れ、ほかの参加者全員（自分以外）に `call.event { peer, from, name, payload }` として中継する（保存しない。`peer` は送った接続の ID でサーバーが付ける）。参加していなければ `not_in_call`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）。`audio` は本体の音声（`{ seq, pcm }`。16kHz モノラル Int16 PCM の base64）が使い、それ以外の名前は拡張 API（`disnans.call.emit`）のデータ。送り手ごとに量を制限していて（トークンバケット: 容量 4000・毎秒 3000 回復、1回の重さは `1 + payload の KB`）、超えた分は**エラーを返さずに捨てる**。受け手の送信待ちが 32 件を超えて詰まっているときは、その受け手には切断せずに捨てる（遅れて届くより捨てたほうがよい音声・映像のため）。ただし、符号化したイベントが 1 KB 以下の小さい通知（共有中の知らせや問い合わせなど）は 512 件まで残す。状態通知まで映像と一緒に捨てないためで、こちらも上限を超えれば切断せず間引く
-- `files.changed { path }` は、共有フォルダの項目が変わったとき（作成・上書き・移動・コピー・削除。WebDAV と REST のどちらでも）全員に送る。`path` は変わった項目の相対パス（`docs/a.txt`）。
+- `files.changed { path }` は、共有フォルダや `attachments/` の項目が変わったとき（作成・上書き・移動・コピー・削除。WebDAV と REST のどちらでも）全員に送る。`path` は変わった項目の相対パス（`docs/a.txt`、`attachments/<別名>`）。添付がメッセージに付いたとき（`attachments/` に現れる）と、メッセージを消したとき（消える）も送る。
 - `prefs.updated` は、`PUT /api/me/prefs` で設定が変わったとき、そのユーザーのすべての接続にだけ送る
 - `read.updated` は、`PUT /api/me/read` で既読の位置が進んだとき、そのユーザーのすべての接続にだけ送る（`unread_count` はその時点の値）
 - 失敗したら、送信者に `error` を返す

@@ -45,6 +45,7 @@ fn entry(path: &str, l: &Listed) -> SharedEntry {
         modified: l.meta.modified_ms(),
         mime: l.mime.clone(),
         message_id: l.message_id.clone(),
+        file_id: l.file_id.clone(),
     }
 }
 
@@ -93,20 +94,20 @@ async fn listing(fs: &SharedFs, segs: &[String]) -> AppResult<SharedListing> {
 /// 共有フォルダの直下の一覧。
 pub async fn list_root(
     State(state): State<SharedState>,
-    CurrentUser(_user): CurrentUser,
+    CurrentUser(user): CurrentUser,
 ) -> AppResult<Json<SharedListing>> {
-    let fs = SharedFs::new(&state);
+    let fs = SharedFs::new(&state, &user.id);
     Ok(Json(listing(&fs, &[]).await?))
 }
 
 /// フォルダなら一覧、ファイルなら中身。
 pub async fn get(
     State(state): State<SharedState>,
-    CurrentUser(_user): CurrentUser,
+    CurrentUser(user): CurrentUser,
     Path(path): Path<String>,
     req: Request,
 ) -> AppResult<Response> {
-    let fs = SharedFs::new(&state);
+    let fs = SharedFs::new(&state, &user.id);
     let segs = segments(&path);
     let found = fs.stat(&segs).await.map_err(map_err)?;
     if found.meta.dir {
@@ -126,11 +127,11 @@ pub async fn get(
 /// 本文を、そのパスのファイルにする（作成・上書き）。一時ファイルに書いてから差し替える。
 pub async fn put(
     State(state): State<SharedState>,
-    CurrentUser(_user): CurrentUser,
+    CurrentUser(user): CurrentUser,
     Path(path): Path<String>,
     body: Body,
 ) -> AppResult<Json<SharedEntry>> {
-    let fs = SharedFs::new(&state);
+    let fs = SharedFs::new(&state, &user.id);
     let segs = segments(&path);
     let options = OpenOptions {
         write: true,
@@ -163,10 +164,10 @@ pub async fn put(
 /// 削除。フォルダは中身ごと消す。
 pub async fn delete(
     State(state): State<SharedState>,
-    CurrentUser(_user): CurrentUser,
+    CurrentUser(user): CurrentUser,
     Path(path): Path<String>,
 ) -> AppResult<StatusCode> {
-    let fs = SharedFs::new(&state);
+    let fs = SharedFs::new(&state, &user.id);
     fs.remove(&segments(&path), true).await.map_err(map_err)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -174,10 +175,10 @@ pub async fn delete(
 /// フォルダの作成・移動・コピー。結果の項目を返す。
 pub async fn ops(
     State(state): State<SharedState>,
-    CurrentUser(_user): CurrentUser,
+    CurrentUser(user): CurrentUser,
     Json(op): Json<SharedOp>,
 ) -> AppResult<Json<SharedEntry>> {
-    let fs = SharedFs::new(&state);
+    let fs = SharedFs::new(&state, &user.id);
     let to = match op {
         SharedOp::Mkdir { path } => {
             let segs = segments(&path);

@@ -581,6 +581,7 @@ mod tests {
             width: None,
             height: None,
             has_thumb: false,
+            deleted: false,
         });
         m.card = Some(MessageCard {
             session_id: "s".into(),
@@ -633,6 +634,7 @@ mod tests {
             width: None,
             height: None,
             has_thumb: false,
+            deleted: false,
         });
         m.reactions.push(Reaction {
             emoji: "👍".into(),
@@ -660,6 +662,7 @@ mod tests {
             width: Some(w),
             height: Some(h),
             has_thumb: true,
+            deleted: false,
         }
     }
 

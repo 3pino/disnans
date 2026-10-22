@@ -638,6 +638,7 @@ mod tests {
             width: Some(100),
             height: Some(100),
             has_thumb: true,
+            deleted: false,
         });
         app.messages.push(m);
         render(&mut app, 60, 20);

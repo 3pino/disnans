@@ -31,6 +31,11 @@ pub async fn connect(path: &Path) -> Result<SqlitePool, sqlx::Error> {
         backup_before_migrate(&pool, path).await?;
     }
     migrator.run(&pool).await?;
+    // 既存の添付に別名を割り当てる（冪等。割り当てる行が無ければ何もしない）
+    let assigned = crate::attachment_names::backfill(&pool).await?;
+    if assigned > 0 {
+        tracing::info!("添付の別名を {assigned} 件割り当てました");
+    }
     Ok(pool)
 }
 

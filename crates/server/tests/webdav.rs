@@ -1,5 +1,5 @@
-//! WebDAV 第 1 段（読み取り専用の `attachments/`）の結合テスト。
-//! 仮想フォルダの中身は、投稿された添付から作る（投稿前のアップロードは出ない）。
+//! `attachments/` の中身（投稿された添付と、直接作ったもの）の結合テスト。
+//! 投稿前のアップロードは出ない。名前は添付ごとの別名（アップロードの時に決まる）。
 
 mod common;
 
@@ -30,7 +30,9 @@ async fn upload(server: &TestServer, user: &str, name: &str, data: &[u8]) -> Att
 }
 
 async fn items(server: &TestServer) -> Vec<tree::Item> {
-    store_files::posted_items(&server.state.pool).await.unwrap()
+    store_files::attachment_items(&server.state.pool)
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
@@ -78,11 +80,11 @@ async fn other_users_posts_are_visible_in_the_main_chat_and_so_in_attachments() 
     .await;
     let all = items(&server).await;
     assert_eq!(all.len(), 1);
-    assert_eq!(all[0].file_name, "bobs.txt");
+    assert_eq!(all[0].name, "bobs.txt");
 }
 
 #[tokio::test]
-async fn same_names_in_one_month_are_told_apart() {
+async fn same_names_get_a_numbered_alias_at_upload() {
     let server = TestServer::start().await;
     let mut alice = server.ws(ALICE).await;
     for body in ["1", "2"] {
@@ -104,12 +106,9 @@ async fn same_names_in_one_month_are_told_apart() {
         .into_iter()
         .map(|c| c.name)
         .collect();
-    assert_eq!(names.len(), 2);
-    assert_ne!(names[0], names[1]);
-    assert!(
-        names
-            .iter()
-            .all(|n| n.starts_with("same (") && n.ends_with(").txt")),
-        "{names:?}"
+    // 最初のものはそのまま、後のものは (2)。ID は見せない
+    assert_eq!(
+        names,
+        vec!["same.txt".to_owned(), "same (2).txt".to_owned()]
     );
 }

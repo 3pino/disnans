@@ -3,7 +3,7 @@ import type { SharedKind } from "./SharedKind";
 
 /**
  * 共有フォルダの 1 つの項目（`/api/shared`）。`path` は共有フォルダからの相対（`docs/a.txt`）。
- * `attachments/` の中の項目（投稿された添付）には `message_id` と `mime` が入る（読み取り専用）。
+ * `attachments/` の中の項目（添付）には `file_id` と `mime` が入る。投稿されたものは `message_id` も入る。
  */
 export type SharedEntry = { name: string, path: string, kind: SharedKind, 
 /**
@@ -19,6 +19,10 @@ modified: number,
  */
 mime: string | null, 
 /**
- * 添付のメッセージ（添付のときだけ）。
+ * 添付のメッセージ（投稿された添付だけ）。
  */
-message_id: string | null, };
+message_id: string | null, 
+/**
+ * 添付の ID（`attachments/` の項目だけ。`disnans:file/<ID>` で参照する）。
+ */
+file_id: string | null, };

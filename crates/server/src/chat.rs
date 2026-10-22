@@ -41,6 +41,7 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
     let mut attachment_ids = req.attachment_ids;
     dedup_keep_order(&mut attachment_ids);
     validate_body(&req.body, !attachment_ids.is_empty())?;
+    let body = crate::links::to_stored(&state.pool, &req.body).await?;
 
     let _guard = state.write_lock().await;
 
@@ -56,7 +57,7 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
         None => None,
     };
 
-    let mut row = new_row(&actor.user.id, req.body);
+    let mut row = new_row(&actor.user.id, body);
     row.reply_to = req.reply_to.clone();
 
     let mut tx = state.pool.begin().await?;
@@ -70,6 +71,14 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
         ));
     }
     tx.commit().await?;
+    // 投稿された添付は `attachments/` に現れる
+    for file_id in &attachment_ids {
+        if let Some(file) = file_store::get(&state.pool, file_id).await? {
+            state.hub.broadcast(&ServerEvent::FilesChanged {
+                path: crate::attachments::path_of(&file.file_name),
+            });
+        }
+    }
 
     let sender = actor.conn.map(|conn| (conn, req.client_id));
     let message = broadcast_created(state, &row.id, sender).await?;
@@ -96,13 +105,14 @@ pub async fn post_bot_message(
     req: PluginPostMessage,
 ) -> AppResult<Message> {
     validate_body(&req.body, false)?;
+    let body = crate::links::to_stored(&state.pool, &req.body).await?;
     let name = match req.name.as_deref().map(str::trim) {
         None | Some("") => plugin.name.clone(),
         Some(name) => name.chars().take(MAX_BOT_NAME_CHARS).collect(),
     };
 
     let _guard = state.write_lock().await;
-    let mut row = new_row(&user.id, req.body);
+    let mut row = new_row(&user.id, body);
     row.bot_plugin = Some(plugin.id.clone());
     row.bot_name = Some(name.clone());
 
@@ -145,6 +155,7 @@ pub async fn edit_message(
         &body,
         messages::has_attachments(&state.pool, message_id).await?,
     )?;
+    let body = crate::links::to_stored(&state.pool, &body).await?;
 
     messages::update_body(&state.pool, message_id, &body, db::now_ms()).await?;
 
@@ -168,10 +179,17 @@ pub async fn delete_message(
 
     let mut tx = state.pool.begin().await?;
     let file_ids = file_store::ids_in_message(&mut tx, message_id).await?;
+    let names = file_store::live_names_in_message(&mut tx, message_id).await?;
     messages::delete(&mut tx, message_id).await?;
     tx.commit().await?;
 
     files::remove_stored(&state.config, &file_ids).await;
+    // 消えた添付は `attachments/` から消える
+    for name in names {
+        state.hub.broadcast(&ServerEvent::FilesChanged {
+            path: crate::attachments::path_of(&name),
+        });
+    }
 
     state
         .hub
