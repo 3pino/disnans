@@ -161,20 +161,20 @@ async fn devdir(
     client
         .put_device(&id, default_device_name())
         .await
-        .map_err(CliError::Plugin)?;
+        .map_err(CliError::Api)?;
     let mut prefs = match client.get_device_prefs(&id).await {
         Ok(body) => match body.get("prefs") {
             Some(Value::Object(map)) => Value::Object(map.clone()),
             _ => device_defaults(),
         },
         Err(e) if e.status == Some(404) => device_defaults(),
-        Err(e) => return Err(CliError::Plugin(e)),
+        Err(e) => return Err(CliError::Api(e)),
     };
     prefs["pluginsDevDir"] = value.clone();
     client
         .put_device_prefs(&id, &prefs)
         .await
-        .map_err(CliError::Plugin)?;
+        .map_err(CliError::Api)?;
     show(value.as_str(), args.json)
 }
 
@@ -187,7 +187,7 @@ async fn list(
     let remote = client
         .get_value("/api/plugins")
         .await
-        .map_err(CliError::Plugin)?;
+        .map_err(CliError::Api)?;
     let mut rows: Vec<Value> = Vec::new();
     match resolve_dev_dir(&client).await {
         None => eprintln!(
@@ -284,7 +284,7 @@ async fn publish(
     } else {
         existing_visibility(&client, &local.id)
             .await
-            .map_err(CliError::Plugin)?
+            .map_err(CliError::Api)?
             .unwrap_or_else(|| "public".to_owned())
     };
     let mut report = json!({
@@ -303,7 +303,7 @@ async fn publish(
     let info = client
         .create_plugin(&visibility, &data, &files)
         .await
-        .map_err(CliError::Plugin)?;
+        .map_err(CliError::Api)?;
     report["published"] = json!(true);
     report["hash"] = info.get("hash").cloned().unwrap_or(Value::Null);
     report["server_version"] = info.get("version").cloned().unwrap_or(Value::Null);
@@ -341,7 +341,7 @@ async fn remove(
     client
         .delete_plugin(&args.id)
         .await
-        .map_err(CliError::Plugin)?;
+        .map_err(CliError::Api)?;
     if args.json {
         Ok(output::json_value(
             &json!({ "id": args.id, "removed": true }),

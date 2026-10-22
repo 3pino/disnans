@@ -28,6 +28,12 @@ disnans update
 - `--json` は1呼び出しで1つの JSON 値を標準出力に出します。診断は標準エラーに分離します。人間向け出力は本文等の制御文字を安全に表示します。JSON でも制御文字はエスケープしますが、読み直したデータは元の値です。
 - Windows/Linux のデスクトップ GUI は同じ接続先・下書きファイルを使用します。CLI の `config set-server` は GUI の次回起動で反映され、起動中はフォーカス復帰時に変更を通知します。入力を保存できない間は再読み込みせず、確認なしに接続先を切り替えません。ブラウザー開発版・Android の保存は従来の localStorage のままです。
 - `send [TEXT | --stdin] [--silent] [--reply-to MESSAGE_ID] [--json]`: メインチャットにだけ投稿する。本文を TEXT 引数で渡すと、プロセス一覧やシェル履歴に残ります。**機密や長文・複数行は `--stdin` を使ってください。** `--stdin` を明示したときだけ EOF まで読み（TEXT との併用・ターミナル入力・不正な UTF-8・空本文・10000文字超は 2）、末尾の改行1個だけ除いて内部改行は保持する。成功時は確認済みの `message.id` を標準出力へ（`--json` は `{"client_id","message_id"}`）、標準エラーは空。サーバーが保存前に拒否したと分かる場合は 1。接続・TLS・DNS・接続待ちの失敗は 3。**送信後に結果が分からない場合（確認前の切断・タイムアウト・保存前後を判別できないサーバーエラー・Ctrl-C）は 4**で、`client_id` を表示し（Ctrl-C で中断した場合も同様）、**自動再送しません**。`disnans messages` で確認してから再実行してください。
+- `files ls [PATH] [--json]` / `files get <PATH> [DEST|-] [--force]` / `files put <LOCAL> [PATH] [--force] [--json]` / `files rm <PATH> [-r] [--json]` / `files mv|cp <FROM> <TO> [--json]` / `files mkdir <PATH> [--json]`: 共有フォルダ（`/api/shared`、全員で共有）の操作。パスは共有フォルダからの相対（`docs/a.txt`、区切りは `/`。`..` は 2）。
+  - `get` / `put` は少しずつ流すので、大きなファイルでもメモリに全部は載せません。`get` は `DEST` 省略でカレントに同名、フォルダならその中、`-` なら標準出力（本文だけを書き、メッセージは stderr）。取得中は `.disnans-part` に書き、終わってから差し替えます。既存のローカルファイルは `--force` なしだと 2。
+  - `put` の `PATH` 省略・末尾 `/`・既存フォルダなら、その中に同じ名前で置きます。既存のファイルは**既定で拒否（2）**、`--force` で上書き（送る前に確かめるので、同時に別の人が作った場合は上書きされ得ます）。送信が途切れたときの再送はしません。
+  - `rm` はフォルダだと `-r` 必須（無ければ 2。直下そのものは消せません）。`mv` / `cp` の `TO` は新しいパスそのもの（フォルダの中へは入りません）。`attachments/` は読み取り専用（サーバーが拒否）。
+  - 終了コード: 事前の検査（引数・`..`・ローカルのファイル・上書き/`-r` の確認・フォルダの `get`）は 2、サーバーの拒否（`not_found` / `forbidden` / `exists` など）は 1、接続失敗は 3。
+
 - `plugin publish <ID> | --dir <PATH> [--private | --public] [--dry-run] [--json]` / `plugin list [--json]` / `plugin remove <ID> [--json]` / `plugin devdir [PATH | --clear] [--json]`: プラグイン・テーマの配布・一覧・削除（`POST/GET/DELETE /api/plugins`）と、開発用フォルダの表示・設定。
   - **開発用フォルダ**は GUI の設定と同一で、このマシンの GUI（Tauri）のデバイス設定 `pluginsDevDir`（`/api/me/devices/{id}/prefs`）だけが出どころです（オプション・環境変数はありません）。`plugin devdir` は今の値を表示（未設定は終了 0 で「未設定」、`--json` は `{"dir":null|"…"}`）、`plugin devdir <PATH>` は絶対パスにして保存（フォルダが無ければ 2）、`--clear` で未設定に戻します。書き込みは GET → `pluginsDevDir` だけ変えて PUT で、ほかのキーは保ちます。GUI のデバイス ID が無いときは書き込みの時だけ作り、GUI と同じようにデバイスを登録（名前は OS 名）します。読み取り（`list`・`publish`・`devdir` 表示）では作りません。
   - **GUI への反映**: GUI は起動中に設定を自動では読み直しません（起動時と設定画面を開いたときにサーバーから読みます）。CLI で変えたら、GUI の設定画面を開き直すか GUI を再起動してください。

@@ -251,6 +251,150 @@ impl RestClient {
     }
 }
 
+// ---- 共有フォルダ（`/api/shared`） ----
+
+/// 共有フォルダのパス（`a/b.txt`）を整える。区切りは `/` だけ。先頭・末尾・連続の `/` と `.` は捨て、
+/// `..` や空の名前は拒否する（そのほかの検査はサーバーが行う）。空なら共有フォルダの直下。
+pub fn shared_path(path: &str) -> Result<String, String> {
+    let mut parts = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => return Err(format!("`..` は使えません: {path}")),
+            part if part.contains('\\') => {
+                return Err(format!("`\\` は使えません（区切りは `/`）: {path}"));
+            }
+            part => parts.push(part),
+        }
+    }
+    Ok(parts.join("/"))
+}
+
+fn shared_url_path(path: &str) -> String {
+    if path.is_empty() {
+        return "/api/shared".to_owned();
+    }
+    let encoded: Vec<String> = path.split('/').map(encode_path_segment).collect();
+    format!("/api/shared/{}", encoded.join("/"))
+}
+
+/// 共有フォルダのファイルの取得（本文は `chunk` で少しずつ読む。メモリに全部は載せない）。
+pub struct SharedDownload {
+    response: reqwest::Response,
+}
+
+impl SharedDownload {
+    /// 本文の大きさ（応答に長さがあるとき）
+    pub fn len(&self) -> Option<u64> {
+        self.response.content_length()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == Some(0)
+    }
+
+    /// 次の断片。終わりなら `None`。
+    pub async fn chunk(&mut self) -> Result<Option<Vec<u8>>, ReadFailure> {
+        match self.response.chunk().await {
+            Ok(chunk) => Ok(chunk.map(|c| c.to_vec())),
+            Err(err) => Err(transport_failure(
+                &err,
+                Some(self.response.status().as_u16()),
+            )),
+        }
+    }
+}
+
+fn shared_entry(value: Value) -> Result<disnans_shared::SharedEntry, ReadFailure> {
+    serde_json::from_value(value)
+        .map_err(|_| ReadFailure::new(None, "bad_response", "サーバーの応答を読めませんでした"))
+}
+
+impl RestClient {
+    /// フォルダの中身（`GET /api/shared/{path}`。`path` が空なら直下）。ファイルのパスは `bad_response`
+    pub async fn shared_list(
+        &self,
+        path: &str,
+    ) -> Result<disnans_shared::SharedListing, ReadFailure> {
+        let value = self.get_value(&shared_url_path(path)).await?;
+        serde_json::from_value(value)
+            .map_err(|_| ReadFailure::new(None, "bad_response", "フォルダの一覧ではありません"))
+    }
+
+    /// 項目 1 つの情報。無ければ `None`。親フォルダの一覧から探す（直下は共有フォルダ全体の一覧）。
+    pub async fn shared_stat(
+        &self,
+        path: &str,
+    ) -> Result<Option<disnans_shared::SharedEntry>, ReadFailure> {
+        let (parent, name) = path.rsplit_once('/').unwrap_or(("", path));
+        if name.is_empty() {
+            return Ok(None);
+        }
+        match self.shared_list(parent).await {
+            Ok(listing) => Ok(listing.entries.into_iter().find(|e| e.name == name)),
+            Err(e) if e.status == Some(404) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// ファイルを取得する（`GET /api/shared/{path}`）。全体の時間制限は無い。
+    pub async fn shared_get(&self, path: &str) -> Result<SharedDownload, ReadFailure> {
+        let response = self
+            .upload_request(reqwest::Method::GET, &shared_url_path(path))
+            .send()
+            .await
+            .map_err(|err| transport_failure(&err, None))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.bytes().await.unwrap_or_default();
+            return Err(http_failure(status, &body));
+        }
+        Ok(SharedDownload { response })
+    }
+
+    /// 本文をそのパスのファイルにする（`PUT /api/shared/{path}`、作成・上書き）。`body` は逐次送る。
+    /// 全体の時間制限は無い。自動リトライはしない。
+    pub async fn shared_put(
+        &self,
+        path: &str,
+        length: u64,
+        body: reqwest::Body,
+    ) -> Result<disnans_shared::SharedEntry, ReadFailure> {
+        let response = self
+            .upload_request(reqwest::Method::PUT, &shared_url_path(path))
+            .header(reqwest::header::CONTENT_LENGTH, length.to_string())
+            .body(body)
+            .send()
+            .await
+            .map_err(|err| send_failure(&err, true))?;
+        shared_entry(write_response(response).await?)
+    }
+
+    /// 削除（フォルダは中身ごと）。
+    pub async fn shared_delete(&self, path: &str) -> Result<(), ReadFailure> {
+        send_write(
+            self.write_request(reqwest::Method::DELETE, &shared_url_path(path)),
+            true,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// フォルダの作成・移動・コピー（`POST /api/shared`）。結果の項目を返す。
+    pub async fn shared_op(
+        &self,
+        op: &disnans_shared::SharedOp,
+    ) -> Result<disnans_shared::SharedEntry, ReadFailure> {
+        let value = send_write(
+            self.write_request(reqwest::Method::POST, "/api/shared")
+                .json(op),
+            false,
+        )
+        .await?;
+        shared_entry(value)
+    }
+}
+
 // ---- 書込（段2） ----
 
 /// 書込の送信失敗。非冪等（POST）は、送信後に応答が無ければ結果不明（`unknown_outcome`）にする。

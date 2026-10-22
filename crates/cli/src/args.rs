@@ -40,8 +40,91 @@ pub enum Command {
     /// プラグイン・テーマを配布・一覧・削除する。
     #[command(subcommand)]
     Plugin(PluginAction),
+    /// 共有フォルダのファイルを一覧・取得・送信・削除・移動・コピーする。
+    #[command(subcommand)]
+    Files(FilesAction),
     /// 新しいバージョンを確認し、あれば更新する（GitHub Releases）。
     Update(UpdateArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum FilesAction {
+    /// フォルダの中身（ファイルならその項目）を表示する。
+    Ls(FilesLsArgs),
+    /// ファイルを取得する（`-` なら標準出力）。
+    Get(FilesGetArgs),
+    /// ローカルのファイルを送る（既存は `--force` で上書き）。
+    Put(FilesPutArgs),
+    /// 削除する（フォルダは `-r` が必要）。
+    Rm(FilesRmArgs),
+    /// 移動・名前の変更（TO は新しいパスそのもの）。
+    Mv(FilesMoveArgs),
+    /// コピー（TO は新しいパスそのもの。添付からのコピーも可）。
+    Cp(FilesMoveArgs),
+    /// フォルダを作る（親は必要）。
+    Mkdir(FilesMkdirArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct FilesLsArgs {
+    /// 共有フォルダからの相対パス。省略すると直下。
+    pub path: Option<String>,
+    /// 結果を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct FilesGetArgs {
+    /// 取得するファイルのパス。
+    pub path: String,
+    /// 保存先（省略するとカレントに同じ名前で。フォルダならその中に。`-` は標準出力）。
+    pub dest: Option<String>,
+    /// 既存のローカルファイルを上書きする。
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct FilesPutArgs {
+    /// 送るローカルのファイル。
+    pub local: std::path::PathBuf,
+    /// 共有フォルダ内のパス（省略すると直下に同じ名前で。フォルダならその中に）。
+    pub path: Option<String>,
+    /// 既存のファイルを上書きする。
+    #[arg(long)]
+    pub force: bool,
+    /// 結果を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct FilesRmArgs {
+    pub path: String,
+    /// フォルダを中身ごと消す。
+    #[arg(short = 'r', long)]
+    pub recursive: bool,
+    /// 結果を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct FilesMoveArgs {
+    pub from: String,
+    pub to: String,
+    /// 結果を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct FilesMkdirArgs {
+    pub path: String,
+    /// 結果を JSON で標準出力へ書く。
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Subcommand)]

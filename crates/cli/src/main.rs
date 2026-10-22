@@ -1,4 +1,5 @@
 mod args;
+mod files;
 mod live;
 mod output;
 mod plugin;
@@ -24,8 +25,8 @@ enum CliError {
     Store(StoreError),
     Url(UrlError),
     Client(ClientError),
-    /// プラグイン API の失敗（`unknown_outcome` は 4、通信失敗は 3、それ以外は 1）。
-    Plugin(ReadFailure),
+    /// REST API（プラグイン・共有フォルダ）の失敗（`unknown_outcome` は 4、通信失敗は 3、それ以外は 1）。
+    Api(ReadFailure),
     Ws(WsError),
     Body(send::BodyError),
     /// サーバーが確実に未保存と示した拒否（終了コード1）。
@@ -68,7 +69,7 @@ impl CliError {
             Self::Ws(WsError::Connect(_) | WsError::Timeout) => 3,
             Self::Body(send::BodyError::Io(_)) => 1,
             Self::Body(_) => 2,
-            Self::Plugin(f) => match f.code.as_str() {
+            Self::Api(f) => match f.code.as_str() {
                 "unknown_outcome" => 4,
                 "network" | "timeout" => 3,
                 "invalid_request" => 2,
@@ -88,7 +89,7 @@ impl std::fmt::Display for CliError {
             Self::Store(e) => write!(f, "{e}"),
             Self::Url(e) => write!(f, "{e}"),
             Self::Client(e) => write!(f, "{e}"),
-            Self::Plugin(e) => write!(f, "{} ({}): {}", e.code, e.status.unwrap_or(0), e.message),
+            Self::Api(e) => write!(f, "{} ({}): {}", e.code, e.status.unwrap_or(0), e.message),
             Self::Ws(e) => write!(f, "{e}"),
             Self::Body(e) => write!(f, "{e}"),
             Self::SendRejected {
@@ -264,6 +265,10 @@ async fn run(cli: Cli) -> Result<String, CliError> {
             let server = resolve_server(cli.server.as_deref(), saved_server)?;
             plugin::run(server, cli.dev_user.as_deref(), action).await
         }
+        Command::Files(action) => {
+            let server = resolve_server(cli.server.as_deref(), saved_server)?;
+            files::run(server, cli.dev_user.as_deref(), action).await
+        }
         Command::Update(args) => update::run(args).await,
         // `watch` と `tui` は出力を逐次書くため `main` が直接扱う。
         Command::Watch(_) | Command::Tui => Err(CliError::Usage("直接実行するコマンドです".into())),
@@ -297,6 +302,17 @@ async fn main() -> ExitCode {
     if let Command::Watch(opts) = &cli.command {
         let result = match resolve_server(cli.server.as_deref(), saved_server) {
             Ok(server) => live::watch(server, cli.dev_user.clone(), opts.json).await,
+            Err(e) => Err(e),
+        };
+        return ExitCode::from(match result {
+            Ok(()) => 0,
+            Err(e) => report_error(e, &mut io::stderr().lock()),
+        });
+    }
+    // `files get` は本文を逐次書くので、ここで直接扱う（標準出力を汚さない）。
+    if let Command::Files(args::FilesAction::Get(opts)) = &cli.command {
+        let result = match resolve_server(cli.server.as_deref(), saved_server) {
+            Ok(server) => files::get(server, cli.dev_user.as_deref(), opts).await,
             Err(e) => Err(e),
         };
         return ExitCode::from(match result {

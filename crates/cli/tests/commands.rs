@@ -465,3 +465,94 @@ async fn plugin_publish_list_and_remove_keep_visibility_and_report_errors() {
 
     server.stop().await;
 }
+
+#[tokio::test]
+async fn files_commands_round_trip_and_guard_overwrites_and_folders() {
+    let server = TestServer::start(false).await;
+    let client = tempfile::tempdir().unwrap();
+    let local = tempfile::tempdir().unwrap();
+    let run = |extra: Vec<&str>| {
+        let args = cli_args(&server, &extra);
+        run_cli_async(client.path().to_owned(), args)
+    };
+    // 数 MB のファイル（ストリームで往復する）
+    let big: Vec<u8> = (0..3_000_000u32).map(|i| (i % 251) as u8).collect();
+    let src = local.path().join("big.bin");
+    std::fs::write(&src, &big).unwrap();
+    let src_s = src.to_str().unwrap().to_owned();
+
+    let made = assert_success_json(&run(vec!["files", "mkdir", "docs", "--json"]).await);
+    assert_eq!(made["kind"], "dir");
+    let put = assert_success_json(&run(vec!["files", "put", &src_s, "docs/", "--json"]).await);
+    assert_eq!(put["path"], "docs/big.bin");
+    assert_eq!(put["size"], 3_000_000);
+
+    // 既存は既定で拒否（2）、--force で上書き
+    let again = run(vec!["files", "put", &src_s, "docs/big.bin"]).await;
+    assert_eq!(again.status.code(), Some(2));
+    assert_success_json(
+        &run(vec![
+            "files",
+            "put",
+            &src_s,
+            "docs/big.bin",
+            "--force",
+            "--json",
+        ])
+        .await,
+    );
+
+    let ls = assert_success_json(&run(vec!["files", "ls", "docs", "--json"]).await);
+    assert_eq!(ls["entries"][0]["name"], "big.bin");
+    let root = assert_success_json(&run(vec!["files", "ls", "--json"]).await);
+    assert!(
+        root["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["name"] == "docs")
+    );
+
+    // 取得（ファイルへ・標準出力へ）
+    let dest = local.path().join("out.bin");
+    let dest_s = dest.to_str().unwrap().to_owned();
+    let got = run(vec!["files", "get", "docs/big.bin", &dest_s]).await;
+    assert!(got.status.success());
+    assert_eq!(std::fs::read(&dest).unwrap(), big);
+    let exists = run(vec!["files", "get", "docs/big.bin", &dest_s]).await;
+    assert_eq!(exists.status.code(), Some(2));
+    let stdout = run(vec!["files", "get", "docs/big.bin", "-"]).await;
+    assert!(stdout.status.success());
+    assert_eq!(stdout.stdout, big);
+    let dir_get = run(vec!["files", "get", "docs", &dest_s, "--force"]).await;
+    assert_eq!(dir_get.status.code(), Some(2));
+    let missing = run(vec!["files", "get", "nope.txt", "-"]).await;
+    assert_eq!(missing.status.code(), Some(1));
+
+    // 移動・コピー・削除（フォルダは -r が必要）
+    assert_success_json(
+        &run(vec![
+            "files",
+            "cp",
+            "docs/big.bin",
+            "docs/copy.bin",
+            "--json",
+        ])
+        .await,
+    );
+    let moved = assert_success_json(
+        &run(vec!["files", "mv", "docs/copy.bin", "moved.bin", "--json"]).await,
+    );
+    assert_eq!(moved["path"], "moved.bin");
+    assert_eq!(
+        run(vec!["files", "rm", "docs"]).await.status.code(),
+        Some(2)
+    );
+    assert_eq!(run(vec!["files", "rm", ".."]).await.status.code(), Some(2));
+    assert_success_json(&run(vec!["files", "rm", "docs", "-r", "--json"]).await);
+    assert_success_json(&run(vec!["files", "rm", "moved.bin", "--json"]).await);
+    assert_eq!(
+        run(vec!["files", "rm", "moved.bin"]).await.status.code(),
+        Some(1)
+    );
+}
