@@ -36,6 +36,13 @@ pub async fn connect(path: &Path) -> Result<SqlitePool, sqlx::Error> {
     if assigned > 0 {
         tracing::info!("添付の別名を {assigned} 件割り当てました");
     }
+    // 禁止の文字を含む既存の別名を直す（一度だけ。直す前に DB を残す）
+    let plan = crate::attachment_names::plan_cleanup(&pool).await?;
+    if !plan.is_empty() {
+        backup_before_migrate(&pool, path).await?;
+        let n = crate::attachment_names::apply_cleanup(&pool, &plan).await?;
+        tracing::info!("添付の別名を {n} 件直しました（禁止の文字を外す）");
+    }
     Ok(pool)
 }
 

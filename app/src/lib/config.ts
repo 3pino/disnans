@@ -1,5 +1,6 @@
 import { getItem, setItem } from './storage';
 import { isTauri } from './platform';
+import { sharedPath } from './sharedPath';
 
 const SERVER_KEY = 'disnans.server';
 const DEV_USER_KEY = 'disnans.devUser';
@@ -123,6 +124,11 @@ export function avatarSrc(url: string): string {
 /** 自分で設定したアバターか（Tailscale のプロフィール画像ではない） */
 export function isCustomAvatar(url: string | null | undefined): boolean {
   return !!url && url.startsWith('/api/avatars/');
+}
+
+/** 共有フォルダのファイルの URL（<a> や <img> で使う。`/api/shared/<パス>`。dev_user は付く） */
+export function sharedFileUrl(path: string): string {
+  return withDevQuery(apiUrl(sharedPath(path)));
 }
 
 /** <img> などヘッダーを付けられない場所で使う URL */

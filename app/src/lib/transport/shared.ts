@@ -3,6 +3,7 @@ import type { SharedListing } from '../protocol/SharedListing';
 import type { SharedOp } from '../protocol/SharedOp';
 import { apiUrl, authHeaders } from '../config';
 import { request, toError } from './http';
+import { sharedPath } from '../sharedPath';
 
 /**
  * 共有フォルダ（`/api/shared`）の HTTP の口。Rust の経路は無く、どの環境も fetch で呼ぶ
@@ -11,11 +12,6 @@ import { request, toError } from './http';
  */
 export function sharedUrl(path: string): string {
   return apiUrl(sharedPath(path));
-}
-
-/** `/api/shared` の後ろ（パスを区切りごとに URL の形にする） */
-export function sharedPath(path: string): string {
-  return path === '' ? '/api/shared' : `/api/shared/${path.split('/').map((s) => encodeURIComponent(s)).join('/')}`;
 }
 
 export interface SharedApi {

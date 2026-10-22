@@ -69,7 +69,7 @@ cargo test -p disnans-server
 
 `/dav/` で、共有フォルダを WebDAV として見せる（エクスプローラーやファイルマネージャーからネットワークドライブとしてつなぐ）。設計は [`docs/PLAN_FILES.md`](../../docs/PLAN_FILES.md)。
 
-- 直下に `attachments/` があり、添付の一覧が並ぶ（投稿されたものと、直接作ったもの）。別名はアップロードの時に決まり、同名は `名前 (2).拡張子`。中身の差し替え・名前の変更・削除ができる（`attachments/` と共有フォルダの間の移動は不可、コピーは可）。詳細は `docs/PLAN_FILES.md` の 3 節と `docs/API.md`。
+- 直下に `attachments/` があり、添付の一覧が並ぶ（投稿されたものと、直接作ったもの）。別名はアップロードの時に決まり、同名は `名前 (2).拡張子`。名前に `[` `]` `|` は使えない。中身の差し替え・名前の変更・削除ができる（`attachments/` と共有フォルダの間の移動は不可、コピーは可）。詳細は `docs/PLAN_FILES.md` の 3 節と `docs/API.md`。
 - それ以外は共有フォルダ（`data/shared/`、全員で同じもの）。作成・上書き・移動・コピー・削除ができる。
 - 許可するメソッド: OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY, LOCK, UNLOCK。PROPPATCH は 405。`attachments/` への書き込み・削除・改名は 403。
 - 名前: `..`・区切り文字・Windows で使えない文字（`: * ? " < > |`）・予約名（CON・NUL・COM1 など）・末尾の `.` や空白は拒否。`.disnans-` で始まる名前は内部用。

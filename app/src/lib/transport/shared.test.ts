@@ -5,7 +5,8 @@ vi.mock('../config', () => ({
   authHeaders: () => ({ Authorization: 'Bearer t' }),
 }));
 
-const { sharedApi, sharedPath, sharedUrl } = await import('./shared');
+const { sharedApi, sharedUrl } = await import('./shared');
+const { sharedPath } = await import('../sharedPath');
 const { HttpError } = await import('./http');
 
 type Call = { url: string; init: RequestInit };

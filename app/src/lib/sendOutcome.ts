@@ -49,6 +49,7 @@ export const REJECTED_SEND_CODES: readonly string[] = [
   'reply_not_found',
   'reply_other_place',
   'invalid_attachment',
+  'invalid_link',
 ];
 
 export function isRejectedSendCode(code: string): boolean {

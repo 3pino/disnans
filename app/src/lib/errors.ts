@@ -9,6 +9,8 @@ const MESSAGES: Record<string, string> = {
   reply_not_found: '返信先のメッセージが見つかりません',
   reply_other_place: '同じ場所のメッセージにだけ返信できます',
   invalid_attachment: '添付ファイルが見つかりません。もう一度アップロードしてください',
+  invalid_link:
+    'リンク先のファイルが見つかりません。削除されたか、名前が変わった可能性があります。リンクを直してから、もう一度送ってください',
   invalid_emoji: 'この絵文字は使えません',
   invalid_display_name: '表示名は1〜32文字にしてください',
   invalid_upload: 'アップロードに失敗しました',

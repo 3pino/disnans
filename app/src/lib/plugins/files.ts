@@ -1,6 +1,7 @@
 import type { SharedEntry } from '../protocol/SharedEntry';
 import type { SharedApi } from '../transport/shared';
 import { PluginError, toPluginError } from './errors';
+import { parentOf } from '../sharedPath';
 
 /** manifest.json の permissions に入れると使える、共有フォルダの権限（disnans.Plugin の files） */
 export const PERMISSION_FILES = 'files';
@@ -37,11 +38,7 @@ export function checkSharedPath(path: unknown, allowRoot = false): string {
   return path;
 }
 
-/** 親のフォルダのパス（直下なら空文字） */
-export function parentOf(path: string): string {
-  const i = path.lastIndexOf('/');
-  return i < 0 ? '' : path.slice(0, i);
-}
+export { parentOf };
 
 /**
  * プラグインに渡す共有フォルダの API（disnans.Plugin の files）。

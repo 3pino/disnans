@@ -56,12 +56,13 @@ const MAX_MESSAGE_BYTES: usize = 8 << 20;
 const DEV_USER_HEADER: &str = "X-Dev-User";
 /// Server error codes that are returned before the message is committed. Any other error after a
 /// send is reported as [`UnknownReason::ServerError`] because the outcome is not known.
-const REJECTED_CODES: [&str; 5] = [
+const REJECTED_CODES: [&str; 6] = [
     "empty_message",
     "body_too_long",
     "reply_not_found",
     "reply_other_place",
     "invalid_attachment",
+    "invalid_link",
 ];
 /// `reason` of the gap emitted when the queue overflows.
 const LAGGED: &str = "lagged";

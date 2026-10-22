@@ -155,7 +155,12 @@ fn area(segs: &[String]) -> Area {
 /// 添付の名前（`attachments/<名前>` の形だけ。フォルダの中のフォルダは無い）。
 fn attachment_name(segs: &[String]) -> Option<&str> {
     match segs {
-        [root, name] if root == ATTACHMENTS_DIR && valid_name(name) && !is_internal(name) => {
+        [root, name]
+            if root == ATTACHMENTS_DIR
+                && valid_name(name)
+                && !is_internal(name)
+                && crate::attachment_names::is_clean(name) =>
+        {
             Some(name)
         }
         _ => None,

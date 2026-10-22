@@ -173,7 +173,11 @@ pub async fn remove_stored(config: &Config, ids: &[String]) {
 /// 投稿されていない古いファイルを消す。
 pub async fn cleanup_orphans(state: &SharedState) -> Result<usize, sqlx::Error> {
     let before = db::now_ms() - ORPHAN_TTL.as_millis() as i64;
-    let ids = file_store::delete_orphans(&state.pool, before).await?;
+    // 書き込みは、ほかの書き込みと同じく write_lock の中で行う（起動直後の投稿と競わせない）
+    let ids = {
+        let _guard = state.write_lock().await;
+        file_store::delete_orphans(&state.pool, before).await?
+    };
     remove_stored(&state.config, &ids).await;
     Ok(ids.len())
 }

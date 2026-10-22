@@ -145,3 +145,63 @@ async fn an_index_rejects_two_live_files_with_the_same_key() {
     .await;
     assert!(err.is_err(), "同じ別名の生きている添付は入らない");
 }
+
+fn backups(dir: &Path) -> usize {
+    std::fs::read_dir(dir.join("backup"))
+        .map(|rd| {
+            rd.filter_map(Result::ok)
+                .filter(|e| e.file_name().to_string_lossy().starts_with("pre-migrate-"))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+#[tokio::test]
+async fn names_with_link_brackets_are_rewritten_once_and_backed_up_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = db_at_0014(dir.path()).await;
+    // 0015 の適用で、1 回目のバックアップ
+    let pool = db::connect(&path).await.unwrap();
+    assert_eq!(backups(dir.path()), 1);
+    // 禁止の文字（[ ] |）を含む名前を、以前の形で再現する
+    sqlx::query(
+        "UPDATE files SET file_name = 'A [2].TXT', alias_key = 'a [2].txt' WHERE id = 'f2'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    // 括弧の番号は、禁止の文字ではないので直さない
+    sqlx::query(
+        "UPDATE files SET file_name = 'c (1).txt', alias_key = 'c (1).txt' WHERE id = 'f5'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+
+    // 次の起動で直る。直す前に、バックアップが増える
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let pool = db::connect(&path).await.unwrap();
+    let rows = names(&pool).await;
+    let f2 = rows.iter().find(|r| r.0 == "f2").unwrap();
+    assert_eq!(f2.1, "A _2_.TXT");
+    assert_eq!(f2.2.as_deref(), Some("a _2_.txt"));
+    let f5 = rows.iter().find(|r| r.0 == "f5").unwrap();
+    assert_eq!(f5.1, "c (1).txt", "括弧の番号は変えない");
+    assert_eq!(backups(dir.path()), 2);
+    pool.close().await;
+
+    // もう一度開いても、何もしない（バックアップも増えない）
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let pool = db::connect(&path).await.unwrap();
+    assert_eq!(backups(dir.path()), 2);
+    assert_eq!(
+        names(&pool)
+            .await
+            .into_iter()
+            .find(|r| r.0 == "f2")
+            .unwrap()
+            .1,
+        "A _2_.TXT"
+    );
+}

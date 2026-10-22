@@ -2,6 +2,7 @@
   import type { Inline } from '../lib/markdown';
   import { client } from '../lib/stores/client.svelte';
   import InlineNodes from './InlineNodes.svelte';
+  import FileLink from './FileLink.svelte';
 
   let { nodes }: { nodes: Inline[] } = $props();
 </script>
@@ -18,7 +19,7 @@
       href={n.href}
       target="_blank"
       rel="noopener noreferrer">{n.text}</a
-    >{:else if n.type === 'fileLink'}{n.alias ?? n.path}{:else if n.type === 'mention'}<span
+    >{:else if n.type === 'fileLink'}<FileLink path={n.path} alias={n.alias} embed={n.embed} />{:else if n.type === 'mention'}<span
       class="inline-mention"
       class:inline-mention-me={client.me?.id === n.userId}
       title={client.user(n.userId)?.login_name}>@{client.nameOf(n.userId)}</span

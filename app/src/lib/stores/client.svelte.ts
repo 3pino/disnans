@@ -22,8 +22,12 @@ import { reply } from './reply.svelte';
 import { resumeReconnect } from './chatResume';
 import { EV_AUDIO } from '../call/pure';
 import { AUDIO_MAX_IN_FLIGHT, callLatency } from '../call/latency';
+import { sharedIndex } from './sharedIndex.svelte';
 
 type Listener = (ev: ServerEvent) => void;
+
+/** 添付の変更を読み直すまでの待ち（ms） */
+const ATTACHMENT_REFRESH_MS = 300;
 
 /** 接続できないとき、チャットを再試行する間隔（JS Socket の再接続の上限と同じ） */
 const CHAT_RETRY_MS = 30_000;
@@ -64,6 +68,8 @@ class Client {
   private chatState: 'idle' | 'starting' | 'started' | 'failed' = 'idle';
   /** Rust 経路で、いま有効な接続の世代（古い項目は捨てる） */
   private chatGeneration = 0;
+  /** 添付の変更を、短い間にまとめて読み直すための時計（アップロードが続いても 1 回で済ませる） */
+  private attachmentTimer: ReturnType<typeof setTimeout> | null = null;
   /** Rust 経路で、チャットに接続できていない（終端の失敗のあと、一定間隔で再試行する） */
   chatDown = $state(false);
   private chatRetry: ReturnType<typeof setTimeout> | null = null;
@@ -563,6 +569,24 @@ class Client {
 
   // ---- イベント処理 ----
 
+  /**
+   * 添付の名前・削除は、本文の表示（サーバーが次に返すときの今の名前）と添付の一覧に出る。
+   * 名前の変更では message.updated が届かないので、添付やリンクを持つ最新のページを読み直す（短い間にまとめる）。
+   */
+  private scheduleAttachmentRefresh(): void {
+    if (this.attachmentTimer !== null) return;
+    this.attachmentTimer = setTimeout(() => {
+      this.attachmentTimer = null;
+      // 読み込みの途中に変わったら、終わってからもう一度読む
+      if (this.main.loading) {
+        this.scheduleAttachmentRefresh();
+        return;
+      }
+      const shown = this.main.messages.some((m) => m.attachments.length > 0 || m.body.includes('attachments/'));
+      if (shown && this.main.loaded) void this.main.load();
+    }, ATTACHMENT_REFRESH_MS);
+  }
+
   /** 取りこぼしのあとで、読み込み済みの履歴・未読を REST で読み直す（applyHello と同じ範囲） */
   private refreshAfterGap(): void {
     if (this.main.loaded || this.main.error) void this.main.load();
@@ -644,9 +668,13 @@ class Client {
         ui.toast(text, 'error');
         break;
       }
+      case 'files.changed':
+        // 共有フォルダの一覧（本文のファイルリンクが引く）を捨て、添付の名前・削除を表示に反映する
+        sharedIndex.invalidate(ev.path);
+        if (ev.path === 'attachments' || ev.path.startsWith('attachments/')) this.scheduleAttachmentRefresh();
+        break;
       case 'plugin.updated':
       case 'plugin.removed':
-      case 'files.changed':
       case 'session.updated':
       case 'session.event':
       case 'plugin.event':

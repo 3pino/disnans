@@ -1,6 +1,7 @@
 //! 本文のリンク（`attachments/` のパスと、添付の ID の相互変換）。設計は `docs/PLAN_FILES.md` の 3b 節。
 //!
-//! サーバーが見るのは「パスの位置」だけ: `](パス)` の `)` まで、と `[[パス|` / `[[パス]]`。
+//! サーバーが見るのは「パスの位置」だけ: `[文字](パス)` のパス、と `[[パス|` / `[[パス]]` のパス。
+//! 読み方はクライアント core（`view::markdown`）と同じ。
 //! 位置の前後の文字は変えない（`[[`、`![[`、`|別名` などの書き方はそのまま残す）。
 
 use std::collections::HashMap;
@@ -15,57 +16,81 @@ pub const ID_PREFIX: &str = "disnans:file/";
 const PATH_PREFIX: &str = "attachments/";
 
 /// パスの位置を順に見て、`f` の戻り値で置き換える。`f` が `Err` を返したら止める。
+///
+/// 読み方は `view::markdown`（クライアント core）と同じ:
+/// - `[文字](パス)`: 文字は空でなく `[` を含まない。`(` の後は、括弧の入れ子を数えて、対にならない `)` まで。
+/// - `[[パス]]` / `[[パス|別名]]`: パスは `|` か `]]` まで。`[` `]` を含まない。
+///
+/// 読めない `[` は文字のまま（次の `[` から読み直す）。`!` の有無は関係ない（埋め込みも同じ位置）。
 fn rewrite_paths<E>(body: &str, mut f: impl FnMut(&str) -> Result<String, E>) -> Result<String, E> {
+    let bytes = body.as_bytes();
     let mut out = String::with_capacity(body.len());
-    let mut rest = body;
-    loop {
-        // 次の開き（`](` か `[[`）を探す
-        let paren = rest.find("](").map(|p| (p, 2usize, ')'));
-        let double = rest.find("[[").map(|p| (p, 2usize, '|'));
-        let next = match (paren, double) {
-            (Some(a), Some(b)) => Some(if a.0 <= b.0 { (a, true) } else { (b, false) }),
-            (Some(a), None) => Some((a, true)),
-            (None, Some(b)) => Some((b, false)),
-            (None, None) => None,
-        };
-        let Some(((at, open_len, close), is_paren)) = next else {
-            out.push_str(rest);
-            return Ok(out);
-        };
-        let start = at + open_len;
-        out.push_str(&rest[..start]);
-        let after = &rest[start..];
-        // パスの終わり: `](` は `)`、`[[` は `|` か `]]` のどちらか早いほう
-        let end = if is_paren {
-            paren_end(after)
+    // まだ out に写していない位置
+    let mut copied = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'[' {
+            i += 1;
+            continue;
+        }
+        let read = if bytes.get(i + 1) == Some(&b'[') {
+            wiki_span(body, i)
         } else {
-            match (after.find(close), after.find("]]")) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (a, b) => a.or(b),
+            link_span(body, i)
+        };
+        match read {
+            Some((path_start, path_end, next)) => {
+                out.push_str(&body[copied..path_start]);
+                out.push_str(&f(&body[path_start..path_end])?);
+                copied = path_end;
+                i = next;
             }
-        };
-        let Some(end) = end else {
-            out.push_str(after);
-            return Ok(out);
-        };
-        let path = &after[..end];
-        out.push_str(&f(path)?);
-        rest = &after[end..];
+            None => i += 1,
+        }
     }
+    out.push_str(&body[copied..]);
+    Ok(out)
 }
 
-/// `](` の後のパスの終わり。括弧は対になっていれば中に入れてよい（`photo (2).png`）。対にならない `)` で終わる。
-fn paren_end(after: &str) -> Option<usize> {
+/// `[文字](パス)` を読む（i は `[`）。返すのは (パスの始まり, パスの終わり, 読み終わりの次の位置)。
+fn link_span(body: &str, i: usize) -> Option<(usize, usize, usize)> {
+    let close = i + 1 + body[i + 1..].find(']')?;
+    let text = &body[i + 1..close];
+    if text.trim().is_empty() || text.contains('[') || body.as_bytes().get(close + 1) != Some(&b'(')
+    {
+        return None;
+    }
+    let start = close + 2;
     let mut depth = 0usize;
-    for (i, c) in after.char_indices() {
+    for (k, c) in body[start..].char_indices() {
         match c {
             '(' => depth += 1,
-            ')' if depth == 0 => return Some(i),
+            ')' if depth == 0 => return Some((start, start + k, start + k + 1)),
             ')' => depth -= 1,
             _ => {}
         }
     }
     None
+}
+
+/// `[[パス]]` / `[[パス|別名]]` を読む（i は 1 つ目の `[`）。返すのは (パスの始まり, パスの終わり, 読み終わりの次の位置)。
+fn wiki_span(body: &str, i: usize) -> Option<(usize, usize, usize)> {
+    let start = i + 2;
+    let close = start + body[start..].find("]]")?;
+    let inner = &body[start..close];
+    let (path, alias) = match inner.find('|') {
+        Some(p) => (&inner[..p], Some(&inner[p + 1..])),
+        None => (inner, None),
+    };
+    if path.is_empty() || path.contains(['[', ']']) {
+        return None;
+    }
+    if let Some(a) = alias
+        && (a.trim().is_empty() || a.contains(['[', ']']) || a.chars().any(char::is_control))
+    {
+        return None;
+    }
+    Some((start, start + path.len(), close + 2))
 }
 
 /// 本文の中の `attachments/` のパス（送信・編集の検査に使う）。
@@ -92,11 +117,25 @@ fn stored_ids(body: &str) -> Vec<String> {
     found
 }
 
-/// 名前が、リンクの中に書けるか。区切りや `|` `]` 、改行は書けない。括弧は対になっているものだけ書ける。
+/// 名前が、リンクの中に書けるか。区切り・制御文字・`[` `]` `|` は書けない。括弧は対になっていること
+/// （対にならないと、`[文字](…)` の終わりの読み方が変わる）。
 fn linkable(name: &str) -> bool {
-    !name.is_empty()
-        && !name.contains(['/', '\\', '|', ']', '\n', '\r'])
-        && paren_end(&format!("{name})")) == Some(name.len())
+    if name.is_empty()
+        || name.contains(['/', '\\', '[', ']', '|'])
+        || name.chars().any(char::is_control)
+    {
+        return false;
+    }
+    let mut depth = 0usize;
+    for c in name.chars() {
+        match c {
+            '(' => depth += 1,
+            ')' if depth == 0 => return false,
+            ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    depth == 0
 }
 
 /// 送信・編集の本文: `attachments/<名前>` を、その添付の ID（`disnans:file/<ID>`）に置き換える。
@@ -186,7 +225,12 @@ mod tests {
         assert_eq!(attachment_paths("[[attachments/a.txt]]"), vec!["a.txt"]);
         assert_eq!(
             attachment_paths("[x](attachments/photo (2).png)"),
-            vec!["photo (2).png"]
+            vec!["photo (2).png"],
+            "括弧は対なら中に書ける"
+        );
+        assert!(
+            attachment_paths("(attachments/a.png)").is_empty(),
+            "[文字] が無ければリンクではない"
         );
         assert_eq!(attachment_paths("[[attachments/a.txt|x]]"), vec!["a.txt"]);
         assert!(
@@ -227,6 +271,7 @@ mod tests {
     fn names_with_link_symbols_are_not_linkable() {
         assert!(linkable("photo (2).png"), "対になった括弧は書ける");
         assert!(!linkable("a)b.png"), "対にならない ) は書けない");
+        assert!(!linkable("a(b.png"));
         assert!(!linkable("a|b"));
         assert!(!linkable("a]b"));
         assert!(!linkable(""));

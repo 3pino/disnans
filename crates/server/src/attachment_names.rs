@@ -27,6 +27,21 @@ fn split(base: &str) -> (&str, &str) {
     }
 }
 
+/// 添付の名前に書けない文字（リンクの書き方 `[文字](パス)` `[[パス|別名]]` と衝突するため）。
+pub const FORBIDDEN: &[char] = &['[', ']', '|'];
+
+/// 名前に禁止の文字が無いか。
+pub fn is_clean(name: &str) -> bool {
+    !name.contains(FORBIDDEN)
+}
+
+/// 禁止の文字を `_` に直す（それ以外はそのまま。`(2)` などの番号も変えない）。
+pub fn clean(name: &str) -> String {
+    name.chars()
+        .map(|c| if FORBIDDEN.contains(&c) { '_' } else { c })
+        .collect()
+}
+
 /// `base` の n 番目の候補（`name (n).ext`）。n は 2 から。
 pub fn numbered(base: &str, n: usize) -> String {
     let (stem, ext) = split(base);
@@ -86,6 +101,50 @@ pub async fn backfill(pool: &SqlitePool) -> sqlx::Result<usize> {
     Ok(count)
 }
 
+/// 書き直す計画: 生きている添付のうち、禁止の文字を含む名前を `clean` で直し、ほかと重ならない名前にする。
+/// 戻り値は (ID, 新しい名前, 新しいキー)。直す必要がなければ空。
+pub async fn plan_cleanup(pool: &SqlitePool) -> sqlx::Result<Vec<(String, String, String)>> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT f.id, f.file_name FROM files f LEFT JOIN messages m ON m.id = f.message_id
+         WHERE f.deleted_at IS NULL AND f.alias_key IS NOT NULL
+         ORDER BY m.created_at IS NULL, m.created_at, m.id, f.position, f.created_at, f.id",
+    )
+    .fetch_all(pool)
+    .await?;
+    // 直さない名前は、そのまま予約する（直す名前はこれと重ならないようにする）
+    let mut taken: HashSet<String> = rows
+        .iter()
+        .filter(|(_, name)| is_clean(name))
+        .map(|(_, name)| key(name))
+        .collect();
+    let mut plan = Vec::new();
+    for (id, name) in rows.iter().filter(|(_, name)| !is_clean(name)) {
+        let new = unique(&clean(name), |k| taken.contains(k));
+        let k = key(&new);
+        taken.insert(k.clone());
+        plan.push((id.clone(), new, k));
+    }
+    Ok(plan)
+}
+
+/// `plan_cleanup` の計画を、1 つのトランザクションで書く。戻り値は書き直した件数。
+pub async fn apply_cleanup(
+    pool: &SqlitePool,
+    plan: &[(String, String, String)],
+) -> sqlx::Result<usize> {
+    let mut tx = pool.begin().await?;
+    for (id, name, k) in plan {
+        sqlx::query("UPDATE files SET file_name = ?, alias_key = ? WHERE id = ?")
+            .bind(name)
+            .bind(k)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(plan.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,6 +159,16 @@ mod tests {
         assert_eq!(unique("report.txt", taken2), "report (3).txt");
         assert_eq!(unique("noext", |k| k == "noext"), "noext (2)");
         assert_eq!(unique(".hidden", |k| k == ".hidden"), ".hidden (2)");
+    }
+
+    #[test]
+    fn brackets_and_bar_are_rewritten_and_parentheses_are_kept() {
+        assert_eq!(clean("image (2).webp"), "image (2).webp");
+        assert_eq!(clean("a(1).txt"), "a(1).txt");
+        assert_eq!(clean("a [draft] (3) b.txt"), "a _draft_ (3) b.txt");
+        assert_eq!(clean("x|y.png"), "x_y.png");
+        assert_eq!(clean("plain.txt"), "plain.txt");
+        assert!(is_clean(&clean("a (2) [b] | c).txt")));
     }
 
     #[test]

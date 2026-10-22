@@ -118,7 +118,13 @@ pub async fn create(
                 }
                 name.to_owned()
             }
-            Naming::Unique => free_name(&state.pool, &stored.file_name).await?,
+            Naming::Unique => {
+                free_name(
+                    &state.pool,
+                    &crate::attachment_names::clean(&stored.file_name),
+                )
+                .await?
+            }
         };
         let row = FileRow {
             id: id.clone(),
