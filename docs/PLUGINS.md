@@ -761,8 +761,9 @@ export default class extends Plugin {
 }
 ```
 
-- 操作: `list(path?)`・`stat(path)`・`read(path)`（Blob）・`write(path, data)`・`mkdir(path)`・`remove(path)`（フォルダは中身ごと）・`move(from, to)`・`copy(from, to)`。`onChange(cb)` は解除関数を返します（プラグインを外すと自動で解除）
+- 操作: `list(path?)`・`stat(path)`・`read(path)`（Blob）・`write(path, data)`・`mkdir(path)`・`remove(path)`（フォルダは中身ごと）・`move(from, to, { overwrite? })`・`copy(from, to, { overwrite? })`。`onChange(cb)` は解除関数を返します（プラグインを外すと自動で解除）
 - パスは共有フォルダからの相対（`docs/a.txt`）。区切りは `/`。空の区切り・`.`・`..` は `invalid_argument`。`read` はファイルだけ（フォルダは `invalid_argument`）
+- `move` と `copy` は、同名のファイルがあると `exists`（409）で失敗します。上書きするには `{ overwrite: true }` を渡します（フォルダへの上書きは `forbidden`）
 - `attachments/` は読み取り専用（投稿された添付が並ぶ。`message_id`・`mime` が入る）
 - `SharedEntry` の `size`・`modified`（ミリ秒）は数です
 - 失敗は `disnans.PluginError` で、`code` はサーバーの code（`not_found`・`forbidden`・`exists`・`parent_missing`・`too_large`・`insufficient_storage`）。権限がなければ `permission_denied`

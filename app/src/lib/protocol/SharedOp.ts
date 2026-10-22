@@ -3,4 +3,12 @@
 /**
  * フォルダの作成・移動・コピー（`POST /api/shared`）。
  */
-export type SharedOp = { "op": "mkdir", path: string, } | { "op": "move", from: string, to: string, } | { "op": "copy", from: string, to: string, };
+export type SharedOp = { "op": "mkdir", path: string, } | { "op": "move", from: string, to: string, 
+/**
+ * 省略は false。
+ */
+overwrite?: boolean, } | { "op": "copy", from: string, to: string, 
+/**
+ * 省略は false。
+ */
+overwrite?: boolean, };

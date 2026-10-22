@@ -27,9 +27,14 @@ export interface SharedApi {
   write(path: string, body: Blob | ArrayBuffer | string): Promise<SharedEntry>;
   mkdir(path: string): Promise<SharedEntry>;
   remove(path: string): Promise<void>;
-  move(from: string, to: string): Promise<SharedEntry>;
-  copy(from: string, to: string): Promise<SharedEntry>;
+  /** 移動・名前の変更。overwrite が真なら同名のファイルを上書きする（既定は同名があれば exists） */
+  move(from: string, to: string, overwrite?: boolean): Promise<SharedEntry>;
+  /** コピー。overwrite の決まりは move と同じ */
+  copy(from: string, to: string, overwrite?: boolean): Promise<SharedEntry>;
 }
+
+/** move / copy の本体（overwrite は helper-1 の REST 変更で入る。生成型が追いつくまで、ここで形を持つ） */
+type MoveCopyOp = { op: 'move' | 'copy'; from: string; to: string; overwrite?: boolean };
 
 export const sharedApi: SharedApi = {
   async list(path) {
@@ -48,10 +53,15 @@ export const sharedApi: SharedApi = {
   },
   mkdir: (path) => op({ op: 'mkdir', path }),
   remove: (path) => request<void>('DELETE', sharedPath(path)),
-  move: (from, to) => op({ op: 'move', from, to }),
-  copy: (from, to) => op({ op: 'copy', from, to }),
+  move: (from, to, overwrite) => op(withOverwrite({ op: 'move', from, to }, overwrite)),
+  copy: (from, to, overwrite) => op(withOverwrite({ op: 'copy', from, to }, overwrite)),
 };
 
-function op(body: SharedOp): Promise<SharedEntry> {
+/** overwrite は真のときだけ送る（省略は false） */
+function withOverwrite(body: MoveCopyOp, overwrite: boolean | undefined): MoveCopyOp {
+  return overwrite === true ? { ...body, overwrite: true } : body;
+}
+
+function op(body: SharedOp | MoveCopyOp): Promise<SharedEntry> {
   return request<SharedEntry>('POST', '/api/shared', body);
 }

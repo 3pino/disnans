@@ -31,6 +31,16 @@ async fn op(server: &TestServer, body: Value) -> reqwest::Response {
         .unwrap()
 }
 
+async fn read(server: &TestServer, path: &str) -> String {
+    req(server, reqwest::Method::GET, path)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap()
+}
+
 async fn listing(server: &TestServer, path: &str) -> SharedListing {
     let res = req(server, reqwest::Method::GET, path)
         .send()
@@ -342,4 +352,77 @@ async fn changes_are_announced_on_the_websocket() {
     assert!(res.status().is_success());
     ws.recv_until(|e| matches!(e, ServerEvent::FilesChanged { path } if path == "from-dav.txt"))
         .await;
+}
+
+#[tokio::test]
+async fn copy_and_move_refuse_an_existing_destination_unless_overwrite_is_set() {
+    let server = TestServer::start().await;
+    put(&server, "/api/shared/src.txt", "new").await;
+    put(&server, "/api/shared/dst.txt", "old").await;
+
+    // 既定（overwrite なし）は 409 exists、中身は変わらない
+    let res = op(
+        &server,
+        json!({"op": "copy", "from": "src.txt", "to": "dst.txt"}),
+    )
+    .await;
+    assert_eq!(res.status(), 409);
+    assert_eq!(res.json::<Value>().await.unwrap()["code"], "exists");
+    assert_eq!(read(&server, "/api/shared/dst.txt").await, "old");
+
+    let res = op(
+        &server,
+        json!({"op": "move", "from": "src.txt", "to": "dst.txt", "overwrite": false}),
+    )
+    .await;
+    assert_eq!(res.status(), 409);
+    assert_eq!(
+        read(&server, "/api/shared/src.txt").await,
+        "new",
+        "移動に失敗したら元はそのまま"
+    );
+
+    // overwrite: true なら差し替える
+    let res = op(
+        &server,
+        json!({"op": "copy", "from": "src.txt", "to": "dst.txt", "overwrite": true}),
+    )
+    .await;
+    assert_eq!(res.status(), 200);
+    assert_eq!(read(&server, "/api/shared/dst.txt").await, "new");
+    let res = op(
+        &server,
+        json!({"op": "move", "from": "src.txt", "to": "dst.txt", "overwrite": true}),
+    )
+    .await;
+    assert_eq!(res.status(), 200);
+    assert_eq!(read(&server, "/api/shared/dst.txt").await, "new");
+    assert_eq!(
+        req(&server, reqwest::Method::GET, "/api/shared/src.txt")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+}
+
+#[tokio::test]
+async fn folders_are_never_overwritten_even_with_overwrite() {
+    let server = TestServer::start().await;
+    op(&server, json!({"op": "mkdir", "path": "dir"})).await;
+    put(&server, "/api/shared/f.txt", "f").await;
+    let res = op(
+        &server,
+        json!({"op": "copy", "from": "f.txt", "to": "dir", "overwrite": true}),
+    )
+    .await;
+    assert_eq!(res.status(), 403);
+    let res = op(
+        &server,
+        json!({"op": "move", "from": "f.txt", "to": "dir", "overwrite": true}),
+    )
+    .await;
+    assert_eq!(res.status(), 403);
+    assert_eq!(listing(&server, "/api/shared/dir").await.entries.len(), 0);
 }

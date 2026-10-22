@@ -299,11 +299,24 @@ async fn op(client: RestClient, args: FilesMoveArgs, is_move: bool) -> Result<St
     let from = norm(&args.from, false)?;
     let to = norm(&args.to, false)?;
     let request = if is_move {
-        SharedOp::Move { from, to }
+        SharedOp::Move {
+            from,
+            to,
+            overwrite: args.force.then_some(true),
+        }
     } else {
-        SharedOp::Copy { from, to }
+        SharedOp::Copy {
+            from,
+            to,
+            overwrite: args.force.then_some(true),
+        }
     };
-    let entry = client.shared_op(&request).await.map_err(api)?;
+    let entry = client.shared_op(&request).await.map_err(|mut e| {
+        if e.code == "exists" {
+            e.message = format!("{}（上書きするなら --force を付けてください）", e.message);
+        }
+        api(e)
+    })?;
     if args.json {
         return json_of(&entry);
     }

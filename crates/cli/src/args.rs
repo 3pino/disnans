@@ -114,6 +114,9 @@ pub struct FilesRmArgs {
 pub struct FilesMoveArgs {
     pub from: String,
     pub to: String,
+    /// 同名のファイルがあれば上書きする（フォルダへの上書きはサーバーが拒否）。
+    #[arg(long)]
+    pub force: bool,
     /// 結果を JSON で標準出力へ書く。
     #[arg(long)]
     pub json: bool,

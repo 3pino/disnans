@@ -43,12 +43,12 @@ function fakeApi(entries: SharedEntry[] = []) {
     remove: vi.fn(async (path: string) => {
       calls.push(['remove', path]);
     }),
-    move: vi.fn(async (from: string, to: string) => {
-      calls.push(['move', from, to]);
+    move: vi.fn(async (from: string, to: string, overwrite?: boolean) => {
+      calls.push(['move', from, to, overwrite]);
       return entry(to);
     }),
-    copy: vi.fn(async (from: string, to: string) => {
-      calls.push(['copy', from, to]);
+    copy: vi.fn(async (from: string, to: string, overwrite?: boolean) => {
+      calls.push(['copy', from, to, overwrite]);
       return entry(to);
     }),
   };
@@ -164,8 +164,22 @@ describe('操作（権限あり）', () => {
     expect(calls).toEqual([
       ['mkdir', 'docs'],
       ['remove', 'docs'],
-      ['move', 'a.txt', 'docs/a.txt'],
-      ['copy', 'docs/a.txt', 'b.txt'],
+      ['move', 'a.txt', 'docs/a.txt', false],
+      ['copy', 'docs/a.txt', 'b.txt', false],
+    ]);
+  });
+
+  it('move・copy は { overwrite: true } のときだけ上書きする（既定は false）', async () => {
+    const { files, calls } = allowed();
+    await files.move('a.txt', 'b.txt', { overwrite: true });
+    await files.copy('a.txt', 'c.txt', { overwrite: true });
+    await files.copy('a.txt', 'd.txt', { overwrite: false });
+    await files.move('a.txt', 'e.txt', {});
+    expect(calls.map((c) => c.slice(0, 2).concat(c[3] as never))).toEqual([
+      ['move', 'a.txt', true],
+      ['copy', 'a.txt', true],
+      ['copy', 'a.txt', false],
+      ['move', 'a.txt', false],
     ]);
   });
 

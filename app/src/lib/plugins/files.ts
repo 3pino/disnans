@@ -8,6 +8,9 @@ export const PERMISSION_FILES = 'files';
 /** 共有フォルダの変更（`files.changed`）を受け取る口。解除関数を返す */
 export type FilesChangedSubscribe = (cb: (path: string) => void) => () => void;
 
+/** move / copy の任意の指定 */
+export type FileCopyOptions = { overwrite?: boolean };
+
 /** 権限があるか（manifest.json の permissions に "files" があるか） */
 export function hasPermission(permissions: readonly string[] | undefined, name: string): boolean {
   return !!permissions?.includes(name);
@@ -117,20 +120,20 @@ export class PluginFiles {
     return this.call(() => this.api.remove(p));
   }
 
-  /** 移動・名前の変更 */
-  async move(from: string, to: string): Promise<SharedEntry> {
+  /** 移動・名前の変更。opts.overwrite が真なら同名を上書きする（既定は同名があれば exists） */
+  async move(from: string, to: string, opts: FileCopyOptions = {}): Promise<SharedEntry> {
     this.need();
     const f = checkSharedPath(from);
     const t = checkSharedPath(to);
-    return this.call(() => this.api.move(f, t));
+    return this.call(() => this.api.move(f, t, opts.overwrite === true));
   }
 
-  /** コピー */
-  async copy(from: string, to: string): Promise<SharedEntry> {
+  /** コピー。opts.overwrite の決まりは move と同じ */
+  async copy(from: string, to: string, opts: FileCopyOptions = {}): Promise<SharedEntry> {
     this.need();
     const f = checkSharedPath(from);
     const t = checkSharedPath(to);
-    return this.call(() => this.api.copy(f, t));
+    return this.call(() => this.api.copy(f, t, opts.overwrite === true));
   }
 
   /** 共有フォルダの変更（作成・上書き・移動・コピー・削除。どの端末でも）。cb は `{ path }`。解除関数を返す */

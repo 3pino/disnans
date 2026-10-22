@@ -72,6 +72,18 @@ describe('sharedApi（HTTP）', () => {
     expect(calls[0]!.url).toBe('https://srv/api/shared');
   });
 
+  it('move・copy は overwrite を真のときだけ送る（省略は送らない）', async () => {
+    reply = () => new Response(JSON.stringify({ name: 'x', path: 'x', kind: 'file', size: 0, modified: 0, mime: null, message_id: null }), { status: 200 });
+    await sharedApi.move('a', 'b');
+    await sharedApi.move('a', 'b', false);
+    await sharedApi.copy('a', 'b', true);
+    expect(calls.map((c) => JSON.parse(c.init.body as string))).toEqual([
+      { op: 'move', from: 'a', to: 'b' },
+      { op: 'move', from: 'a', to: 'b' },
+      { op: 'copy', from: 'a', to: 'b', overwrite: true },
+    ]);
+  });
+
   it('remove は DELETE（204）', async () => {
     reply = () => new Response(null, { status: 204 });
     await sharedApi.remove('docs/a b.txt');

@@ -184,14 +184,26 @@ pub async fn ops(
             fs.make_dir(&segs).await.map_err(map_err)?;
             segs
         }
-        SharedOp::Move { from, to } => {
+        SharedOp::Move {
+            from,
+            to,
+            overwrite,
+        } => {
             let to = segments(&to);
-            fs.rename(&segments(&from), &to).await.map_err(map_err)?;
+            fs.rename(&segments(&from), &to, overwrite.unwrap_or(false))
+                .await
+                .map_err(map_err)?;
             to
         }
-        SharedOp::Copy { from, to } => {
+        SharedOp::Copy {
+            from,
+            to,
+            overwrite,
+        } => {
             let to = segments(&to);
-            fs.copy(&segments(&from), &to).await.map_err(map_err)?;
+            fs.copy(&segments(&from), &to, overwrite.unwrap_or(false))
+                .await
+                .map_err(map_err)?;
             to
         }
     };

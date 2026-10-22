@@ -729,10 +729,10 @@ declare global {
       mkdir(path: string): Promise<SharedEntry>;
       /** 削除（フォルダは中身ごと） */
       remove(path: string): Promise<void>;
-      /** 移動・名前の変更 */
-      move(from: string, to: string): Promise<SharedEntry>;
-      /** コピー */
-      copy(from: string, to: string): Promise<SharedEntry>;
+      /** 移動・名前の変更。`overwrite: true` で同名のファイルを上書きする（既定は同名があれば `exists`。フォルダへの上書きは `forbidden`） */
+      move(from: string, to: string, opts?: { overwrite?: boolean }): Promise<SharedEntry>;
+      /** コピー。`overwrite` の決まりは move と同じ */
+      copy(from: string, to: string, opts?: { overwrite?: boolean }): Promise<SharedEntry>;
       /** 共有フォルダの変更（どの端末の変更でも）。cb は `{ path }`（変わった項目の相対パス）。解除関数を返す。プラグインが外れると自動で解除 */
       onChange(cb: (ev: { path: string }) => void): Cleanup;
     }

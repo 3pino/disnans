@@ -456,25 +456,28 @@ impl SharedFs {
     }
 
     /// 移動（名前の変更も）。両方とも共有フォルダの中。添付は動かせない。
-    pub async fn rename(&self, from: &[String], to: &[String]) -> FsResult<()> {
+    /// `overwrite` が false で同名のファイルがあれば `Exists`（true なら差し替える）。フォルダへは常に上書きしない。
+    pub async fn rename(&self, from: &[String], to: &[String], overwrite: bool) -> FsResult<()> {
         let (Area::Shared(from), Area::Shared(to)) = (area(from), area(to)) else {
             return Err(FsError::Forbidden);
         };
         let src = self.real_path(&from, true)?;
         let (dst, _parent) = self.writable_target(&to)?;
+        check_destination(&dst, overwrite)?;
         std::fs::rename(&src, &dst).map_err(|e| io_err(&e))?;
         self.notify(&from);
         self.notify(&to);
         Ok(())
     }
 
-    /// コピー（ファイルだけ）。元は共有フォルダのファイル、または添付。
-    pub async fn copy(&self, from: &[String], to: &[String]) -> FsResult<()> {
+    /// コピー（ファイルだけ）。元は共有フォルダのファイル、または添付。`overwrite` の決まりは `rename` と同じ。
+    pub async fn copy(&self, from: &[String], to: &[String], overwrite: bool) -> FsResult<()> {
         let Area::Shared(to) = area(to) else {
             return Err(FsError::Forbidden);
         };
         let src = self.read_target(from).await?.path;
         let (dst, parent) = self.writable_target(&to)?;
+        check_destination(&dst, overwrite)?;
         let tmp = parent.join(format!("{TMP_PREFIX}{}", ulid::Ulid::new()));
         if let Err(e) = tokio::fs::copy(&src, &tmp).await {
             let _ = std::fs::remove_file(&tmp);
@@ -487,6 +490,14 @@ impl SharedFs {
         })?;
         self.notify(&to);
         Ok(())
+    }
+}
+
+/// 移動・コピーの行き先に同名のものがあるときの決まり。ファイルの上書きは `overwrite` のときだけ。
+fn check_destination(dst: &Path, overwrite: bool) -> FsResult<()> {
+    match std::fs::symlink_metadata(dst) {
+        Ok(_) if !overwrite => Err(FsError::Exists),
+        _ => Ok(()),
     }
 }
 
@@ -732,7 +743,8 @@ impl DavFileSystem for SharedFs {
         Box::pin(async move {
             let from = segments(from).ok_or(FsError::Forbidden)?;
             let to = segments(to).ok_or(FsError::Forbidden)?;
-            SharedFs::rename(self, &from, &to).await
+            // 上書きの可否は dav-server が Overwrite ヘッダーで決めて、先に宛先を消す
+            SharedFs::rename(self, &from, &to, true).await
         })
     }
 
@@ -740,7 +752,7 @@ impl DavFileSystem for SharedFs {
         Box::pin(async move {
             let from = segments(from).ok_or(FsError::NotFound)?;
             let to = segments(to).ok_or(FsError::Forbidden)?;
-            SharedFs::copy(self, &from, &to).await
+            SharedFs::copy(self, &from, &to, true).await
         })
     }
 }

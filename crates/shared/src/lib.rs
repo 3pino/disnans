@@ -65,10 +65,22 @@ pub struct SharedListing {
 pub enum SharedOp {
     /// フォルダを作る。
     Mkdir { path: String },
-    /// 移動（名前の変更も）。添付は動かせない。
-    Move { from: String, to: String },
-    /// コピー。元は共有フォルダのファイル、または添付。
-    Copy { from: String, to: String },
+    /// 移動（名前の変更も）。添付は動かせない。`overwrite` が false（既定）で同名があれば 409 `exists`。
+    Move {
+        from: String,
+        to: String,
+        /// 省略は false。
+        #[ts(optional)]
+        overwrite: Option<bool>,
+    },
+    /// コピー。元は共有フォルダのファイル、または添付。`overwrite` の決まりは `Move` と同じ。
+    Copy {
+        from: String,
+        to: String,
+        /// 省略は false。
+        #[ts(optional)]
+        overwrite: Option<bool>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
