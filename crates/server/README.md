@@ -78,6 +78,7 @@ cargo test -p disnans-server
 - 認証は `/api` と同じ（whois。Tailscale Serve 経由なら Serve のヘッダーを、接続元がループバックのときだけ信じる）。
 - Serve の例: `tailscale serve --https=443 --set-path /dav http://127.0.0.1:8080/dav`（`DISNANS_LOCAL_BIND=127.0.0.1:8080` が要る）。
 - CORS は `/api` だけに付ける（`/dav` の OPTIONS は WebDAV の `DAV:` と `Allow` を返す必要があるため）。
+- 同じ中身を REST で見せる: `/api/shared`（[`docs/API.md`](../../docs/API.md)）。変更は WebSocket の `files.changed` で全員に知らせる。
 
 ## バックアップ
 

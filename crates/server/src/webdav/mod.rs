@@ -30,10 +30,7 @@ const PREFIX: &str = "/dav";
 
 /// dav-server のハンドラーを作る（読み取り専用の共有フォルダ）。
 pub fn handler(state: &SharedState) -> DavHandler {
-    let fs = fs::SharedFs {
-        config: state.config.clone(),
-        pool: state.pool.clone(),
-    };
+    let fs = fs::SharedFs::new(state);
     DavHandler::builder()
         .filesystem(Box::new(fs))
         .locksystem(MemLs::new())

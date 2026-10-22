@@ -124,7 +124,7 @@ async fn find(state: &SharedState, id: &str) -> AppResult<FileRow> {
         .ok_or_else(|| AppError::not_found("ファイルが見つかりません"))
 }
 
-async fn serve(
+pub(crate) async fn serve(
     path: std::path::PathBuf,
     mime: &str,
     disposition: HeaderValue,
@@ -154,7 +154,7 @@ async fn serve(
 /// 画像・動画・音声はその場で表示し、それ以外はダウンロードさせる。
 ///
 /// SVG や HTML はスクリプトを含められるので、同じオリジンで開かれないよう必ずダウンロードにする。
-fn content_disposition(mime: &str, file_name: &str) -> HeaderValue {
+pub(crate) fn content_disposition(mime: &str, file_name: &str) -> HeaderValue {
     let inline = (mime.starts_with("image/") && mime != "image/svg+xml")
         || mime.starts_with("video/")
         || mime.starts_with("audio/");

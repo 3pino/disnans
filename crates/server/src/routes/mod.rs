@@ -7,6 +7,7 @@ mod notify;
 mod plugins;
 mod reads;
 mod sessions;
+mod shared;
 mod users;
 
 use axum::Router;
@@ -63,6 +64,15 @@ pub fn router(state: SharedState) -> Router {
         )
         .route("/files/{id}", get(files::get))
         .route("/files/{id}/thumb", get(files::thumb))
+        // 共有フォルダ（WebDAV と同じ中身。パスは末尾の `{*path}`）
+        .route("/shared", get(shared::list_root).post(shared::ops))
+        .route(
+            "/shared/{*path}",
+            get(shared::get)
+                .put(shared::put)
+                .delete(shared::delete)
+                .layer(DefaultBodyLimit::disable()),
+        )
         .route("/notify/sample", post(notify::sample))
         // 上限はプラグインの合計サイズに、multipart の見出しの分を足したもの
         .route(

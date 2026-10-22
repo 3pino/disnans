@@ -141,9 +141,12 @@ pub async fn posted_items(pool: &SqlitePool) -> sqlx::Result<Vec<crate::webdav::
         file_name: String,
         size: i64,
         posted_at: i64,
+        message_id: String,
+        mime: String,
     }
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT f.id AS id, f.file_name AS file_name, f.size AS size, m.created_at AS posted_at
+        "SELECT f.id AS id, f.file_name AS file_name, f.size AS size, m.created_at AS posted_at,
+                m.id AS message_id, f.mime AS mime
          FROM files f JOIN messages m ON m.id = f.message_id
          ORDER BY m.created_at, f.id",
     )
@@ -156,6 +159,8 @@ pub async fn posted_items(pool: &SqlitePool) -> sqlx::Result<Vec<crate::webdav::
             file_name: r.file_name,
             size: r.size.max(0) as u64,
             posted_at_ms: r.posted_at,
+            message_id: r.message_id,
+            mime: r.mime,
         })
         .collect())
 }

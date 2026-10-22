@@ -41,6 +41,11 @@
 | POST | `/api/files` | ファイルのアップロード（multipart、フィールド名 `file`） | `Attachment` |
 | GET | `/api/files/{id}` | ファイル本体 | バイナリ |
 | GET | `/api/files/{id}/thumb` | サムネイル（WebP） | バイナリ |
+| GET | `/api/shared` | 共有フォルダの直下の一覧 | `SharedListing` |
+| GET | `/api/shared/{パス}` | フォルダなら一覧、ファイルなら中身（`Range` 可、ファイルの種類は拡張子で決まる） | `SharedListing` / バイナリ |
+| PUT | `/api/shared/{パス}` | 本文をそのパスのファイルにする（作成・上書き。本文は任意の大きさ）。親のフォルダがなければ `409 parent_missing` | `SharedEntry` |
+| DELETE | `/api/shared/{パス}` | 削除（フォルダは中身ごと） | `204` |
+| POST | `/api/shared` | フォルダの作成・移動・コピー（body: `SharedOp` = `{ op: "mkdir", path }` / `{ op: "move", from, to }` / `{ op: "copy", from, to }`）。結果の項目を返す | `SharedEntry` |
 | POST | `/api/notify/sample` | 自分にサンプルの `notify` を送る（通知の動作確認用）。送り先は、リクエストと同じ IP アドレス（デバイス）からの接続だけ | `204` |
 | GET | `/api/plugins` | 自分に見えるプラグイン・テーマの一覧（みんなのものと自分だけのもの。ID 順） | `PluginInfo[]` |
 | POST | `/api/plugins` | プラグイン・テーマの配布・更新（multipart、フィールド名 `file` を複数、`visibility`） | `PluginInfo` |
@@ -102,6 +107,17 @@
 - 長辺 480px のサムネイルを作る
 - アニメーション GIF / WebP は変換せずそのまま保存する
 - 投稿されていないファイルは、一定時間（24時間）後に削除してよい
+
+### 共有フォルダ（`/api/shared`）
+
+WebDAV（`/dav/`）と同じ中身・同じ規則。全員で共有する 1 つのフォルダ（`data/shared/`）。
+
+- パスは共有フォルダからの相対（`docs/a.txt`）。区切りごとに名前を検査する: `..`・区切り文字・Windows で使えない文字（`: * ? " < > |`）・予約名（CON・NUL・COM1 など）・末尾の `.` や空白・`.disnans-` で始まる名前は拒否（`403`）
+- 直下の `attachments/` は読み取り専用の仮想フォルダ（投稿された添付が並ぶ。`message_id` と `mime` が入る）。ここへの作成・上書き・削除・移動は `403`。添付からのコピーは可
+- 書き込みは一時ファイルに書いてから差し替える（上書きでも既存の実体は書き換えない）
+- シンボリックリンクは辿らず、一覧にも出さない
+- 変更（作成・上書き・移動・コピー・削除）は、WebDAV でも REST でも `files.changed`（`{ path }`、変わった項目の相対パス）を全員に配信する。フォルダの一覧はその親を読み直す
+- 失敗の `code`: `not_found`（404）、`forbidden`（403）、`exists`（409、同名がある）、`parent_missing`（409）、`too_large` / `insufficient_storage`
 
 ### プラグイン・テーマ
 - ファイルは `<data_dir>/plugins/<id>/` に置く。みんなのものは誰でも配布・更新・削除できる
@@ -177,6 +193,7 @@
   - 参加・退出・更新のたびに `call.state { members }` を**全員に**配る。接続した直後も、通話中なら送る
   - `call.kick { peer }` で参加者を外す（参加者だけが送れる。自分は外せない: `invalid_kick`、いない人: `peer_not_found`）。外された接続に `call.kicked { by }` を送り、一覧から外して `call.state` を配る
   - `call.emit { name, payload }` は、参加者だけが送れ、ほかの参加者全員（自分以外）に `call.event { peer, from, name, payload }` として中継する（保存しない。`peer` は送った接続の ID でサーバーが付ける）。参加していなければ `not_in_call`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）。`audio` は本体の音声（`{ seq, pcm }`。16kHz モノラル Int16 PCM の base64）が使い、それ以外の名前は拡張 API（`disnans.call.emit`）のデータ。送り手ごとに量を制限していて（トークンバケット: 容量 4000・毎秒 3000 回復、1回の重さは `1 + payload の KB`）、超えた分は**エラーを返さずに捨てる**。受け手の送信待ちが 32 件を超えて詰まっているときは、その受け手には切断せずに捨てる（遅れて届くより捨てたほうがよい音声・映像のため）。ただし、符号化したイベントが 1 KB 以下の小さい通知（共有中の知らせや問い合わせなど）は 512 件まで残す。状態通知まで映像と一緒に捨てないためで、こちらも上限を超えれば切断せず間引く
+- `files.changed { path }` は、共有フォルダの項目が変わったとき（作成・上書き・移動・コピー・削除。WebDAV と REST のどちらでも）全員に送る。`path` は変わった項目の相対パス（`docs/a.txt`）。
 - `prefs.updated` は、`PUT /api/me/prefs` で設定が変わったとき、そのユーザーのすべての接続にだけ送る
 - `read.updated` は、`PUT /api/me/read` で既読の位置が進んだとき、そのユーザーのすべての接続にだけ送る（`unread_count` はその時点の値）
 - 失敗したら、送信者に `error` を返す

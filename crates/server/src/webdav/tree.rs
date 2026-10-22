@@ -25,6 +25,10 @@ pub struct Item {
     pub size: u64,
     /// 投稿（メッセージの作成）の時刻（ミリ秒、UNIX 時間）。
     pub posted_at_ms: i64,
+    /// 添付したメッセージの ID。
+    pub message_id: String,
+    /// 添付の種類（MIME）。
+    pub mime: String,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -147,6 +151,8 @@ mod tests {
             file_name: name.into(),
             size: 1,
             posted_at_ms,
+            message_id: format!("m-{id}"),
+            mime: "text/plain".into(),
         }
     }
 

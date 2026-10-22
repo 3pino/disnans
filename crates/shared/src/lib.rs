@@ -23,6 +23,54 @@ pub struct User {
     pub created_at: Timestamp,
 }
 
+/// 共有フォルダの項目の種類。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum SharedKind {
+    File,
+    Dir,
+}
+
+/// 共有フォルダの 1 つの項目（`/api/shared`）。`path` は共有フォルダからの相対（`docs/a.txt`）。
+/// `attachments/` の中の項目（投稿された添付）には `message_id` と `mime` が入る（読み取り専用）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SharedEntry {
+    pub name: String,
+    pub path: String,
+    pub kind: SharedKind,
+    /// ファイルの大きさ（バイト）。フォルダは 0。
+    pub size: u64,
+    /// 更新された時刻（ミリ秒、UNIX 時間）。添付は投稿の時刻。
+    pub modified: i64,
+    /// 添付の種類（添付のときだけ）。
+    pub mime: Option<String>,
+    /// 添付のメッセージ（添付のときだけ）。
+    pub message_id: Option<String>,
+}
+
+/// フォルダの中身（`GET /api/shared/...` がフォルダのとき）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SharedListing {
+    pub path: String,
+    pub entries: Vec<SharedEntry>,
+}
+
+/// フォルダの作成・移動・コピー（`POST /api/shared`）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "op", rename_all = "lowercase")]
+#[ts(export)]
+pub enum SharedOp {
+    /// フォルダを作る。
+    Mkdir { path: String },
+    /// 移動（名前の変更も）。添付は動かせない。
+    Move { from: String, to: String },
+    /// コピー。元は共有フォルダのファイル、または添付。
+    Copy { from: String, to: String },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Attachment {
@@ -416,6 +464,10 @@ pub enum ServerEvent {
     },
     #[serde(rename = "user.updated")]
     UserUpdated { user: User },
+    /// 共有フォルダの項目が変わった（作成・上書き・移動・コピー・削除。WebDAV と REST のどちらでも）。
+    /// `path` は変わった項目（共有フォルダからの相対）。フォルダの一覧はその親を読み直す。
+    #[serde(rename = "files.changed")]
+    FilesChanged { path: String },
     /// 自分宛ての通知（メンション、返信、全体向けの投稿など）。
     #[serde(rename = "notify")]
     Notify {
