@@ -630,6 +630,573 @@
           "text": "[[attachments/x]]"
         }
       ]
+    },
+    {
+      "name": "ported_inline_001",
+      "input": "_x_",
+      "expected": [
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "x"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_002",
+      "input": "*x*",
+      "expected": [
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "x"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_003",
+      "input": "snake_case_name",
+      "expected": [
+        {
+          "type": "text",
+          "text": "snake_case_name"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_004",
+      "input": "foo_bar_ baz",
+      "expected": [
+        {
+          "type": "text",
+          "text": "foo_bar_ baz"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_005",
+      "input": "**open",
+      "expected": [
+        {
+          "type": "text",
+          "text": "**open"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_006",
+      "input": "a * b * c",
+      "expected": [
+        {
+          "type": "text",
+          "text": "a * b * c"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_007",
+      "input": "** x**",
+      "expected": [
+        {
+          "type": "text",
+          "text": "** x**"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_008",
+      "input": "2*3*4",
+      "expected": [
+        {
+          "type": "text",
+          "text": "2"
+        },
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "3"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "4"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_009",
+      "input": "javascript:alert(1)",
+      "expected": [
+        {
+          "type": "text",
+          "text": "javascript:alert(1)"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_010",
+      "input": "xhttps://a.com",
+      "expected": [
+        {
+          "type": "text",
+          "text": "xhttps://a.com"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_011",
+      "input": "https://",
+      "expected": [
+        {
+          "type": "text",
+          "text": "https://"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_012",
+      "input": "<img src=x onerror=alert(1)><script>alert(1)</script>",
+      "expected": [
+        {
+          "type": "text",
+          "text": "<img src=x onerror=alert(1)><script>alert(1)</script>"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_013",
+      "input": "https://a.com/\"><script>",
+      "expected": [
+        {
+          "type": "link",
+          "href": "https://a.com/",
+          "text": "https://a.com/"
+        },
+        {
+          "type": "text",
+          "text": "\"><script>"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_014",
+      "input": "__u__",
+      "expected": [
+        {
+          "type": "underline",
+          "children": [
+            {
+              "type": "text",
+              "text": "u"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_015",
+      "input": "a __b c__ d",
+      "expected": [
+        {
+          "type": "text",
+          "text": "a "
+        },
+        {
+          "type": "underline",
+          "children": [
+            {
+              "type": "text",
+              "text": "b c"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " d"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_016",
+      "input": "__init__",
+      "expected": [
+        {
+          "type": "underline",
+          "children": [
+            {
+              "type": "text",
+              "text": "init"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_017",
+      "input": "my__var__name",
+      "expected": [
+        {
+          "type": "text",
+          "text": "my__var__name"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_018",
+      "input": "~~x~~",
+      "expected": [
+        {
+          "type": "strike",
+          "children": [
+            {
+              "type": "text",
+              "text": "x"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_019",
+      "input": "a ~~ b ~~ c",
+      "expected": [
+        {
+          "type": "text",
+          "text": "a ~~ b ~~ c"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_020",
+      "input": "~~open",
+      "expected": [
+        {
+          "type": "text",
+          "text": "~~open"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_021",
+      "input": "==**b**==",
+      "expected": [
+        {
+          "type": "highlight",
+          "children": [
+            {
+              "type": "bold",
+              "children": [
+                {
+                  "type": "text",
+                  "text": "b"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_022",
+      "input": "a == b",
+      "expected": [
+        {
+          "type": "text",
+          "text": "a == b"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_023",
+      "input": "`**x** _y_`",
+      "expected": [
+        {
+          "type": "code",
+          "text": "**x** _y_"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_024",
+      "input": "`<@u1>` https://a.com",
+      "expected": [
+        {
+          "type": "code",
+          "text": "<@u1>"
+        },
+        {
+          "type": "text",
+          "text": " "
+        },
+        {
+          "type": "link",
+          "href": "https://a.com",
+          "text": "https://a.com"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_025",
+      "input": "*a `b*` c*",
+      "expected": [
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "a "
+            },
+            {
+              "type": "code",
+              "text": "b*"
+            },
+            {
+              "type": "text",
+              "text": " c"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_026",
+      "input": "`abc",
+      "expected": [
+        {
+          "type": "text",
+          "text": "`abc"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_027",
+      "input": "\\_a\\_",
+      "expected": [
+        {
+          "type": "text",
+          "text": "_a_"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_028",
+      "input": "\\*\\*x\\*\\*",
+      "expected": [
+        {
+          "type": "text",
+          "text": "**x**"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_029",
+      "input": "\\`no\\`",
+      "expected": [
+        {
+          "type": "text",
+          "text": "`no`"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_030",
+      "input": "a\\b",
+      "expected": [
+        {
+          "type": "text",
+          "text": "a\\b"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_031",
+      "input": "_a\\_ b_",
+      "expected": [
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "a_ b"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_032",
+      "input": "[文字](https://example.com/a?b=1)です",
+      "expected": [
+        {
+          "type": "link",
+          "href": "https://example.com/a?b=1",
+          "text": "文字"
+        },
+        {
+          "type": "text",
+          "text": "です"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_033",
+      "input": "[w](https://ja.wikipedia.org/wiki/X_(Y))",
+      "expected": [
+        {
+          "type": "link",
+          "href": "https://ja.wikipedia.org/wiki/X_(Y)",
+          "text": "w"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_034",
+      "input": "[x](javascript:alert(1))",
+      "expected": [
+        {
+          "type": "text",
+          "text": "[x](javascript:alert(1))"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_035",
+      "input": "[x](ftp://a.com)",
+      "expected": [
+        {
+          "type": "text",
+          "text": "[x](ftp://a.com)"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_036",
+      "input": "[x](https://a.com\"onmouseover=1)",
+      "expected": [
+        {
+          "type": "text",
+          "text": "[x]("
+        },
+        {
+          "type": "link",
+          "href": "https://a.com",
+          "text": "https://a.com"
+        },
+        {
+          "type": "text",
+          "text": "\"onmouseover=1)"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_037",
+      "input": "[x](https://a.com b)",
+      "expected": [
+        {
+          "type": "text",
+          "text": "[x]("
+        },
+        {
+          "type": "link",
+          "href": "https://a.com",
+          "text": "https://a.com"
+        },
+        {
+          "type": "text",
+          "text": " b)"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_038",
+      "input": "[](https://a.com)",
+      "expected": [
+        {
+          "type": "text",
+          "text": "[]("
+        },
+        {
+          "type": "link",
+          "href": "https://a.com",
+          "text": "https://a.com"
+        },
+        {
+          "type": "text",
+          "text": ")"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_039",
+      "input": "[x](https://a.com",
+      "expected": [
+        {
+          "type": "text",
+          "text": "[x]("
+        },
+        {
+          "type": "link",
+          "href": "https://a.com",
+          "text": "https://a.com"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_040",
+      "input": "[**x**](https://a.com)",
+      "expected": [
+        {
+          "type": "link",
+          "href": "https://a.com",
+          "text": "**x**"
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_041",
+      "input": "*a [b*](https://a.com) c*",
+      "expected": [
+        {
+          "type": "italic",
+          "children": [
+            {
+              "type": "text",
+              "text": "a "
+            },
+            {
+              "type": "link",
+              "href": "https://a.com",
+              "text": "b*"
+            },
+            {
+              "type": "text",
+              "text": " c"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_inline_042",
+      "input": "[<b>x</b>](https://a.com)",
+      "expected": [
+        {
+          "type": "link",
+          "href": "https://a.com",
+          "text": "<b>x</b>"
+        }
+      ]
     }
   ],
   "blocks": [
@@ -1532,6 +2099,1105 @@
           "type": "code",
           "lang": "",
           "text": "[[attachments/x]]"
+        }
+      ]
+    },
+    {
+      "name": "ported_block_001",
+      "input": "a\nb\n\nc",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "a"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": "b"
+              }
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "c"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_002",
+      "input": "```ts\nconst a = **1**;\n<b>x</b>\n```\nafter",
+      "expected": [
+        {
+          "type": "code",
+          "lang": "ts",
+          "text": "const a = **1**;\n<b>x</b>"
+        },
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "after"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_003",
+      "input": "```\ncode",
+      "expected": [
+        {
+          "type": "code",
+          "lang": "",
+          "text": "code"
+        }
+      ]
+    },
+    {
+      "name": "ported_block_004",
+      "input": "```\n  a\n\n  b\n```",
+      "expected": [
+        {
+          "type": "code",
+          "lang": "",
+          "text": "  a\n\n  b"
+        }
+      ]
+    },
+    {
+      "name": "ported_block_005",
+      "input": "> hello\n> - x\n>\n> **b**\nout",
+      "expected": [
+        {
+          "type": "quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "hello"
+                  }
+                ]
+              ]
+            },
+            {
+              "type": "list",
+              "ordered": false,
+              "start": 1,
+              "items": [
+                {
+                  "lines": [
+                    [
+                      {
+                        "type": "text",
+                        "text": "x"
+                      }
+                    ]
+                  ],
+                  "children": []
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "lines": [
+                [
+                  {
+                    "type": "bold",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "b"
+                      }
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "out"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_006",
+      "input": "- a\n- **b**\n* c",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "bold",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "b"
+                      }
+                    ]
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "c"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_007",
+      "input": "+ list\n* list",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "list"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "list"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_008",
+      "input": "3. a\n4. b",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 3,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_009",
+      "input": "1) a",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_010",
+      "input": "items:\n1. a",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "items:"
+              }
+            ]
+          ]
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_011",
+      "input": "+ list\n* list\n- nested\n  - list\n    1. nested\n      1. ordered",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "list"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "list"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "nested"
+                  }
+                ]
+              ],
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "start": 1,
+                  "items": [
+                    {
+                      "lines": [
+                        [
+                          {
+                            "type": "text",
+                            "text": "list"
+                          }
+                        ]
+                      ],
+                      "children": [
+                        {
+                          "type": "list",
+                          "ordered": true,
+                          "start": 1,
+                          "items": [
+                            {
+                              "lines": [
+                                [
+                                  {
+                                    "type": "text",
+                                    "text": "nested"
+                                  }
+                                ]
+                              ],
+                              "children": [
+                                {
+                                  "type": "list",
+                                  "ordered": true,
+                                  "start": 1,
+                                  "items": [
+                                    {
+                                      "lines": [
+                                        [
+                                          {
+                                            "type": "text",
+                                            "text": "ordered"
+                                          }
+                                        ]
+                                      ],
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_012",
+      "input": "1. a\n   5. b",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": true,
+                  "start": 5,
+                  "items": [
+                    {
+                      "lines": [
+                        [
+                          {
+                            "type": "text",
+                            "text": "b"
+                          }
+                        ]
+                      ],
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_013",
+      "input": "- a\n  - b\n- c",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "start": 1,
+                  "items": [
+                    {
+                      "lines": [
+                        [
+                          {
+                            "type": "text",
+                            "text": "b"
+                          }
+                        ]
+                      ],
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "c"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_014",
+      "input": "- a\n1. b",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_015",
+      "input": "1. a\n\n2. b",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_016",
+      "input": "- a\n  b\n- c",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ],
+                [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              ],
+              "children": []
+            },
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "c"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_017",
+      "input": "- a\n  ```\n  x\n  ```",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": [
+                {
+                  "type": "code",
+                  "lang": "",
+                  "text": "x"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_018",
+      "input": "- ~~a~~ `b` [c](https://c.d)",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "strike",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " "
+                  },
+                  {
+                    "type": "code",
+                    "text": "b"
+                  },
+                  {
+                    "type": "text",
+                    "text": " "
+                  },
+                  {
+                    "type": "link",
+                    "href": "https://c.d",
+                    "text": "c"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_019",
+      "input": "# heading\n| a | b |",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "# heading"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": "| a | b |"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_020",
+      "input": "-1 point",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "-1 point"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_021",
+      "input": "a\r\nb",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "a"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": "b"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_022",
+      "input": "**a**b_c_ <@x> https://q.r/s",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "bold",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "b_c_ "
+              },
+              {
+                "type": "mention",
+                "userId": "x"
+              },
+              {
+                "type": "text",
+                "text": " "
+              },
+              {
+                "type": "link",
+                "href": "https://q.r/s",
+                "text": "https://q.r/s"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_023",
+      "input": "> **x\n- _y\n1. z**",
+      "expected": [
+        {
+          "type": "quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "**x"
+                  }
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "_y"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "z**"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_024",
+      "input": "```\n<script>\n```",
+      "expected": [
+        {
+          "type": "code",
+          "lang": "",
+          "text": "<script>"
+        }
+      ]
+    },
+    {
+      "name": "ported_block_025",
+      "input": "***x***",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "bold",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "*x"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "*"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_026",
+      "input": "_a **b_ c**",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "italic",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "a **b"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": " c**"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_027",
+      "input": "- a\n  - ~~b~~\n    1. ==c== __d__",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "a"
+                  }
+                ]
+              ],
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "start": 1,
+                  "items": [
+                    {
+                      "lines": [
+                        [
+                          {
+                            "type": "strike",
+                            "children": [
+                              {
+                                "type": "text",
+                                "text": "b"
+                              }
+                            ]
+                          }
+                        ]
+                      ],
+                      "children": [
+                        {
+                          "type": "list",
+                          "ordered": true,
+                          "start": 1,
+                          "items": [
+                            {
+                              "lines": [
+                                [
+                                  {
+                                    "type": "highlight",
+                                    "children": [
+                                      {
+                                        "type": "text",
+                                        "text": "c"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "type": "text",
+                                    "text": " "
+                                  },
+                                  {
+                                    "type": "underline",
+                                    "children": [
+                                      {
+                                        "type": "text",
+                                        "text": "d"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              ],
+                              "children": []
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_028",
+      "input": "+ e `h`\n\n1. i",
+      "expected": [
+        {
+          "type": "list",
+          "ordered": false,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "e "
+                  },
+                  {
+                    "type": "code",
+                    "text": "h"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "start": 1,
+          "items": [
+            {
+              "lines": [
+                [
+                  {
+                    "type": "text",
+                    "text": "i"
+                  }
+                ]
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ported_block_029",
+      "input": "a **b**",
+      "expected": [
+        {
+          "type": "paragraph",
+          "lines": [
+            [
+              {
+                "type": "text",
+                "text": "a "
+              },
+              {
+                "type": "bold",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "b"
+                  }
+                ]
+              }
+            ]
+          ]
         }
       ]
     }

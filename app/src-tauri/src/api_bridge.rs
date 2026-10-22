@@ -642,6 +642,12 @@ pub fn api_settings_definitions() -> Value {
     disnans_client_core::view::settings::definitions_json()
 }
 
+/// 本文の構文木（送信・編集の仮表示に使う。core の Markdown の木と同じ形）。サーバーには触らない
+#[tauri::command]
+pub fn api_markdown_tree(body: String) -> Value {
+    disnans_client_core::view::markdown::blocks_value(&body)
+}
+
 #[tauri::command]
 pub async fn api_device_register(args: DeviceRegisterArgs) -> Result<Value, ReadFailure> {
     device_register(&args).await
@@ -803,6 +809,16 @@ mod tests {
         );
         assert_eq!(out[1]["markdown"][0]["type"], "paragraph");
         assert_eq!(out[1]["body"], "b");
+    }
+
+    #[test]
+    fn markdown_tree_command_returns_the_core_tree() {
+        let out = api_markdown_tree("a **b** <@u1>".to_owned());
+        assert_eq!(
+            out,
+            disnans_client_core::view::markdown::blocks_value("a **b** <@u1>")
+        );
+        assert_eq!(api_markdown_tree(String::new()), serde_json::json!([]));
     }
 
     #[tokio::test]

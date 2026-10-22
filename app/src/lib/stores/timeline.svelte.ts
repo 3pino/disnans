@@ -3,6 +3,7 @@ import type { Message } from '../protocol/Message';
 import type { Reaction } from '../protocol/Reaction';
 import type { Attachment } from '../protocol/Attachment';
 import type { CropRect } from '../imageCrop';
+import type { Block } from '../markdown';
 
 /** 送るときにまとめてアップロードするファイル（送る前は手元に File だけ持つ） */
 export type OutgoingFile = {
@@ -42,6 +43,8 @@ export type PendingMessage = Message & {
   files: PendingFile[];
   /** アップロードと送信の途中（二重に動かさない） */
   busy: boolean;
+  /** 本文の木（Rust が作ったものが届くまでは無い。無いときは本文をプレーンに描く） */
+  markdown?: Block[];
 };
 
 const PAGE = 50;

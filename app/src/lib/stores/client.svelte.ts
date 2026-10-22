@@ -1,6 +1,7 @@
 import { api, uploadFile } from '../api';
 import { prepareUpload } from '../imageCrop';
-import { mentionsToText } from '../markdown';
+import { mentionsToText, setTree } from '../markdown';
+import { markdownTreeOf } from '../transport/markdownTree';
 import { authorOf } from '../author';
 import type { ClientEvent } from '../protocol/ClientEvent';
 import type { Message } from '../protocol/Message';
@@ -251,6 +252,7 @@ class Client {
     const me = this.me;
     if (!me) return;
     const clientId = `c-${Date.now().toString(36)}-${(++this.seq).toString(36)}`;
+    const body = opts.body;
     this.main.addPending({
       id: clientId,
       client_id: clientId,
@@ -280,6 +282,11 @@ class Client {
         abort: null,
       })),
       busy: false,
+    });
+    // 本文の木は Rust に作らせて付ける。返るまでは、同じ本文をプレーンに描く
+    void markdownTreeOf(body).then((tree) => {
+      const p = this.main.pending.find((x) => x.client_id === clientId);
+      if (tree && p && p.body === body) p.markdown = tree;
     });
     void this.deliver(clientId);
   }
@@ -347,9 +354,17 @@ class Client {
   }
 
   editMessage(msg: Message, body: string): void {
+    // 古い木は捨てる（返るまではプレーン）。届いた木は、同じ本文のときだけ付ける
     this.main.patch(msg.id, (m) => {
       m.body = body;
       m.edited_at = Date.now();
+      setTree(m, undefined);
+    });
+    void markdownTreeOf(body).then((tree) => {
+      if (!tree) return;
+      this.main.patch(msg.id, (m) => {
+        if (m.body === body) setTree(m, tree);
+      });
     });
     this.send({ type: 'message.edit', message_id: msg.id, body });
   }

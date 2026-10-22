@@ -1,8 +1,8 @@
 # 表示データの固定値（fixture）
 
-ステップ8（`.pi/step8-shared-view-model.md`）の共通の表示データを、GUI（TS）と TUI・core（Rust）で同じ結果にするための入出力の例。
+共通の表示データ（[docs/PLAN_SHARED_VIEW.md](../../../../../docs/PLAN_SHARED_VIEW.md)）を、GUI（TS）と TUI・core（Rust）で同じ結果にするための入出力の例。
 
-- `markdown.json`: 本文の Markdown（`parseInline` / `parse`）、メンションの取り出し・置き換え。
+- `markdown.json`: 本文の Markdown の木（`parse_inline` / `parse` の期待値。Rust が唯一の実装）、メンションの置き換え（`mentionsToText`）、メンションの取り出し（Rust の `extract_mentions`）。
 - `mentions.json`: 入力欄の `@名前` ↔ `<@id>`（`bodyToDraft` / `draftToBody`）。
 - `continuation.json`: 同じ人の連続（まとめ）の判定。スレッドの条件は含まない。
 
@@ -10,10 +10,11 @@
 
 ## 誰が読むか
 
-- TS: `app/src/lib/view/fixtures.test.ts`（vitest。V0 から）。
-- Rust: 段 V2 以降、`crates/client-core/tests/` の同じファイルを読む（cargo test。CI のみ）。
+- TS: `app/src/lib/view/fixtures.test.ts`（vitest）。段 A 以降、木の値は Rust に任せ、TS は木の形（描画が扱える型）と、メンションの置き換え・入力欄・続きの判定を見る。
+- Rust: `crates/client-core/tests/view_fixtures.rs`（`scripts/check-rust.sh` で走る）。木の値の正は、ここ。
 
 ## 作り方（V0）
 
-`expected` は、V0 の時点の TS 実装（`app/src/lib/markdown.ts` など）の出力を記録したもの（特徴付け）。人が読んで正しいかを確かめたうえで使う。
-後で仕様を変えるときは、`expected` を書き換える前に、変える理由を `.pi/step8-shared-view-model.md` に書く。
+`expected` は、V0 の時点の TS 実装の出力を記録したもの（特徴付け）。段 A で TS の Markdown 解析を消す前に、旧 TS の出力を `markdown.test.ts` の入力から記録して加えた（`ported_*` の名前）。その時点で Rust の木は全件一致した。
+人が読んで正しいかを確かめたうえで使う。
+後で仕様を変えるときは、`expected` を書き換える前に、変える理由を、その PR・コミットのメッセージか `docs/PLAN_SHARED_VIEW.md` に書く。

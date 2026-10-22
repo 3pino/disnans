@@ -26,7 +26,7 @@
   import { enterComboLabel, sendCombos } from '../lib/enterKeys';
   import { formatFull, formatStamp, formatTime } from '../lib/format';
   import { QUICK_REACTIONS } from '../lib/emoji';
-  import { extractMentions } from '../lib/markdown';
+  import { mentionIds, treeOfMessage } from '../lib/markdown';
   import { resolveMessageActions, type MessageActionContext } from '../lib/messageActions.svelte';
   import { registerCoreMessageActions, removeMessage } from '../lib/messageActionsCore';
   import { timelinePanels } from '../lib/stores/timelinePanel.svelte';
@@ -56,7 +56,7 @@
   const author = $derived(authorOf(message, client.users));
   /** 自分の発言（吹き出しの右側）。ボットの発言は、自分が実行したものでも他人の発言として出す */
   const isMine = $derived(isOwnMessage(message, client.me?.id));
-  const mentionsMe = $derived(!!client.me && extractMentions(message.body).includes(client.me.id));
+  const mentionsMe = $derived(!!client.me && mentionIds(treeOfMessage(message)).includes(client.me.id));
   const editing = $derived(ui.editing === message.id && !pending && !message.card);
   /** 返信できるか（同じ場所のメッセージに返信する） */
   const canReply = $derived(!pending);

@@ -1,17 +1,19 @@
 # 共通の表示データ（client-core の view）と GUI の切り替え
 
-状態: 進行中（GUI の切り替えは判断待ち）。未対応の一覧は [FEEDBACKS.md](../FEEDBACKS.md)。
+状態: V0〜V5 完了。V6（GUI に残る重複の削除）を段 A〜E に分けて進めている。段 A（Markdown の製品経路）は実装済み（レビュー待ち）。未対応の一覧は [FEEDBACKS.md](../FEEDBACKS.md)。
 
 ## 目的
 
-メッセージの見た目を決めるロジック（並び・日付の区切り・同じ人の続き・本文の構文木・メンションの名前・通知の文言）を、GUI（TypeScript）と TUI（Rust）で二重に持たないようにする。ロジックは `crates/client-core/src/view/` に一つだけ置き、描画（Svelte の部品、ターミナルの幅と折り返し）は各画面に残す。
+メッセージの見た目を決めるロジック（並び・日付の区切り・同じ人の続き・本文の構文木・メンションの名前・通知の文言・設定項目の定義と既定値）を、GUI（TypeScript）と TUI（Rust）で二重に持たないようにする。ロジックは `crates/client-core/src/view/` に一つだけ置き、描画（Svelte の部品、ターミナルの幅と折り返し）は各画面に残す。
 
 ## 原則
 
 - core は描画に依存しない。文字の幅・折り返し・色は持たない。
 - 表示データは「何を出すか」だけを表す。HTML の文字列は作らない（GUI は木を描き、TUI は行を描く）。
-- 同じ判断は fixture（`crates/client-core/tests/fixtures/view/*.json`）を、Rust と TypeScript の両方で通して保証する。fixture の `expected` は、作成時点の TypeScript の出力を記録したもの（特徴付け）。変えるときは理由を残す。
-- 続き（まとめ）の判定に、スレッドの条件は含まない。
+- 同じ判断は fixture（`crates/client-core/tests/fixtures/view/*.json`、`tests/fixtures/prefs/*.json`）を、Rust と TypeScript の両方で通して保証する。fixture の `expected` は、作成時点の TypeScript の出力を記録したもの（特徴付け）。変えるときは理由を残す。
+- 製品は Tauri（デスクトップと Android）だけ。ブラウザー（vite dev）は開発用で、表示は簡素になってよい（壊れて何も出ないことだけは避ける）。製品の判断をブラウザーのために残さない。
+- 一件ごとの invoke は作らない。表示データは既存の応答やイベントに乗せる。Android は JSON を base64 で渡すため、大きさに注意する。
+- 続き（まとめ）の判定に、スレッドの条件は含まない（スレッドは廃止）。
 
 ## 現在の状態
 
@@ -21,18 +23,34 @@
 | V1 | 環境の方針（`platform.rs`。`surface` は `tauri` `tui` `cli`）を core に移す | 完了 |
 | V2a | `view` モジュール（行の並び・日付・同じ人の続き・メッセージの行） | 完了 |
 | V2b | TUI の表示を `view` に接続（名前の省略・ボット名・メンションの表示を含む） | 完了（TUI のみ） |
-| V3 (Rust) | Markdown の構文木を `view/markdown.rs` に移し、fixture で確かめる | 完了（GUI は未変更） |
-| V3 (GUI) | GUI が Rust の本文の木（`markdown`）を使う。TypeScript の parse は Rust の木が無いときだけ使う | 実装済み（CI 待ち）。`messageRows.ts` は残す |
-| V4 | 作成・名前・通知の文言を `view` に移す | 未着手 |
-| V5 | 設定項目の定義とコマンド・ナビ項目を `view` に移す | 未着手（デバイス・ユーザーの設定の境界が決まってから） |
-| V6 | 残った重複の削除 | 未着手 |
+| V3 | Markdown の木を `view/markdown.rs` に移す。Tauri の応答・イベントに `markdown` として付け、GUI はそれを描く | 完了 |
+| V4 | 作成・名前・通知の文言 | 縮小版で完了。通知の文言はサーバーが作る（`crates/server/src/notify.rs`）。名前は TS の users マップから引く（改名に追従するため）。「不明なユーザー」の文言は core に無く、TUI が自分の定数を持つ（段 D で core に寄せる） |
+| V5 | 設定項目の定義（ユーザー・デバイス・このデバイスだけ）と既定値・正規化 | 完了（core の `view/settings.rs`。GUI の読み出しは段 C） |
+| V6 | GUI に残る重複の削除 | 進行中。段 A 実装済み。段 B〜E は下 |
 
-## V3 の方式（実装済み）
+## V6 の段
+
+各段は `scripts/check-rust.sh`、`npm run check`、`npx vitest run`、`npm run build` を通してから次へ進む。
+
+- **段 A（Markdown の製品経路）**: TS の Markdown 解析を削除。木は Rust が作る（Tauri の履歴・検索・チャットのイベント、送信・編集の仮表示）。木がまだ無いとき（送信・編集の直後、Rust の木が返るまで）と、ブラウザー（開発）は、プレーンの木（書式なし。改行と `<@id>` のメンションだけ保つ）。旧 TS の出力を fixture に記録してから削除し、Rust がその全件と一致することを確かめた。
+- **段 B（並び・日付）**: 続き（同じ人・5 分）と日付の区切りの扱いは未決定（下の「未決定」1）。
+- **段 C（設定の定義と正規化）**: GUI の読み出しを core の正規化にする（`api_prefs` の正規化、起動時に `api_settings_definitions` を読む）。TS の既定値（`DEFAULT_*`）と `normalize*` を削除する。ブラウザーは定義を読めないので、既定値の最小限の写しを残す（未決定 2）。
+- **段 D（名前と文言）**: 「不明なユーザー」を core の定数にして、定義の応答で GUI に渡す。GUI の 9 か所ほど（投稿者・通話・プラグインのユーザー）を、それに寄せる。名前の差し込みは TS の users マップに残す。
+- **段 E（掃除）**: 残った TS の重複と、不要になった fixture の TS 側の検証を整理する。
+
+## 段 A で決めたこと
+
+- 送信（`sendMessage`）と編集（`editMessage`）のとき、本文の木を Tauri の command `api_markdown_tree(body)` で 1 回だけ作らせ、仮表示（`PendingMessage.markdown`、編集中のメッセージの `markdown`）に付ける。返るまではプレーン。返ったときに本文が変わっていれば付けない。編集では古い木を先に外す（古い書式が残らないように）。
+- ブラウザー（開発）は Rust を呼ばず、仮表示は常にプレーン（書式なし。改行とメンションだけ）。
+- 失敗・形が合わないときはプレーンのまま。再送はしない（送信の再試行とは別の処理）。
+- メンションが自分宛かどうか（強調の判定）は木から取る。木が付けば（Tauri で返ったあと）判定も出る。
+- メンションの名前の差し込み（`mentionsToText`）は TS に残す（V4 の決定）。
+
+## V3 の方式
 
 - 本文の木は、履歴（`api_messages`）・検索（`api_search_messages`）の結果と、チャットの `message.created` / `message.updated` イベントの `message` に、`markdown` として付けて渡す（Rust の `view::markdown::add_to_message`）。
 - 別の呼び出し（一件ずつの invoke）は作らない。木は既存の応答に乗るので、往復は増えない。
-- GUI は `treeOf(body, markdown)` を使う。`markdown` が配列なら使い、無ければ（ブラウザー版・送信直後の仮表示など）TypeScript の `parse` で作る。
-- ブラウザー版は Rust を使えないため、`markdown.ts` の parse は残す（削除できるのは Tauri の経路だけ）。両方の正しさは fixture（`markdown.json`）で保つ。
+- GUI は `treeOf(body, markdown)` を使う。`markdown` が配列ならそれを使い、無ければプレーンの木を作る。
 
 ### payload の測定（V3 の前に行った。TypeScript で測定）
 
@@ -49,21 +67,15 @@
 
 - 9 件の合計: メッセージ 2642 バイト、木 1695 バイト（1 件あたり平均 約 190 バイト）。
 - 木は本文の繰り返しと型の印を含むので、本文の 1〜3 倍程度。Android は base64 で送るため、さらに 1/3 増える。1 件あたり数百バイトで、目安の「数 KB」の内に収まる（この測定は TypeScript の木による推定。Rust の木は fixture で同じ形と確かめている）。
-- 結論: 木を付ける方式で payload の増分は小さい。V3 の方式（上）で進める。
-
-## GUI に渡すときの判断（V3 以降）
-
-- 表示データをどこで渡すか（チャットの橋の `ChatItem` に足すか、TypeScript が作り続けるか）は、payload の大きさを測ってから決める。Android は `ChatItem` を base64 の JSON で渡すため、増えた分の影響が大きい。
-- `invoke` は一件ごとに呼ばない。表示データはイベントに乗せるか、まとめて一度取る。
-- GUI の見た目が変わりうるので、Windows・Linux・Android の実機確認と利用者の確認が要る。
 
 ## 既知の差（未検証）
 
-- Markdown の文字の判定（`\p{L}` 相当）は Rust の文字の判定で近似している。結合記号やサロゲートペアの隣の `_` `*` で、JavaScript と違う結果になる可能性がある。
-- fixture に無い入力の振る舞いは、両方で一致する保証がない。
+- Markdown の文字の判定（`\p{L}` 相当）は Rust の文字の判定（`char::is_alphanumeric`）で近似している。結合記号やサロゲートペアの隣の `_` `*` で、旧 TypeScript と違う結果になる可能性がある。
+- fixture に無い入力の振る舞いは、旧 TypeScript と一致する保証がない。
+- ブラウザー版の表示（段 A 以降）は、書式を出さない。Tauri の仮表示は、Rust の木が返るまでの短い間だけプレーンになる。見た目の判断はユーザーが行う。
 
 ## 未決定
 
-1. 表示データを渡す場所（上の「GUI に渡すとき」）。
-2. 設定項目の定義をどこに置くか（デバイス単位・ユーザー単位の境界は [設定のサーバー保管](PLAN_SERVER_SETTINGS.md) と合わせる）。
+1. 並び（段 B）: 決定済み（(a)）。続き（同じ人・5 分）と日付の区切りの判定は GUI に残し、判定の本体は fixture（`continuation.json`）で core と揃える。
+2. ブラウザー版の既定値（段 C）: 決定済み（最小の代替で可）。設定の定義は Tauri からしか読めないため、ブラウザーは既定値の最小限の写しだけを持つ。
 3. TUI と GUI は同じ版で配る前提でよいか。表示データの形が変わったとき、版がずれた場合の扱い。
