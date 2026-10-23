@@ -42,8 +42,28 @@ export function getServerUrl(): string {
   return serverUrlOverride !== undefined ? serverUrlOverride : getItem(SERVER_KEY) ?? '';
 }
 
+const serverChangeListeners = new Set<() => void>();
+
+/** 接続先のサーバーが変わったとき（旧サーバーの手元の写しを捨てるため）に呼ばれる。解除関数を返す */
+export function onServerChange(fn: () => void): () => void {
+  serverChangeListeners.add(fn);
+  return () => serverChangeListeners.delete(fn);
+}
+
+/** 実効の URL が変わっていれば、変わったと知らせる */
+function notifyIfChanged(before: string): void {
+  if (getServerUrl() === before) return;
+  for (const fn of [...serverChangeListeners]) fn();
+}
+
 /** Set the already-resolved shared-file value in memory without rewriting legacy storage. */
 export function applyServerUrl(url: string | null): void {
+  const before = getServerUrl();
+  applyServerUrlRaw(url);
+  notifyIfChanged(before);
+}
+
+function applyServerUrlRaw(url: string | null): void {
   if (!url) {
     serverUrlOverride = '';
     return;
@@ -58,10 +78,12 @@ export function applyServerUrl(url: string | null): void {
 
 /** Browser/Android-compatible synchronous setter. Desktop hosts persist through shared storage first. */
 export function setServerUrl(url: string | null): void {
+  const before = getServerUrl();
   const normalized = url ? normalizeServerUrl(url) : '';
   setItem(SERVER_KEY, normalized || null);
   // Legacy clients keep reading localStorage, including external changes and failed writes.
   serverUrlOverride = undefined;
+  notifyIfChanged(before);
 }
 
 /** Tauri ではサーバーの指定が必須 */

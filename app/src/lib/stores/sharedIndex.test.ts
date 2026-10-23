@@ -116,3 +116,27 @@ describe('SharedIndex', () => {
     expect(idx.file('attachments/new.png').kind).toBe('found');
   });
 });
+
+describe('clear（接続先の切り替え）', () => {
+  it('写しを捨て、読んでいる途中の旧サーバーの結果も捨てる', async () => {
+    let resolve!: (v: SharedEntry[]) => void;
+    list.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    idx.ensure('docs');
+    idx.clear();
+    expect(idx.state('docs')).toBeUndefined();
+    resolve([entry('docs/old.txt')]);
+    await settle();
+    expect(idx.state('docs')).toBeUndefined();
+  });
+
+  it('捨てたあとは新しく読む', async () => {
+    list.mockResolvedValue([entry('a.txt')]);
+    idx.ensure('');
+    await settle();
+    idx.clear();
+    expect(idx.state('')).toBeUndefined();
+    idx.ensure('');
+    await settle();
+    expect(idx.state('')?.kind).toBe('ok');
+  });
+});

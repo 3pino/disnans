@@ -3,6 +3,7 @@ import type { SharedEntry } from '../protocol/SharedEntry';
 import { sharedApi } from '../transport/shared';
 import { HttpError } from '../transport/http';
 import { baseName, parentOf } from '../sharedPath';
+import { onServerChange } from '../config';
 
 /** フォルダの一覧の状態（本文のファイルリンクを今の名前・有無で見分けるため） */
 export type DirState =
@@ -61,6 +62,12 @@ export class SharedIndex {
     );
   }
 
+  /** 手元の写しをすべて捨てる（接続先のサーバーが変わったとき）。読んでいる途中の結果も、世代を進めて捨てる */
+  clear(): void {
+    for (const dir of this.dirs.keys()) this.gen.set(dir, (this.gen.get(dir) ?? 0) + 1);
+    this.dirs.clear();
+  }
+
   /** 変わった項目（files.changed の path）に関わるフォルダの写しを捨てる。見ている側は次の描画で読み直す */
   invalidate(changed: string): void {
     for (const dir of [...this.dirs.keys()]) {
@@ -90,3 +97,5 @@ function findCaseless(entries: Map<string, SharedEntry>, name: string): SharedEn
 }
 
 export const sharedIndex = new SharedIndex();
+// 接続先が変わったら、旧サーバーの一覧を新サーバーのものとして見せない
+onServerChange(() => sharedIndex.clear());

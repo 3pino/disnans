@@ -9,6 +9,7 @@ import Search from '@lucide/svelte/icons/search';
 import SunMoon from '@lucide/svelte/icons/sun-moon';
 import ChevronsDown from '@lucide/svelte/icons/chevrons-down';
 import BookmarkCheck from '@lucide/svelte/icons/bookmark-check';
+import FolderOpen from '@lucide/svelte/icons/folder-open';
 import {
   APP_COMMAND_PREFIX,
   commandForKey,
@@ -107,6 +108,13 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       run: () => {
         host.paletteOpen = !host.paletteOpen;
       },
+    },
+    {
+      id: id('open-files'),
+      name: '共有フォルダを開く',
+      icon: FolderOpen,
+      description: '共有フォルダの中身を見る',
+      run: () => ui.openFiles(),
     },
     {
       id: id('take-photo'),

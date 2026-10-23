@@ -5,6 +5,7 @@
   import TimelinePanel from './TimelinePanel.svelte';
   import SettingsView from './SettingsView.svelte';
   import CallView from './CallView.svelte';
+  import FileExplorer from './FileExplorer.svelte';
   import PluginSettingsPage from './PluginSettingsPage.svelte';
   import ConnectionBanner from './ConnectionBanner.svelte';
   import NavBar from './NavBar.svelte';
@@ -67,6 +68,11 @@
       {#key ui.panel.messageId}
         <TimelinePanel tree={{ messageId: ui.panel.messageId }} />
       {/key}
+    </div>
+  {:else if ui.panel?.kind === 'files'}
+    <!-- 共有フォルダの閲覧 -->
+    <div class="shell-panel">
+      <FileExplorer />
     </div>
   {:else if ui.panel?.kind === 'plugin'}
     <!-- プラグインの view。枠は同じ -->

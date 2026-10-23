@@ -7,6 +7,7 @@
 export type Panel =
   | { kind: 'replyTree'; messageId: string }
   | { kind: 'timeline'; id: number }
+  | { kind: 'files' }
   | { kind: 'plugin'; plugin: string; view: string; sessionId: string }
   | null;
 
@@ -55,6 +56,8 @@ export function samePanel(a: Panel, b: Panel): boolean {
       return a.messageId === (b as typeof a).messageId;
     case 'timeline':
       return a.id === (b as typeof a).id;
+    case 'files':
+      return true;
     case 'plugin': {
       const o = b as typeof a;
       return a.plugin === o.plugin && a.view === o.view && a.sessionId === o.sessionId;

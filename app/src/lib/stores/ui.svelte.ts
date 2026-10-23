@@ -142,6 +142,11 @@ class Ui {
     this.openPanel({ kind: 'timeline', id });
   }
 
+  /** 共有フォルダの中身を見るパネルを開く */
+  openFiles(): void {
+    this.openPanel({ kind: 'files' });
+  }
+
   /** プラグインの view でセッションを開く */
   openPluginView(plugin: string, view: string, sessionId: string): void {
     this.openPanel({ kind: 'plugin', plugin, view, sessionId });
