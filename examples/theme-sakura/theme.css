@@ -1,13 +1,19 @@
 /*
  * さくら（disnans のテーマの実例）
  *
- * 本体の CSS 変数（app/src/app.css の :root）を上書きするだけのテーマ。
+ * 本体の CSS 変数（@3pino/design-system の tokens.css）を上書きするテーマ。
  * ライト・ダークの両方を、本体と同じ3つのセレクターで書く（→ docs/THEMES.md）。
  * 中立色は oklch(L 0.012 350)（ほんのり桜色のグレー）、アクセントは色相 350 の桜色。
  */
 
 /* ライト */
 :root {
+  /* 新しいフォーカス枠・入力背景・幕も、このパレットから色を引く。 */
+  --hue: 350;
+  --chroma: 0.012;
+  --hue-accent: 355;
+  --hue-mention: 60;
+
   --bg: oklch(0.975 0.012 350);
   --surface: oklch(0.945 0.012 350);
   --surface-2: oklch(0.905 0.014 350);
@@ -27,6 +33,7 @@
 /* ダーク（デバイスの設定に合わせる「自動」のとき） */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    --hue-mention: 70;
     --bg: oklch(0.18 0.014 350);
     --surface: oklch(0.22 0.016 350);
     --surface-2: oklch(0.27 0.018 350);
@@ -44,6 +51,7 @@
 
 /* ダーク（設定で「ダーク」を選んだとき）。上と同じ値 */
 :root[data-theme='dark'] {
+  --hue-mention: 70;
   --bg: oklch(0.18 0.014 350);
   --surface: oklch(0.22 0.016 350);
   --surface-2: oklch(0.27 0.018 350);
