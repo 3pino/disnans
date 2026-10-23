@@ -2,12 +2,24 @@
  * 並べ替えの純粋関数（ドラッグ・上下キー・左スワイプの判定。DOM は使わない）。
  * 並べ替えの部品は components/ui/SortableList.svelte。テストは sortable.test.ts
  */
-import { swipeAxis, swipeTriggered } from './swipe';
+import { swipeAxis } from './swipe';
 
 /** タッチで、動かさずにこの時間（ms）押したら並べ替えを始める。それより前の縦の動きはページのスクロール */
 export const TOUCH_DRAG_HOLD_MS = 400;
-/** 左スワイプで出す「削除」ボタンの幅（px）。離したとき、これ以上の動きなら出したままにする */
+/** 左スワイプで止まる位置（削除ボタンの幅・px）。離したとき、REVEAL_TRIGGER_PX 以上なら、ここで止めて出したままにする */
 export const REVEAL_PX = 88;
+/**
+ * 離したときに、ボタンを出したまま止まる左への動き（px）。小さな引きや指の揺れで出ないよう、ボタンの幅より手前にする。
+ * 届かなければ閉じる
+ */
+export const REVEAL_TRIGGER_PX = 60;
+/**
+ * 行の幅に対する割合。これ以上まで引いて離すと、ボタンを押さずに削除する。
+ * 60% は、縦のスクロールの横ずれ（行の端まで届くほどの横の動き）では起きない大きさ。手前で止める（ボタンを出す）操作と分けるため。
+ */
+export const FULL_SWIPE_RATIO = 0.6;
+/** 即削除のとき、行を画面の外へ滑らせる時間（ms）。CSS の transition（180ms）と合わせる */
+export const ROW_LEAVE_MS = 180;
 
 /**
  * キーボードで動かす先。上下キー・Home・End のとき、動かす先の位置を返す。
@@ -24,12 +36,28 @@ export function keyMoveTarget(key: string, index: number, length: number): numbe
   return to;
 }
 
+/** 行の左スワイプで、行の位置（左へ動くほど負）。指に合わせて動き、行の幅より先へは行かない */
+export function rowSwipeOffset(dx: number, width: number): number {
+  return Math.max(-width, Math.min(0, dx));
+}
+
 /**
- * 指を離したあと、削除ボタンを出したままにするか。取り消し（pointercancel など）では出さない。
- * 離した位置が削除のしきい値を超えていたときだけ出す
+ * 即削除に届く、左への動き（px）。幅が分からない（0 以下）ときは届かないものとする（誤って消さない）
  */
-export function revealAfterEnd(dx: number, cancelled: boolean): boolean {
-  return !cancelled && swipeTriggered(dx);
+export function fullSwipeDistance(width: number): number {
+  return width > 0 ? width * FULL_SWIPE_RATIO : Infinity;
+}
+
+/**
+ * 指を離したあとの扱い。取り消し（pointercancel など）は閉じる。
+ * delete: 行の幅の割合まで引いた（即削除）。open: ボタンを出したまま止める。close: 元に戻す
+ */
+export function releaseAction(dx: number, width: number, cancelled: boolean): 'delete' | 'open' | 'close' {
+  if (cancelled) return 'close';
+  const pulled = -dx;
+  if (pulled >= fullSwipeDistance(width)) return 'delete';
+  if (pulled >= REVEAL_TRIGGER_PX) return 'open';
+  return 'close';
 }
 
 /** 並べている項目の ID の並びが同じか（ドラッグの途中で並びが外から変わったら、操作を取り消すため） */

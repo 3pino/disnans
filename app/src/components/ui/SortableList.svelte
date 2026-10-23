@@ -2,26 +2,32 @@
   import type { Snippet } from 'svelte';
   import { onDestroy, tick } from 'svelte';
   import Button from './Button.svelte';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
   import {
     dropSlot,
     finalPositions,
+    fullSwipeDistance,
     keyMoveTarget,
     REVEAL_PX,
-    revealAfterEnd,
+    releaseAction,
+    ROW_LEAVE_MS,
     rowGesture,
+    rowSwipeOffset,
     sameIdOrder,
     slotToIndex,
     TOUCH_DRAG_HOLD_MS,
     type RowGesture,
   } from '../../lib/sortable';
-  import { swipeOffset, swipeTriggered } from '../../lib/swipe';
 
   // 並べ替えのリスト（設定の「＋メニュー」「ナビゲーションバー」で使う）。
   // つまみは無く、行の大部分（ボタン・入力欄・トグルの上を除く）が当たり判定になる:
   // - マウス・ペン: 縦に動かすと並べ替え。横に左へ動かすと削除のスワイプ。
   // - タッチ: 押したまま（約 0.4 秒）動かすと並べ替え。その前の縦の動きはページのスクロール。左への横は削除のスワイプ。
   // - キーボード: 行にフォーカスがあるとき、上下キー（Home・End も）で動かす。
-  // 削除（removable が true の行だけ）は、左へスワイプして出る「削除」ボタンを押すと消える（押して確定の2段）。
+  // 削除（removable が true の行だけ）は、行を左へ引く:
+  // - 途中まで（REVEAL_TRIGGER_PX 以上）引いて離すと、ゴミ箱のボタンを出したまま止まる。押すと削除（2段）。
+  // - 行の幅の FULL_SWIPE_RATIO（60%）以上まで引いて離すと、ボタンを押さずに即削除する。
+  // - キーボード: Delete でボタンを出し、Escape で閉じる。途中の操作は Escape で取り消す。
   // 削除できるかは親が決める。並びは onmove で親が決めて保存する。行の中身は row（snippet）で渡す
 
   let {
@@ -71,17 +77,23 @@
     dy: number;
     /** 押したまま時間が過ぎた（タッチの並べ替えの条件） */
     held: boolean;
+    /** 行の幅（左スワイプの即削除の判定に使う。幅が分からないときは Infinity） */
+    width: number;
     canRemove: boolean;
     mode: RowGesture | null;
     timer: ReturnType<typeof setTimeout> | null;
     body: HTMLElement;
   };
   let gesture: Gesture | null = null;
-  /** 左スワイプ中の行と、その横の動き（描画に要る） */
+  /** 左スワイプ中の行と、その横の動き・行の幅（描画に要る） */
   let swipingId = $state<string | null>(null);
   let swipeDx = $state(0);
+  let swipeWidth = $state(0);
   /** 削除ボタンを出したままの行（離したあと、タップか別の行を押すまで） */
   let revealedId = $state<string | null>(null);
+  /** 即削除へ向けて、画面の外へ滑らせている行。時間が過ぎたら削除する */
+  let leaving = $state<{ id: string; width: number } | null>(null);
+  let leaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * 途中の操作を取り消す（並びが外から変わった・ページを離れた）。
@@ -94,6 +106,14 @@
     drag = null;
     swipingId = null;
     swipeDx = 0;
+    swipeWidth = 0;
+    clearLeave();
+  }
+
+  function clearLeave() {
+    if (leaveTimer !== null) clearTimeout(leaveTimer);
+    leaveTimer = null;
+    leaving = null;
   }
 
   onDestroy(() => cancelGesture());
@@ -126,11 +146,21 @@
     return d === 0 ? undefined : `translateY(${d}px)`;
   }
 
-  /** 中身（行の body）の横の位置。左スワイプ中は指に合わせ、離したあとは削除ボタンを出した位置 */
+  /** 中身（行の body）の横の位置。左スワイプ中は指に合わせ、止めたときは削除ボタンを出した位置、即削除のときは行の幅の外 */
   function bodyTransform(id: string): string | undefined {
-    if (swipingId === id) return `translateX(${swipeOffset(swipeDx)}px)`;
+    if (swipingId === id) return `translateX(${swipeDx}px)`;
+    if (leaving?.id === id) return `translateX(${-leaving.width}px)`;
     if (revealedId === id) return `translateX(${-REVEAL_PX}px)`;
     return undefined;
+  }
+
+  /** 行の下の削除の層を見せている行（引いている・止まっている・滑って消えるとき） */
+  function isOpen(id: string): boolean {
+    return swipingId === id || revealedId === id || leaving?.id === id;
+  }
+
+  function canRemoveItem(item: T): boolean {
+    return !!onremove && !!removable?.(item);
   }
 
   /** 押したところが、ボタン・入力欄などの操作部品の中か */
@@ -164,7 +194,7 @@
   }
 
   function onRowDown(e: PointerEvent, i: number, item: T) {
-    if (e.button !== 0 || !listEl) return;
+    if (e.button !== 0 || !listEl || leaving) return;
     const body = e.currentTarget as HTMLElement;
     // 行を押したら、開いていた削除ボタンは閉じる
     revealedId = null;
@@ -179,7 +209,9 @@
       dx: 0,
       dy: 0,
       held: false,
-      canRemove: !!onremove && !!removable?.(item),
+      // 幅が分からない（0 以下）ときは、左スワイプで即削除しない（誤って消さない）
+      width: body.getBoundingClientRect().width > 0 ? body.getBoundingClientRect().width : Infinity,
+      canRemove: canRemoveItem(item),
       mode: null,
       timer: null,
       body,
@@ -216,6 +248,7 @@
         g.mode = 'swipe';
         capture(g);
         swipingId = g.id;
+        swipeWidth = g.width;
         swipeDx = 0;
       }
     }
@@ -223,7 +256,7 @@
       e.preventDefault();
       drag = { ...drag, y: e.clientY, slot: dropSlot(rowTops, e.clientY) };
     } else if (g.mode === 'swipe') {
-      swipeDx = Math.min(0, g.dx);
+      swipeDx = rowSwipeOffset(g.dx, g.width);
     }
   }
 
@@ -245,10 +278,28 @@
       }
       void commit(id, to);
     } else if (g.mode === 'swipe') {
-      revealedId = revealAfterEnd(g.dx, cancelled) ? g.id : null;
+      const action = releaseAction(g.dx, g.width, cancelled);
       swipingId = null;
       swipeDx = 0;
+      swipeWidth = 0;
+      if (action === 'delete') startLeave(g.id, g.width);
+      else revealedId = action === 'open' ? g.id : null;
     }
+  }
+
+  /** 即削除: 行を画面の外へ滑らせ、終わってから削除する（ボタンを押さない削除。滑る間は押せない） */
+  function startLeave(id: string, width: number) {
+    leaving = { id, width };
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    leaveTimer = setTimeout(
+      () => {
+        leaveTimer = null;
+        if (leaving?.id !== id) return;
+        leaving = null;
+        remove(id);
+      },
+      reduced ? 0 : ROW_LEAVE_MS,
+    );
   }
 
   /**
@@ -279,10 +330,26 @@
     });
   }
 
-  /** 削除ボタン。並べ替えの途中・ほかの操作の後に消す */
+  /**
+   * 削除（ボタン・即削除）。削除に使ったところにフォーカスがあったときは、近くの行へ移す
+   * （消えた行の中では、フォーカスが body に落ちてキーボードの位置を失うため）
+   */
   function remove(id: string) {
     revealedId = null;
+    const wasFocused = document.activeElement?.closest<HTMLElement>('[data-sortable-id]')?.dataset.sortableId === id;
+    const idx = items.findIndex((x) => getId(x) === id);
+    const next = idx < 0 ? undefined : (items[idx + 1] ?? items[idx - 1]);
     onremove?.(id);
+    if (!wasFocused || !next) return;
+    const nextId = getId(next);
+    void tick().then(() => focusRow(nextId));
+  }
+
+  /** 行（並べ替えの行の body）にフォーカスを移す */
+  function focusRow(id: string) {
+    const moved = listEl?.querySelectorAll<HTMLElement>(':scope > [data-sortable-id]');
+    const row = moved ? [...moved].find((el) => el.dataset.sortableId === id) : undefined;
+    row?.querySelector<HTMLElement>('.sortable-list-body')?.focus();
   }
 
   /** 押したまま動かす途中で、タッチのページのスクロールを止める（並べ替えの間だけ） */
@@ -301,15 +368,27 @@
   async function onRowKey(e: KeyboardEvent, i: number) {
     // 行そのものにフォーカスがあるときだけ（中のボタン・入力欄の操作は、そのまま）
     if (e.target !== e.currentTarget) return;
+    if (e.key === 'Escape') {
+      // 押している途中の操作（並べ替え・引いている行）と、開いている削除ボタンを閉じる
+      if (gesture || drag || revealedId !== null) {
+        e.preventDefault();
+        cancelGesture();
+        revealedId = null;
+      }
+      return;
+    }
+    if (e.key === 'Delete' && canRemoveItem(items[i])) {
+      e.preventDefault();
+      revealedId = getId(items[i]);
+      return;
+    }
     const to = keyMoveTarget(e.key, i, items.length);
     if (to === null) return;
     e.preventDefault();
     const id = getId(items[i]);
     await commit(id, to);
     // 並びが変わると行の DOM が動くため、同じ行にフォーカスを戻す
-    const moved = listEl?.querySelectorAll<HTMLElement>(':scope > [data-sortable-id]');
-    const row = moved ? [...moved].find((el) => el.dataset.sortableId === id) : undefined;
-    row?.querySelector<HTMLElement>('.sortable-list-body')?.focus();
+    focusRow(id);
   }
 </script>
 
@@ -325,6 +404,7 @@
     <div
       class="sortable-list-item"
       class:sortable-list-item-dragging={drag?.id === id}
+      class:sortable-list-item-open={isOpen(id)}
       data-sortable-id={id}
       style:transform={rowTransform(i)}
     >
@@ -333,6 +413,7 @@
       <div
         class="sortable-list-body"
         class:sortable-list-body-moving={swipingId === id}
+        class:sortable-list-body-open={isOpen(id)}
         role="group"
         tabindex="0"
         aria-label="{getLabel(item)} を並べ替える（上下キーで動かす）"
@@ -355,12 +436,27 @@
         {@render row(item)}
       </div>
       {#if canRemove}
+        <!-- 行の後ろの層。行を引くと見える（行は面で動き、この層は動かない） -->
         <div
           class="sortable-list-delete-slot"
-          class:sortable-list-delete-shown={revealedId === id || (swipingId === id && swipeTriggered(swipeDx))}
-          style:width="{REVEAL_PX}px"
+          class:sortable-list-delete-shown={isOpen(id)}
+          class:sortable-list-delete-armed={swipingId === id && swipeDx <= -fullSwipeDistance(swipeWidth)}
         >
-          <Button variant="danger" aria-label="{getLabel(item)} を削除" onclick={() => remove(id)}>削除</Button>
+          <Button
+            variant="danger"
+            icon={Trash2}
+            label="削除"
+            class="sortable-list-delete"
+            style="width: {REVEAL_PX}px"
+            onclick={() => remove(id)}
+            onkeydown={(e) => {
+              // 削除ボタンにフォーカスがあるときの Escape は、閉じて行へ戻す
+              if (e.key !== 'Escape') return;
+              e.preventDefault();
+              revealedId = null;
+              focusRow(id);
+            }}
+          />
         </div>
       {/if}
     </div>
@@ -428,19 +524,43 @@
   .sortable-list-item-dragging .sortable-list-body {
     cursor: grabbing;
   }
-  /* 左スワイプで出る「削除」。出していないときは見えず、触れず、読み上げもされない */
+  /* 行の後ろの削除の層。引いていないときは見えず、触れず、読み上げもされない。行の面の下に固定する */
   .sortable-list-delete-slot {
     position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
+    z-index: 0;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    justify-content: flex-end;
+    align-items: stretch;
+    background: var(--danger);
+    border-radius: var(--radius-sm);
+    opacity: 0.75;
+    pointer-events: none;
     visibility: hidden;
   }
   .sortable-list-delete-shown {
     visibility: visible;
+  }
+  /* 即削除の位置まで引いたら、離せば消えることを濃くして示す */
+  .sortable-list-delete-armed {
+    opacity: 1;
+  }
+  .sortable-list-delete-slot :global(.sortable-list-delete) {
+    pointer-events: auto;
+    border-radius: 0;
+    border-color: transparent;
+    background: transparent;
+  }
+  /* 行の面は、引いている間・止まっている間は下の層を隠す（背景を付ける） */
+  .sortable-list-body {
+    z-index: 1;
+  }
+  .sortable-list-body-open {
+    background: var(--surface);
+  }
+  /* 滑って出た行が、並びの外へはみ出さないように */
+  .sortable-list-item-open {
+    overflow: hidden;
   }
   @media (prefers-reduced-motion: reduce) {
     .sortable-list-item,

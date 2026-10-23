@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import Host from './SortableListTestHost.svelte';
+import { ROW_LEAVE_MS } from '../../lib/sortable';
 
 type HostExports = { setItems: (items: { id: string; name: string }[]) => void };
 
@@ -205,6 +206,155 @@ describe('SortableList（タッチの一連の操作）', () => {
     touchPointer(b, 'pointermove', 180, 50);
     touchPointer(b, 'pointerup', 180, 50);
     expect(host!.querySelector('[data-sortable-id="b"] .sortable-list-delete-shown')).toBeNull();
+  });
+});
+
+/** 左への引き（行の幅の判定）。行の幅を決めて、ボタン・行の判定を本物の寸法に近づける */
+describe('SortableList（左への引き: ボタンで止まる・即削除）', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** 行の幅（jsdom は描画しないため、行の要素の幅を決める） */
+  function stubWidth(width: number) {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      () => ({ x: 0, y: 0, top: 0, bottom: 40, left: 0, right: width, width, height: 40, toJSON() {} }) as DOMRect,
+    );
+  }
+
+  function touchPointer(el: Element, type: string, clientX: number, clientY: number) {
+    const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button: 0 });
+    Object.defineProperty(e, 'pointerId', { value: 9 });
+    Object.defineProperty(e, 'pointerType', { value: 'mouse' });
+    el.dispatchEvent(e);
+    flushSync();
+  }
+
+  function swipeTo(id: string, dx: number) {
+    const el = bodyOf(id);
+    touchPointer(el, 'pointerdown', 300, 50);
+    touchPointer(el, 'pointermove', 300 + dx, 50);
+    return el;
+  }
+
+  /** 削除の層を見せているか（削除できない行は層そのものが無い） */
+  function shown(id: string) {
+    return host!.querySelector(`[data-sortable-id="${id}"] .sortable-list-delete-slot`)?.classList.contains('sortable-list-delete-shown') ?? false;
+  }
+
+  it('途中まで引いて離すと、ボタンを出したまま止まる（即削除はしない）', () => {
+    stubWidth(300);
+    const { onmove } = render(vi.fn(), { onremove: vi.fn(), removable: () => true });
+    const b = swipeTo('b', -120);
+    touchPointer(b, 'pointerup', 180, 50);
+    expect(shown('b')).toBe(true);
+    expect(b.style.transform).toBe('translateX(-88px)');
+    vi.advanceTimersByTime(1000);
+    expect(onmove).not.toHaveBeenCalled();
+  });
+
+  it('行の幅の 60% 以上まで引いて離すと、ボタンを押さず、滑ってから削除する', () => {
+    stubWidth(300);
+    const onremove = vi.fn();
+    render(vi.fn(), { onremove, removable: () => true });
+    const b = swipeTo('b', -200);
+    touchPointer(b, 'pointerup', 100, 50);
+    expect(b.style.transform).toBe('translateX(-300px)');
+    expect(onremove).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(ROW_LEAVE_MS);
+    expect(onremove).toHaveBeenCalledWith('b');
+  });
+
+  it('60% に届かない引きは、即削除しない（ボタンで止まる）', () => {
+    stubWidth(300);
+    const onremove = vi.fn();
+    render(vi.fn(), { onremove, removable: () => true });
+    const b = swipeTo('b', -170);
+    touchPointer(b, 'pointerup', 130, 50);
+    vi.advanceTimersByTime(1000);
+    expect(onremove).not.toHaveBeenCalled();
+    expect(shown('b')).toBe(true);
+  });
+
+  it('取り消し（pointercancel）では、どれだけ引いていても削除せず閉じる', () => {
+    stubWidth(300);
+    const onremove = vi.fn();
+    render(vi.fn(), { onremove, removable: () => true });
+    const b = swipeTo('b', -250);
+    touchPointer(b, 'pointercancel', 50, 50);
+    vi.advanceTimersByTime(1000);
+    expect(onremove).not.toHaveBeenCalled();
+    expect(shown('b')).toBe(false);
+  });
+
+  it('幅が分からないときは、即削除しない（ボタンで止まる）', () => {
+    // jsdom は描画しないので幅は 0。誤って消さないため、ボタンで止まる
+    const onremove = vi.fn();
+    render(vi.fn(), { onremove, removable: () => true });
+    const b = swipeTo('b', -500);
+    touchPointer(b, 'pointerup', -200 + 300, 50);
+    vi.advanceTimersByTime(1000);
+    expect(onremove).not.toHaveBeenCalled();
+    expect(shown('b')).toBe(true);
+  });
+
+  it('ボタンを押すと削除する', () => {
+    stubWidth(300);
+    const onremove = vi.fn();
+    render(vi.fn(), { onremove, removable: () => true });
+    const b = swipeTo('b', -120);
+    touchPointer(b, 'pointerup', 180, 50);
+    host!.querySelector<HTMLButtonElement>('[data-sortable-id="b"] .sortable-list-delete')!.click();
+    flushSync();
+    expect(onremove).toHaveBeenCalledWith('b');
+  });
+
+  it('Escape で、開いている削除ボタンを閉じる', () => {
+    stubWidth(300);
+    render(vi.fn(), { onremove: vi.fn(), removable: () => true });
+    const b = swipeTo('b', -120);
+    touchPointer(b, 'pointerup', 180, 50);
+    expect(shown('b')).toBe(true);
+    b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    flushSync();
+    expect(shown('b')).toBe(false);
+  });
+
+  it('Escape で、引いている途中の行を戻す（削除しない）', () => {
+    stubWidth(300);
+    const onremove = vi.fn();
+    render(vi.fn(), { onremove, removable: () => true });
+    const b = swipeTo('b', -250);
+    b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    flushSync();
+    touchPointer(b, 'pointerup', 50, 50);
+    vi.advanceTimersByTime(1000);
+    expect(onremove).not.toHaveBeenCalled();
+    expect(b.style.transform).toBe('');
+  });
+
+  it('行にフォーカスがあるとき Delete でボタンを出す（キーボードで削除できる）', () => {
+    render(vi.fn(), { onremove: vi.fn(), removable: () => true });
+    bodyOf('b').dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+    flushSync();
+    expect(shown('b')).toBe(true);
+  });
+
+  it('削除できない行では、引いても・Delete でも削除の層を出さない', () => {
+    stubWidth(300);
+    const onremove = vi.fn();
+    render(vi.fn(), { onremove, removable: (x) => x.id !== 'b' });
+    const b = swipeTo('b', -250);
+    touchPointer(b, 'pointerup', 50, 50);
+    bodyOf('b').dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+    flushSync();
+    vi.advanceTimersByTime(1000);
+    expect(onremove).not.toHaveBeenCalled();
+    expect(shown('b')).toBe(false);
   });
 });
 

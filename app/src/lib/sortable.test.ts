@@ -6,7 +6,10 @@ import {
   finalPositions,
   keyMoveTarget,
   moveItem,
-  revealAfterEnd,
+  fullSwipeDistance,
+  releaseAction,
+  REVEAL_TRIGGER_PX,
+  rowSwipeOffset,
   rowGesture,
   sameIdOrder,
   slotToIndex,
@@ -146,19 +149,44 @@ describe('keyMoveTarget（上下キー・Home・End）', () => {
   });
 });
 
-describe('revealAfterEnd（指を離したあと、削除ボタンを出すか）', () => {
-  it('しきい値を超えて離したら出す。届かなければ出さない', () => {
-    expect(revealAfterEnd(-60, false)).toBe(true);
-    expect(revealAfterEnd(-59, false)).toBe(false);
-    expect(revealAfterEnd(0, false)).toBe(false);
+describe('rowSwipeOffset（行の位置は指に合わせ、行の幅より先へは行かない）', () => {
+  it('左へ動いた分だけ負になり、右への動きは 0', () => {
+    expect(rowSwipeOffset(-40, 300)).toBe(-40);
+    expect(rowSwipeOffset(30, 300)).toBe(0);
   });
 
-  it('取り消し（pointercancel など）では、しきい値を超えていても出さない', () => {
-    expect(revealAfterEnd(-120, true)).toBe(false);
+  it('行の幅を超えては動かない', () => {
+    expect(rowSwipeOffset(-500, 300)).toBe(-300);
+  });
+});
+
+describe('releaseAction（指を離したとき、削除ボタンで止める・即削除・元に戻す）', () => {
+  const W = 300;
+
+  it('ボタンを出す位置（REVEAL_TRIGGER_PX）に届くと open、届かなければ close', () => {
+    expect(releaseAction(-REVEAL_TRIGGER_PX, W, false)).toBe('open');
+    expect(releaseAction(-(REVEAL_TRIGGER_PX - 1), W, false)).toBe('close');
+    expect(releaseAction(0, W, false)).toBe('close');
   });
 
-  it('右への動きでは出さない', () => {
-    expect(revealAfterEnd(80, false)).toBe(false);
+  it('行の幅の 60% 以上まで引くと delete（ボタンを押さずに削除）', () => {
+    expect(fullSwipeDistance(W)).toBe(180);
+    expect(releaseAction(-180, W, false)).toBe('delete');
+    expect(releaseAction(-179, W, false)).toBe('open');
+  });
+
+  it('取り消し（pointercancel など）は、どれだけ引いていても close', () => {
+    expect(releaseAction(-290, W, true)).toBe('close');
+    expect(releaseAction(-120, W, true)).toBe('close');
+  });
+
+  it('幅が分からないとき（0 以下）は即削除しない（誤って消さない）', () => {
+    expect(fullSwipeDistance(0)).toBe(Infinity);
+    expect(releaseAction(-500, 0, false)).toBe('open');
+  });
+
+  it('右への動きでは開かない', () => {
+    expect(releaseAction(80, W, false)).toBe('close');
   });
 });
 
