@@ -98,8 +98,6 @@ pub struct Def {
 pub const ORIENTATION_OPTIONS: &[&str] = &["portrait", "media", "auto"];
 pub const DEVICE_KIND_OPTIONS: &[&str] = &["smartphone", "tablet", "laptop", "monitor"];
 pub const THEME_OPTIONS: &[&str] = &["system", "light", "dark"];
-/// メッセージの表示（`messageLayout.ts`）
-pub const MESSAGE_LAYOUT_OPTIONS: &[&str] = &["list"];
 /// Enter キーの動作（`enterKeys.ts` の ACTIONS）と組み合わせ
 const ENTER_ACTIONS: &[&str] = &["send", "newline", "none"];
 const ENTER_COMBOS: &[&str] = &["enter", "shift", "ctrl", "alt"];
@@ -214,15 +212,6 @@ pub const DEFINITIONS: &[Def] = &[
         scope: Scope::User,
         kind: Kind::ComposerMenu,
         default: DefaultValue::Json(r#"{"order":[],"hidden":[]}"#),
-    },
-    Def {
-        key: "messageLayout",
-        scope: Scope::User,
-        kind: Kind::Choice {
-            options: MESSAGE_LAYOUT_OPTIONS,
-            nullable: false,
-        },
-        default: DefaultValue::Text("list"),
     },
     // ---- デバイスごと（サーバーのデバイスの prefs）----
     Def {

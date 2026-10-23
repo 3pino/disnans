@@ -13,7 +13,6 @@ import { DEFAULT_NAV_ITEMS } from './navBar';
 import { DEFAULT_CALL_SETTINGS } from './call/pure';
 import { DEFAULT_ENTER_KEYS } from './enterKeys';
 import { DEFAULT_COMPOSER_MENU } from './composerMenu';
-import { DEFAULT_MESSAGE_LAYOUT } from './messageLayout';
 
 export type Raw = Record<string, unknown>;
 
@@ -53,7 +52,6 @@ export function userDefaults(): Raw {
     slashNames: {},
     enterKeys: { ...DEFAULT_ENTER_KEYS },
     composerMenu: { ...DEFAULT_COMPOSER_MENU },
-    messageLayout: DEFAULT_MESSAGE_LAYOUT,
   };
 }
 

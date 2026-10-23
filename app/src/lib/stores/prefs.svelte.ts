@@ -4,7 +4,6 @@ import { DEFAULT_ENTER_KEYS, type EnterAction, type EnterCombo, type EnterKeyPre
 import type { HotkeyOverrides } from '../commands.svelte';
 import { setSlashAlias, type SlashAliases } from '../slashAlias';
 import { migrateComposerMenu, type ComposerMenuPrefs } from '../composerMenu';
-import { DEFAULT_MESSAGE_LAYOUT, type MessageLayout } from '../messageLayout';
 import { DEFAULT_CALL_SETTINGS, type CallSettingsData } from '../call/pure';
 import {
   CALL_USER_KEYS,
@@ -91,8 +90,6 @@ export class Prefs {
   readonly enterKeys = $derived((this.view.enterKeys ?? DEFAULT_ENTER_KEYS) as EnterKeyPrefs);
   /** 入力欄の「＋」メニューの並び順と出す項目 */
   readonly composerMenu = $derived(this.view.composerMenu as ComposerMenuPrefs);
-  /** メッセージの表示は一覧に固定（吹き出しは撤去。保存された旧い値は見ない） */
-  readonly messageLayout: MessageLayout = DEFAULT_MESSAGE_LAYOUT;
   /** テーマ（system・light・dark）。起動直後はデバイスのキャッシュの値 */
   readonly theme = $derived(this.view.theme as ThemeChoice);
   /** 選んだプラグインのテーマの ID（なければ null） */

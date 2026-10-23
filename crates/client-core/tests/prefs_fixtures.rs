@@ -64,13 +64,7 @@ fn user_prefs_read_like_the_gui_normalizers() {
 #[test]
 fn user_pref_definitions_are_user_scoped() {
     use disnans_client_core::view::settings::{DEFINITIONS, Scope};
-    for key in [
-        "hotkeys",
-        "slashNames",
-        "enterKeys",
-        "composerMenu",
-        "messageLayout",
-    ] {
+    for key in ["hotkeys", "slashNames", "enterKeys", "composerMenu"] {
         let def = DEFINITIONS
             .iter()
             .find(|d| d.key == key)

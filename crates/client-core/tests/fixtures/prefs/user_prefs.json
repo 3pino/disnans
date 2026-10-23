@@ -268,30 +268,6 @@
       }
     },
     {
-      "key": "messageLayout",
-      "name": "removed bubble falls back to list",
-      "input": "bubble",
-      "expected": "list"
-    },
-    {
-      "key": "messageLayout",
-      "name": "list",
-      "input": "list",
-      "expected": "list"
-    },
-    {
-      "key": "messageLayout",
-      "name": "unknown is list",
-      "input": "x",
-      "expected": "list"
-    },
-    {
-      "key": "messageLayout",
-      "name": "null is list",
-      "input": null,
-      "expected": "list"
-    },
-    {
       "key": "navBarItems",
       "name": "null gives the default items",
       "input": null,

@@ -47,7 +47,6 @@
   const AVATAR_LIST_PX = 28;
 
   /** 表示の仕方（一覧のみ。吹き出しは撤去） */
-  const layout = $derived(prefs.messageLayout);
   const pending = $derived('client_id' in message ? (message as PendingMessage) : null);
   /** 投稿者の表示（ボットなら名前とプラグインのアイコン） */
   const author = $derived(authorOf(message, client.users));
@@ -231,7 +230,6 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="message-item"
-  data-layout={layout}
   class:message-item-grouped={grouped}
   class:message-item-pending={!!pending}
   class:message-item-failed={pending?.failed}
@@ -282,7 +280,7 @@
 
     <div class="message-line">
       <!-- 本文と、その下の付属物（リアクション・カードなど）。スワイプではまとめて動く -->
-      <div class="message-stack" class:message-stack-editing={editing} style:transform="translateX({swipeX}px)">
+      <div class="message-stack" style:transform="translateX({swipeX}px)">
         {#if editing}
           <div class="message-editor">
             <MessageInput
@@ -412,14 +410,11 @@
   .message-item {
     position: relative;
     display: flex;
-    gap: var(--space-4);
+    gap: var(--space-6);
     padding: var(--space-3) var(--space-7) var(--space-2);
     margin-top: var(--space-3);
     /* 横方向の操作（スワイプで返信）は自分で受け、縦のスクロールはそのまま */
     touch-action: pan-y;
-  }
-  .message-item[data-layout='list'] {
-    gap: var(--space-6);
   }
   .message-item.message-item-grouped {
     margin-top: 0;
@@ -452,15 +447,11 @@
     opacity: 1;
   }
   .message-gutter {
-    width: 20px;
+    width: 28px;
     flex: none;
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding-top: var(--space-1);
-  }
-  .message-item[data-layout='list'] .message-gutter {
-    width: 28px;
     padding-top: 0;
   }
   /* 一覧の先頭の発言のアイコンは、押して名前と時刻を出し入れできる */
@@ -479,7 +470,7 @@
     display: flex;
     flex-direction: column;
   }
-  /* 時刻は、どちらの表示でも選べないように（長押しで文字を選ばないように） */
+  /* 時刻は選べないように（長押しで文字を選ばないように） */
   .message-item time {
     flex: none;
     -webkit-user-select: none;
@@ -490,6 +481,8 @@
   }
   .message-hover-time {
     visibility: hidden;
+    font-size: var(--fs-xs);
+    line-height: 23px;
   }
   .message-item:hover .message-hover-time {
     visibility: visible;
@@ -504,10 +497,6 @@
   }
   .message-header .message-time {
     font-size: var(--fs-sm);
-  }
-  .message-item[data-layout='list'] .message-hover-time {
-    font-size: var(--fs-xs);
-    line-height: 23px;
   }
   .message-author {
     font-weight: var(--fw-semibold);
@@ -537,12 +526,9 @@
     color: var(--text);
     background: var(--surface-2);
   }
-  /* 本文がないメッセージ用。一覧では右下 */
+  /* 本文がないメッセージの返信の目印は右下 */
   .message-replied-alone {
     flex: none;
-    align-self: flex-end;
-  }
-  .message-item[data-layout='list'] .message-replied-alone {
     display: flex;
     justify-content: flex-end;
     align-self: auto;
@@ -563,30 +549,18 @@
     vertical-align: 1px;
   }
   .message-line {
-    display: flex;
-    align-items: flex-end;
-    gap: var(--space-3);
+    display: block;
     min-width: 0;
   }
-  .message-item[data-layout='list'] .message-line {
-    display: block;
-  }
+  /* 本文は行の幅いっぱい。カードや添付は、ふつうの大きさのまま */
   .message-stack {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     min-width: 0;
-    max-width: 75%;
-    transition: transform 0.2s ease-out;
-  }
-  /* 一覧: 本文は行の幅いっぱい。カードや添付は、ふつうの大きさのまま */
-  .message-item[data-layout='list'] .message-stack {
     width: 100%;
     max-width: none;
-  }
-  .message-stack.message-stack-editing {
-    max-width: 100%;
-    width: 100%;
+    transition: transform 0.2s ease-out;
   }
   .message-item.message-item-swiping .message-stack {
     transition: none;
@@ -716,8 +690,6 @@
     .message-item {
       padding-left: var(--space-5);
       padding-right: var(--space-5);
-    }
-    .message-item[data-layout='list'] {
       gap: var(--space-5);
     }
   }

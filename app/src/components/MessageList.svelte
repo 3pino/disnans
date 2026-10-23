@@ -10,7 +10,6 @@
   import { isContinuation } from '../lib/messageRows';
   import { ui } from '../lib/stores/ui.svelte';
   import { client } from '../lib/stores/client.svelte';
-  import { prefs } from '../lib/stores/prefs.svelte';
   import { firstUnread, page, registerUnreadView, takePendingJump, unread } from '../lib/stores/unread.svelte';
 
   let {
@@ -200,7 +199,7 @@
   });
 </script>
 
-<div class="message-list" data-layout={prefs.messageLayout}>
+<div class="message-list">
 <div class="message-list-scroller scroll" bind:this={scroller} {onscroll}>
   <div class="message-list-content" bind:this={content}>
     {#if header}{@render header()}{/if}
@@ -338,22 +337,18 @@
     box-shadow: var(--shadow);
     z-index: 6;
   }
-  /* 送信中の添付（アップロードの進み）。自分の発言と同じ側に出す */
+  /* 送信中の添付（アップロードの進み）。アイコンの幅のぶん空け、本文の左の位置にそろえる */
   .message-list-upload {
     display: flex;
     align-items: center;
     gap: var(--space-4);
     max-width: 70%;
-    margin: var(--space-2) var(--space-7) var(--space-2) auto;
+    margin: var(--space-2) var(--space-7) var(--space-2) 64px;
     padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--surface);
     font-size: var(--fs-sm);
-  }
-  /* 一覧のときは、本文と同じ左の位置に（アイコンの幅のぶん空ける） */
-  .message-list[data-layout='list'] .message-list-upload {
-    margin: var(--space-2) var(--space-7) var(--space-2) 64px;
   }
   .message-list-upload.message-list-upload-error {
     border-color: var(--danger);

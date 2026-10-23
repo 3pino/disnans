@@ -8,7 +8,6 @@
   import { jumpToMessage } from '../lib/jump';
   import { matchRanges } from '../lib/search';
   import { client } from '../lib/stores/client.svelte';
-  import { prefs } from '../lib/stores/prefs.svelte';
   import { messageSearch as search } from '../lib/stores/search.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 
@@ -148,7 +147,7 @@
   }
 </script>
 
-<div class="search-results" data-layout={prefs.messageLayout}>
+<div class="search-results">
   <div class="search-results-scroller scroll" bind:this={scroller} {onscroll}>
     <div class="search-results-content" bind:this={content}>
       {#if search.error}

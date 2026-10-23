@@ -90,7 +90,7 @@ describe('表示の補完（正規化は Rust。ここは足りない項目を�
   it('Rust を通さない結果（ブラウザー）は raw をそのまま、view は既定で埋めたもの', () => {
     const r = prefsResultOf({ theme: 'light' });
     expect(r.raw).toEqual({ theme: 'light' });
-    expect(r.view).toMatchObject({ theme: 'light', messageLayout: 'list' });
+    expect(r.view).toMatchObject({ theme: 'light' });
     expect(prefsResultOf('x')).toEqual({ raw: {}, view: fillUserDefaults({}) });
   });
 });
@@ -106,7 +106,6 @@ import { DEFAULT_CALL_SETTINGS } from './call/pure';
 import { DEFAULT_NAV_ITEMS } from './navBar';
 import { DEFAULT_ENTER_KEYS } from './enterKeys';
 import { DEFAULT_COMPOSER_MENU } from './composerMenu';
-import { DEFAULT_MESSAGE_LAYOUT } from './messageLayout';
 import { DEFAULT_ORIENTATION } from './orientation';
 import { USER_KEYS, DEVICE_KEYS } from './settingsModel';
 
@@ -130,7 +129,6 @@ const SCOPE_OF: Record<string, 'user' | 'device' | 'local'> = {
   slashNames: 'user',
   enterKeys: 'user',
   composerMenu: 'user',
-  messageLayout: 'user',
   inputId: 'device',
   output: 'device',
   deviceKind: 'device',
@@ -159,7 +157,6 @@ const TS_DEFAULTS: Record<string, unknown> = {
   slashNames: {},
   enterKeys: DEFAULT_ENTER_KEYS,
   composerMenu: DEFAULT_COMPOSER_MENU,
-  messageLayout: DEFAULT_MESSAGE_LAYOUT,
   ...DEVICE_DEFAULTS,
   inputId: DEFAULT_CALL_SETTINGS.inputId,
   output: DEFAULT_CALL_SETTINGS.output,
