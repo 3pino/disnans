@@ -3,20 +3,21 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, MouseEvent, MouseEventKind};
 use disnans_shared::{Message, Reaction, User};
 
 use std::collections::HashMap;
 
 use jiff::tz::TimeZone;
 
-use super::commands::{self, Mode};
+use super::commands::{self, Bindings, Mode};
 use super::graphics::Placement;
 use super::input::{Action, EnterKeys, Keymap};
 use super::picture::Prepared;
 use super::search::{Phase, Search};
 use super::textbuf::TextBuf;
 use super::transcript::{self, Row};
+use super::ui::modal::{Dialog, Menu, MenuItem, Modal, Outcome, Prompt};
 
 /// 起動時・再取得時に読む件数。
 pub const PAGE_SIZE: u32 = 50;
@@ -121,6 +122,7 @@ pub enum NetEvent {
 pub enum Event {
     Key(KeyEvent),
     Paste(String),
+    Mouse(MouseEvent),
     Net(NetEvent),
 }
 
@@ -223,8 +225,14 @@ pub struct App {
     pub mode: Mode,
     /// 選択モードで選んでいるメッセージの ID。
     pub selected: Option<String>,
-    /// リアクションの絵文字の入力。
-    pub react_input: TextBuf,
+    /// キーとコマンドの対応（後から設定で差し替えられる）。
+    pub bindings: Bindings,
+    /// モーダルのスタック。最上位だけが操作を受ける。
+    pub modals: Vec<Modal>,
+    /// 送信ボタンの領域（x, y, 幅, 高さ）。描画のたびに更新する。
+    pub send_button: Option<(u16, u16, u16, u16)>,
+    /// 最上位のモーダルを描いた領域（x, y, 幅, 高さ）と、Dialog のメッセージの行数。マウスの当たり判定に使う。
+    pub modal_area: Option<(u16, u16, u16, u16, u16)>,
     /// 検索の状態。
     pub search: Search,
     /// 返信先のメッセージ ID（次の送信に付く）。
@@ -241,7 +249,6 @@ pub struct App {
     pub reached_start: bool,
     /// 履歴の取得に失敗している（Ctrl+R で再取得）。
     pub history_error: Option<String>,
-    confirm_resend: bool,
     new_client_id: IdSource,
 }
 
@@ -275,7 +282,10 @@ impl App {
             should_quit: false,
             mode: Mode::Input,
             selected: None,
-            react_input: TextBuf::default(),
+            bindings: Bindings::default(),
+            modals: Vec::new(),
+            send_button: None,
+            modal_area: None,
             search: Search::default(),
             reply_to: None,
             zone,
@@ -286,7 +296,6 @@ impl App {
             refetching: false,
             reached_start: false,
             history_error: None,
-            confirm_resend: false,
             new_client_id,
         }
     }
@@ -408,6 +417,10 @@ impl App {
         match event {
             Event::Key(key) => {
                 let mut action = self.keymap.map(key);
+                if !self.modals.is_empty() {
+                    self.on_action(action, &mut effects);
+                    return effects;
+                }
                 if self.focus == Focus::SendButton {
                     let plain = key.modifiers.is_empty()
                         && key.kind != crossterm::event::KeyEventKind::Release;
@@ -452,6 +465,13 @@ impl App {
                 }
             }
             Event::Paste(text) => {
+                if let Some(Modal::Prompt(p)) = self.modals.last_mut() {
+                    p.text.insert_str(&text.replace(['\r', '\n'], " "));
+                    return effects;
+                }
+                if !self.modals.is_empty() {
+                    return effects;
+                }
                 if self.mode == Mode::Search && self.search.phase == Phase::Editing {
                     // 検索語は 1 行。改行は空白にする。
                     self.search
@@ -466,6 +486,7 @@ impl App {
                 self.input.insert_str(&text);
                 self.draft_changed(&mut effects);
             }
+            Event::Mouse(mouse) => self.on_mouse(mouse, &mut effects),
             Event::Net(net) => self.on_net(net, &mut effects),
         }
         effects
@@ -478,7 +499,6 @@ impl App {
     fn clear_transient(&mut self) {
         self.notice = None;
         self.alert = None;
-        self.confirm_resend = false;
     }
 
     fn draft_changed(&self, effects: &mut Vec<Effect>) {
@@ -490,12 +510,16 @@ impl App {
     }
 
     fn on_action(&mut self, action: Action, effects: &mut Vec<Effect>) {
+        if !self.modals.is_empty() {
+            self.on_modal_action(action, effects);
+            return;
+        }
         match self.mode {
             Mode::Input => {}
             Mode::Select => {
                 if commands::is_passthrough(&action) {
                     self.on_input_action(action, effects);
-                } else if let Some(id) = commands::from_key(self.mode, &action, false) {
+                } else if let Some(id) = self.bindings.command(self.mode, &action, false) {
                     self.run_command(id, effects);
                 }
                 return;
@@ -504,26 +528,11 @@ impl App {
                 self.on_search_action(action, effects);
                 return;
             }
-            Mode::React => {
-                if let Some(id) = commands::from_key(self.mode, &action, false) {
-                    self.run_command(id, effects);
-                } else {
-                    match action {
-                        Action::Insert(c) => self.react_input.insert_char(c),
-                        Action::Backspace => self.react_input.backspace(),
-                        Action::Delete => self.react_input.delete(),
-                        Action::Left => self.react_input.left(),
-                        Action::Right => self.react_input.right(),
-                        Action::Home => self.react_input.home(),
-                        Action::End => self.react_input.end(),
-                        Action::Quit => self.on_input_action(action, effects),
-                        _ => {}
-                    }
-                }
-                return;
-            }
         }
-        match commands::from_key(self.mode, &action, self.reply_to.is_some()) {
+        match self
+            .bindings
+            .command(self.mode, &action, self.reply_to.is_some())
+        {
             Some(
                 id @ (commands::MESSAGE_SELECT
                 | commands::MESSAGE_REPLY_CANCEL
@@ -764,14 +773,25 @@ impl App {
             }
             commands::MESSAGE_REPLY_CANCEL => self.reply_to = None,
             commands::MESSAGE_REACT => {
-                self.react_input.clear();
-                self.mode = Mode::React;
+                self.modals.push(Modal::Prompt(Prompt {
+                    title: "リアクション（絵文字）".into(),
+                    command: commands::MESSAGE_REACT_APPLY.into(),
+                    text: TextBuf::default(),
+                }));
             }
-            commands::MESSAGE_REACT_CANCEL => self.mode = Mode::Select,
-            commands::MESSAGE_REACT_APPLY => {
-                let emoji = self.react_input.as_str().trim().to_owned();
-                self.apply_reaction(&emoji, effects);
+            commands::MESSAGE_MENU => {
+                let mut items = vec![
+                    MenuItem::new("返信", commands::MESSAGE_REPLY),
+                    MenuItem::new("絵文字でリアクション…", commands::MESSAGE_REACT),
+                ];
+                for (command, emoji) in commands::QUICK_REACTIONS {
+                    items.push(MenuItem::new(&format!("{emoji} リアクション"), command));
+                }
+                self.modals
+                    .push(Modal::Menu(Menu::new("メッセージの操作", items)));
             }
+            commands::CHAT_RESEND_CONFIRMED => self.send_checked(false, true, effects),
+            commands::CHAT_RESEND_CONFIRMED_SILENT => self.send_checked(true, true, effects),
             quick => {
                 if let Some((_, emoji)) = commands::QUICK_REACTIONS
                     .iter()
@@ -781,6 +801,89 @@ impl App {
                 }
             }
         }
+    }
+
+    /// 最上位のモーダルへ操作を渡し、結果に応じてスタックから外してコマンドを実行する。
+    fn on_modal_action(&mut self, action: Action, effects: &mut Vec<Effect>) {
+        if matches!(action, Action::Quit) {
+            self.modals.clear();
+            self.on_input_action(action, effects);
+            return;
+        }
+        let Some(top) = self.modals.last_mut() else {
+            return;
+        };
+        let outcome = top.on_action(&action);
+        self.finish_modal(outcome, effects);
+    }
+
+    fn finish_modal(&mut self, outcome: Outcome, effects: &mut Vec<Effect>) {
+        match outcome {
+            Outcome::Keep => {}
+            Outcome::Close => {
+                self.modals.pop();
+            }
+            Outcome::Run(command) => {
+                self.modals.pop();
+                self.run_command(&command, effects);
+            }
+            Outcome::Submit(command, text) => {
+                self.modals.pop();
+                if command == commands::MESSAGE_REACT_APPLY {
+                    self.apply_reaction(text.trim(), effects);
+                }
+            }
+        }
+    }
+
+    /// マウス。ホイールはスクロール（モーダル中は項目の移動）、左クリックはモーダルの項目・ボタン、
+    /// 入力欄・送信ボタンのフォーカス。モーダルの外のクリックは取消。
+    fn on_mouse(&mut self, mouse: MouseEvent, effects: &mut Vec<Effect>) {
+        let wheel = match mouse.kind {
+            MouseEventKind::ScrollUp => Some((Action::ScrollUp, Action::Up)),
+            MouseEventKind::ScrollDown => Some((Action::ScrollDown, Action::Down)),
+            _ => None,
+        };
+        if let Some((scroll, step)) = wheel {
+            let action = if self.modals.is_empty() { scroll } else { step };
+            self.on_action(action, effects);
+            return;
+        }
+        if !matches!(
+            mouse.kind,
+            MouseEventKind::Down(crossterm::event::MouseButton::Left)
+        ) {
+            return;
+        }
+        if self.modals.is_empty() {
+            self.focus = match self.send_button {
+                Some((x, y, w, h))
+                    if (x..x + w).contains(&mouse.column) && (y..y + h).contains(&mouse.row) =>
+                {
+                    Focus::SendButton
+                }
+                _ => Focus::Input,
+            };
+            return;
+        }
+        let Some((x, y, w, h, message_rows)) = self.modal_area else {
+            return;
+        };
+        let inside = (x..x + w).contains(&mouse.column) && (y..y + h).contains(&mouse.row);
+        let Some(top) = self.modals.last_mut() else {
+            return;
+        };
+        let outcome = if inside {
+            // 枠 1 行 + 本体の内側 1 桁ぶんを引いた位置が、本体の左上。
+            top.on_click(
+                mouse.row.saturating_sub(y + 1),
+                mouse.column.saturating_sub(x + 2),
+                message_rows,
+            )
+        } else {
+            top.on_action(&Action::Cancel)
+        };
+        self.finish_modal(outcome, effects);
     }
 
     fn move_selection(&mut self, delta: isize) {
@@ -854,10 +957,6 @@ impl App {
     }
 
     fn on_input_action(&mut self, action: Action, effects: &mut Vec<Effect>) {
-        // 再送の確認中に送信キー以外を押したら取り消す。
-        if !matches!(action, Action::Send | Action::SendSilent | Action::Ignore) {
-            self.confirm_resend = false;
-        }
         match action {
             Action::Quit => {
                 self.should_quit = true;
@@ -932,6 +1031,10 @@ impl App {
     }
 
     fn send_pressed(&mut self, silent: bool, effects: &mut Vec<Effect>) {
+        self.send_checked(silent, false, effects);
+    }
+
+    fn send_checked(&mut self, silent: bool, confirmed: bool, effects: &mut Vec<Effect>) {
         if self.input_locked() {
             self.notice = Some("送信中です。確認を待っています".into());
             return;
@@ -950,16 +1053,21 @@ impl App {
             self.notice = Some("接続中ではないため送信できません。入力は残してあります".into());
             return;
         }
-        if matches!(self.send, SendState::Unknown { .. }) && !self.confirm_resend {
-            self.confirm_resend = true;
-            self.notice = Some(
-                "前回の送信は結果が不明で、実は成功している可能性があります。\
-                 送ると二重投稿になるかもしれません。もう一度送信キーを押すと送ります（他のキーで取消）"
-                    .into(),
-            );
+        if matches!(self.send, SendState::Unknown { .. }) && !confirmed {
+            // 初期の選択は「やめる」。送るには、送る側へ動かして決定する。
+            self.modals.push(Modal::Dialog(Dialog::confirm(
+                "二重投稿の確認",
+                "前回の送信は結果が不明で、実は成功している可能性があります。送ると二重投稿になるかもしれません。",
+                "やめる",
+                "送る",
+                if silent {
+                    commands::CHAT_RESEND_CONFIRMED_SILENT
+                } else {
+                    commands::CHAT_RESEND_CONFIRMED
+                },
+            )));
             return;
         }
-        self.confirm_resend = false;
         self.notice = None;
         let client_id = (self.new_client_id)();
         self.send = SendState::Sending {
@@ -1262,7 +1370,7 @@ mod tests {
     use super::*;
     use crate::tui::search::LIMIT;
     use crate::tui::transcript::tests_support::{message, user};
-    use crossterm::event::{KeyCode, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
 
     fn make() -> App {
         let mut n = 0;
@@ -1549,7 +1657,7 @@ mod tests {
         );
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
         press(&mut app, KeyCode::Char('r'), KeyModifiers::NONE);
-        assert_eq!(app.mode, Mode::React);
+        assert_eq!((app.mode, app.modals.len()), (Mode::Select, 1));
         type_text(&mut app, "🔥");
         let effects = press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!(
@@ -1560,12 +1668,14 @@ mod tests {
                 add: false
             }]
         );
-        // 空のままでは送らず、Esc で選択へ戻る。
+        // 空のままでは送らず、理由を出して選択へ戻る。Esc はモーダルを閉じるだけ。
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
         press(&mut app, KeyCode::Char('r'), KeyModifiers::NONE);
         assert!(press(&mut app, KeyCode::Enter, KeyModifiers::NONE).is_empty());
+        assert!(app.modals.is_empty() && app.notice.is_some());
+        press(&mut app, KeyCode::Char('r'), KeyModifiers::NONE);
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-        assert_eq!(app.mode, Mode::Select);
+        assert_eq!((app.mode, app.modals.len()), (Mode::Select, 0));
     }
 
     #[test]
@@ -1696,12 +1806,17 @@ mod tests {
         );
         assert!(effects.contains(&Effect::SaveDraftNow(Some("maybe".into()))));
         assert!(matches!(app.send, SendState::Unknown { .. }));
-        // 最初の送信キーは送らず確認だけ。
+        // 最初の送信キーは送らず、確認のダイアログ（既定は「やめる」）を出す。
         assert!(send_key(&mut app).is_empty());
-        assert!(app.notice.as_deref().unwrap().contains("二重投稿"));
-        // 別のキーで取り消すと、また確認から。
+        assert!(
+            matches!(app.modals.last(), Some(Modal::Dialog(d)) if d.message.contains("二重投稿") && d.focus == 0)
+        );
+        // Esc で取り消すと、また確認から。入力は変わらない。
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(app.modals.is_empty());
         type_text(&mut app, "!");
         assert!(send_key(&mut app).is_empty());
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
         // 同じ client_id の created が後から届いたら確定扱い。
         net(
             &mut app,
@@ -1729,8 +1844,13 @@ mod tests {
             },
         );
         send_key(&mut app);
-        let effects = send_key(&mut app);
+        // 既定の「やめる」のまま Enter では送らない。「送る」へ動かして決定すると新しい client_id で送る。
+        assert!(press(&mut app, KeyCode::Enter, KeyModifiers::NONE).is_empty());
+        send_key(&mut app);
+        press(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        let effects = press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert!(matches!(&effects[..], [Effect::Send { client_id, .. }] if client_id == "cid2"));
+        assert!(app.modals.is_empty());
     }
 
     #[test]
@@ -2001,5 +2121,69 @@ mod tests {
         );
         let (r, g, b) = app.author_color("u1").unwrap();
         assert!(b > r && b > g && b > 140);
+    }
+
+    #[test]
+    fn message_menu_opens_runs_and_blocks_keys_to_the_screen_underneath() {
+        let mut app = make();
+        two_messages(&mut app);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE);
+        assert_eq!(app.modals.len(), 1);
+        // 下の画面（選択の移動）へは届かない
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::NONE);
+        assert_eq!(app.selected.as_deref(), Some("b"));
+        // 貼り付けも無視する
+        app.update(Event::Paste("x".into()));
+        assert_eq!(app.input.as_str(), "");
+        // 2 番目は絵文字入力。Prompt が積まれる
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(app.modals.last(), Some(Modal::Prompt(_))) && app.modals.len() == 1);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(app.modals.is_empty());
+        // 先頭は返信
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(
+            (app.mode, app.reply_to.as_deref()),
+            (Mode::Input, Some("b"))
+        );
+    }
+
+    #[test]
+    fn mouse_wheel_scrolls_and_clicks_hit_the_modal_or_close_it() {
+        use crossterm::event::{MouseButton, MouseEvent};
+        let mouse = |kind, column, row| {
+            Event::Mouse(MouseEvent {
+                kind,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            })
+        };
+        let mut app = make();
+        two_messages(&mut app);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE);
+        // 描画で決まる領域を仮に置く: x=10,y=5 幅30 高さ9
+        app.modal_area = Some((10, 5, 30, 9, 0));
+        // ホイールは項目の移動
+        app.update(mouse(MouseEventKind::ScrollDown, 12, 6));
+        let Some(Modal::Menu(m)) = app.modals.last() else {
+            panic!()
+        };
+        assert_eq!(m.cursor, 1);
+        // 外のクリックは取消
+        app.update(mouse(MouseEventKind::Down(MouseButton::Left), 0, 0));
+        assert!(app.modals.is_empty());
+        // 内側のクリック: 枠の次の行が先頭の項目（返信）
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE);
+        app.modal_area = Some((10, 5, 30, 9, 0));
+        app.update(mouse(MouseEventKind::Down(MouseButton::Left), 12, 6));
+        assert_eq!(app.reply_to.as_deref(), Some("b"));
+        // モーダルが無いとき、ホイールは履歴のスクロール
+        assert!(app.modals.is_empty());
+        app.update(mouse(MouseEventKind::ScrollUp, 0, 0));
     }
 }

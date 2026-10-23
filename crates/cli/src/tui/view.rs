@@ -13,6 +13,7 @@ use super::markdown::Deco;
 use super::sanitize;
 use super::search::Phase;
 use super::transcript::{self, Row, RowKind};
+use super::ui::modal::Modal;
 use super::ui::theme::{self, Theme};
 
 fn t() -> &'static Theme {
@@ -100,15 +101,6 @@ pub fn message_line(app: &App) -> Option<(String, Color)> {
             None => line,
         };
         return Some((text, t().warning));
-    }
-    if app.mode == Mode::React {
-        return Some((
-            format!(
-                "リアクション（絵文字）: {}▏",
-                sanitize::inline(app.react_input.as_str())
-            ),
-            t().warning,
-        ));
     }
     if app.mode == Mode::Select {
         return Some(("メッセージを選択中".into(), t().warning));
@@ -368,8 +360,8 @@ pub fn plan(area: Rect, app: &mut App) {
     }
     let (w, h) = history_size(area, app);
     app.set_viewport(w, h);
-    if app.mode == Mode::Search {
-        // 検索の結果を出している間は、履歴の画像を出さない。
+    if app.mode == Mode::Search || !app.modals.is_empty() {
+        // 検索の結果やモーダルを出している間は、履歴の画像を出さない（モーダルに重ならない）。
         app.placements = Vec::new();
         return;
     }
@@ -624,7 +616,13 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         width: BUTTON_W.min(r.input.width),
         height: 3,
     };
-    let focused = app.focus == Focus::SendButton;
+    app.send_button = Some((
+        button_area.x,
+        button_area.y,
+        button_area.width,
+        button_area.height,
+    ));
+    let focused = app.focus == Focus::SendButton && app.modals.is_empty();
     let can_send = matches!(app.conn, ConnState::Connected { .. })
         && !app.input.as_str().trim().is_empty()
         && !app.input_locked();
@@ -676,9 +674,13 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
     frame.render_widget(
         Paragraph::new(sanitize::truncate(
-            &if app.mode == Mode::Select {
-                "↑↓/j k: 選択 | ←→/h l: 画像を横へ | r: リアクション | 1-5: 👍🎉😂😮🙏 | p/Enter: 返信 | Esc: 戻る"
-                    .to_owned()
+            &if let Some(modal) = app.modals.last() {
+                modal_hint(modal).to_owned()
+            } else if app.mode == Mode::Select {
+                format!(
+                    "↑↓/j k: 選択 | ←→/h l: 画像を横へ | {}: メニュー | r: リアクション | 1-5: 👍🎉😂😮🙏 | p/Enter: 返信 | Esc: 戻る",
+                    key_labels(app, crate::tui::commands::MESSAGE_MENU)
+                )
             } else if app.mode == Mode::Search {
                 match app.search.phase {
                     Phase::Editing => "Enter: 検索 | Esc: 閉じる | 空白で区切った語をすべて含むものを探します".to_owned(),
@@ -686,8 +688,6 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                     Phase::Detail => "↑↓/j k/PgUp/PgDn: スクロール | Esc/←: 結果へ戻る".to_owned(),
                     Phase::Browsing => "↑↓/j k: 選択 | Enter: そのメッセージへ（履歴に無ければ本文を表示） | d/→: 本文の詳細 | n: さらに古い結果 | /: 語を編集 | Esc: 入力へ戻る".to_owned(),
                 }
-            } else if app.mode == Mode::React {
-                "Enter: 付ける/外す | Esc: 戻る".to_owned()
             } else if focused {
                 "送信ボタン: Enter / Space で送信 | Shift+Tab: 入力欄へ戻る".to_owned()
             } else {
@@ -699,6 +699,139 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         r.hint,
     );
     frame.render_widget(Paragraph::new(navbar_line(r.navbar.width)), r.navbar);
+    draw_modal(frame, area, app);
+}
+
+/// コマンドに割り当てたキーの表示（選択モード）。割り当てが無ければ `-`。
+fn key_labels(app: &App, command: &str) -> String {
+    use crate::tui::input::Action;
+    let keys: Vec<String> = app
+        .bindings
+        .keys_for(Mode::Select, command)
+        .into_iter()
+        .map(|a| match a {
+            Action::Insert(c) => c.to_string(),
+            Action::Send | Action::Newline => "Enter".to_owned(),
+            Action::Up => "↑".to_owned(),
+            Action::Down => "↓".to_owned(),
+            Action::Left => "←".to_owned(),
+            Action::Right => "→".to_owned(),
+            _ => "?".to_owned(),
+        })
+        .collect();
+    if keys.is_empty() {
+        "-".to_owned()
+    } else {
+        keys.join("/")
+    }
+}
+
+fn modal_hint(modal: &Modal) -> &'static str {
+    match modal {
+        Modal::Menu(_) | Modal::Choice(_) => {
+            "↑↓/Tab: 選択 | Enter: 決定 | Esc: 閉じる | クリック: 決定"
+        }
+        Modal::Dialog(_) => "←→/Tab: ボタン選択 | Enter: 決定 | Esc: やめる",
+        Modal::Prompt(_) => "Enter: 決定 | Esc: やめる",
+    }
+}
+
+/// 最上位のモーダルを画面の中央に重ねて描く。当たり判定のため、領域を `app.modal_area` に残す。
+fn draw_modal(frame: &mut Frame, area: Rect, app: &mut App) {
+    let Some(modal) = app.modals.last() else {
+        app.modal_area = None;
+        return;
+    };
+    let max_w = area.width.saturating_sub(4).max(1);
+    let text_w = |s: &str| unicode_width::UnicodeWidthStr::width(s);
+    // 本体の行（強調の有無つき）と、Dialog のメッセージの行数。
+    let mut message_rows = 0u16;
+    let mut body: Vec<Line> = Vec::new();
+    let mut want = text_w(modal.title()) + 4;
+    let selected = Style::new()
+        .fg(t().on_accent)
+        .bg(t().accent_bg)
+        .add_modifier(Modifier::BOLD);
+    match modal {
+        Modal::Menu(m) => {
+            for (i, item) in m.items.iter().enumerate() {
+                let label = sanitize::inline(&item.label);
+                want = want.max(text_w(&label) + 6);
+                let style = if i == m.cursor {
+                    selected
+                } else {
+                    Style::new()
+                };
+                body.push(Line::from(Span::styled(format!(" {label} "), style)));
+            }
+        }
+        Modal::Choice(c) => {
+            for (i, option) in c.options.iter().enumerate() {
+                let label = sanitize::inline(option);
+                want = want.max(text_w(&label) + 6);
+                let style = if i == c.cursor {
+                    selected
+                } else {
+                    Style::new()
+                };
+                let mark = if i == c.cursor { "●" } else { "○" };
+                body.push(Line::from(Span::styled(format!(" {mark} {label} "), style)));
+            }
+        }
+        Modal::Dialog(d) => {
+            let width = usize::from(max_w).saturating_sub(4).clamp(10, 56);
+            want = want.max(width + 4);
+            let lines = sanitize::wrap(&sanitize::inline(&d.message), width);
+            message_rows = lines.len() as u16;
+            body.extend(lines.into_iter().map(Line::from));
+            body.push(Line::from(""));
+            let mut spans = Vec::new();
+            for (i, b) in d.buttons.iter().enumerate() {
+                if i > 0 {
+                    spans.push(Span::raw(" "));
+                }
+                let style = if i == d.focus {
+                    selected
+                } else {
+                    Style::new().fg(t().text_muted)
+                };
+                spans.push(Span::styled(
+                    format!("[ {} ]", sanitize::inline(&b.label)),
+                    style,
+                ));
+            }
+            body.push(Line::from(spans));
+        }
+        Modal::Prompt(p) => {
+            want = want.max(36);
+            body.push(Line::from(format!(
+                "{}▏",
+                sanitize::inline(p.text.as_str())
+            )));
+        }
+    }
+    let w = (want as u16).clamp(10, max_w);
+    let h = (body.len() as u16 + 2).min(area.height);
+    let rect = Rect {
+        x: area.x + area.width.saturating_sub(w) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
+        width: w.min(area.width),
+        height: h,
+    };
+    app.modal_area = Some((rect.x, rect.y, rect.width, rect.height, message_rows));
+    let danger = matches!(modal, Modal::Dialog(_));
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(if danger { t().warning } else { t().accent }))
+        .title(sanitize::truncate(
+            modal.title(),
+            usize::from(w.saturating_sub(4)),
+        ))
+        .padding(Padding::horizontal(1));
+    frame.render_widget(ratatui::widgets::Clear, rect);
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    frame.render_widget(Paragraph::new(body), inner);
 }
 
 #[cfg(test)]
@@ -944,5 +1077,40 @@ mod tests {
         assert_eq!(app.placements.len(), 1);
         let p = &app.placements[0];
         assert_eq!((p.col, p.cols, p.rows), (0, 2, 1));
+    }
+
+    #[test]
+    fn modal_is_drawn_centered_records_its_area_and_hides_images() {
+        use crate::tui::ui::modal::{Dialog, Menu, MenuItem};
+        let mut app = app();
+        connect(&mut app);
+        app.enable_images((8, 16));
+        app.modals.push(Modal::Menu(Menu::new(
+            "操作",
+            vec![MenuItem::new("返信", "a"), MenuItem::new("閉じる", "b")],
+        )));
+        let lines = render(&mut app, 40, 14);
+        assert!(lines.iter().any(|l| l.contains("操作")));
+        assert!(lines.iter().any(|l| l.contains("返信")));
+        let (x, y, w, h, _) = app.modal_area.unwrap();
+        assert!(x > 0 && y > 0 && x + w < 40 && y + h < 14);
+        plan(Rect::new(0, 0, 40, 14), &mut app);
+        assert!(app.placements.is_empty());
+        app.modals.push(Modal::Dialog(Dialog::confirm(
+            "確認",
+            "よろしいですか",
+            "やめる",
+            "送る",
+            "c",
+        )));
+        let lines = render(&mut app, 40, 14);
+        assert!(
+            lines.iter().any(|l| l.contains("[やめる][送る]")),
+            "{lines:?}"
+        );
+        assert!(app.modal_area.unwrap().4 >= 1);
+        app.modals.clear();
+        render(&mut app, 40, 14);
+        assert!(app.modal_area.is_none());
     }
 }

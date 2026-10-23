@@ -138,6 +138,7 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
                     app.update(Event::Key(key))
                 }
                 Some(event::Event::Paste(text)) => app.update(Event::Paste(text)),
+                Some(event::Event::Mouse(mouse)) => app.update(Event::Mouse(mouse)),
                 Some(event::Event::Resize(..)) => {
                     // 画面を作り直すので、画像も描き直す。
                     force_images = true;

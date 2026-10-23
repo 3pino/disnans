@@ -4,8 +4,8 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossterm::event::{
-    DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
-    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -17,6 +17,7 @@ use crossterm::terminal::{
 pub trait TermOps {
     fn pop_keyboard_flags(&mut self) -> io::Result<()>;
     fn disable_paste(&mut self) -> io::Result<()>;
+    fn disable_mouse(&mut self) -> io::Result<()>;
     fn leave_screen(&mut self) -> io::Result<()>;
     fn show_cursor(&mut self) -> io::Result<()>;
     fn disable_raw(&mut self) -> io::Result<()>;
@@ -27,6 +28,7 @@ pub fn restore_with(ops: &mut impl TermOps, keyboard_flags_pushed: bool) {
     if keyboard_flags_pushed {
         let _ = ops.pop_keyboard_flags();
     }
+    let _ = ops.disable_mouse();
     let _ = ops.disable_paste();
     let _ = ops.leave_screen();
     let _ = ops.show_cursor();
@@ -41,6 +43,9 @@ impl TermOps for RealOps {
     }
     fn disable_paste(&mut self) -> io::Result<()> {
         execute!(io::stdout(), DisableBracketedPaste)
+    }
+    fn disable_mouse(&mut self) -> io::Result<()> {
+        execute!(io::stdout(), DisableMouseCapture)
     }
     fn leave_screen(&mut self) -> io::Result<()> {
         execute!(io::stdout(), LeaveAlternateScreen)
@@ -77,6 +82,13 @@ impl TerminalGuard {
         ACTIVE.store(true, Ordering::SeqCst);
         let result = (|| {
             execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
+            // マウス操作（ホイール・クリック）。ターミナル側の範囲選択は Shift を押しながらになる。
+            // 邪魔なときは DISNANS_TUI_MOUSE=off で使わない。
+            if std::env::var("DISNANS_TUI_MOUSE").is_ok_and(|v| v.eq_ignore_ascii_case("off")) {
+                // 無効のときも、戻すときの無効化は害がない。
+            } else {
+                execute!(io::stdout(), EnableMouseCapture)?;
+            }
             // 対応ターミナルでは修飾付き Enter を区別できる。Windows のコンソールは元から区別できる。
             let mut enhanced = cfg!(windows);
             if supports_keyboard_enhancement().unwrap_or(false)
@@ -147,6 +159,9 @@ mod tests {
         fn pop_keyboard_flags(&mut self) -> io::Result<()> {
             self.record("pop")
         }
+        fn disable_mouse(&mut self) -> io::Result<()> {
+            self.record("mouse")
+        }
         fn disable_paste(&mut self) -> io::Result<()> {
             self.record("paste")
         }
@@ -165,10 +180,13 @@ mod tests {
     fn restores_in_reverse_order_of_setup() {
         let mut ops = Recorder::default();
         restore_with(&mut ops, true);
-        assert_eq!(ops.calls, ["pop", "paste", "leave", "cursor", "raw"]);
+        assert_eq!(
+            ops.calls,
+            ["pop", "mouse", "paste", "leave", "cursor", "raw"]
+        );
         let mut ops = Recorder::default();
         restore_with(&mut ops, false);
-        assert_eq!(ops.calls, ["paste", "leave", "cursor", "raw"]);
+        assert_eq!(ops.calls, ["mouse", "paste", "leave", "cursor", "raw"]);
     }
 
     #[test]
@@ -179,6 +197,6 @@ mod tests {
         };
         restore_with(&mut ops, false);
         assert_eq!(ops.calls.last(), Some(&"raw"));
-        assert_eq!(ops.calls.len(), 4);
+        assert_eq!(ops.calls.len(), 5);
     }
 }
