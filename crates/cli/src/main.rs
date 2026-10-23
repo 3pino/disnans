@@ -1,4 +1,5 @@
 mod args;
+mod attach;
 mod files;
 mod live;
 mod output;
@@ -269,10 +270,13 @@ async fn run(cli: Cli) -> Result<String, CliError> {
         Command::Send(args) => {
             let body = live::read_send_body(&args)?;
             let server = resolve_server(cli.server.as_deref(), saved_server)?;
+            let ids =
+                live::upload_attachments(&server, cli.dev_user.as_deref(), &args.attach).await?;
             live::send(
                 server,
                 cli.dev_user,
                 body,
+                ids,
                 args.silent,
                 args.reply_to,
                 args.json,

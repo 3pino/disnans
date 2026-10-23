@@ -39,6 +39,8 @@ pub fn read_send_body(args: &SendArgs) -> Result<String, CliError> {
         let stdin = io::stdin();
         let is_terminal = stdin.is_terminal();
         send::read_stdin_body(stdin.lock(), is_terminal)?
+    } else if args.text.is_none() && !args.attach.is_empty() {
+        String::new()
     } else {
         send::validate_body(args.text.clone().unwrap_or_default())?
     };
@@ -52,10 +54,61 @@ fn options(dev_user: Option<String>) -> ConnectOptions {
     }
 }
 
+/// 添付をアップロードして ID を返す。まだ何も投稿していないので、失敗しても安全に再実行できる。
+pub async fn upload_attachments(
+    server: &ServerUrl,
+    dev_user: Option<&str>,
+    paths: &[std::path::PathBuf],
+) -> Result<Vec<String>, CliError> {
+    let client = disnans_client_core::RestClient::new(server.clone(), dev_user)?;
+    let mut ids = Vec::new();
+    for path in paths {
+        let data = std::fs::read(path)
+            .map_err(|e| CliError::Usage(format!("{} を読めません: {e}", path.display())))?;
+        let name = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
+            CliError::Usage(format!("{} にファイル名がありません", path.display()))
+        })?;
+        let (_handle, abort) = disnans_client_core::UploadAbortHandle::new_pair();
+        let value = client
+            .upload_file(
+                std::sync::Arc::new(data),
+                name,
+                mime_of(name),
+                std::sync::Arc::new(|_, _| {}),
+                abort,
+            )
+            .await
+            .map_err(CliError::Api)?;
+        let id = value
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| CliError::Usage("アップロードの応答に ID がありません".into()))?;
+        ids.push(id.to_owned());
+    }
+    Ok(ids)
+}
+
+fn mime_of(name: &str) -> &'static str {
+    match name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("txt" | "md") => "text/plain",
+        Some("pdf") => "application/pdf",
+        _ => "application/octet-stream",
+    }
+}
+
 pub async fn send(
     server: ServerUrl,
     dev_user: Option<String>,
     body: String,
+    attachment_ids: Vec<String>,
     silent: bool,
     reply_to: Option<String>,
     json: bool,
@@ -73,7 +126,7 @@ pub async fn send(
     let outcome = tokio::select! {
         outcome = connection.send_request_with_id(
             &client_id,
-            SendRequest { body, silent, reply_to, ..SendRequest::default() },
+            SendRequest { body, attachment_ids, silent, reply_to },
             ack_timeout,
         ) => outcome,
         _ = &mut interrupt => {

@@ -136,7 +136,10 @@ pub fn message_line(app: &App) -> Option<(String, Color)> {
             format!(
                 "↩ 返信先: {}: {} (Esc で取消)",
                 sanitize::inline(who),
-                sanitize::truncate(&sanitize::inline(excerpt), 30)
+                sanitize::truncate(
+                    &sanitize::inline(&crate::attach::plain_excerpt(excerpt)),
+                    30
+                )
             ),
             t().info,
         ));

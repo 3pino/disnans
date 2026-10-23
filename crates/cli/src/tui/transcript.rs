@@ -330,6 +330,7 @@ fn message_rows_with(
             |u| sanitize::inline(&u.display_name),
         )
     };
+    let linked = crate::attach::linked_names(&message.body);
     let mut body_done = false;
     for row in model {
         let view::Row::Message { line, .. } = row else {
@@ -388,7 +389,11 @@ fn message_rows_with(
                         push(
                             &mut content,
                             RowKind::Meta,
-                            &format!("↩ {}: {}", sanitize::inline(who), sanitize::inline(excerpt)),
+                            &format!(
+                                "↩ {}: {}",
+                                sanitize::inline(who),
+                                sanitize::inline(&crate::attach::plain_excerpt(excerpt))
+                            ),
                         );
                     }
                     view::Meta::ReplyDeleted => {
@@ -403,6 +408,9 @@ fn message_rows_with(
                             sanitize::inline(text)
                         ),
                     ),
+                    // 本文のリンク（埋め込み）で出る添付は、別に出さない（二重になる）。
+                    view::Meta::Attachment { file_name, .. }
+                        if crate::attach::is_linked(&linked, file_name) => {}
                     view::Meta::Attachment {
                         file_name, thumb, ..
                     } => {
@@ -834,6 +842,23 @@ mod tests {
         assert!(text.iter().any(|l| l.ends_with("\u{e0b6}👍 2\u{e0b4}")));
         assert!(text.iter().any(|l| l.ends_with("(編集済み)")));
         assert_eq!(text.len(), 3);
+    }
+
+    #[test]
+    fn attachment_linked_in_the_body_is_not_listed_again() {
+        let mut m = message("m", "u", "![[attachments/photo.png]]");
+        m.attachments.push(Attachment {
+            id: "a".into(),
+            file_name: "photo.png".into(),
+            mime: "image/png".into(),
+            size: 1,
+            width: None,
+            height: None,
+            has_thumb: false,
+            deleted: false,
+        });
+        let rows = message_rows(&m, &[], 60, None, None);
+        assert!(rows.iter().all(|r| !r.text.contains("[添付:")), "{rows:?}");
     }
 
     fn photo(id: &str, w: u32, h: u32) -> Attachment {

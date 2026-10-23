@@ -239,9 +239,13 @@ pub struct SendArgs {
     #[arg(
         value_name = "TEXT",
         conflicts_with = "stdin",
-        required_unless_present = "stdin"
+        required_unless_present_any = ["stdin", "attach"]
     )]
     pub text: Option<String>,
+
+    /// 添付するファイル（繰り返せる）。先にアップロードし、投稿に添付する（本文が空でもよい）。
+    #[arg(long, value_name = "FILE")]
+    pub attach: Vec<std::path::PathBuf>,
 
     /// 標準入力を EOF まで読んで本文にする。
     #[arg(long)]

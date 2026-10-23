@@ -65,14 +65,16 @@ pub fn human_messages(messages: &[Message], users: &[User]) -> String {
                 escape_human(&card.text)
             ));
         }
-        if !message.attachments.is_empty() {
-            let names = message
-                .attachments
-                .iter()
-                .map(|attachment| escape_human(&attachment.file_name))
-                .collect::<Vec<_>>()
-                .join(", ");
-            line.push_str(&format!(" [添付: {names}]"));
+        // 本文のリンクで示された添付は本文に出ているので、別に並べない（削除済みの印は残す）。
+        let linked = crate::attach::linked_names(&message.body);
+        let names = message
+            .attachments
+            .iter()
+            .filter(|a| a.deleted || !crate::attach::is_linked(&linked, &a.file_name))
+            .map(|attachment| escape_human(&attachment.file_name))
+            .collect::<Vec<_>>();
+        if !names.is_empty() {
+            line.push_str(&format!(" [添付: {}]", names.join(", ")));
         }
         lines.push(line);
     }
@@ -154,6 +156,33 @@ mod tests {
         assert!(rendered.contains("[カード: 題\\u{1B}[2J — 本文\\n2]"));
         assert!(rendered.contains("[添付: 写真\\u{1B}[31m.png]"));
         assert!(!rendered.chars().any(|c| c.is_control()));
+    }
+
+    #[test]
+    fn human_output_does_not_repeat_attachments_linked_in_the_body() {
+        let mut msg = Message {
+            body: "見て ![[attachments/a.png]]".into(),
+            ..message_with_attachment("a.png")
+        };
+        let rendered = human_messages(std::slice::from_ref(&msg), &[]);
+        assert!(!rendered.contains("[添付:"), "{rendered}");
+        msg.body = "本文だけ".into();
+        assert!(human_messages(&[msg], &[]).contains("[添付: a.png]"));
+    }
+
+    fn message_with_attachment(name: &str) -> Message {
+        let mut msg = message("");
+        msg.attachments.push(Attachment {
+            id: "f".into(),
+            file_name: name.into(),
+            mime: "image/png".into(),
+            size: 2,
+            width: None,
+            height: None,
+            has_thumb: false,
+            deleted: false,
+        });
+        msg
     }
 
     #[test]
