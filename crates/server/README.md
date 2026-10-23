@@ -86,6 +86,7 @@ cargo test -p disnans-server
 ## 添付の別名の移行
 
 - 適用済みの migration は変更しない。`0015_attachment_names.sql` で `alias_key`・`library`・`deleted_at` と一意インデックスを追加する。
+- `0016_first_posted.sql` で `first_posted_at`（初回の投稿の時刻）を追加する。起動時の移行（`links::plan_backfill`）で、投稿済みの添付を本文の埋め込みにし、時刻を入れる（冪等。変更がある起動の前に `data/backup/` に残す）。
 - 既存の別名は起動時に Rust で割り当てる。Unicode の `to_lowercase()` を比較キーに使うため、SQL の `lower()` だけでは処理しない。
 - `alias_key IS NULL` の行を 1 トランザクションで処理する。投稿の古い順（同時刻は ID 順）、その後に投稿前の行を処理し、同名には ` (2)` 以降を付ける。再起動しても付け直さない。失敗したら起動を止める。
 - 禁止文字 `[` `]` `|` を含む既存名の補正も、必要なときだけ実行する。DB の移行・名前の補正前に `data/backup/pre-migrate-*.db` を残す。

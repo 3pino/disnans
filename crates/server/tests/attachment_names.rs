@@ -173,7 +173,7 @@ async fn replacing_content_keeps_the_id_that_messages_refer_to() {
         .messages("")
         .await
         .into_iter()
-        .find(|m| m.body == "see")
+        .find(|m| m.body.starts_with("see"))
         .unwrap();
     let att = &msg.attachments[0];
     assert_eq!(att.id, a.id);
@@ -205,7 +205,7 @@ async fn deleting_a_posted_attachment_leaves_a_deleted_mark_in_the_message() {
         .messages("")
         .await
         .into_iter()
-        .find(|m| m.body == "with file")
+        .find(|m| m.body.starts_with("with file"))
         .unwrap();
     assert!(msg.attachments[0].deleted);
     assert_eq!(msg.attachments[0].file_name, "gone.txt");

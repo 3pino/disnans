@@ -48,6 +48,8 @@ pub struct Meta {
     pub dir: bool,
     pub len: u64,
     pub modified: SystemTime,
+    /// 作成の時刻（添付は最初に投稿された時刻、未投稿はアップロードの時刻）。
+    pub created: SystemTime,
 }
 
 impl Meta {
@@ -56,22 +58,29 @@ impl Meta {
             dir: true,
             len: 0,
             modified: UNIX_EPOCH,
+            created: UNIX_EPOCH,
         }
     }
 
     fn of_item(item: &Item) -> Self {
+        // `posted_at_ms` は初回の投稿の時刻（未投稿はアップロードの時刻）。作成と更新は同じ（添付は中身を変えると更新だけ変わる）
+        let at = UNIX_EPOCH + Duration::from_millis(item.posted_at_ms.max(0) as u64);
         Meta {
             dir: false,
             len: item.size,
-            modified: UNIX_EPOCH + Duration::from_millis(item.posted_at_ms.max(0) as u64),
+            modified: at,
+            created: at,
         }
     }
 
     fn of_std(m: &std::fs::Metadata) -> Self {
+        let modified = m.modified().unwrap_or(UNIX_EPOCH);
         Meta {
             dir: m.is_dir(),
             len: if m.is_dir() { 0 } else { m.len() },
-            modified: m.modified().unwrap_or(UNIX_EPOCH),
+            modified,
+            // 作成の時刻が取れない OS・ファイルシステムでは更新の時刻で代える
+            created: m.created().unwrap_or(modified),
         }
     }
 
@@ -90,6 +99,9 @@ impl DavMetaData for Meta {
     }
     fn modified(&self) -> FsResult<SystemTime> {
         Ok(self.modified)
+    }
+    fn created(&self) -> FsResult<SystemTime> {
+        Ok(self.created)
     }
     fn is_dir(&self) -> bool {
         self.dir

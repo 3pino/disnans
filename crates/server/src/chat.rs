@@ -40,8 +40,10 @@ pub struct SendMessage {
 pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage) -> AppResult<()> {
     let mut attachment_ids = req.attachment_ids;
     dedup_keep_order(&mut attachment_ids);
+    // 長さは送られた本文（表示の形）で見る。添付の埋め込みは末尾に足す（旧クライアントの attachment_ids）
     validate_body(&req.body, !attachment_ids.is_empty())?;
-    let body = crate::links::to_stored(&state.pool, &req.body).await?;
+    let stored = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &req.body).await?;
+    let body = crate::links::append_links(&stored, &attachment_ids);
 
     let _guard = state.write_lock().await;
 
@@ -57,21 +59,14 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
         None => None,
     };
 
-    let mut row = new_row(&actor.user.id, body);
+    let mut row = new_row(&actor.user.id, body.clone());
     row.reply_to = req.reply_to.clone();
 
     let mut tx = state.pool.begin().await?;
     messages::insert(&mut tx, &row).await?;
-    if let Err(file_id) =
-        file_store::attach(&mut tx, &attachment_ids, &row.id, &actor.user.id).await?
-    {
-        return Err(AppError::bad_request(
-            "invalid_attachment",
-            format!("添付できないファイルです（{file_id}）"),
-        ));
-    }
+    claim_or_fail(&mut tx, &body, &attachment_ids, &row.id, &actor.user.id, row.created_at).await?;
     tx.commit().await?;
-    // 投稿された添付は `attachments/` に現れる
+    // 投稿された添付は `attachments/` に現れる（新しく紐付いたもの）
     for file_id in &attachment_ids {
         if let Some(file) = file_store::get(&state.pool, file_id).await? {
             state.hub.broadcast(&ServerEvent::FilesChanged {
@@ -105,19 +100,20 @@ pub async fn post_bot_message(
     req: PluginPostMessage,
 ) -> AppResult<Message> {
     validate_body(&req.body, false)?;
-    let body = crate::links::to_stored(&state.pool, &req.body).await?;
+    let body = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &req.body).await?;
     let name = match req.name.as_deref().map(str::trim) {
         None | Some("") => plugin.name.clone(),
         Some(name) => name.chars().take(MAX_BOT_NAME_CHARS).collect(),
     };
 
     let _guard = state.write_lock().await;
-    let mut row = new_row(&user.id, body);
+    let mut row = new_row(&user.id, body.clone());
     row.bot_plugin = Some(plugin.id.clone());
     row.bot_name = Some(name.clone());
 
     let mut tx = state.pool.begin().await?;
     messages::insert(&mut tx, &row).await?;
+    claim_or_fail(&mut tx, &body, &[], &row.id, &user.id, row.created_at).await?;
     tx.commit().await?;
 
     let message = broadcast_created(state, &row.id, None).await?;
@@ -151,13 +147,42 @@ pub async fn edit_message(
             "カードのメッセージは編集できません",
         ));
     }
-    validate_body(
-        &body,
-        messages::has_attachments(&state.pool, message_id).await?,
-    )?;
-    let body = crate::links::to_stored(&state.pool, &body).await?;
+    // 添付も本文の中にあるので、本文が空なら空のメッセージ
+    validate_body(&body, false)?;
+    let stored = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &body).await?;
 
-    messages::update_body(&state.pool, message_id, &body, db::now_ms()).await?;
+    let old_ids = crate::links::ids_in(&row.body);
+    let new_ids = crate::links::ids_in(&stored);
+    let added: Vec<String> = new_ids.iter().filter(|id| !old_ids.contains(id)).cloned().collect();
+    let removed: Vec<String> = old_ids.iter().filter(|id| !new_ids.contains(id)).cloned().collect();
+
+    let mut tx = state.pool.begin().await?;
+    if let Some(bad) = file_store::claim(&mut tx, &added, &[], &row.id, &actor.user.id, db::now_ms()).await? {
+        return Err(invalid_link(&bad));
+    }
+    messages::update_body(&mut tx, message_id, &stored, db::now_ms()).await?;
+    // 本文から外れた添付は、メッセージから外れる（ファイルは `attachments/` に残す）
+    let mut kept = Vec::new();
+    let mut gone = Vec::new();
+    let mut names = names_of(&mut tx, &added).await?;
+    for id in &removed {
+        match file_store::unlink(&mut tx, id, &row.id, true).await? {
+            file_store::Unlinked::Kept => kept.push(id.clone()),
+            file_store::Unlinked::Purged { name } => {
+                gone.push(id.clone());
+                names.extend(name);
+            }
+            file_store::Unlinked::Moved => {}
+        }
+    }
+    names.extend(names_of(&mut tx, &kept).await?);
+    tx.commit().await?;
+    files::remove_stored(&state.config, &gone).await;
+    for name in names {
+        state.hub.broadcast(&ServerEvent::FilesChanged {
+            path: crate::attachments::path_of(&name),
+        });
+    }
 
     let message = messages::get(&state.pool, &row.id)
         .await?
@@ -168,7 +193,7 @@ pub async fn edit_message(
     Ok(())
 }
 
-/// メッセージを完全に消す。添付ファイルも消す。
+/// メッセージを消す。本文だけが参照していた添付も消す（ほかの本文が参照していれば残す）。
 pub async fn delete_message(
     state: &AppState,
     actor: &Actor<'_>,
@@ -178,12 +203,26 @@ pub async fn delete_message(
     let row = own_message(state, actor, message_id).await?;
 
     let mut tx = state.pool.begin().await?;
-    let file_ids = file_store::ids_in_message(&mut tx, message_id).await?;
-    let names = file_store::live_names_in_message(&mut tx, message_id).await?;
+    let mut ids = crate::links::ids_in(&row.body);
+    for id in file_store::ids_with_message(&mut tx, message_id).await? {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    let mut gone = Vec::new();
+    let mut names = Vec::new();
+    for id in &ids {
+        if let file_store::Unlinked::Purged { name } =
+            file_store::unlink(&mut tx, id, message_id, false).await?
+        {
+            gone.push(id.clone());
+            names.extend(name);
+        }
+    }
     messages::delete(&mut tx, message_id).await?;
     tx.commit().await?;
 
-    files::remove_stored(&state.config, &file_ids).await;
+    files::remove_stored(&state.config, &gone).await;
     // 消えた添付は `attachments/` から消える
     for name in names {
         state.hub.broadcast(&ServerEvent::FilesChanged {
@@ -295,6 +334,40 @@ async fn broadcast_reactions(state: &AppState, message_id: &str) -> AppResult<()
         reactions,
     });
     Ok(())
+}
+
+/// 本文の中の添付を紐付ける。付けられない ID があれば、その理由（欄から来たものは `invalid_attachment`）。
+/// `at` は初回の紐付けの時刻（送信なら、メッセージの作成の時刻）。
+async fn claim_or_fail(
+    conn: &mut sqlx::SqliteConnection,
+    body: &str,
+    fresh: &[Id],
+    message_id: &str,
+    uploader_id: &str,
+    at: i64,
+) -> AppResult<()> {
+    let ids = crate::links::ids_in(body);
+    match file_store::claim(conn, &ids, fresh, message_id, uploader_id, at).await? {
+        None => Ok(()),
+        Some(bad) if fresh.contains(&bad) => Err(AppError::bad_request(
+            "invalid_attachment",
+            format!("添付できないファイルです（{bad}）"),
+        )),
+        Some(bad) => Err(invalid_link(&bad)),
+    }
+}
+
+fn invalid_link(id: &str) -> AppError {
+    AppError::bad_request(
+        "invalid_link",
+        format!("本文の添付が見つからないか、付けられません（{id}）"),
+    )
+}
+
+/// 添付の ID の並びを、今の別名に直す（変更の通知に使う）。
+async fn names_of(conn: &mut sqlx::SqliteConnection, ids: &[String]) -> AppResult<Vec<String>> {
+    let rows = file_store::rows_by_ids(conn, ids).await?;
+    Ok(rows.into_iter().filter(|r| r.deleted_at.is_none()).map(|r| r.file_name).collect())
 }
 
 fn validate_body(body: &str, has_attachments: bool) -> AppResult<()> {

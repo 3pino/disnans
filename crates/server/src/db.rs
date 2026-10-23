@@ -27,8 +27,11 @@ pub async fn connect(path: &Path) -> Result<SqlitePool, sqlx::Error> {
 
     let migrator = sqlx::migrate!("./migrations");
     // 移行で消えるものがあるかもしれないので、適用の前に DB をまるごと残す（data/backup/）
+    // 同じ起動の中で一度残したら、その後の移行の前には残さない（残した時点は、この起動の変更より前）
+    let mut backed_up = false;
     if has_pending_migrations(&pool, &migrator).await? {
         backup_before_migrate(&pool, path).await?;
+        backed_up = true;
     }
     migrator.run(&pool).await?;
     // 既存の添付に別名を割り当てる（冪等。割り当てる行が無ければ何もしない）
@@ -36,10 +39,26 @@ pub async fn connect(path: &Path) -> Result<SqlitePool, sqlx::Error> {
     if assigned > 0 {
         tracing::info!("添付の別名を {assigned} 件割り当てました");
     }
+    // 投稿済みの添付を本文の埋め込みにし、初回投稿の時刻を入れる（冪等。変更が無ければ何もしない）
+    let links_plan = crate::links::plan_backfill(&pool).await?;
+    if !links_plan.is_empty() {
+        if !backed_up {
+            backup_before_migrate(&pool, path).await?;
+            backed_up = true;
+        }
+        crate::links::apply_backfill(&pool, &links_plan).await?;
+        tracing::info!(
+            "本文の添付の埋め込みを {} 件足し、初回投稿の時刻を {} 件入れました",
+            links_plan.bodies.len(),
+            links_plan.first_posted
+        );
+    }
     // 禁止の文字を含む既存の別名を直す（一度だけ。直す前に DB を残す）
     let plan = crate::attachment_names::plan_cleanup(&pool).await?;
     if !plan.is_empty() {
-        backup_before_migrate(&pool, path).await?;
+        if !backed_up {
+            backup_before_migrate(&pool, path).await?;
+        }
         let n = crate::attachment_names::apply_cleanup(&pool, &plan).await?;
         tracing::info!("添付の別名を {n} 件直しました（禁止の文字を外す）");
     }

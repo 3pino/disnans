@@ -29,7 +29,6 @@ struct ReplyRow {
     body: String,
     bot_plugin: Option<String>,
     bot_name: Option<String>,
-    has_attachments: bool,
 }
 
 /// 返信先の要約に入れる本文の最大文字数。
@@ -73,7 +72,9 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
     .fetch_all(pool)
     .await?;
 
-    let mut attachments = files::attachments_for(pool, &ids_json).await?;
+    // 添付は本文のリンクから導く（本文が真実）
+    let bodies: Vec<(String, String)> = rows.iter().map(|r| (r.id.clone(), r.body.clone())).collect();
+    let mut attachments = files::attachments_for_bodies(pool, &bodies).await?;
     let mut reactions = reactions_for(pool, &ids_json).await?;
     let mut cards = sessions::cards_for(pool, &ids_json).await?;
     let mut previews = reply_previews_for(pool, &rows).await?;
@@ -248,8 +249,7 @@ async fn reply_previews_for(
         return Ok(HashMap::new());
     }
     let found: Vec<ReplyRow> = sqlx::query_as(
-        "SELECT m.id, m.author_id, m.body, m.bot_plugin, m.bot_name,
-                EXISTS (SELECT 1 FROM files f WHERE f.message_id = m.id) AS has_attachments
+        "SELECT m.id, m.author_id, m.body, m.bot_plugin, m.bot_name
          FROM messages m
          WHERE m.id IN (SELECT value FROM json_each(?))",
     )
@@ -279,7 +279,7 @@ async fn reply_previews_for(
                 ReplyPreview {
                     author_id: r.author_id,
                     body,
-                    has_attachments: r.has_attachments,
+                    has_attachments: !crate::links::ids_in(&r.body).is_empty(),
                     bot: r
                         .bot_plugin
                         .zip(r.bot_name)
@@ -309,12 +309,12 @@ pub async fn insert(conn: &mut SqliteConnection, row: &MessageRow) -> sqlx::Resu
     Ok(())
 }
 
-pub async fn update_body(pool: &SqlitePool, id: &str, body: &str, now: i64) -> sqlx::Result<()> {
+pub async fn update_body(conn: &mut SqliteConnection, id: &str, body: &str, now: i64) -> sqlx::Result<()> {
     sqlx::query("UPDATE messages SET body = ?, edited_at = ? WHERE id = ?")
         .bind(body)
         .bind(now)
         .bind(id)
-        .execute(pool)
+        .execute(conn)
         .await?;
     Ok(())
 }
@@ -363,14 +363,5 @@ pub async fn remove_reaction(
     Ok(())
 }
 
-/// 添付ファイルが付いているか（本文を空にする編集を許すかの判定に使う）。
-pub async fn has_attachments(pool: &SqlitePool, id: &str) -> sqlx::Result<bool> {
-    let found: Option<i64> = sqlx::query_scalar("SELECT 1 FROM files WHERE message_id = ? LIMIT 1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
-    Ok(found.is_some())
-}
-
-/// `Attachment` の一覧を、メッセージ ID ごとにまとめた型。
+/// `Attachment` の一覧を、メッセージ ID ごとにまとめた型（本文のリンクの順）。
 pub type AttachmentMap = HashMap<String, Vec<Attachment>>;

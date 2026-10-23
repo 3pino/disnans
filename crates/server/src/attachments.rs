@@ -138,6 +138,7 @@ pub async fn create(
             has_thumb: stored.has_thumb,
             library,
             deleted_at: None,
+            first_posted_at: None,
             created_at: ulid.timestamp_ms() as i64,
         };
         if let Err(err) = store::insert(&state.pool, &row).await {
@@ -315,9 +316,9 @@ pub async fn remove(state: &SharedState, id: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// 行を消す（投稿されていれば印を付けるだけ）。本体は呼び出し側で消す。
+/// 行を消す（どこかの本文が参照していれば印を付けるだけ）。本体は呼び出し側で消す。
 async fn remove_row(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, row: &FileRow) -> AppResult<()> {
-    if row.message_id.is_some() {
+    if store::referencing_message(tx, &row.id, None).await?.is_some() {
         store::mark_deleted(tx, &row.id, db::now_ms()).await?;
     } else {
         store::purge(tx, &row.id).await?;
