@@ -26,21 +26,18 @@ const PATH_PREFIX: &str = "attachments/";
 ///
 /// 読めない `[` は文字のまま（次の `[` から読み直す）。`!` の有無は関係ない（埋め込みも同じ位置）。
 fn rewrite_paths<E>(body: &str, mut f: impl FnMut(&str, bool) -> Result<String, E>) -> Result<String, E> {
+    let segments: Vec<&str> = body.split_inclusive('\n').collect();
+    let lines: Vec<String> = segments
+        .iter()
+        .map(|seg| seg.trim_end_matches(['\n', '\r']).to_owned())
+        .collect();
+    let code = code_mask(&lines);
     let mut out = String::with_capacity(body.len());
-    let mut in_fence = false;
-    for line in body.split_inclusive('\n') {
-        let text = line.trim_end_matches(['\n', '\r']);
-        let inner = strip_quotes(text);
-        if in_fence {
-            if is_fence_close(inner) {
-                in_fence = false;
-            }
-            out.push_str(line);
-        } else if fence_lang(inner).is_some() {
-            in_fence = true;
-            out.push_str(line);
+    for (i, seg) in segments.iter().enumerate() {
+        if code[i] {
+            out.push_str(seg);
         } else {
-            out.push_str(&rewrite_line(line, &mut f)?);
+            out.push_str(&rewrite_line(seg, &mut f)?);
         }
     }
     Ok(out)
@@ -84,20 +81,6 @@ fn rewrite_line<E>(line: &str, f: &mut impl FnMut(&str, bool) -> Result<String, 
     Ok(out)
 }
 
-/// 行頭の `>`（引用）を外す（core の quote_inner と同じ: 行頭の空白は最大 3 つ、`>` の後ろの空白は 1 つ）。
-fn strip_quotes(mut line: &str) -> &str {
-    loop {
-        let spaces = line.bytes().take_while(|b| *b == b' ').count();
-        if spaces > 3 {
-            return line;
-        }
-        match line[spaces..].strip_prefix('>') {
-            Some(rest) => line = rest.strip_prefix(' ').unwrap_or(rest),
-            None => return line,
-        }
-    }
-}
-
 /// core の fence_rest: 行頭の空白（最大 3 つ）の後ろの ```。
 fn fence_rest(line: &str) -> Option<&str> {
     let spaces = line.bytes().take_while(|b| *b == b' ').count();
@@ -119,6 +102,182 @@ fn fence_lang(line: &str) -> Option<&str> {
 /// 閉じのフェンス: ``` の後ろが空白だけ。
 fn is_fence_close(line: &str) -> bool {
     fence_rest(line).is_some_and(|rest| rest.trim().is_empty())
+}
+
+/// 各行が、コードブロック（フェンスの行と中身）の中か。core の `view::markdown` の区切りと同じ:
+/// 引用（`>`）とリストの項目の中身は、外した行を再帰で読む。段落の中の行は読む（コードではない）。
+fn code_mask(lines: &[String]) -> Vec<bool> {
+    let mut mask = vec![false; lines.len()];
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i].as_str();
+        if line.trim().is_empty() {
+            i += 1;
+        } else if fence_lang(line).is_some() {
+            mask[i] = true;
+            i += 1;
+            while i < lines.len() && !is_fence_close(&lines[i]) {
+                mask[i] = true;
+                i += 1;
+            }
+            // 閉じ（なければ末尾まで）も、コードの行
+            if i < lines.len() {
+                mask[i] = true;
+            }
+            i += 1;
+        } else if let Some(inner) = quote_inner(line) {
+            let start = i;
+            let mut inner_lines = vec![inner];
+            i += 1;
+            while i < lines.len() {
+                match quote_inner(&lines[i]) {
+                    Some(text) => inner_lines.push(text),
+                    None => break,
+                }
+                i += 1;
+            }
+            for (k, b) in code_mask(&inner_lines).into_iter().enumerate() {
+                mask[start + k] = b;
+            }
+        } else if let Some(first) = list_match(line) {
+            i = list_mask(lines, &mut mask, i, first);
+        } else {
+            // 段落: 空行・フェンス・引用・リストの開始まで
+            i += 1;
+            while i < lines.len() {
+                let l = lines[i].as_str();
+                if l.trim().is_empty()
+                    || fence_lang(l).is_some()
+                    || quote_inner(l).is_some()
+                    || list_match(l).is_some()
+                {
+                    break;
+                }
+                i += 1;
+            }
+        }
+    }
+    mask
+}
+
+/// core の parse_list と同じ区切りで、リストの項目の中身を `code_mask` に渡す。次の行（リストの続きでない行）の番号を返す。
+fn list_mask(lines: &[String], mask: &mut [bool], start: usize, first: ListLine) -> usize {
+    let base_indent = cols_of(&first.indent);
+    let mut item = first;
+    let mut i = start;
+    loop {
+        let content_indent = cols_of(&item.indent) + item.marker_len + cols_of(&item.gap);
+        let mut body: Vec<String> = Vec::new();
+        let mut j = i + 1;
+        while j < lines.len() {
+            let l = &lines[j];
+            if l.trim().is_empty() {
+                body.push(String::new());
+                j += 1;
+                continue;
+            }
+            if cols_of(indent_of(l)) <= base_indent {
+                break;
+            }
+            body.push(strip_indent(l, content_indent));
+            j += 1;
+        }
+        while body.last().is_some_and(String::is_empty) {
+            body.pop();
+            j -= 1;
+        }
+        // body[k] は lines[i + 1 + k]（末尾の空行を除いたぶんは、もとの行のまま）
+        for (k, b) in code_mask(&body).into_iter().enumerate() {
+            if b {
+                mask[i + 1 + k] = true;
+            }
+        }
+        let mut k = j;
+        while k < lines.len() && lines[k].trim().is_empty() {
+            k += 1;
+        }
+        match lines.get(k).and_then(|l| list_match(l)) {
+            Some(next) if cols_of(&next.indent) == base_indent && next.ordered == item.ordered => {
+                item = next;
+                i = k;
+            }
+            _ => return j,
+        }
+    }
+}
+
+/// リストの行（`^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(.*)$`）。
+struct ListLine {
+    indent: String,
+    marker_len: usize,
+    gap: String,
+    ordered: bool,
+}
+
+fn list_match(line: &str) -> Option<ListLine> {
+    let indent_len = line.bytes().take_while(|b| *b == b' ' || *b == b'\t').count();
+    let rest = &line[indent_len..];
+    let (marker_len, ordered) = if rest.starts_with(['-', '*', '+']) {
+        (1, false)
+    } else {
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        if !(1..=9).contains(&digits) || !matches!(rest.as_bytes().get(digits), Some(b'.' | b')')) {
+            return None;
+        }
+        (digits + 1, true)
+    };
+    let after = &rest[marker_len..];
+    let gap_len = after.bytes().take_while(|b| *b == b' ' || *b == b'\t').count();
+    if gap_len == 0 {
+        return None;
+    }
+    Some(ListLine {
+        indent: line[..indent_len].to_owned(),
+        marker_len,
+        gap: after[..gap_len].to_owned(),
+        ordered,
+    })
+}
+
+/// `^ {0,3}>( ?)(.*)$` の中身（`>` の後の空白は 1 つ除く）。core の quote_inner と同じ。
+fn quote_inner(line: &str) -> Option<String> {
+    let spaces = line.bytes().take_while(|b| *b == b' ').count();
+    if spaces > 3 {
+        return None;
+    }
+    let rest = line[spaces..].strip_prefix('>')?;
+    Some(rest.strip_prefix(' ').unwrap_or(rest).to_owned())
+}
+
+/// タブは 4 桁として数える（core の cols_of）
+fn cols_of(ws: &str) -> usize {
+    ws.chars().map(|c| if c == '\t' { 4usize } else { 1 }).sum()
+}
+
+fn indent_of(line: &str) -> &str {
+    let len = line.bytes().take_while(|b| *b == b' ' || *b == b'\t').count();
+    &line[..len]
+}
+
+/// 行頭から最大 n 桁ぶんの空白を取り除く（core の strip_indent）
+fn strip_indent(line: &str, n: usize) -> String {
+    let bytes = line.as_bytes();
+    let mut col = 0;
+    let mut k = 0;
+    while k < bytes.len() && col < n {
+        match bytes[k] {
+            b' ' => col += 1,
+            b'\t' => {
+                if col + 4 > n {
+                    return format!("{}{}", " ".repeat(col + 4 - n), &line[k + 1..]);
+                }
+                col += 4;
+            }
+            _ => break,
+        }
+        k += 1;
+    }
+    line[k..].to_owned()
 }
 
 /// 本文が参照している添付の ID（順番どおり、重複なし）。コードの中は数えない。
@@ -312,12 +471,17 @@ fn linkable(name: &str) -> bool {
 }
 
 /// 送信・編集の本文: 添付の名前のリンクを、その添付の ID（`disnans:file/<ID>`）に置き換える。
-/// - `attachments/<名前>`（どの書き方でも）: 生きている添付（投稿済み・`library`）が無ければ `invalid_link`。
+/// - `attachments/<名前>`（どの書き方でも）: 生きている添付（投稿済み・`library`・送信者自身の未投稿）が無ければ `invalid_link`。
 /// - `[[名前]]` / `![[名前]]`（パスに `/` を含まない）: `attachments/` にあればその添付。無ければ従来どおり（shared のパスの文字）。
 ///   同じ名前が shared の直下にもあれば `ambiguous_link`（`attachments/名前` と書けば解決）。
 ///
 /// 本文の中の ID（クライアントが直接書いたもの）は、呼び出し側が `claim` で検査する。
-pub async fn to_stored(pool: &SqlitePool, shared_dir: &Path, body: &str) -> AppResult<String> {
+pub async fn to_stored(
+    pool: &SqlitePool,
+    shared_dir: &Path,
+    uploader: &str,
+    body: &str,
+) -> AppResult<String> {
     let mut ids: HashMap<String, String> = HashMap::new();
     for (path, wiki) in link_targets(body) {
         if ids.contains_key(&path) {
@@ -331,9 +495,11 @@ pub async fn to_stored(pool: &SqlitePool, shared_dir: &Path, body: &str) -> AppR
         let id = if linkable(&name) {
             sqlx::query_scalar::<_, String>(
                 "SELECT id FROM files
-                 WHERE alias_key = ? AND deleted_at IS NULL AND (message_id IS NOT NULL OR library = 1)",
+                 WHERE alias_key = ? AND deleted_at IS NULL
+                   AND (message_id IS NOT NULL OR library = 1 OR uploader_id = ?)",
             )
             .bind(crate::attachment_names::key(&name))
+            .bind(uploader)
             .fetch_optional(pool)
             .await?
         } else {
@@ -456,6 +622,36 @@ mod tests {
         assert_eq!(
             rewrite_paths::<()>(body, |p, _| Ok(p.to_owned())).unwrap(),
             body
+        );
+    }
+
+    #[test]
+    fn fences_inside_list_items_and_nested_lists_are_code() {
+        // 項目の中の（インデントした）フェンスはコード。項目の最初の行の ``` は文字（core と同じ）
+        assert!(attachment_paths("- item\n  ```\n  [a](attachments/x.png)\n  ```").is_empty());
+        assert_eq!(
+            attachment_paths("- ```\n  [a](attachments/x.png)"),
+            vec!["x.png"],
+            "項目の最初の行の ``` はフェンスではない"
+        );
+        assert!(attachment_paths("1. a\n   - b\n     ```\n     [a](attachments/x.png)\n     ```").is_empty());
+        // 項目の外に出た行は、もうコードではない
+        assert_eq!(
+            attachment_paths("- item\n  ```\n  [a](attachments/x.png)\n  ```\n[b](attachments/y.png)"),
+            vec!["y.png"]
+        );
+    }
+
+    #[test]
+    fn a_fence_in_a_paragraph_starts_code_and_quotes_are_read_inside() {
+        assert_eq!(
+            attachment_paths("text\n```\n[a](attachments/x.png)\n```\n[b](attachments/y.png)"),
+            vec!["y.png"]
+        );
+        assert_eq!(
+            attachment_paths("> quoted\n> [a](attachments/x.png)"),
+            vec!["x.png"],
+            "引用の中の本文は読む"
         );
     }
 

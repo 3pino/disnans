@@ -42,7 +42,7 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
     dedup_keep_order(&mut attachment_ids);
     // 長さは送られた本文（表示の形）で見る。添付の埋め込みは末尾に足す（旧クライアントの attachment_ids）
     validate_body(&req.body, !attachment_ids.is_empty())?;
-    let stored = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &req.body).await?;
+    let stored = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &actor.user.id, &req.body).await?;
     let body = crate::links::append_links(&stored, &attachment_ids);
 
     let _guard = state.write_lock().await;
@@ -100,7 +100,7 @@ pub async fn post_bot_message(
     req: PluginPostMessage,
 ) -> AppResult<Message> {
     validate_body(&req.body, false)?;
-    let body = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &req.body).await?;
+    let body = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &user.id, &req.body).await?;
     let name = match req.name.as_deref().map(str::trim) {
         None | Some("") => plugin.name.clone(),
         Some(name) => name.chars().take(MAX_BOT_NAME_CHARS).collect(),
@@ -149,7 +149,7 @@ pub async fn edit_message(
     }
     // 添付も本文の中にあるので、本文が空なら空のメッセージ
     validate_body(&body, false)?;
-    let stored = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &body).await?;
+    let stored = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &actor.user.id, &body).await?;
 
     let old_ids = crate::links::ids_in(&row.body);
     let new_ids = crate::links::ids_in(&stored);

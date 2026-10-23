@@ -8,6 +8,7 @@ use disnans_server::store::files as store_files;
 use disnans_shared::{Attachment, ClientEvent, Message, SharedEntry, SharedListing};
 
 const ALICE: &str = "alice@test";
+const BOB: &str = "bob@test";
 
 fn req(server: &TestServer, m: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
     server.http.request(m, server.url(path)).header("X-Dev-User", ALICE)
@@ -167,15 +168,60 @@ async fn a_name_link_in_the_body_attaches_a_library_file() {
     assert_eq!(m.body, "look [[attachments/lib.txt]] and [[attachments/lib.txt|x]]");
 }
 
+async fn upload_as(server: &TestServer, user: &str, name: &str) -> Attachment {
+    let part = reqwest::multipart::Part::bytes(b"data".to_vec())
+        .file_name(name.to_owned())
+        .mime_str("text/plain")
+        .unwrap();
+    let form = reqwest::multipart::Form::new().part("file", part);
+    let res = server
+        .http
+        .post(server.url("/api/files"))
+        .header("X-Dev-User", user)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    res.json().await.unwrap()
+}
+
+async fn send_as_error(server: &TestServer, user: &str, body: &str) -> String {
+    let mut ws = server.ws(user).await;
+    ws.send(ClientEvent::MessageSend {
+        client_id: "err".into(),
+        body: body.into(),
+        attachment_ids: vec![],
+        reply_to: None,
+        silent: false,
+    })
+    .await;
+    ws.expect_error().await.1
+}
+
 #[tokio::test]
-async fn a_raw_id_of_an_unposted_upload_is_refused_in_the_body() {
+async fn an_unposted_upload_is_referenced_by_its_own_uploader_only() {
     let server = TestServer::start().await;
-    let hidden = upload(&server, "hidden.txt").await;
-    let err = send_error(&server, &format!("![[disnans:file/{}]]", hidden.id), &[]).await;
-    assert_eq!(err, "invalid_link");
-    // 欄から来た未投稿の添付は付けられる
-    let ok = send(&server, "ok", &[&hidden.id]).await;
-    assert_eq!(ok.attachments.len(), 1);
+    let mine = upload(&server, "mine.txt").await;
+    // 自分の未投稿は、本文の ID でも名前でも参照できる（送信で投稿扱いになる）
+    let m = send(&server, &format!("![[disnans:file/{}]]", mine.id), &[]).await;
+    assert_eq!(m.attachments.len(), 1);
+    assert_eq!(m.attachments[0].id, mine.id);
+
+    let draft = upload(&server, "draft.txt").await;
+    let by_name = send(&server, "![[attachments/draft.txt]]", &[]).await;
+    assert_eq!(by_name.attachments[0].id, draft.id);
+
+    // ほかの利用者の未投稿は、ID でも名前でも参照できない
+    let theirs = upload_as(&server, BOB, "bobs.txt").await;
+    assert_eq!(
+        send_as_error(&server, ALICE, &format!("![[disnans:file/{}]]", theirs.id)).await,
+        "invalid_link"
+    );
+    assert_eq!(
+        send_as_error(&server, ALICE, "![[attachments/bobs.txt]]").await,
+        "invalid_link"
+    );
 }
 
 #[tokio::test]

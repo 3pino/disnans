@@ -173,7 +173,8 @@ pub async fn claim(
         let ok = if fresh.contains(id) {
             posted.is_none() && (uploader == uploader_id || library)
         } else {
-            posted.is_some() || library
+            // 本文の参照: 投稿済み・library・自分の未投稿（送信者が本文の `![[…]]` から参照できる）
+            posted.is_some() || library || uploader == uploader_id
         };
         if !ok {
             return Ok(Some(id.clone()));
