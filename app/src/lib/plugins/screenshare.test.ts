@@ -590,6 +590,40 @@ afterEach(() => {
 });
 
 describe('examples/screenshare', () => {
+  it('取得の失敗: 許可・カメラなし・使用中で文言を分ける', async () => {
+    const { cameraFailureText } = await load();
+    expect(cameraFailureText(new DOMException('x', 'NotFoundError'))).toBe('カメラが見つかりません');
+    expect(cameraFailureText(new DOMException('x', 'NotReadableError'))).toContain('ほかのアプリ');
+    expect(cameraFailureText(new DOMException('x', 'OtherError'))).toBe('カメラを取得できませんでした（OtherError: x）');
+  });
+
+  it('カメラの共有中に画面に切り替えても、受け手には止まったと出さない。画面が取れなければ止まったと知らせる', async () => {
+    const s = await setup({ display: true, camera: true });
+    s.getDisplayMedia.mockRejectedValueOnce(new DOMException('no', 'NotAllowedError'));
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true, source: 'camera' }, { on: false }]);
+    s.r.stop();
+  });
+
+  it('許可の選択の途中でもう一度押すと取り消し、取れた映像は使わない', async () => {
+    const s = await setup({ display: true });
+    let resolve: (v: unknown) => void = () => {};
+    s.getDisplayMedia.mockReturnValueOnce(new Promise((r) => (resolve = r as (v: unknown) => void)) as never);
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    s.button()!.onClick();
+    const stop = vi.fn();
+    resolve({ getTracks: () => [{ stop, addEventListener: () => {} }], getVideoTracks: () => [] });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(stop).toHaveBeenCalled();
+    expect(s.button()!.active).toBeFalsy();
+    expect(emitted(s.call, 'screen.state')).toHaveLength(0);
+    s.r.stop();
+  });
+
   it('共有ボタンは通話の全画面だけに置く', async () => {
     const s = await setup({ display: true });
     expect(s.button()?.location).toBe('view');
@@ -706,18 +740,19 @@ describe('examples/screenshare', () => {
     s.button()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
     expect(s.getDisplayMedia).toHaveBeenCalledOnce();
-    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true, source: 'camera' }, { on: false }, { on: true, source: 'screen' }]);
+    // 切り替えは止めたことを知らせない（受け手の表示を閉じないように、新しい source で続ける）
+    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true, source: 'camera' }, { on: true, source: 'screen' }]);
     expect(s.cameraButton()!.active).toBe(false);
     expect(s.button()!.active).toBe(true);
     s.r.stop();
   });
 
-  it('カメラを開けなければ知らせて、共有中にしない', async () => {
+  it('カメラを開けなければ知らせて、共有中にしない（許可されていない・カメラがない・使用中で文言を分ける）', async () => {
     const s = await setup({ display: false, camera: true });
     s.getUserMedia.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'));
     s.cameraButton()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
-    expect(s.toast).toHaveBeenCalledWith(expect.stringContaining('カメラを取得できませんでした'), 'error');
+    expect(s.toast).toHaveBeenCalledWith(expect.stringContaining('カメラの使用が許可されていません'), 'error');
     expect(s.cameraButton()!.active).toBeFalsy();
     expect(emitted(s.call, 'screen.state')).toHaveLength(0);
     s.r.stop();
@@ -1306,17 +1341,23 @@ describe('examples/screenshare', () => {
     s.r.stop();
   });
 
-  it('画面の共有では自分の枠を出さない。通話を抜けたら、カメラの枠も外す', async () => {
+  it('自分の送信中の枠は、画面でもカメラでも出す。通話を抜けたら外す', async () => {
     const s = await setup({ display: true, camera: true });
     const wrap = s.panel.el.querySelector<HTMLElement>('.screenshare-self')!;
     const video = s.panel.el.querySelector<HTMLVideoElement>('.screenshare-self-video')!;
+    const label = s.panel.el.querySelector<HTMLElement>('.screenshare-self-label')!;
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(wrap.hidden).toBe(false);
+    expect(label.textContent).toBe('自分の画面（送信中）');
+    expect(video.srcObject).toBeTruthy();
     s.button()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
     expect(wrap.hidden).toBe(true);
     expect(video.srcObject).toBeFalsy();
-    s.button()!.onClick();
     s.cameraButton()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
+    expect(label.textContent).toBe('自分のカメラ（送信中）');
     expect(wrap.hidden).toBe(false);
     s.call.joined = false;
     s.changed();

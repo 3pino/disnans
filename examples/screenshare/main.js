@@ -441,6 +441,18 @@ export function isCancelError(e) {
 }
 
 /**
+ * カメラを開けなかったときの利用者向けの文言（権限・カメラなし・使用中を分ける）。
+ * @param {unknown} e
+ */
+export function cameraFailureText(e) {
+  const name = typeof e === 'object' && e !== null && 'name' in e ? String(/** @type {{ name: unknown }} */ (e).name) : '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'カメラの使用が許可されていません。端末かブラウザーの設定で許可してください';
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'カメラが見つかりません';
+  if (name === 'NotReadableError') return 'カメラを開けません（ほかのアプリが使っているかもしれません）';
+  return `カメラを取得できませんでした（${describeError(e)}）`;
+}
+
+/**
  * 例外を短い文字にする（トースト・ログ用）。
  * @param {unknown} e
  */
@@ -1003,6 +1015,8 @@ export default class ScreenSharePlugin extends Plugin {
   selfWrap = /** @type {HTMLElement | null} */ (null);
   /** @type {HTMLVideoElement | null} */
   selfVideo = null;
+  /** @type {HTMLElement | null} */
+  selfLabel = null;
   frameId = 0;
   lastHeartbeat = 0;
   lastSentAt = 0;
@@ -1148,6 +1162,7 @@ export default class ScreenSharePlugin extends Plugin {
       this.panelStage?.destroy();
       if (this.selfVideo) this.selfVideo.srcObject = null;
       this.selfWrap = null;
+      this.selfLabel = null;
       this.selfVideo = null;
       this.panel?.remove();
       this.panel = null;
@@ -1183,11 +1198,21 @@ export default class ScreenSharePlugin extends Plugin {
 
   /** @param {ShareSource} source */
   async toggleSource(source) {
-    if (this.starting) return;
+    // 許可や画面の選択の途中でもう一度押したら取り消す（選ぶ画面は閉じられないので、取れた映像は startWeb が捨てる）
+    if (this.starting) {
+      this.stopShare(false);
+      return;
+    }
     const was = this.sharing ? this.source : null;
-    // 切り替えでも、いったん止めたことを知らせる（受け手は新しい source で出し直す）
-    if (was) this.stopShare(true);
-    if (was !== source) await this.startShare(source);
+    if (was === source) {
+      this.stopShare(true);
+      return;
+    }
+    // 画面とカメラの切り替えでは、止めたことを相手に知らせない（相手の表示が閉じないように、新しい source で出し直す）。
+    // 新しい共有が始まらなかったら、そのとき止めたと知らせる
+    if (was) this.stopShare(false);
+    await this.startShare(source);
+    if (was && !this.sharing && this.call.joined) this.sendState(false);
   }
 
   /** @param {ShareSource} [source] */
@@ -1281,7 +1306,7 @@ export default class ScreenSharePlugin extends Plugin {
       stream = source === 'camera' ? await this.pickCamera(this.settings.fps) : await this.pickDisplay(this.settings.fps);
     } catch (e) {
       console.error(`[screenshare] ${what}を取得できません`, e);
-      ui.toast(`${what}を取得できませんでした（${describeError(e)}）`, 'error');
+      ui.toast(source === 'camera' ? cameraFailureText(e) : `${what}を取得できませんでした（${describeError(e)}）`, 'error');
       return;
     }
     if (!stream) return;
@@ -2034,14 +2059,15 @@ export default class ScreenSharePlugin extends Plugin {
     selfWrap.hidden = true;
     const selfLabel = document.createElement('div');
     selfLabel.className = 'screenshare-self-label';
-    selfLabel.textContent = '自分のカメラ（送信中）';
+    selfLabel.textContent = '自分の映像（送信中）';
     const selfVideo = document.createElement('video');
     selfVideo.className = 'screenshare-self-video';
     selfVideo.muted = true;
     selfVideo.playsInline = true;
-    selfVideo.setAttribute('aria-label', '自分のカメラ（送信中）');
+    selfVideo.setAttribute('aria-label', '自分の映像（送信中）');
     selfWrap.append(selfLabel, selfVideo);
     this.selfWrap = selfWrap;
+    this.selfLabel = selfLabel;
     this.selfVideo = selfVideo;
     const bar = document.createElement('div');
     bar.className = 'screenshare-panel-bar';
@@ -2064,7 +2090,7 @@ export default class ScreenSharePlugin extends Plugin {
 
   /** 自分のカメラを確認の枠に出すのは、カメラを送信中のとき（取得できた MediaStream があるときだけ） */
   selfShowing() {
-    return this.sharing && this.source === 'camera' && this.stream !== null && this.call.joined;
+    return this.sharing && this.stream !== null && this.call.joined;
   }
 
   /**
@@ -2077,6 +2103,9 @@ export default class ScreenSharePlugin extends Plugin {
     if (!wrap || !video) return;
     const show = this.selfShowing();
     if (show) {
+      const label = this.source === 'camera' ? '自分のカメラ（送信中）' : '自分の画面（送信中）';
+      if (this.selfLabel) this.selfLabel.textContent = label;
+      video.setAttribute('aria-label', label);
       if (video.srcObject !== this.stream) {
         video.srcObject = this.stream;
         void Promise.resolve(video.play()).catch((e) => console.warn('[screenshare] 自分のカメラを再生できません', e));
