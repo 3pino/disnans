@@ -1,9 +1,7 @@
 <script lang="ts">
   import Plus from '@lucide/svelte/icons/plus';
-  import X from '@lucide/svelte/icons/x';
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import Button from './ui/Button.svelte';
-  import IconButton from './ui/IconButton.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
   import Section from './ui/Section.svelte';
@@ -22,7 +20,7 @@
   import { prefs } from '../lib/stores/prefs.svelte';
 
   // 設定の「＋メニュー」: 入力欄の「＋」を押したときに出す項目を、並べ替え・表示の切り替え・コマンドの追加で決める。
-  // 並べ替えは共通の SortableList（行をドラッグ。行にフォーカスして上下キーでも動かせる。コマンドは左へスワイプで削除）。
+  // 並べ替え・削除は共通の SortableList（行をドラッグ。長押しで削除モード。行にフォーカスして上下キーで動かし、Delete で削除モード）。
   // 保存はサーバー（prefs）で、同じユーザーのデバイスで共有する。削除したプラグインの項目は、出ないだけで設定には残る
 
   let pickerOpen = $state(false);
@@ -52,11 +50,6 @@
 </script>
 
 <Section title="＋メニュー" class="composer-menu-settings">
-  <p class="muted composer-menu-settings-note">
-    入力欄の「＋」を押したときに出す項目です。行をドラッグして並べ替えられます（タッチは押したまま動かします。行を選んで上下キーでも動かせます）。
-    出さない項目は右の切り替えで外します。追加したコマンドは、行を左へ引いて削除のボタンを押すか（幅の 6 割以上まで引くと、そのまま削除）、× で外します。この設定はほかのデバイスとも共有されます
-  </p>
-
   <SortableList
     items={items}
     getId={(x) => x.entry.id}
@@ -66,18 +59,17 @@
     onremove={remove}
     class="composer-menu-settings-list"
   >
-    {#snippet row(x)}
+    {#snippet row(x, s)}
       <SettingRow
         name={x.entry.label}
-        description={x.entry.source ?? (x.entry.kind === 'command' ? 'コマンド' : '本体')}
+        description={x.entry.source ?? (x.entry.kind === 'command' ? 'コマンド' : undefined)}
         icon={x.entry.icon ?? Puzzle}
+        deleting={s.deleting}
+        ondelete={s.canRemove ? s.remove : undefined}
+        deleteLabel="{x.entry.label} をメニューから外す"
       >
         {#snippet control()}
-          {#if x.entry.kind === 'command'}
-            <IconButton label="{x.entry.label} をメニューから外す" class="composer-menu-settings-remove" onclick={() => remove(x.entry.id)}>
-              <X size={16} />
-            </IconButton>
-          {:else}
+          {#if x.entry.kind !== 'command'}
             <Toggle checked={!x.hidden} label="{x.entry.label} を「＋」メニューに出す" onchange={(on) => setShown(x.entry.id, on)} />
           {/if}
         {/snippet}
@@ -102,10 +94,6 @@
 </Section>
 
 <style>
-  .composer-menu-settings-note {
-    margin: 0;
-    font-size: var(--fs-sm);
-  }
   .composer-menu-settings-add {
     position: relative;
     display: inline-flex;

@@ -32,7 +32,7 @@ export function addNavItem(list: readonly string[], id: string): string[] {
   return list.includes(id) ? [...list] : [...list, id];
 }
 
-/** 左スワイプ・× で外せるか（必須の項目は外せない。removeNavItem と同じ条件） */
+/** 削除モードの × で外せるか（必須の項目は外せない。removeNavItem と同じ条件） */
 export function navItemRemovable(id: string): boolean {
   return !NAV_REQUIRED_IDS.includes(id);
 }

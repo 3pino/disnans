@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  REVEAL_PX,
+  DELETE_MODE_DRAG_HOLD_MS,
+  DELETE_MODE_HOLD_MS,
   TOUCH_DRAG_HOLD_MS,
+  dragHoldMs,
   dropSlot,
   finalPositions,
   keyMoveTarget,
   moveItem,
-  fullSwipeDistance,
-  releaseAction,
-  REVEAL_TRIGGER_PX,
-  rowSwipeOffset,
   rowGesture,
   sameIdOrder,
   slotToIndex,
@@ -102,12 +100,12 @@ describe('rowGesture（行の指の動きで何を始めるか）', () => {
     expect(rowGesture('touch', 0, 12, true)).toBe('drag');
   });
 
-  it('左への横の動きは削除のスワイプ（タッチも、マウスも）', () => {
-    expect(rowGesture('touch', -30, 2, false)).toBe('swipe');
-    expect(rowGesture('mouse', -30, 2, false)).toBe('swipe');
+  it('横の動きは、行を動かさない（削除は削除モードで行う）', () => {
+    expect(rowGesture('touch', -30, 2, false)).toBe('ignore');
+    expect(rowGesture('mouse', -30, 2, true)).toBe('ignore');
   });
 
-  it('右への横の動きは何もしない（縦が強ければ縦として扱う）', () => {
+  it('横の動きは何もしない（縦が強ければ縦として扱う）', () => {
     expect(rowGesture('mouse', 30, 2, false)).toBe('ignore');
     expect(rowGesture('mouse', 10, 30, false)).toBe('drag');
   });
@@ -117,10 +115,21 @@ describe('rowGesture（行の指の動きで何を始めるか）', () => {
   });
 });
 
-describe('タッチの長押しと削除ボタン', () => {
-  it('長押しの時間と削除ボタンの幅は、既定の値（変えたら設計に理由を書く）', () => {
+describe('長押しの時間（通常モードと削除モード）', () => {
+  it('既定の値（変えたら設計に理由を書く）', () => {
     expect(TOUCH_DRAG_HOLD_MS).toBe(400);
-    expect(REVEAL_PX).toBe(88);
+    expect(DELETE_MODE_DRAG_HOLD_MS).toBe(150);
+    expect(DELETE_MODE_HOLD_MS).toBe(700);
+  });
+
+  it('削除モードでは並べ替えを早く始められる。通常モードは従来どおり', () => {
+    expect(dragHoldMs(false)).toBe(TOUCH_DRAG_HOLD_MS);
+    expect(dragHoldMs(true)).toBe(DELETE_MODE_DRAG_HOLD_MS);
+    expect(DELETE_MODE_DRAG_HOLD_MS).toBeLessThan(TOUCH_DRAG_HOLD_MS);
+  });
+
+  it('削除モードに入る押し続けは、並べ替えの押し（400ms）より長い（先に並べ替えに入るため）', () => {
+    expect(DELETE_MODE_HOLD_MS).toBeGreaterThan(TOUCH_DRAG_HOLD_MS);
   });
 });
 
@@ -146,47 +155,6 @@ describe('keyMoveTarget（上下キー・Home・End）', () => {
   it('項目が一つ以下なら何も動かさない', () => {
     expect(keyMoveTarget('ArrowDown', 0, 1)).toBeNull();
     expect(keyMoveTarget('End', 0, 0)).toBeNull();
-  });
-});
-
-describe('rowSwipeOffset（行の位置は指に合わせ、行の幅より先へは行かない）', () => {
-  it('左へ動いた分だけ負になり、右への動きは 0', () => {
-    expect(rowSwipeOffset(-40, 300)).toBe(-40);
-    expect(rowSwipeOffset(30, 300)).toBe(0);
-  });
-
-  it('行の幅を超えては動かない', () => {
-    expect(rowSwipeOffset(-500, 300)).toBe(-300);
-  });
-});
-
-describe('releaseAction（指を離したとき、削除ボタンで止める・即削除・元に戻す）', () => {
-  const W = 300;
-
-  it('ボタンを出す位置（REVEAL_TRIGGER_PX）に届くと open、届かなければ close', () => {
-    expect(releaseAction(-REVEAL_TRIGGER_PX, W, false)).toBe('open');
-    expect(releaseAction(-(REVEAL_TRIGGER_PX - 1), W, false)).toBe('close');
-    expect(releaseAction(0, W, false)).toBe('close');
-  });
-
-  it('行の幅の 60% 以上まで引くと delete（ボタンを押さずに削除）', () => {
-    expect(fullSwipeDistance(W)).toBe(180);
-    expect(releaseAction(-180, W, false)).toBe('delete');
-    expect(releaseAction(-179, W, false)).toBe('open');
-  });
-
-  it('取り消し（pointercancel など）は、どれだけ引いていても close', () => {
-    expect(releaseAction(-290, W, true)).toBe('close');
-    expect(releaseAction(-120, W, true)).toBe('close');
-  });
-
-  it('幅が分からないとき（0 以下）は即削除しない（誤って消さない）', () => {
-    expect(fullSwipeDistance(0)).toBe(Infinity);
-    expect(releaseAction(-500, 0, false)).toBe('open');
-  });
-
-  it('右への動きでは開かない', () => {
-    expect(releaseAction(80, W, false)).toBe('close');
   });
 });
 

@@ -44,3 +44,44 @@ describe('SettingRow の DOM の契約', () => {
     expect(render({ control: false }).querySelector('.setting-row-control')).toBeNull();
   });
 });
+
+// 削除モード: 操作部品（control）の代わりに × を出す。削除できない行（ondelete なし）は何も出さない
+describe('SettingRow の削除モード', () => {
+  function renderDeleting(props: { deleting: boolean; ondelete?: () => void }) {
+    target = document.createElement('div');
+    document.body.appendChild(target);
+    instance = mount(SettingRow, {
+      target,
+      props: {
+        name: '項目',
+        deleteLabel: '項目を外す',
+        control: createRawSnippet(() => ({ render: () => '<span class="ctl">操作</span>' })),
+        ...props,
+      },
+    });
+    flushSync();
+    return target.querySelector<HTMLElement>('.setting-row')!;
+  }
+
+  it('削除モードでないときは、操作部品をそのまま出す（× は出さない）', () => {
+    const row = renderDeleting({ deleting: false, ondelete: () => {} });
+    expect(row.querySelector('.ctl')).not.toBeNull();
+    expect(row.querySelector('.setting-row-delete')).toBeNull();
+  });
+
+  it('削除モードでは、操作部品の代わりに × を出し、押すと ondelete を呼ぶ', () => {
+    let called = 0;
+    const row = renderDeleting({ deleting: true, ondelete: () => called++ });
+    expect(row.querySelector('.ctl')).toBeNull();
+    const btn = row.querySelector<HTMLButtonElement>('.setting-row-delete');
+    expect(btn?.getAttribute('aria-label')).toBe('項目を外す');
+    btn!.click();
+    expect(called).toBe(1);
+  });
+
+  it('削除モードでも、削除できない行（ondelete なし）は操作部品も × も出さない', () => {
+    const row = renderDeleting({ deleting: true });
+    expect(row.querySelector('.ctl')).toBeNull();
+    expect(row.querySelector('.setting-row-delete')).toBeNull();
+  });
+});

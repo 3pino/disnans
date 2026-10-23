@@ -27,7 +27,10 @@
 </script>
 
 <SortableList {items} getId={(x) => x.id} getLabel={(x) => x.name} {onmove} {onremove} {removable}>
-  {#snippet row(x)}
+  {#snippet row(x, s)}
     <span class="row-text">{x.name}</span><input class="row-input" />
+    {#if s.deleting && s.canRemove}
+      <button type="button" class="row-x" onclick={s.remove}>×</button>
+    {/if}
   {/snippet}
 </SortableList>

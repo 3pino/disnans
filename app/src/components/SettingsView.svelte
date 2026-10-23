@@ -343,7 +343,7 @@
               </select>
             {/snippet}
           </SettingRow>
-          <SettingRow name="ナビゲーションバーを隠す" description="画面の下端からスワイプすると一時的に表示します" class="settings-hide-nav-bar-row">
+          <SettingRow name="ナビゲーションバーを隠す" class="settings-hide-nav-bar-row">
             {#snippet control()}
               <Toggle checked={ui.hideNavigationBar} label="ナビゲーションバーを隠す" onchange={(on) => ui.setHideNavigationBar(on)} />
             {/snippet}
@@ -447,7 +447,7 @@
             {:else if st.kind === 'permission'}
               <StatusLine kind="accent">インストールの許可が必要です</StatusLine>
               <p class="muted settings-small-text">
-                アップデートを入れるには、一度だけ「不明なアプリのインストール」で disnans を許可してください。開いた設定画面で許可したら、戻って「続ける」を押してください。
+                アップデートを入れるには、「不明なアプリのインストール」で disnans を許可してください。開いた設定画面で許可したら、戻って「続ける」を押してください。
               </p>
             {:else if st.kind === 'downloading'}
               <StatusLine kind="muted" busy>

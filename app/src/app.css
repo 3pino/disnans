@@ -35,6 +35,10 @@
   grid-row: 1 / span 2;
   margin-left: var(--space-6);
 }
+/* 削除モードの × （操作部品の代わりに出る。削除だと分かる色） */
+.setting-row-delete {
+  color: var(--danger);
+}
 @container setting-row (max-width: 30em) {
   .setting-row > .setting-row-icon,
   .setting-row-control {

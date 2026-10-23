@@ -1,22 +1,20 @@
 <script lang="ts">
   import Plus from '@lucide/svelte/icons/plus';
-  import X from '@lucide/svelte/icons/x';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import Button from './ui/Button.svelte';
   import TextInput from './ui/TextInput.svelte';
-  import IconButton from './ui/IconButton.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
   import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import SortableList from './ui/SortableList.svelte';
   import { commandList, type AppCommand } from '../lib/commands.svelte';
-  import { addNavItem, DEFAULT_NAV_LABELS, NAV_REQUIRED_IDS, navItemRemovable, removeNavItem, reorderNavItem } from '../lib/navBar';
+  import { addNavItem, DEFAULT_NAV_LABELS, navItemRemovable, removeNavItem, reorderNavItem } from '../lib/navBar';
   import { navBar } from '../lib/stores/navBar.svelte';
 
   // 設定の「ナビゲーションバー」: 出すコマンドを、並べ替え・追加・削除で決める。
-  // 並べ替えは共通の SortableList（行をドラッグ。行にフォーカスして上下キーでも動かせる。左へスワイプで削除）。
+  // 並べ替え・削除は共通の SortableList（行をドラッグ。長押しで削除モード。行にフォーカスして上下キーで動かし、Delete で削除モード）。
   // 保存は同じアカウントのデバイスで共有する（ユーザーごとの設定）。チャットと設定は外せない（設定に戻れるように）
   // 表示名は項目ごとに入力欄で決める（空欄で保存するとコマンド名になる。入力欄を空のままにすると既定の名前）
 
@@ -51,10 +49,6 @@
 </script>
 
 <Section title="ナビゲーションバー" class="nav-bar-settings">
-  <p class="muted nav-bar-settings-note">
-    狭い画面では下、広い画面では左に出る項目です。並べ替えや、追加・削除ができます。チャットと設定は外せません。この設定は同じアカウントのデバイスで共有されます
-  </p>
-
   <SortableList
     items={shown}
     getId={(c) => c.id}
@@ -64,8 +58,15 @@
     onremove={remove}
     class="nav-bar-settings-list"
   >
-    {#snippet row(c)}
-      <SettingRow name={c.name} description={c.source ?? '本体'} icon={c.icon ?? Puzzle}>
+    {#snippet row(c, s)}
+      <SettingRow
+        name={c.name}
+        description={c.source}
+        icon={c.icon ?? Puzzle}
+        deleting={s.deleting}
+        ondelete={s.canRemove ? s.remove : undefined}
+        deleteLabel="{c.name} をナビゲーションバーから外す"
+      >
         {#snippet control()}
           <TextInput
             class="nav-bar-settings-label"
@@ -76,14 +77,6 @@
             autocomplete="off"
             onchange={(e) => navBar.setLabel(c.id, e.currentTarget.value)}
           />
-          {#if NAV_REQUIRED_IDS.includes(c.id)}
-            <!-- 外せない項目も、外すボタンと同じ幅を空けておく（表示名の入力欄の位置をそろえる） -->
-            <span class="nav-bar-settings-remove-slot" aria-hidden="true"></span>
-          {:else}
-            <IconButton label="ナビゲーションバーから外す" class="nav-bar-settings-remove" onclick={() => remove(c.id)}>
-              <X size={16} />
-            </IconButton>
-          {/if}
         {/snippet}
       </SettingRow>
     {/snippet}
@@ -110,10 +103,6 @@
 </Section>
 
 <style>
-  .nav-bar-settings-note {
-    margin: 0;
-    font-size: var(--fs-sm);
-  }
   .nav-bar-settings-actions {
     display: flex;
     flex-wrap: wrap;
@@ -138,12 +127,6 @@
     width: 9em;
     max-width: 40vw;
     min-width: 0;
-  }
-  /* 外すボタン（.icon-btn の幅 34px）と同じ幅。外せない項目の行に置く */
-  .nav-bar-settings-remove-slot {
-    display: inline-block;
-    width: 34px;
-    flex: none;
   }
   .nav-bar-settings-source {
     font-size: var(--fs-sm);

@@ -1,25 +1,23 @@
 /**
- * 並べ替えの純粋関数（ドラッグ・上下キー・左スワイプの判定。DOM は使わない）。
+ * 並べ替えの純粋関数（ドラッグ・上下キー・長押しの時間の判定。DOM は使わない）。
  * 並べ替えの部品は components/ui/SortableList.svelte。テストは sortable.test.ts
  */
 import { swipeAxis } from './swipe';
 
-/** タッチで、動かさずにこの時間（ms）押したら並べ替えを始める。それより前の縦の動きはページのスクロール */
+/** 行の中身（row）に渡す削除モードの状態。canRemove は、この行を削除できるか（必須の項目は false） */
+export type SortableRow = { deleting: boolean; canRemove: boolean; remove: () => void };
+
+/** 通常モードで、タッチで押したまま動かすと並べ替えを始める、押した時間（ms）。それより前の縦の動きはページのスクロール */
 export const TOUCH_DRAG_HOLD_MS = 400;
-/** 左スワイプで止まる位置（削除ボタンの幅・px）。離したとき、REVEAL_TRIGGER_PX 以上なら、ここで止めて出したままにする */
-export const REVEAL_PX = 88;
-/**
- * 離したときに、ボタンを出したまま止まる左への動き（px）。小さな引きや指の揺れで出ないよう、ボタンの幅より手前にする。
- * 届かなければ閉じる
- */
-export const REVEAL_TRIGGER_PX = 60;
-/**
- * 行の幅に対する割合。これ以上まで引いて離すと、ボタンを押さずに削除する。
- * 60% は、縦のスクロールの横ずれ（行の端まで届くほどの横の動き）では起きない大きさ。手前で止める（ボタンを出す）操作と分けるため。
- */
-export const FULL_SWIPE_RATIO = 0.6;
-/** 即削除のとき、行を画面の外へ滑らせる時間（ms）。CSS の transition（180ms）と合わせる */
-export const ROW_LEAVE_MS = 180;
+/** 削除モードでは、並べ替えの押した時間（ms）を短くする（すぐ動かせる） */
+export const DELETE_MODE_DRAG_HOLD_MS = 150;
+/** 動かさずにこの時間（ms）押し続けると、削除モードに入る（タッチも、マウスも） */
+export const DELETE_MODE_HOLD_MS = 700;
+
+/** 並べ替えを始めるまでの押した時間（ms）。削除モードかどうかで決まる */
+export function dragHoldMs(deleting: boolean): number {
+  return deleting ? DELETE_MODE_DRAG_HOLD_MS : TOUCH_DRAG_HOLD_MS;
+}
 
 /**
  * キーボードで動かす先。上下キー・Home・End のとき、動かす先の位置を返す。
@@ -36,48 +34,24 @@ export function keyMoveTarget(key: string, index: number, length: number): numbe
   return to;
 }
 
-/** 行の左スワイプで、行の位置（左へ動くほど負）。指に合わせて動き、行の幅より先へは行かない */
-export function rowSwipeOffset(dx: number, width: number): number {
-  return Math.max(-width, Math.min(0, dx));
-}
-
-/**
- * 即削除に届く、左への動き（px）。幅が分からない（0 以下）ときは届かないものとする（誤って消さない）
- */
-export function fullSwipeDistance(width: number): number {
-  return width > 0 ? width * FULL_SWIPE_RATIO : Infinity;
-}
-
-/**
- * 指を離したあとの扱い。取り消し（pointercancel など）は閉じる。
- * delete: 行の幅の割合まで引いた（即削除）。open: ボタンを出したまま止める。close: 元に戻す
- */
-export function releaseAction(dx: number, width: number, cancelled: boolean): 'delete' | 'open' | 'close' {
-  if (cancelled) return 'close';
-  const pulled = -dx;
-  if (pulled >= fullSwipeDistance(width)) return 'delete';
-  if (pulled >= REVEAL_TRIGGER_PX) return 'open';
-  return 'close';
-}
-
 /** 並べている項目の ID の並びが同じか（ドラッグの途中で並びが外から変わったら、操作を取り消すため） */
 export function sameIdOrder(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
-/** 行の指の動きで、何を始めるか。'drag' 並べ替え・'swipe' 左スワイプ・'scroll' ページのスクロール（手を離す）・'ignore' 右への横の動き */
-export type RowGesture = 'drag' | 'swipe' | 'scroll' | 'ignore';
+/** 行の指の動きで、何を始めるか。'drag' 並べ替え・'scroll' ページのスクロール（手を離す）・'ignore' 何もしない（横の動き） */
+export type RowGesture = 'drag' | 'scroll' | 'ignore';
 
 /**
  * 指の動き（開始点からの差）から、行で何を始めるか。まだ横か縦か決まらないなら null。
- * 縦: マウス・ペンは並べ替え。タッチは、長押しのあと（held）だけ並べ替え、それ以外はページのスクロール。
- * 横: 左は削除のスワイプ、右は何もしない。
+ * 縦: マウス・ペンは並べ替え。タッチは、押したまま時間が過ぎたあと（held）だけ並べ替え、それ以外はページのスクロール。
+ * 横: 何もしない（行は動かさない。削除は削除モードで行う）。
  */
 export function rowGesture(pointerType: string, dx: number, dy: number, held: boolean): RowGesture | null {
   const axis = swipeAxis(dx, dy);
   if (axis === null) return null;
-  if (axis === 'y') return pointerType === 'touch' && !held ? 'scroll' : 'drag';
-  return dx < 0 ? 'swipe' : 'ignore';
+  if (axis === 'x') return 'ignore';
+  return pointerType === 'touch' && !held ? 'scroll' : 'drag';
 }
 
 /**

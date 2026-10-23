@@ -23,7 +23,7 @@
     removeHotkey,
     type AppCommand,
   } from '../lib/commands.svelte';
-  import { commandHost, PALETTE_COMMAND_ID } from '../lib/commandHost.svelte';
+  import { commandHost } from '../lib/commandHost.svelte';
   import { formatHotkey, hotkeyFromEvent } from '../lib/plugins/hotkey';
   import { checkSlashAlias } from '../lib/slashAlias';
   import { slashCommands } from '../lib/slashCommands.svelte';
@@ -35,12 +35,6 @@
   /** 本体のもの → プラグインのもの、それぞれ名前順 */
   const commands = $derived(filterCommands(commandList(), ''));
   const conflicts = $derived(findHotkeyConflicts(commands, prefs.hotkeys));
-  const paletteHotkey = $derived.by(() => {
-    const c = commands.find((x) => x.id === PALETTE_COMMAND_ID);
-    const hk = c ? effectiveHotkeys(c, prefs.hotkeys)[0] : undefined;
-    return hk ? formatHotkey(hk) : null;
-  });
-
   /** ホットキーを記録しているコマンド */
   let recording = $state<string | null>(null);
 
@@ -128,9 +122,6 @@
 <svelte:window onkeydowncapture={onRecordKey} />
 
 <Section title="ホットキー" class="hotkey-settings">
-  <p class="muted hotkey-settings-note">
-    ＋ を押してから、追加したいキーを押します（Esc で取り消し）。キーの右の × で外せます。{#if paletteHotkey}コマンドパレット（{paletteHotkey}）からも実行できます。{/if}この設定はほかのデバイスとも共有されます
-  </p>
   {#each commands as c (c.id)}
     {@const hotkeys = effectiveHotkeys(c, prefs.hotkeys)}
     {@const same = conflicts.get(c.id)}
@@ -221,10 +212,6 @@
 </Section>
 
 <style>
-  .hotkey-settings-note {
-    margin: 0;
-    font-size: var(--fs-sm);
-  }
   /* ほかのコマンドと同じキーになっているときの警告 */
   .hotkey-settings-command > :global(.hotkey-settings-conflict) {
     margin-top: var(--space-2);

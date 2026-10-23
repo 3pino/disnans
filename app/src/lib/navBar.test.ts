@@ -98,7 +98,7 @@ describe('表示名', () => {
   });
 });
 
-describe('navItemRemovable（左スワイプ・× で外せるか）', () => {
+describe('navItemRemovable（削除モードの × で外せるか）', () => {
   it('必須（チャット・設定）は外せず、ほかは外せる（removeNavItem と同じ条件）', () => {
     for (const id of NAV_REQUIRED_IDS) expect(navItemRemovable(id)).toBe(false);
     expect(navItemRemovable(NAV_SEARCH_ID)).toBe(true);
