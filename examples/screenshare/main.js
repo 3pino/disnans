@@ -8,7 +8,8 @@
  * 1. 通話の全画面の [画面を共有] を押すと画面を選び、縮小した画像（JPEG / WebP / PNG）を一定間隔で call.emit（サーバー中継）に流す。
  *    もう一度押すと止まる。OS 側で止めた・通話から抜けたときも止まる。
  *    取得は、本体のネイティブ（Android の MediaProjection、Linux の portal / PipeWire）を優先し、無ければ getDisplayMedia（Windows / ブラウザー）
- *    [カメラを共有] を押すと、画面の代わりにカメラの映像（getUserMedia）を同じ流れで送る。画面とカメラは同時には送らない（押したほうに切り替わる）
+ *    [カメラを共有] を押すと、画面の代わりにカメラの映像（getUserMedia）を同じ流れで送る。画面とカメラは同時には送らない（押したほうに切り替わる）。
+ *    カメラが前後に2つ以上ある端末では、カメラの共有中に [カメラを切り替え] で前と後ろを切り替える
  * 2. 誰かが共有を始めると、ステータス欄に [○○の画面を見る]（カメラなら [○○のカメラを見る]）が出る。押すと全画面の表示が開き、共有者が複数なら上のタブで切り替えられる。
  *    通話の画面（「通話を開く」）にも、参加者の上に配信が出る（call.addPanel）。
  *    既定は画面全体が収まる表示。ピンチ・Ctrl+ホイール（トラックパッドのピンチ）でカーソルの位置を中心に拡大縮小、
@@ -162,6 +163,48 @@ export function canShareScreen(nav) {
  */
 export function canShareCamera(nav) {
   return typeof nav?.mediaDevices?.getUserMedia === 'function';
+}
+
+/**
+ * カメラを前後で切り替えられるか。向き（facingMode）に対応し、カメラが 2 つ以上ある端末だけ。
+ * 数えられない環境（enumerateDevices がない・失敗）は、向きに対応しているかだけで決める。
+ * @param {{ mediaDevices?: { getUserMedia?: unknown, getSupportedConstraints?: () => { facingMode?: boolean }, enumerateDevices?: () => Promise<{ kind: string }[]> } } | undefined | null} nav
+ * @returns {Promise<boolean>}
+ */
+export async function canSwitchCamera(nav) {
+  const md = nav?.mediaDevices;
+  if (typeof md?.getUserMedia !== 'function') return false;
+  const supported = typeof md.getSupportedConstraints === 'function' ? md.getSupportedConstraints() : {};
+  if (!supported?.facingMode) return false;
+  if (typeof md.enumerateDevices !== 'function') return true;
+  try {
+    const devices = await md.enumerateDevices();
+    return devices.filter((d) => d.kind === 'videoinput').length >= 2;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * 切り替え先の向き。今が背面（environment）なら前面（user）、それ以外（不明を含む）は背面
+ * @param {string | null} current
+ */
+export function nextFacing(current) {
+  return current === 'environment' ? 'user' : 'environment';
+}
+
+/**
+ * 映像のトラックの向き（取れないときは null）
+ * @param {MediaStream} stream
+ * @returns {string | null}
+ */
+function facingOf(stream) {
+  try {
+    const facing = stream.getVideoTracks()[0]?.getSettings?.().facingMode;
+    return typeof facing === 'string' ? facing : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1022,6 +1065,14 @@ export default class ScreenSharePlugin extends Plugin {
   button = null;
   /** @type {Disnans.CallButton | null} */
   cameraButton = null;
+  /** カメラの前後の切り替え（カメラが 2 つ以上あるとき、共有中だけ出す） */
+  /** @type {Disnans.CallButton | null} */
+  switchButton = null;
+  /** 切り替えの途中（二重の押下は無視する） */
+  switching = false;
+  /** 切り替えの印。止めた・始め直したあとに届いた応答は捨てる（tickSeq と同じ考え） */
+  /** @type {object | null} */
+  switchToken = null;
 
   // 通話の画面の領域（call.addPanel）
   /** @type {Disnans.CallPanel | null} */
@@ -1066,6 +1117,7 @@ export default class ScreenSharePlugin extends Plugin {
         onClick: () => void this.toggleCamera(),
       });
       this.register(() => this.cameraButton?.remove());
+      this.register(() => this.switchButton?.remove());
     }
 
     this.statusEl = this.addStatusBarItem();
@@ -1250,6 +1302,7 @@ export default class ScreenSharePlugin extends Plugin {
     this.imageCapture = null;
     this.backend = 'web';
     this.beginSharing(source);
+    if (source === 'camera') void this.offerSwitch(this.shareSeq);
     // OS の「共有を停止」ボタンなどで止められたとき
     for (const t of stream.getVideoTracks()) {
       t.addEventListener('ended', () => {
@@ -1257,6 +1310,73 @@ export default class ScreenSharePlugin extends Plugin {
       });
     }
     this.scheduleTick(0);
+  }
+
+  /**
+   * カメラを共有し始めたあと、前後の切り替えのボタンを出す（切り替えられる端末だけ）。
+   * 判定の途中で共有が変わったら出さない
+   * @param {number} seq
+   */
+  async offerSwitch(seq) {
+    const ok = await canSwitchCamera(navigator);
+    if (!ok || !this.sharing || this.source !== 'camera' || seq !== this.shareSeq || this.switchButton) return;
+    this.switchButton = this.call.addButton({
+      icon: 'switch-camera',
+      label: 'カメラを切り替え',
+      location: 'view',
+      onClick: () => void this.switchCamera(),
+    });
+  }
+
+  /**
+   * 前と後ろのカメラを切り替える（カメラを共有中だけ）。新しいカメラを開けたら、映像を差し替えて古いカメラを止める。
+   * 開けなかったら、いまのカメラのまま続けて知らせる
+   */
+  async switchCamera() {
+    if (this.switching || !this.sharing || this.source !== 'camera' || !this.stream || !this.call.joined) return;
+    const old = this.stream;
+    const seq = this.shareSeq;
+    const token = {};
+    this.switchToken = token;
+    this.switching = true;
+    this.switchButton?.update({ disabled: true });
+    /** @type {MediaStream | null} */
+    let fresh = null;
+    try {
+      fresh = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: nextFacing(facingOf(old)) }, frameRate: { ideal: this.settings.fps, max: 30 } },
+        audio: false,
+      });
+    } catch (e) {
+      console.warn('[screenshare] カメラを切り替えられません', e);
+    }
+    // 開いているあいだに止めた・始め直した・通話から抜けたときは、新しいカメラは使わない
+    if (this.switchToken !== token || !this.sharing || this.stream !== old || seq !== this.shareSeq || !this.call.joined) {
+      for (const t of fresh?.getTracks() ?? []) t.stop();
+      return;
+    }
+    this.switching = false;
+    this.switchToken = null;
+    this.switchButton?.update({ disabled: false });
+    if (!fresh) {
+      ui.toast('カメラを切り替えられませんでした。いまのカメラのまま続けます', 'error');
+      return;
+    }
+    this.stream = fresh;
+    if (this.video) {
+      this.video.srcObject = fresh;
+      void Promise.resolve(this.video.play()).catch((e) => console.warn('[screenshare] 切り替え後の映像を再生できません', e));
+    }
+    // OS 側で止められたとき（切り替え後のカメラ）も、通常どおり止める
+    for (const t of fresh.getVideoTracks()) {
+      t.addEventListener('ended', () => {
+        if (this.stream === fresh) this.stopShare(true);
+      });
+    }
+    for (const t of old.getTracks()) t.stop();
+    // 新しい映像は、差分の判定の前の画像と比べず必ず送る
+    this.lastDiffData = null;
+    this.syncSelfPreview();
   }
 
   /** 本体のネイティブ（Android / Linux）で始める。許可のダイアログが出る */
@@ -1345,6 +1465,10 @@ export default class ScreenSharePlugin extends Plugin {
     this.sharing = false;
     this.shareSeq++;
     this.backend = null;
+    this.switchToken = null;
+    this.switching = false;
+    this.switchButton?.remove();
+    this.switchButton = null;
     if (backend === 'native' || (this.starting && disnans.screenCapture?.supported)) {
       // 許可を待っている間に退出・プラグインを無効化したときも、ネイティブの開始を取り消す
       void disnans.screenCapture.stop().catch(() => {});

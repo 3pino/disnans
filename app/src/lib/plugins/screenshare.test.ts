@@ -420,6 +420,7 @@ function makeCall() {
   let change: () => void = () => {};
   let buttonOpts: Disnans.CallButtonOptions | null = null;
   let cameraOpts: Disnans.CallButtonOptions | null = null;
+  let switchOpts: Disnans.CallButtonOptions | null = null;
   const panelEl = document.createElement('div');
   const panel = {
     el: panelEl,
@@ -452,6 +453,7 @@ function makeCall() {
       // 画面の共有ボタンとカメラのボタンを、作ったときのアイコンで分ける
       const opts = { ...o };
       if (o.icon === 'video') cameraOpts = opts;
+      else if (o.icon === 'switch-camera') switchOpts = opts;
       else buttonOpts = opts;
       return {
         update: (p: Partial<Disnans.CallButtonOptions>) => Object.assign(opts, p),
@@ -466,6 +468,7 @@ function makeCall() {
     panel,
     button: () => buttonOpts,
     cameraButton: () => cameraOpts,
+    switchButton: () => switchOpts,
     fire: (name: string, peer: string, userKey: 'a' | 'b', payload: unknown) => handlers.get(name)!({ peer, user: users[userKey], payload }),
     files: { api: {} as never, onChanged: () => () => {} },
     changed: () => change(),
@@ -504,7 +507,7 @@ function fakeImageLoad(width: number, height: number): () => void {
   };
 }
 
-async function setup(opts: { display: boolean; camera?: boolean; native?: Partial<Disnans.ScreenCapture>; pip?: Partial<Disnans.Pip> }) {
+async function setup(opts: { display: boolean; camera?: boolean; cameras?: number; native?: Partial<Disnans.ScreenCapture>; pip?: Partial<Disnans.Pip> }) {
   const c = makeCall();
   (g.disnans as { call: unknown }).call = c.call;
   (g.disnans as { screenCapture: unknown }).screenCapture = opts.native;
@@ -512,7 +515,16 @@ async function setup(opts: { display: boolean; camera?: boolean; native?: Partia
   const fs = fakeStream();
   const getDisplayMedia = vi.fn(async () => fs.stream);
   const getUserMedia = vi.fn(async (_c: MediaStreamConstraints) => fs.stream);
-  const media = { ...(opts.display ? { getDisplayMedia } : {}), ...(opts.camera ? { getUserMedia } : {}) };
+  // 前後のカメラの数（cameras があるときだけ、向きの対応と数を知らせる）
+  const devices = {
+    ...(opts.cameras !== undefined
+      ? {
+          getSupportedConstraints: () => ({ facingMode: true }),
+          enumerateDevices: async () => Array.from({ length: opts.cameras! }, () => ({ kind: 'videoinput' })),
+        }
+      : {}),
+  };
+  const media = { ...(opts.display ? { getDisplayMedia } : {}), ...(opts.camera ? { getUserMedia } : {}), ...devices };
   Object.defineProperty(nav, 'mediaDevices', { configurable: true, value: opts.display || opts.camera ? media : undefined });
   const status: HTMLElement[] = [];
   const toast = vi.fn();
@@ -1174,6 +1186,103 @@ describe('examples/screenshare', () => {
     expect(s.panel.visible).toBe(false);
     s.r.stop();
     expect(s.panel.remove).toHaveBeenCalled();
+  });
+
+  it('カメラが 2 つ以上ある端末では、カメラの共有中だけ切り替えのボタンを出す', async () => {
+    const s = await setup({ display: true, camera: true, cameras: 2 });
+    expect(s.switchButton()).toBeNull();
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.switchButton()).toMatchObject({ icon: 'switch-camera', label: 'カメラを切り替え', location: 'view' });
+    s.cameraButton()!.onClick();
+    s.r.stop();
+  });
+
+  it('カメラが 1 つだけの端末では、切り替えのボタンを出さない', async () => {
+    const s = await setup({ display: true, camera: true, cameras: 1 });
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.switchButton()).toBeNull();
+    s.r.stop();
+  });
+
+  it('切り替えると、反対の向きのカメラを開き、前のカメラを止める。自分の枠も新しいカメラに替える', async () => {
+    const s = await setup({ display: true, camera: true, cameras: 2 });
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    const second = fakeStream();
+    s.getUserMedia.mockResolvedValueOnce(second.stream as never);
+    s.switchButton()!.onClick!();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(s.getUserMedia.mock.calls[1]![0]).toMatchObject({ video: { facingMode: { exact: 'environment' } }, audio: false });
+    expect(s.fs.track.stop).toHaveBeenCalled();
+    expect(second.track.stop).not.toHaveBeenCalled();
+    const video = s.panel.el.querySelector<HTMLVideoElement>('.screenshare-self-video')!;
+    expect(video.srcObject).toBe(second.stream);
+    expect(s.switchButton()).toMatchObject({ disabled: false });
+    s.r.stop();
+  });
+
+  it('切り替えの途中の二度目の押下は無視する', async () => {
+    const s = await setup({ display: true, camera: true, cameras: 2 });
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    let resolve: (st: never) => void = () => {};
+    s.getUserMedia.mockImplementationOnce(() => new Promise<never>((r) => (resolve = r)));
+    s.switchButton()!.onClick!();
+    s.switchButton()!.onClick!();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.getUserMedia).toHaveBeenCalledTimes(2);
+    resolve(fakeStream().stream as never);
+    await vi.advanceTimersByTimeAsync(1);
+    s.r.stop();
+  });
+
+  it('開けなかったら、いまのカメラのまま続けて知らせる', async () => {
+    const s = await setup({ display: true, camera: true, cameras: 2 });
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    s.getUserMedia.mockRejectedValueOnce(new DOMException('no', 'OverconstrainedError'));
+    s.switchButton()!.onClick!();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.fs.track.stop).not.toHaveBeenCalled();
+    expect(s.cameraButton()).toMatchObject({ active: true });
+    expect(s.toast).toHaveBeenCalledWith(expect.stringContaining('切り替えられません'), 'error');
+    s.r.stop();
+  });
+
+  it('切り替えの途中で止めたら、遅れて届いたカメラは使わずに止める', async () => {
+    const s = await setup({ display: true, camera: true, cameras: 2 });
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    const late = fakeStream();
+    let resolve: (st: never) => void = () => {};
+    s.getUserMedia.mockImplementationOnce(() => new Promise<never>((r) => (resolve = r)));
+    s.switchButton()!.onClick!();
+    s.cameraButton()!.onClick();
+    resolve(late.stream as never);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(late.track.stop).toHaveBeenCalled();
+    expect(s.fs.track.stop).toHaveBeenCalledTimes(1);
+    s.r.stop();
+  });
+
+  it('向きの判定: 不明なら背面へ、背面なら前面へ。カメラの数は 2 つ以上・向きに対応のときだけ', async () => {
+    const { nextFacing, canSwitchCamera } = await load();
+    expect(nextFacing(null)).toBe('environment');
+    expect(nextFacing('user')).toBe('environment');
+    expect(nextFacing('environment')).toBe('user');
+    expect(await canSwitchCamera(undefined)).toBe(false);
+    expect(await canSwitchCamera({ mediaDevices: { getUserMedia: () => {} } })).toBe(false);
+    const facing = { getSupportedConstraints: () => ({ facingMode: true }) };
+    const cams = (n: number) => async () => Array.from({ length: n }, () => ({ kind: 'videoinput' }));
+    expect(await canSwitchCamera({ mediaDevices: { getUserMedia: () => {}, ...facing, enumerateDevices: cams(2) } })).toBe(true);
+    expect(await canSwitchCamera({ mediaDevices: { getUserMedia: () => {}, ...facing, enumerateDevices: cams(1) } })).toBe(false);
+    // 数えられないとき（失敗）は、向きに対応していることだけで決める
+    expect(
+      await canSwitchCamera({ mediaDevices: { getUserMedia: () => {}, ...facing, enumerateDevices: async () => { throw new Error('x'); } } }),
+    ).toBe(true);
   });
 
   it('カメラを送っているあいだは、自分のカメラを確認の枠に出し、止めたら外す（新しい取得はしない）', async () => {
