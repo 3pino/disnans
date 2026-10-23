@@ -27,6 +27,8 @@ pub enum Command {
     Me(JsonOption),
     /// メインチャットの履歴を表示する（古い順）。
     Messages(MessagesArgs),
+    /// 本文を検索する（新しい順。空白で区切った語をすべて含むもの）。
+    Search(SearchArgs),
     /// メインチャットへ投稿する。自動再送はしない。
     Send(SendArgs),
     /// メッセージにリアクションを付ける。成否が不明でも自動再送しない。
@@ -286,6 +288,43 @@ pub struct MessagesArgs {
     /// 機械処理向けに Message の配列を JSON で書く。
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SearchArgs {
+    /// 探す語（空白で区切った語をすべて含むもの。大文字小文字は区別しない。200 文字まで）。
+    #[arg(value_name = "QUERY", required = true, num_args = 1.., value_parser = nonempty_query)]
+    pub query: Vec<String>,
+
+    /// 読む件数（1〜200、既定50）。
+    #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..=200))]
+    pub limit: u32,
+
+    /// 指定した ID より古い結果を探す（前回の最後の ID を渡して続きを読む）。
+    #[arg(long, value_name = "MESSAGE_ID", value_parser = nonempty)]
+    pub before: Option<String>,
+
+    /// 機械処理向けに Message の配列を JSON で書く。
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl SearchArgs {
+    /// 語を空白 1 つでつないだ検索語。
+    pub fn query_text(&self) -> String {
+        self.query.join(" ")
+    }
+}
+
+/// 検索語の上限（サーバーは 200 文字を超えると `query_too_long`）。
+pub const SEARCH_QUERY_MAX: usize = 200;
+
+fn nonempty_query(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        Err("検索語は空にできません".to_owned())
+    } else {
+        Ok(value.to_owned())
+    }
 }
 
 fn dev_user(value: &str) -> Result<String, String> {

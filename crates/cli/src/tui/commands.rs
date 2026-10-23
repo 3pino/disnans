@@ -13,6 +13,8 @@ pub enum Mode {
     Select,
     /// 選んだメッセージへのリアクションの絵文字を入力している。
     React,
+    /// 検索（語の入力・結果の選択）。
+    Search,
 }
 
 pub const CHAT_SEND: &str = "chat.send";
@@ -28,6 +30,10 @@ pub const MESSAGE_REPLY_CANCEL: &str = "message.reply.cancel";
 /// 選んだメッセージの画像の帯を左右へ 1 枚ずつ動かす。
 pub const MESSAGE_IMAGES_PREV: &str = "message.images.prev";
 pub const MESSAGE_IMAGES_NEXT: &str = "message.images.next";
+/// 検索を開く（入力欄・選択モードの Ctrl+F、選択モードの `/`）。
+pub const SEARCH_OPEN: &str = "search.open";
+/// 検索を閉じて入力欄へ戻る。
+pub const SEARCH_CLOSE: &str = "search.close";
 /// 絵文字の入力を始める。
 pub const MESSAGE_REACT: &str = "message.react";
 pub const MESSAGE_REACT_APPLY: &str = "message.react.apply";
@@ -47,6 +53,7 @@ pub fn from_key(mode: Mode, action: &Action, has_reply: bool) -> Option<&'static
         Mode::Input => match action {
             Action::Send => Some(CHAT_SEND),
             Action::SendSilent => Some(CHAT_SEND_SILENT),
+            Action::Search => Some(SEARCH_OPEN),
             Action::Cancel if has_reply => Some(MESSAGE_REPLY_CANCEL),
             Action::Cancel => Some(MESSAGE_SELECT),
             _ => None,
@@ -55,6 +62,7 @@ pub fn from_key(mode: Mode, action: &Action, has_reply: bool) -> Option<&'static
             Action::Up | Action::Insert('k') => Some(MESSAGE_SELECT_PREV),
             Action::Down | Action::Insert('j') => Some(MESSAGE_SELECT_NEXT),
             Action::Cancel => Some(MESSAGE_SELECT_CANCEL),
+            Action::Search | Action::Insert('/') => Some(SEARCH_OPEN),
             Action::Left | Action::Insert('h') => Some(MESSAGE_IMAGES_PREV),
             Action::Right | Action::Insert('l') => Some(MESSAGE_IMAGES_NEXT),
             Action::Insert('r') => Some(MESSAGE_REACT),
@@ -62,6 +70,8 @@ pub fn from_key(mode: Mode, action: &Action, has_reply: bool) -> Option<&'static
             Action::Insert(c @ '1'..='5') => Some(QUICK_REACTIONS[usize::from(*c as u8 - b'1')].0),
             _ => None,
         },
+        // 検索の中のキーは、段階（入力・結果）で違うので app.rs が決める。
+        Mode::Search => None,
         Mode::React => match action {
             Action::Cancel => Some(MESSAGE_REACT_CANCEL),
             Action::Send | Action::Newline => Some(MESSAGE_REACT_APPLY),

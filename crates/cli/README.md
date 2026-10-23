@@ -40,6 +40,7 @@ disnans update
   - `publish <ID>` は開発用フォルダ（サブフォルダ 1 つ = 1 プラグイン）の中から、**フォルダ名ではなく manifest.json の `id`** で探して配布します（見つからない・重複・開発用フォルダ未設定は終了 2）。パスで送るなら `--dir <PATH>`。
   - `list` の列は id・version・type・出どころ（`dev` / `public` / `private`）・name で、同じ id が開発中と配布済みの両方にあれば両方の行を出します（`--json` は `source` を持つ配列）。開発用フォルダが未設定なら配布済みだけを出し、stderr に注記します。
   - `publish` は `manifest.json`・`main.js`・`styles.css`・`theme.css`・`icon.svg` のうち存在するものを送り、送る前に manifest の `id` / `version` を結果に含めます（`--dry-run` なら送らず表示だけ）。範囲は `--private` / `--public` で指定し、**省略すると既存の公開状態を保ちます**（まだ無ければ public）。manifest 不備・必須ファイルなし・合計 5 MB 超は接続前に 2、サーバーの拒否（`409 plugin_id_taken` など）は 1、接続失敗は 3、送信後に結果が分からない場合は 4（自動再送しません。`plugin list` で確認）。開発用フォルダの走査は client-core の `dev_plugins` を GUI と共有しています。
+- `search <QUERY>... [--limit N] [--before MESSAGE_ID] [--json]`: メインチャットの本文を全文検索（新しい順。空白で区切った語をすべて含むもの、大文字小文字は区別しない、削除済みは出ない）。`--before` に前回の最後の ID を渡すと続きが読めます。空の語・200 文字超は接続前に 2、一致なしは成功（`--json` は `[]`）。
 - `react <MESSAGE_ID> <EMOJI> [--json]` / `unreact <MESSAGE_ID> <EMOJI>`: 自分のリアクションを付ける・外す。サーバーが同じ状態を `reaction.updated` で知らせたら成功（人間向けは「👍 を追加しました」、`--json` は `{"message_id","emoji","reaction":"added|removed"}`）。サーバーの拒否（メッセージなし・絵文字不正）は 1、接続失敗は 3、確認が取れない場合（切断・タイムアウト・Ctrl-C）は **4 で、自動再送しません**（リアクションは同じ状態にするだけなので、確認してから再実行しても害はありません）。
 - `watch [--json]`: メインチャットの `message.created` / `message.updated` / `message.deleted` だけを標準出力へ1イベント1行で出す（`--json` は NDJSON: `{"type":…,"generation":N,…}`）。`stream.connected` / `stream.gap` は接続の区切りで、**切断中のイベントや過去分は復元しません**。`stream.gap` は切断の通知で、**次の `stream.connected`（世代 2 以降）までのイベントは失われうる**ため、`disnans messages` での再取得は **`stream.connected`（世代 2 以降）の後**に行ってください（購読は再取得前に再開済みなので、重複は `id` で取り除けます）。`reason` が `lagged` の `stream.gap` は購読が生きたまま取りこぼした場合で、すぐ再取得できます。人向け表示では区切りを標準エラーへ出します。最初の接続失敗は再試行せず 3（認証拒否などは 1）、一度成功した後は自動で再接続し続けますが、再接続時に認証拒否（HTTP 401/403）になると標準エラーに理由を出して 1 で終了します。Ctrl-C で接続を閉じて 130、標準出力が閉じられたら 0。`watch` は既読にしません。人向け表示の投稿者は ID です。
 - 終了コード: `0` 成功、`1` サーバー/保存/応答のエラー、`2` 引数・本文・接続先未設定、`3` 接続/タイムアウト、`4` 送信後の成否不明、`130` 中断（`watch` と送信前のみ）。
@@ -62,3 +63,12 @@ disnans update
 ## テスト・診断用の環境変数
 
 `DISNANS_CLI_ACK_TIMEOUT_MS`（1〜60000 の整数、ミリ秒。既定 15000）は `send` の確認待ちの時間を変える**テスト・診断用**の設定です。範囲外・数値以外は終了コード 2 になります。通常の利用では設定しないでください。
+
+## TUI の検索
+
+`Ctrl+F`（選択モードでは `/` も）で検索を開きます。語を入力して Enter → 結果（1 件 1 行、新しい順）を `↑↓` / `j` `k` で選び、Enter でそのメッセージを選択モードで開きます。`n`（または最後の結果で `↓`）でさらに古い結果を読みます。`Esc` は 1 段戻る（結果 → 語の編集 → 閉じる）。履歴にまだ読み込んでいない古い結果は、Enter（または `d` / `→`）で本文を読み取り専用の詳細として表示します（履歴には混ぜません。`↑↓` でスクロール、`Esc` / `←` で結果へ戻る）。
+
+## tmux の中で
+
+- **画像**: tmux 3.3 以降で `allow-passthrough on`（または `all`）のときだけ、外側のターミナル（WezTerm / iTerm2 / Kitty / Ghostty。環境変数 `WEZTERM_PANE`・`KITTY_WINDOW_ID`・`ITERM_SESSION_ID` などで判定）の画像表示を、tmux のパススルーで包んで使います。許可が無い・tmux が答えない・外側が分からない・tmux の入れ子（外側のターミナル名が `tmux`/`screen`）のときは出さず、これまでどおり文字だけです。**tmux の設定は読むだけで、変更しません**（`set -g allow-passthrough on` は利用者が `.tmux.conf` に書いてください）。判定を飛ばして強制するには `DISNANS_TUI_IMAGES=kitty|iterm2`、止めるには `off`。GNU screen の中では出しません。
+- **色**: 今つながっている tmux クライアントの機能（`client_termfeatures`）に `RGB` があるとき（答えが無い古い tmux だけ `terminal-features` / `terminal-overrides` から推測。`COLORTERM=truecolor` でも）は RGB のまま、そうでなければ 256 色の番号に寄せて出します。tmux の外では従来どおり RGB です。

@@ -81,6 +81,8 @@ pub enum Action {
     ScrollTop,
     ScrollBottom,
     Refetch,
+    /// Ctrl+F: 検索を開く。
+    Search,
     /// Tab: 送信ボタンへ。
     FocusButton,
     /// Shift+Tab: 入力欄へ戻る。
@@ -122,6 +124,7 @@ impl Keymap {
                 's' => Action::Send,
                 'j' => Action::Newline,
                 'r' => Action::Refetch,
+                'f' => Action::Search,
                 _ => Action::Ignore,
             },
             KeyCode::Char(c) if alt && !ctrl && c.eq_ignore_ascii_case(&'s') => Action::SendSilent,
@@ -185,7 +188,7 @@ impl Keymap {
             names.join("/")
         };
         format!(
-            "送信: {} | 改行: {} | Alt+S: 通知なし送信 | Esc: メッセージ選択 | Tab: 送信ボタン | PgUp/PgDn: 履歴 | Ctrl+Q: 終了",
+            "送信: {} | 改行: {} | Alt+S: 通知なし送信 | Esc: メッセージ選択 | Ctrl+F: 検索 | Tab: 送信ボタン | PgUp/PgDn: 履歴 | Ctrl+Q: 終了",
             pick(EnterAction::Send, "Ctrl+S"),
             pick(EnterAction::Newline, "Ctrl+J"),
         )

@@ -240,6 +240,32 @@ async fn run(cli: Cli) -> Result<String, CliError> {
                 Ok(output::human_messages(&messages, &users))
             }
         }
+        Command::Search(opts) => {
+            let query = opts.query_text();
+            if query.trim().chars().count() > args::SEARCH_QUERY_MAX {
+                return Err(CliError::Usage(format!(
+                    "検索語は {} 文字までです",
+                    args::SEARCH_QUERY_MAX
+                )));
+            }
+            let server = resolve_server(cli.server.as_deref(), saved_server)?;
+            let client = RestClient::new(server, cli.dev_user.as_deref())?;
+            let found = client
+                .search_messages(&disnans_client_core::MessageSearchQuery {
+                    q: Some(query),
+                    before: opts.before,
+                    limit: Some(opts.limit),
+                })
+                .await?;
+            if opts.json {
+                Ok(output::json_value(&found)?)
+            } else if found.is_empty() {
+                Ok("一致するメッセージはありません".to_owned())
+            } else {
+                let users = client.users().await?;
+                Ok(output::human_messages(&found, &users))
+            }
+        }
         Command::Send(args) => {
             let body = live::read_send_body(&args)?;
             let server = resolve_server(cli.server.as_deref(), saved_server)?;

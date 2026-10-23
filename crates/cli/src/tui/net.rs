@@ -24,6 +24,7 @@ use super::graphics::{self, Graphics, Protocol};
 use super::input::{EnterKeys, Keymap};
 use super::picture;
 use super::terminal::TerminalGuard;
+use super::ui::theme;
 use super::view;
 use crate::{CliError, live};
 
@@ -67,7 +68,9 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
     app.keymap.enhanced = guard.enhanced_keys;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout())).map_err(CliError::Io)?;
     let _ = terminal.clear();
-    let mut graphics = Graphics::new(graphics::detect());
+    let environment = graphics::detect();
+    theme::init(environment.depth);
+    let mut graphics = Graphics::new(environment.protocol).with_tmux(environment.tmux);
     if graphics.protocol != Protocol::None {
         app.enable_images(cell_pixels());
     }
@@ -180,6 +183,9 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
                 } => spawn_react(&session, &tx, message_id, emoji, add),
                 Effect::LoadOlder { before } => {
                     spawn_history(&rest, &tx, Some(before), HistoryPurpose::Older, PAGE_SIZE);
+                }
+                Effect::Search { seq, query, before } => {
+                    spawn_search(&rest, &tx, seq, query, before);
                 }
                 Effect::Bell => write_raw(b"\x07"),
                 Effect::Refetch => {
@@ -433,6 +439,32 @@ fn spawn_history(
             .await
             .map_err(|e| e.to_string());
         let _ = tx.send(NetEvent::History { purpose, result });
+    });
+}
+
+fn spawn_search(
+    rest: &Arc<RestClient>,
+    tx: &UnboundedSender<NetEvent>,
+    seq: u64,
+    query: String,
+    before: Option<String>,
+) {
+    let (rest, tx) = (rest.clone(), tx.clone());
+    tokio::spawn(async move {
+        let append = before.is_some();
+        let result = rest
+            .search_messages(&disnans_client_core::MessageSearchQuery {
+                q: Some(query),
+                before,
+                limit: Some(super::search::LIMIT),
+            })
+            .await
+            .map_err(|e| e.to_string());
+        let _ = tx.send(NetEvent::Search {
+            seq,
+            append,
+            result,
+        });
     });
 }
 

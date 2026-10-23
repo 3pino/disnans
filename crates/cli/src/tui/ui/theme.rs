@@ -54,7 +54,78 @@ pub const DEFAULT: Theme = Theme {
     ],
 };
 
+/// 色の深さ。`TrueColor` 以外では RGB を 256 色の番号へ寄せる（tmux などで RGB が通らないとき）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Depth {
+    TrueColor,
+    Indexed,
+}
+
+static DEPTH: std::sync::OnceLock<Depth> = std::sync::OnceLock::new();
+static CURRENT: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+
+/// 起動時に 1 回だけ、色の深さを決める（以後は変えない）。
+pub fn init(depth: Depth) {
+    let _ = DEPTH.set(depth);
+}
+
+fn depth() -> Depth {
+    DEPTH.get().copied().unwrap_or(Depth::TrueColor)
+}
+
+/// RGB の色。深さが足りなければ 256 色の番号（6x6x6 の立方体）へ寄せる。
+pub fn rgb(r: u8, g: u8, b: u8) -> Color {
+    match depth() {
+        Depth::TrueColor => Color::Rgb(r, g, b),
+        Depth::Indexed => indexed(r, g, b),
+    }
+}
+
+fn indexed(r: u8, g: u8, b: u8) -> Color {
+    let level = |v: u8| (u16::from(v) * 5 + 127) / 255;
+    Color::Indexed((16 + 36 * level(r) + 6 * level(g) + level(b)) as u8)
+}
+
+fn quantized(theme: &Theme) -> Theme {
+    let q = |c: Color| match c {
+        Color::Rgb(r, g, b) => indexed(r, g, b),
+        other => other,
+    };
+    Theme {
+        accent: q(theme.accent),
+        accent_bg: q(theme.accent_bg),
+        on_accent: q(theme.on_accent),
+        text_muted: q(theme.text_muted),
+        surface: q(theme.surface),
+        surface_2: q(theme.surface_2),
+        mark: q(theme.mark),
+        code: q(theme.code),
+        danger: q(theme.danger),
+        warning: q(theme.warning),
+        info: q(theme.info),
+        palette: theme.palette.map(q),
+    }
+}
+
 /// いま使うテーマ。
 pub fn current() -> &'static Theme {
-    &DEFAULT
+    match depth() {
+        Depth::TrueColor => &DEFAULT,
+        Depth::Indexed => CURRENT.get_or_init(|| quantized(&DEFAULT)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quantizing_maps_rgb_into_the_256_color_cube_and_keeps_named_colors() {
+        assert_eq!(indexed(0, 0, 0), Color::Indexed(16));
+        assert_eq!(indexed(255, 255, 255), Color::Indexed(231));
+        assert_eq!(indexed(255, 0, 0), Color::Indexed(196));
+        let q = quantized(&DEFAULT);
+        assert!(matches!(q.accent, Color::Indexed(_)));
+        assert_eq!(q.danger, Color::Red);
+    }
 }

@@ -8,6 +8,7 @@ mod markdown;
 mod net;
 mod picture;
 mod sanitize;
+mod search;
 mod terminal;
 mod textbuf;
 mod transcript;

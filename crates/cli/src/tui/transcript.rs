@@ -72,7 +72,6 @@ pub struct Media<'a> {
 
 impl Media<'_> {
     /// 画像なし（埋め込みは全部取得できなかった扱い、スクロールは 0）。
-    #[cfg(test)]
     pub const NONE: Media<'static> = Media {
         embed: &|_| Embed::Failed,
         first: &|_| 0,
@@ -159,7 +158,7 @@ pub fn separator_row(label: &str, width: usize) -> Row {
 }
 
 /// 投稿者の名前が分からないときの表示（GUI と同じ文言。core が持つ）
-const UNKNOWN_USER: &str = view::UNKNOWN_USER_NAME;
+pub const UNKNOWN_USER: &str = view::UNKNOWN_USER_NAME;
 
 /// 日曜始まりの曜日の表示（`view::Day::weekday` の添字）
 const WEEK: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];

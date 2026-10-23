@@ -570,3 +570,41 @@ async fn files_commands_round_trip_and_guard_overwrites_and_folders() {
         Some(1)
     );
 }
+
+#[tokio::test]
+async fn search_returns_newest_first_with_paging_and_checks_the_query_before_connecting() {
+    let server = TestServer::start(true).await;
+    let client = tempfile::tempdir().unwrap();
+    let run = |extra: Vec<&str>| {
+        let args = cli_args(&server, &extra);
+        run_cli_async(client.path().to_owned(), args)
+    };
+    let found = assert_success_json(&run(vec!["search", "ir", "--json"]).await);
+    let bodies: Vec<_> = found
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["body"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(bodies, ["third", "first"]);
+    let one = assert_success_json(&run(vec!["search", "ir", "--limit", "1", "--json"]).await);
+    assert_eq!(one.as_array().unwrap().len(), 1);
+    let next = assert_success_json(&run(vec!["search", "ir", "--before", "msg-3", "--json"]).await);
+    assert_eq!(next[0]["body"], "first");
+    // 複数の語は AND
+    let and = assert_success_json(&run(vec!["search", "ir", "th", "--json"]).await);
+    assert_eq!(and.as_array().unwrap().len(), 1);
+    // 一致なしは成功（空の配列 / 案内）
+    assert_eq!(
+        assert_success_json(&run(vec!["search", "zzzz", "--json"]).await),
+        serde_json::json!([])
+    );
+    let human = run(vec!["search", "zzzz"]).await;
+    assert!(human.status.success());
+    assert!(String::from_utf8_lossy(&human.stdout).contains("一致するメッセージはありません"));
+    // 空・長すぎは接続前に 2
+    assert_eq!(run(vec!["search", " "]).await.status.code(), Some(2));
+    let long = "a".repeat(201);
+    assert_eq!(run(vec!["search", &long]).await.status.code(), Some(2));
+    server.stop().await;
+}

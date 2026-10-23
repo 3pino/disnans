@@ -132,6 +132,15 @@ impl RestClient {
         self.get_json(&path).await
     }
 
+    /// `GET /api/messages/search`。メインチャットの本文を全文検索する（新しい順）。
+    pub async fn search_messages(
+        &self,
+        query: &crate::MessageSearchQuery,
+    ) -> Result<Vec<Message>, ClientError> {
+        let path = crate::search_path(query);
+        self.get_json(&path).await
+    }
+
     /// 開発用ヘッダー（X-Dev-User）を付けた GET の準備。`rest_api` の読み取りでも使う（status と本文を自分で扱うため）。
     pub(crate) fn get_request(&self, path: &str) -> reqwest::RequestBuilder {
         let mut request = self.client.get(self.server.http_url(path));

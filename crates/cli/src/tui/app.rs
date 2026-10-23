@@ -14,6 +14,7 @@ use super::commands::{self, Mode};
 use super::graphics::Placement;
 use super::input::{Action, EnterKeys, Keymap};
 use super::picture::Prepared;
+use super::search::{Phase, Search};
 use super::textbuf::TextBuf;
 use super::transcript::{self, Row};
 
@@ -94,6 +95,12 @@ pub enum NetEvent {
         result: Result<Vec<Message>, String>,
     },
     Prefs(EnterKeys),
+    /// 検索の応答。`append` は続きの取得。
+    Search {
+        seq: u64,
+        append: bool,
+        result: Result<Vec<Message>, String>,
+    },
     SendResult {
         client_id: String,
         result: SendResult,
@@ -135,6 +142,12 @@ pub enum Effect {
     },
     LoadOlder {
         before: String,
+    },
+    /// 検索（`seq` で応答を照合する。`before` があれば続き）。
+    Search {
+        seq: u64,
+        query: String,
+        before: Option<String>,
     },
     Refetch,
     /// ターミナルのベルを鳴らす（通知）。
@@ -212,6 +225,8 @@ pub struct App {
     pub selected: Option<String>,
     /// リアクションの絵文字の入力。
     pub react_input: TextBuf,
+    /// 検索の状態。
+    pub search: Search,
     /// 返信先のメッセージ ID（次の送信に付く）。
     pub reply_to: Option<String>,
     /// 表示に使うタイムゾーン。`None` は UTC（`Z` 付き）。
@@ -261,6 +276,7 @@ impl App {
             mode: Mode::Input,
             selected: None,
             react_input: TextBuf::default(),
+            search: Search::default(),
             reply_to: None,
             zone,
             viewport: (80, 20),
@@ -436,6 +452,13 @@ impl App {
                 }
             }
             Event::Paste(text) => {
+                if self.mode == Mode::Search && self.search.phase == Phase::Editing {
+                    // 検索語は 1 行。改行は空白にする。
+                    self.search
+                        .query
+                        .insert_str(&text.replace(['\r', '\n'], " "));
+                    return effects;
+                }
                 if self.input_locked() || self.mode != Mode::Input {
                     return effects;
                 }
@@ -477,6 +500,10 @@ impl App {
                 }
                 return;
             }
+            Mode::Search => {
+                self.on_search_action(action, effects);
+                return;
+            }
             Mode::React => {
                 if let Some(id) = commands::from_key(self.mode, &action, false) {
                     self.run_command(id, effects);
@@ -497,10 +524,184 @@ impl App {
             }
         }
         match commands::from_key(self.mode, &action, self.reply_to.is_some()) {
-            Some(id @ (commands::MESSAGE_SELECT | commands::MESSAGE_REPLY_CANCEL)) => {
+            Some(
+                id @ (commands::MESSAGE_SELECT
+                | commands::MESSAGE_REPLY_CANCEL
+                | commands::SEARCH_OPEN),
+            ) => {
                 self.run_command(id, effects);
             }
             _ => self.on_input_action(action, effects),
+        }
+    }
+
+    fn open_search(&mut self) {
+        self.selected = None;
+        self.hscroll.clear();
+        self.focus = Focus::Input;
+        self.mode = Mode::Search;
+        self.search.error = None;
+        self.search.phase = if self.search.results.is_empty() {
+            Phase::Editing
+        } else {
+            Phase::Browsing
+        };
+    }
+
+    fn close_search(&mut self) {
+        // 応答待ちなら捨てる（番号を進める）。
+        self.search.seq += 1;
+        self.search.loading_more = false;
+        if self.search.phase == Phase::Loading {
+            self.search.phase = Phase::Editing;
+        }
+        self.mode = Mode::Input;
+    }
+
+    /// 検索の中のキー。Esc は 1 段戻る（結果 → 入力 → 閉じる）。
+    fn on_search_action(&mut self, action: Action, effects: &mut Vec<Effect>) {
+        if matches!(action, Action::Quit) {
+            self.on_input_action(action, effects);
+            return;
+        }
+        match self.search.phase {
+            Phase::Editing => {
+                let q = &mut self.search.query;
+                match action {
+                    Action::Insert(c) => q.insert_char(c),
+                    Action::Backspace => q.backspace(),
+                    Action::Delete => q.delete(),
+                    Action::Left => q.left(),
+                    Action::Right => q.right(),
+                    Action::Home => q.home(),
+                    Action::End => q.end(),
+                    Action::Send | Action::Newline => self.submit_search(effects),
+                    Action::Cancel | Action::Search => self.close_search(),
+                    _ => return,
+                }
+                if !matches!(action, Action::Send | Action::Newline) {
+                    self.search.error = None;
+                }
+            }
+            Phase::Loading => {
+                if matches!(action, Action::Cancel) {
+                    self.search.seq += 1;
+                    self.search.phase = Phase::Editing;
+                }
+            }
+            Phase::Detail => match action {
+                Action::Up | Action::Insert('k') | Action::ScrollUp => {
+                    self.search.detail_scroll = self.search.detail_scroll.saturating_sub(1);
+                }
+                Action::Down | Action::Insert('j') | Action::ScrollDown => {
+                    self.search.detail_scroll += 1;
+                }
+                Action::PageUp => {
+                    self.search.detail_scroll = self.search.detail_scroll.saturating_sub(10);
+                }
+                Action::PageDown => self.search.detail_scroll += 10,
+                Action::Home | Action::ScrollTop => self.search.detail_scroll = 0,
+                Action::Cancel | Action::Left | Action::Insert('h') | Action::Search => {
+                    self.search.phase = Phase::Browsing;
+                }
+                _ => {}
+            },
+            Phase::Browsing => {
+                let last = self.search.results.len().saturating_sub(1);
+                match action {
+                    Action::Up | Action::Insert('k') => {
+                        self.search.cursor = self.search.cursor.saturating_sub(1);
+                    }
+                    Action::Down | Action::Insert('j') => {
+                        if self.search.cursor >= last {
+                            self.search_more(effects);
+                        } else {
+                            self.search.cursor += 1;
+                        }
+                    }
+                    Action::PageUp => {
+                        self.search.cursor = self.search.cursor.saturating_sub(10);
+                    }
+                    Action::PageDown => {
+                        self.search.cursor = (self.search.cursor + 10).min(last);
+                    }
+                    Action::Home | Action::ScrollTop => self.search.cursor = 0,
+                    Action::End | Action::ScrollBottom => self.search.cursor = last,
+                    Action::Insert('n') => self.search_more(effects),
+                    Action::Send | Action::Newline => self.jump_to_result(),
+                    Action::Insert('d') | Action::Right => self.open_detail(),
+                    Action::Insert('/') | Action::Cancel | Action::Search => {
+                        self.search.error = None;
+                        self.search.phase = Phase::Editing;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn submit_search(&mut self, effects: &mut Vec<Effect>) {
+        match self.search.checked_query() {
+            Err(reason) => self.search.error = Some(reason),
+            Ok(query) => {
+                self.search.seq += 1;
+                self.search.phase = Phase::Loading;
+                self.search.results.clear();
+                self.search.cursor = 0;
+                self.search.more = false;
+                self.search.error = None;
+                self.search.last_query = query.clone();
+                effects.push(Effect::Search {
+                    seq: self.search.seq,
+                    query,
+                    before: None,
+                });
+            }
+        }
+    }
+
+    /// さらに古い結果を読む（最後の結果の ID より前）。
+    fn search_more(&mut self, effects: &mut Vec<Effect>) {
+        if !self.search.more || self.search.loading_more {
+            return;
+        }
+        let Some(before) = self.search.results.last().map(|m| m.id.clone()) else {
+            return;
+        };
+        self.search.seq += 1;
+        self.search.loading_more = true;
+        effects.push(Effect::Search {
+            seq: self.search.seq,
+            query: self.search.last_query.clone(),
+            before: Some(before),
+        });
+    }
+
+    /// 選んだ結果のメッセージへ移る（履歴に読み込み済みなら選択モードで）。
+    fn jump_to_result(&mut self) {
+        let Some(id) = self
+            .search
+            .results
+            .get(self.search.cursor)
+            .map(|m| m.id.clone())
+        else {
+            return;
+        };
+        if self.messages.iter().any(|m| m.id == id) {
+            self.selected = Some(id);
+            self.mode = Mode::Select;
+            self.focus = Focus::Input;
+            self.reveal_selected();
+        } else {
+            // 履歴に無い古い結果は、履歴へ混ぜず、本文だけを読み取り専用で見せる。
+            self.open_detail();
+        }
+    }
+
+    fn open_detail(&mut self) {
+        if self.search.results.get(self.search.cursor).is_some() {
+            self.search.detail_scroll = 0;
+            self.search.phase = Phase::Detail;
         }
     }
 
@@ -551,6 +752,8 @@ impl App {
                 self.selected = None;
                 self.hscroll.clear();
             }
+            commands::SEARCH_OPEN => self.open_search(),
+            commands::SEARCH_CLOSE => self.close_search(),
             commands::MESSAGE_IMAGES_PREV => self.scroll_images(-1),
             commands::MESSAGE_IMAGES_NEXT => self.scroll_images(1),
             commands::MESSAGE_REPLY => {
@@ -842,6 +1045,25 @@ impl App {
                 None => self.users.push(user),
             },
             NetEvent::History { purpose, result } => self.on_history(purpose, result),
+            NetEvent::Search {
+                seq,
+                append,
+                result,
+            } => {
+                if seq != self.search.seq {
+                    return;
+                }
+                match result {
+                    Ok(found) => self.search.accept(found, append),
+                    Err(reason) => {
+                        self.search.loading_more = false;
+                        self.search.error = Some(format!("検索できませんでした: {reason}"));
+                        if !append {
+                            self.search.phase = Phase::Editing;
+                        }
+                    }
+                }
+            }
             NetEvent::Prefs(keys) => self.keymap.enter_keys = keys,
             NetEvent::SendResult { client_id, result } => {
                 self.on_send_result(&client_id, result, effects);
@@ -1038,6 +1260,7 @@ fn compare(a: &Message, b: &Message) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::search::LIMIT;
     use crate::tui::transcript::tests_support::{message, user};
     use crossterm::event::{KeyCode, KeyModifiers};
 
@@ -1188,6 +1411,114 @@ mod tests {
             matches!(&effects[..], [Effect::Send { reply_to: Some(r), silent: true, body, .. }] if r == "b" && body == "hi"),
             "{effects:?}"
         );
+    }
+
+    #[test]
+    fn search_flows_from_query_to_results_to_jump_and_back_with_esc() {
+        let mut app = make();
+        two_messages(&mut app);
+        let ctrl_f = |app: &mut App| press(app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+        ctrl_f(&mut app);
+        assert_eq!((app.mode, app.search.phase), (Mode::Search, Phase::Editing));
+        // 空は検索せず、理由を出す
+        let effects = press(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert!(effects.is_empty() && app.search.error.is_some());
+        type_text(&mut app, "  foo bar ");
+        let effects = press(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        let seq = app.search.seq;
+        assert_eq!(
+            effects,
+            [Effect::Search {
+                seq,
+                query: "foo bar".into(),
+                before: None
+            }]
+        );
+        assert_eq!(app.search.phase, Phase::Loading);
+        // 古い番号の応答は捨てる
+        let stale = NetEvent::Search {
+            seq: seq - 1,
+            append: false,
+            result: Ok(vec![message("zzz", "u1", "x")]),
+        };
+        net(&mut app, stale);
+        assert!(app.search.results.is_empty());
+        let found = vec![
+            message("b", "u1", "foo bar"),
+            message("old", "u1", "bar foo"),
+        ];
+        net(
+            &mut app,
+            NetEvent::Search {
+                seq,
+                append: false,
+                result: Ok(found),
+            },
+        );
+        assert_eq!(app.search.phase, Phase::Browsing);
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.search.cursor, 1);
+        // 履歴にない結果は、履歴へ混ぜず、本文の詳細（読み取り専用）を開く。Esc で結果へ戻る
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!((app.mode, app.search.phase), (Mode::Search, Phase::Detail));
+        assert!(app.messages.iter().all(|m| m.id != "old"));
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!((app.search.phase, app.search.cursor), (Phase::Browsing, 1));
+        // Esc で語の編集へ 1 段戻り、もう一度で閉じる
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(app.search.phase, Phase::Editing);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(app.mode, Mode::Input);
+        // 開き直すと前の結果から。履歴にある結果へは、選択モードで移る。
+        ctrl_f(&mut app);
+        assert_eq!(app.search.phase, Phase::Browsing);
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(
+            (app.mode, app.selected.as_deref()),
+            (Mode::Select, Some("b"))
+        );
+    }
+
+    #[test]
+    fn search_loads_older_results_only_when_more_exist() {
+        let mut app = make();
+        ctrl_f_and_search(&mut app);
+        let seq = app.search.seq;
+        let page: Vec<Message> = (0..LIMIT)
+            .map(|i| message(&format!("m{i:03}"), "u1", "x"))
+            .collect();
+        net(
+            &mut app,
+            NetEvent::Search {
+                seq,
+                append: false,
+                result: Ok(page),
+            },
+        );
+        assert!(app.search.more);
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE);
+        let effects = press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE);
+        // 読み込み中は重ねて取らない
+        assert!(effects.is_empty());
+        let seq = app.search.seq;
+        net(
+            &mut app,
+            NetEvent::Search {
+                seq,
+                append: true,
+                result: Ok(vec![message("m049", "u1", "x"), message("m999", "u1", "x")]),
+            },
+        );
+        assert_eq!(app.search.results.len(), LIMIT as usize + 1);
+        assert!(!app.search.more);
+        assert!(press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).is_empty());
+    }
+
+    fn ctrl_f_and_search(app: &mut App) {
+        press(app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+        type_text(app, "x");
+        press(app, KeyCode::Char('s'), KeyModifiers::CONTROL);
     }
 
     #[test]

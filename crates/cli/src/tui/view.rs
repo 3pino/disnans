@@ -11,7 +11,8 @@ use super::commands::Mode;
 use super::graphics::Placement;
 use super::markdown::Deco;
 use super::sanitize;
-use super::transcript::{Row, RowKind};
+use super::search::Phase;
+use super::transcript::{self, Row, RowKind};
 use super::ui::theme::{self, Theme};
 
 fn t() -> &'static Theme {
@@ -80,6 +81,25 @@ pub fn message_line(app: &App) -> Option<(String, Color)> {
             ));
         }
         _ => {}
+    }
+    if app.mode == Mode::Search {
+        let s = &app.search;
+        let line = match s.phase {
+            Phase::Editing => format!("検索: {}▏", sanitize::inline(s.query.as_str())),
+            Phase::Loading => format!("検索: {} （検索中…）", sanitize::inline(&s.last_query)),
+            Phase::Browsing => {
+                format!("検索: {} （/ で語を編集）", sanitize::inline(&s.last_query))
+            }
+            Phase::Detail => format!(
+                "検索: {} （詳細・読み取り専用）",
+                sanitize::inline(&s.last_query)
+            ),
+        };
+        let text = match &s.error {
+            Some(e) => format!("{line}  ⚠ {}", sanitize::inline(e)),
+            None => line,
+        };
+        return Some((text, t().warning));
     }
     if app.mode == Mode::React {
         return Some((
@@ -324,7 +344,7 @@ fn row_line(row: &Row, color: Color, hide_icon: bool, selected: bool) -> Line<'s
 /// 投稿者の色。アバターがあればその平均色、なければ ID から決めた色。
 fn author_color(app: &App, row: &Row) -> Color {
     match app.author_color(&row.author_id) {
-        Some((r, g, b)) => Color::Rgb(r, g, b),
+        Some((r, g, b)) => theme::rgb(r, g, b),
         None => t().palette[usize::from(row.accent) % t().palette.len()],
     }
 }
@@ -345,6 +365,11 @@ pub fn plan(area: Rect, app: &mut App) {
     }
     let (w, h) = history_size(area, app);
     app.set_viewport(w, h);
+    if app.mode == Mode::Search {
+        // 検索の結果を出している間は、履歴の画像を出さない。
+        app.placements = Vec::new();
+        return;
+    }
     let r = regions(area, app);
     let rows = app.rows();
     let (start, end, pad) = visible(app, &rows, r.history.height);
@@ -397,6 +422,106 @@ pub fn plan(area: Rect, app: &mut App) {
     app.placements = placements;
 }
 
+/// 検索の結果の一覧（1 件 1 行、新しい順）。選んでいる行を強調し、見える範囲だけ出す。
+fn search_lines(app: &App, width: u16, height: u16) -> Vec<Line<'static>> {
+    let (width, height) = (usize::from(width), usize::from(height));
+    let s = &app.search;
+    let muted = Style::new().fg(t().text_muted);
+    let note = |text: &str| vec![Line::from(Span::styled(text.to_owned(), muted))];
+    if s.phase == Phase::Detail
+        && let Some(m) = s.results.get(s.cursor)
+    {
+        let rows = transcript::message_rows_for(
+            m,
+            &app.users,
+            width,
+            app.zone.as_ref(),
+            None,
+            app.me.as_ref().map(|u| u.id.as_str()),
+            &transcript::Media::NONE,
+        );
+        let when = match &app.zone {
+            Some(zone) => crate::timefmt::format_in(m.created_at, zone, "%Y-%m-%d %H:%M:%S"),
+            None => crate::timefmt::format_in(
+                m.created_at,
+                &jiff::tz::TimeZone::UTC,
+                "%Y-%m-%d %H:%M:%SZ",
+            ),
+        };
+        let mut lines = vec![Line::from(Span::styled(
+            format!("{when}（検索結果の詳細。履歴には追加されません）"),
+            muted,
+        ))];
+        let room = height.saturating_sub(1).max(1);
+        let start = s.detail_scroll.min(rows.len().saturating_sub(room));
+        for row in rows.iter().skip(start).take(room) {
+            lines.push(row_line(row, Color::Reset, false, false));
+        }
+        return lines;
+    }
+    match s.phase {
+        Phase::Loading => return note("検索中…"),
+        Phase::Editing if s.results.is_empty() => {
+            return note(
+                "語を入力して Enter（空白で区切った語をすべて含むメッセージを、新しい順に出します）",
+            );
+        }
+        Phase::Browsing if s.results.is_empty() => return note("一致するメッセージはありません"),
+        _ => {}
+    }
+    let header = format!(
+        "検索結果 {} 件{}{}",
+        s.results.len(),
+        if s.more {
+            "以上（n: さらに古い結果）"
+        } else {
+            ""
+        },
+        if s.loading_more {
+            " 読み込み中…"
+        } else {
+            ""
+        },
+    );
+    let mut lines = vec![Line::from(Span::styled(header, muted))];
+    let list_h = height.saturating_sub(1).max(1);
+    let start = s
+        .cursor
+        .saturating_sub(list_h / 2)
+        .min(s.results.len().saturating_sub(list_h));
+    for (i, m) in s.results.iter().enumerate().skip(start).take(list_h) {
+        let who = app
+            .users
+            .iter()
+            .find(|u| u.id == m.author_id)
+            .map_or(crate::tui::transcript::UNKNOWN_USER, |u| {
+                u.display_name.as_str()
+            });
+        let when = match &app.zone {
+            Some(zone) => crate::timefmt::format_in(m.created_at, zone, "%Y-%m-%d %H:%M"),
+            None => {
+                crate::timefmt::format_in(m.created_at, &jiff::tz::TimeZone::UTC, "%Y-%m-%d %H:%MZ")
+            }
+        };
+        let selected = i == s.cursor;
+        let text = format!(
+            "{} {when} {}: {}",
+            if selected { "▶" } else { " " },
+            sanitize::inline(who),
+            sanitize::inline(&m.body)
+        );
+        let mut style = Style::new();
+        if selected {
+            style = style.bg(t().surface).add_modifier(Modifier::BOLD);
+        }
+        lines.push(Line::from(Span::styled(
+            sanitize::truncate(&text, width),
+            style,
+        )));
+    }
+    lines
+}
+
 /// 下部のナビゲーション。Chat だけが使え、未実装の Settings は選べない（無効表示）。
 fn navbar_line(width: u16) -> Line<'static> {
     let cell = usize::from(width) / 2;
@@ -440,7 +565,17 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
 
     plan(area, app);
-    let rows = app.rows();
+    if app.mode == Mode::Search {
+        frame.render_widget(
+            Paragraph::new(search_lines(app, r.history.width, r.history.height)),
+            r.history,
+        );
+    }
+    let rows = if app.mode == Mode::Search {
+        Vec::new()
+    } else {
+        app.rows()
+    };
     let (start, end, pad) = visible(app, &rows, r.history.height);
     let mut lines: Vec<Line> = rows[start..end]
         .iter()
@@ -457,7 +592,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // 少ないときは下に寄せる（最新が入力欄の近くにある）。
     let mut padded = vec![Line::from(""); pad];
     padded.append(&mut lines);
-    frame.render_widget(Paragraph::new(padded), r.history);
+    if app.mode != Mode::Search {
+        frame.render_widget(Paragraph::new(padded), r.history);
+    }
 
     if let Some((text, color)) = message_line(app) {
         frame.render_widget(
@@ -539,6 +676,13 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             &if app.mode == Mode::Select {
                 "↑↓/j k: 選択 | ←→/h l: 画像を横へ | r: リアクション | 1-5: 👍🎉😂😮🙏 | p/Enter: 返信 | Esc: 戻る"
                     .to_owned()
+            } else if app.mode == Mode::Search {
+                match app.search.phase {
+                    Phase::Editing => "Enter: 検索 | Esc: 閉じる | 空白で区切った語をすべて含むものを探します".to_owned(),
+                    Phase::Loading => "検索中… | Esc: 入力へ戻る".to_owned(),
+                    Phase::Detail => "↑↓/j k/PgUp/PgDn: スクロール | Esc/←: 結果へ戻る".to_owned(),
+                    Phase::Browsing => "↑↓/j k: 選択 | Enter: そのメッセージへ（履歴に無ければ本文を表示） | d/→: 本文の詳細 | n: さらに古い結果 | /: 語を編集 | Esc: 入力へ戻る".to_owned(),
+                }
             } else if app.mode == Mode::React {
                 "Enter: 付ける/外す | Esc: 戻る".to_owned()
             } else if focused {
