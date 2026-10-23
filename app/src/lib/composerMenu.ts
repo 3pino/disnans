@@ -73,7 +73,8 @@ function replaceLegacyEntry(
   placeUnlisted: (order: string[]) => string[],
 ): ComposerMenuPrefs {
   const on = !prefs.hidden.includes(legacyId);
-  const hidden = prefs.hidden.filter((id) => id !== legacyId);
+  // 本体を出していた場合は、移行先のコマンドも必ず出す。
+  const hidden = prefs.hidden.filter((id) => id !== legacyId && (!on || id !== commandId));
   let order = prefs.order.filter((id) => id !== legacyId);
   if (on && !order.includes(commandId)) {
     const legacyAt = prefs.order.indexOf(legacyId);

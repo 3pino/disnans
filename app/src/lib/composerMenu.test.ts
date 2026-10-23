@@ -225,6 +225,16 @@ describe('migrateComposerMenu（本体の写真を撮る → 写真を撮るコ�
     expect(r.value.order).toEqual(['builtin:file', TAKE_PHOTO_COMMAND_ID]);
   });
 
+  it('本体を出していたら、既にあるコマンドの非表示も解除する', () => {
+    const r = migrateComposerMenu({
+      order: ['builtin:file', 'builtin:camera', TAKE_PHOTO_COMMAND_ID],
+      hidden: [TAKE_PHOTO_COMMAND_ID],
+      v: 2,
+    });
+    expect(r.value.order).toEqual(['builtin:file', TAKE_PHOTO_COMMAND_ID]);
+    expect(r.value.hidden).toEqual([]);
+  });
+
   it('「＋」メニューに本体の「写真を撮る」は出ない', () => {
     expect(composerMenuAvailable(() => {}).map((x) => x.id)).not.toContain('builtin:camera');
   });
