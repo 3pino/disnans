@@ -120,13 +120,12 @@ export class DeviceSettings {
   /** このデバイスの名前を変える（登録し直す）。空なら OS の名前に戻す */
   async renameDevice(name: string): Promise<void> {
     const trimmed = name.trim();
-    this.deps.set(DEVICE_NAME_KEY, trimmed === '' ? null : trimmed);
-    if (!this.deps.api || !this.id) return;
-    try {
-      await this.deps.api.register(this.id, this.deviceName());
-    } catch (e) {
-      reportSettingsError(`デバイスの名前を保存できませんでした: ${errorText(e)}`);
+    // 失敗を呼び出し側へ返す。先にローカル名を変えると、失敗しても
+    // 次の起動の登録でその名前を再送してしまうため、成功してから保存する。
+    if (this.deps.api && this.id) {
+      await this.deps.api.register(this.id, trimmed || this.deps.defaultName());
     }
+    this.deps.set(DEVICE_NAME_KEY, trimmed === '' ? null : trimmed);
   }
 
   // ---- 読み込み ----

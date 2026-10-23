@@ -39,6 +39,7 @@
   import ComposerMenuSettings from './ComposerMenuSettings.svelte';
   import CallSettings from './CallSettings.svelte';
   import DeviceKindSettings from './DeviceKindSettings.svelte';
+  import DeviceListSettings from './DeviceListSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { ui, type SettingsSubpage, type ThemePref } from '../lib/stores/ui.svelte';
@@ -87,6 +88,7 @@
     { value: 'navBar', name: 'ナビゲーションバー' },
     { value: 'composerMenu', name: '＋メニュー' },
     { value: 'call', name: '通話' },
+    ...(isTauri() ? [{ value: 'devices' as const, name: 'デバイス' }] : []),
   ];
 
   const themes: { value: ThemePref; label: string; icon: typeof Sun }[] = [
@@ -253,6 +255,8 @@
             <NavBarSettings />
           {:else if ui.settingsSub === 'call'}
             <CallSettings />
+          {:else if ui.settingsSub === 'devices'}
+            <DeviceListSettings />
           {:else}
             <ComposerMenuSettings />
           {/if}

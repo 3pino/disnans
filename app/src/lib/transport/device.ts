@@ -1,5 +1,8 @@
 import type { BridgeContext, Invoke } from './types';
 import { toBridgeError } from './tauri';
+import type { DeviceInfo } from '../protocol/DeviceInfo';
+
+export type { DeviceInfo };
 
 /** デバイスの設定の結果。`saved` が false は「まだ設定が無い」（既定の値を返す） */
 export type DeviceView = { prefs: Record<string, unknown>; updatedAt: number | null; saved: boolean };
@@ -14,6 +17,10 @@ export type DeviceApi = {
   read(id: string): Promise<DeviceView>;
   /** デバイスの設定をまるごと書く（Rust で正規化したものが返る） */
   write(id: string, body: Record<string, unknown>): Promise<DeviceView>;
+  /** 自分のデバイスの一覧（設定は読まない） */
+  list(): Promise<DeviceInfo[]>;
+  /** デバイスとその設定を消す（このデバイス自身を消すかは呼び出し側が決める） */
+  remove(id: string): Promise<void>;
 };
 
 /** Rust の api_device_* を呼ぶ口（引数は server・devUser・id の形）。エラーは HttpError にそろえる */
@@ -33,5 +40,9 @@ export function createDeviceApi(invoke: Invoke, ctx: BridgeContext): DeviceApi {
     },
     read: (id) => call<DeviceView>('api_device_prefs_read', { args: { ...base(), id } }),
     write: (id, body) => call<DeviceView>('api_device_prefs_write', { args: { ...base(), id, body } }),
+    list: async () => (await call<DeviceInfo[]>('api_devices_list', { args: base() })) ?? [],
+    remove: async (id) => {
+      await call('api_device_delete', { args: { ...base(), id } });
+    },
   };
 }

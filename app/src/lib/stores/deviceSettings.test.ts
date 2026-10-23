@@ -26,6 +26,8 @@ function fakeApi(opts: { saved?: boolean; prefs?: Record<string, unknown>; failW
       server = { ...body, hideNavigationBar: body.hideNavigationBar === true };
       return { prefs: server, updatedAt: 2, saved: true };
     }),
+    list: vi.fn(async () => []),
+    remove: vi.fn(async (_id: string) => {}),
   };
   return { api, peek: () => server };
 }
@@ -100,6 +102,17 @@ describe('DeviceSettings（ブラウザ版: localStorage だけ）', () => {
 });
 
 describe('DeviceSettings（Tauri: サーバーのデバイスの設定）', () => {
+  it('自デバイスの名前変更が失敗したら呼び出し側へ返し、次回再送されるローカル名も変えない', async () => {
+    const { api } = fakeApi();
+    const local = memory({ [DEVICE_NAME_KEY]: '旧名' });
+    const s = new DeviceSettings(deps({ api, local }).d);
+    await s.start();
+    api.register.mockRejectedValueOnce(new Error('offline'));
+    await expect(s.renameDevice('新名')).rejects.toThrow('offline');
+    expect(s.deviceName()).toBe('旧名');
+    expect(local.m.get(DEVICE_NAME_KEY)).toBe('旧名');
+  });
+
   it('登録して読む。サーバーに設定があれば、それを使う', async () => {
     const { api } = fakeApi({ prefs: { deviceKind: 'monitor', orientation: 'media' } });
     const s = new DeviceSettings(deps({ api }).d);

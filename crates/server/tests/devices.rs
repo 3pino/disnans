@@ -223,31 +223,27 @@ async fn invalid_ids_names_and_prefs_are_refused() {
 }
 
 #[tokio::test]
-async fn a_user_has_at_most_fifty_devices() {
+async fn more_than_fifty_devices_can_be_registered_and_stay_user_scoped() {
     let server = TestServer::start().await;
-    for i in 0..50 {
+    for i in 0..75 {
         register(&server, ALICE, &format!("d{i}"), "d").await;
     }
-    let res = server
-        .put_json(
-            ALICE,
-            "/api/me/devices/d50",
-            &PutDevice { name: "d".into() },
-        )
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(error_code(res).await, (409, "too_many_devices".into()));
-
-    // 既にあるデバイスの名前は変えられる。他人の上限は別
+    save(&server, ALICE, "d0", json!({ "mine": true })).await;
     register(&server, ALICE, "d0", "renamed").await;
-    register(&server, BOB, "d50", "bob").await;
+    let list: Vec<DeviceInfo> = server.get_json(ALICE, "/api/me/devices").await;
+    assert_eq!(list.len(), 75);
+    assert!(
+        list.iter()
+            .any(|d| d.device_id == "d0" && d.name == "renamed" && d.has_prefs)
+    );
+    assert!(list.iter().any(|d| d.device_id == "d74"));
 
-    // 消せば、また登録できる
-    server
-        .delete(ALICE, "/api/me/devices/d1")
-        .send()
-        .await
-        .unwrap();
-    register(&server, ALICE, "d50", "d").await;
+    // 同じ ID を他のユーザーが使っても、名前・設定・一覧は混ざらない。
+    register(&server, BOB, "d0", "bob").await;
+    let list: Vec<DeviceInfo> = server.get_json(BOB, "/api/me/devices").await;
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].name, "bob");
+    assert!(!list[0].has_prefs);
+    let got: DevicePrefs = server.get_json(ALICE, "/api/me/devices/d0/prefs").await;
+    assert_eq!(got.prefs, json!({ "mine": true }));
 }

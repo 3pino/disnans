@@ -26,14 +26,6 @@ pub async fn list(pool: &SqlitePool, user_id: &str) -> sqlx::Result<Vec<DeviceRo
     .await
 }
 
-/// デバイスの数。
-pub async fn count(pool: &SqlitePool, user_id: &str) -> sqlx::Result<i64> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM devices WHERE user_id = ?")
-        .bind(user_id)
-        .fetch_one(pool)
-        .await
-}
-
 /// 1 件（なければ `None`）。
 pub async fn get(
     pool: &SqlitePool,

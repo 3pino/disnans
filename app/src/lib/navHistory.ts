@@ -11,7 +11,7 @@ export type Panel =
   | null;
 
 /** 設定の中のサブページ（一覧の代わりに出す）。入力欄のキー・ホットキー・ナビゲーションバー・＋メニュー・通話 */
-export type SettingsSubpage = 'enterKeys' | 'hotkeys' | 'navBar' | 'composerMenu' | 'call';
+export type SettingsSubpage = 'enterKeys' | 'hotkeys' | 'navBar' | 'composerMenu' | 'call' | 'devices';
 
 /** ナビゲーションバーのタブ（チャット・設定・通話） */
 export type NavTab = 'chat' | 'settings' | 'call';

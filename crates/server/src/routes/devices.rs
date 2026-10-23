@@ -12,8 +12,6 @@ use crate::routes::users::MAX_PREFS_BYTES;
 use crate::state::SharedState;
 use crate::store::devices::{self, DeviceRow};
 
-/// デバイス 1 人あたりの上限（ユーザーごと）。
-const MAX_DEVICES: i64 = 50;
 /// デバイス名の最大文字数。
 const MAX_DEVICE_NAME_CHARS: usize = 64;
 
@@ -51,7 +49,7 @@ pub async fn list(
     Ok(Json(rows.into_iter().map(info).collect()))
 }
 
-/// デバイスを登録する（初回）、または名前を変える。上限を超える新規は `409 too_many_devices`。
+/// デバイスを登録する（初回）、または名前を変える。台数の上限は設けない。
 pub async fn put(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
@@ -74,14 +72,6 @@ pub async fn put(
     }
 
     let _guard = state.write_lock().await;
-    let existing = devices::get(&state.pool, &user.id, &device_id).await?;
-    if existing.is_none() && devices::count(&state.pool, &user.id).await? >= MAX_DEVICES {
-        return Err(AppError::new(
-            StatusCode::CONFLICT,
-            "too_many_devices",
-            format!("デバイスは {MAX_DEVICES} 台までです。使わないデバイスを削除してください"),
-        ));
-    }
     let mut conn = state.pool.acquire().await.map_err(AppError::internal)?;
     devices::upsert(&mut conn, &user.id, &device_id, name, db::now_ms()).await?;
     drop(conn);

@@ -29,7 +29,7 @@
 | GET | `/api/me/prefs` | 自分の設定（ホットキー・Enter キーの動作など。まだなければ `{}`） | JSON オブジェクト |
 | PUT | `/api/me/prefs` | 自分の設定をまるごと置き換える（body: JSON オブジェクト） | JSON オブジェクト |
 | GET | `/api/me/devices` | 自分のデバイスの一覧（`device_id`, `name`, `created_at`, `last_seen_at`, `has_prefs`。新しい順） | `[DeviceInfo]` |
-| PUT | `/api/me/devices/{device_id}` | デバイスを登録する・名前を変える（body: `{ "name": "…" }`）。上限 50 台（超えると `409 too_many_devices`） | `DeviceInfo` |
+| PUT | `/api/me/devices/{device_id}` | デバイスを登録する・名前を変える（body: `{ "name": "…" }`）。台数の上限なし | `DeviceInfo` |
 | DELETE | `/api/me/devices/{device_id}` | デバイスと、その設定を消す | `204`（なければ `404`） |
 | GET | `/api/me/devices/{device_id}/prefs` | このデバイスの設定。未保存・デバイスがなければ `404` | `{ "prefs": {…}, "updated_at": n }` |
 | PUT | `/api/me/devices/{device_id}/prefs` | このデバイスの設定をまるごと置き換える（body: `{ "prefs": {…} }`）。デバイスを登録していなければ `404` | `{ "prefs": {…}, "updated_at": n }` |
@@ -69,7 +69,7 @@
 
 ### 設定（prefs）
 
-保存先の分類とクライアントの `{ raw, view }` の扱いは [設計](DESIGN.md#設定の保存先) を参照。REST は元の JSON オブジェクトを返す（Tauri 内部の応答とは異なる）。デバイス台数の無制限化は確定方針だが、現行の 50 台制限の撤去は未実装。
+保存先の分類とクライアントの `{ raw, view }` の扱いは [設計](DESIGN.md#設定の保存先) を参照。REST は元の JSON オブジェクトを返す（Tauri 内部の応答とは異なる）。デバイス台数の上限は設けない（ID の形式・名前の長さ・設定サイズの検査は行う）。
 
 - ユーザーごとに1つの JSON オブジェクトを保存し、同じユーザーのデバイスどうしで共有する。中身はクライアントが決める（サーバーは形と大きさだけを確かめる）
   - いまの中身: `hotkeys`（コマンド ID → `"Mod+Shift+D"` 形式のホットキーの配列。空の配列は「なし」、項目がなければ既定。古い1つだけの文字列も読める）、`slashNames`（コマンド ID → スラッシュコマンドの別名。項目がなければ元の名前）、`enterKeys`（`enter` / `shift` / `ctrl` / `alt` → `"send"` / `"newline"` / `"none"`）

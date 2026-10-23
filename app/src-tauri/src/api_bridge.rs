@@ -643,6 +643,21 @@ pub async fn device_prefs_write(args: &IdBodyArgs) -> Result<DevicePrefsView, Re
     Ok(device_prefs_view(&value, true))
 }
 
+/// 自分のデバイスの一覧（`GET /api/me/devices`）。設定は読まない・書かない（一覧の表示だけ）
+pub async fn device_list(args: &Base) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .list_devices()
+        .await
+}
+
+/// デバイスとその設定を消す（`DELETE /api/me/devices/{id}`）。成功は `null`（204）。
+/// このデバイス自身を消すかどうかは GUI が決める（ここでは送るだけ）
+pub async fn device_delete(args: &IdArgs) -> Result<Value, ReadFailure> {
+    client(&args.server, args.dev_user.as_deref())?
+        .delete_device(&args.id)
+        .await
+}
+
 /// 設定項目の定義（キー・保存先・型・既定値）。core の一覧が正（起動時に一度読む想定）
 #[tauri::command]
 pub fn api_settings_definitions() -> Value {
@@ -668,6 +683,16 @@ pub async fn api_device_prefs_read(args: IdArgs) -> Result<DevicePrefsView, Read
 #[tauri::command]
 pub async fn api_device_prefs_write(args: IdBodyArgs) -> Result<DevicePrefsView, ReadFailure> {
     device_prefs_write(&args).await
+}
+
+#[tauri::command]
+pub async fn api_devices_list(args: Base) -> Result<Value, ReadFailure> {
+    device_list(&args).await
+}
+
+#[tauri::command]
+pub async fn api_device_delete(args: IdArgs) -> Result<Value, ReadFailure> {
+    device_delete(&args).await
 }
 
 #[cfg(test)]
@@ -773,6 +798,47 @@ mod tests {
             task.await.unwrap(),
             "PUT /api/me/devices/01J8/prefs HTTP/1.1"
         );
+    }
+
+    #[tokio::test]
+    async fn device_list_returns_the_server_list_and_sends_only_a_get() {
+        let body = r#"[{"device_id":"01J8","name":"自宅","created_at":1,"last_seen_at":2,"has_prefs":true}]"#;
+        let (server, task) = one_shot("200 OK", body).await;
+        let value = device_list(&base(&server)).await.unwrap();
+        assert_eq!(value, serde_json::from_str::<Value>(body).unwrap());
+        assert_eq!(task.await.unwrap(), "GET /api/me/devices HTTP/1.1");
+    }
+
+    #[tokio::test]
+    async fn device_delete_sends_delete_and_treats_204_as_success() {
+        let (server, task) = one_shot("204 No Content", "").await;
+        let value = device_delete(&IdArgs {
+            server,
+            dev_user: Some("alice".into()),
+            id: "01J8".into(),
+        })
+        .await
+        .unwrap();
+        assert_eq!(value, Value::Null);
+        assert_eq!(task.await.unwrap(), "DELETE /api/me/devices/01J8 HTTP/1.1");
+    }
+
+    #[tokio::test]
+    async fn device_delete_reports_a_missing_device_as_not_found() {
+        let (server, task) = one_shot(
+            "404 Not Found",
+            r#"{"code":"not_found","message":"デバイスがありません"}"#,
+        )
+        .await;
+        let failure = device_delete(&IdArgs {
+            server,
+            dev_user: Some("alice".into()),
+            id: "01J8".into(),
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(failure.status, Some(404));
+        assert_eq!(task.await.unwrap(), "DELETE /api/me/devices/01J8 HTTP/1.1");
     }
 
     #[tokio::test]
