@@ -342,7 +342,10 @@
         onpointermove={onRowMove}
         onpointerup={(e) => onRowEnd(e, false)}
         onpointercancel={(e) => onRowEnd(e, true)}
-        onlostpointercapture={(e) => onRowEnd(e, true)}
+        onlostpointercapture={(e) => {
+          // 行の中の文字が暗黙の捕捉を持つと、捕捉の解放が泡のように行へ届く。行自身の捕捉が外れたときだけ取り消す
+          if (e.target === e.currentTarget) onRowEnd(e, true);
+        }}
         onkeydown={(e) => onRowKey(e, i)}
         oncontextmenu={(e) => {
           // 長押しで出る文脈メニュー（Android・iOS のコピーなど）は行では出さない。入力欄などの操作部品は除く

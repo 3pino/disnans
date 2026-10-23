@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // 並べ替えの部品の DOM のテスト（キーボード・ポインターの取り消し・並びの変化・文脈メニュー）。
 // ポインターの座標は jsdom では本物の描画の位置を持たないため、判定は lib/sortable.test.ts の純関数で確かめ、ここでは配線を見る。
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import Host from './SortableListTestHost.svelte';
 
@@ -103,6 +103,108 @@ describe('SortableList（ポインターの取り消し）', () => {
     expect(host!.querySelector('.sortable-list-dragging')).toBeNull();
     pointer(b, 'pointerup', 10, 130);
     expect(onmove).not.toHaveBeenCalled();
+  });
+});
+
+/** タッチの一連の操作（pointerdown → 長押しの時間 → pointermove → lostpointercapture → pointerup）。実機で起きた順を再現する */
+describe('SortableList（タッチの一連の操作）', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function touchPointer(el: Element, type: string, clientX: number, clientY: number, bubbles = true) {
+    const e = new MouseEvent(type, { bubbles, cancelable: true, clientX, clientY, button: 0 });
+    Object.defineProperty(e, 'pointerId', { value: 7 });
+    Object.defineProperty(e, 'pointerType', { value: 'touch' });
+    el.dispatchEvent(e);
+    flushSync();
+  }
+
+  /** 捕捉の解放（実機の lostpointercapture と同じく、ポインターの ID を持つ） */
+  function lostCapture(el: Element) {
+    const e = new Event('lostpointercapture', { bubbles: true });
+    Object.defineProperty(e, 'pointerId', { value: 7 });
+    el.dispatchEvent(e);
+    flushSync();
+  }
+
+  /** 行の中の文字（子要素）で、捕捉の解放が泡のように行へ届く */
+  function childCaptureLost(id: string) {
+    lostCapture(bodyOf(id).querySelector('.row-text')!);
+  }
+
+  it('長押し（400ms）のあとに縦へ動かすと並べ替えが始まり、離したとき動かし先を通知する', () => {
+    const { onmove } = render();
+    const b = bodyOf('b');
+    touchPointer(b, 'pointerdown', 10, 100);
+    vi.advanceTimersByTime(400);
+    flushSync();
+    expect(host!.querySelector('.sortable-list-dragging')).not.toBeNull();
+    touchPointer(b, 'pointermove', 10, 130);
+    touchPointer(b, 'pointerup', 10, 130);
+    expect(onmove).toHaveBeenCalledWith('b', 2);
+  });
+
+  it('長押しの前に縦へ動かすと、並べ替えにならない（ページのスクロールに任せる）', () => {
+    const { onmove } = render();
+    const b = bodyOf('b');
+    touchPointer(b, 'pointerdown', 10, 100);
+    touchPointer(b, 'pointermove', 10, 120);
+    vi.advanceTimersByTime(400);
+    flushSync();
+    expect(host!.querySelector('.sortable-list-dragging')).toBeNull();
+    touchPointer(b, 'pointerup', 10, 120);
+    expect(onmove).not.toHaveBeenCalled();
+  });
+
+  it('行の中の文字の捕捉の解放では、並べ替えを取り消さない（実機: 長押しの直後に途切れた）', () => {
+    const { onmove } = render();
+    const b = bodyOf('b');
+    touchPointer(b, 'pointerdown', 10, 100);
+    vi.advanceTimersByTime(400);
+    flushSync();
+    childCaptureLost('b');
+    expect(host!.querySelector('.sortable-list-dragging')).not.toBeNull();
+    touchPointer(b, 'pointermove', 10, 130);
+    touchPointer(b, 'pointerup', 10, 130);
+    expect(onmove).toHaveBeenCalledWith('b', 2);
+  });
+
+  it('行自身の捕捉が外れたら、取り消す（並べ替えず、行を戻す）', () => {
+    const { onmove } = render();
+    const b = bodyOf('b');
+    touchPointer(b, 'pointerdown', 10, 100);
+    vi.advanceTimersByTime(400);
+    flushSync();
+    touchPointer(b, 'pointermove', 10, 130);
+    lostCapture(b);
+    expect(host!.querySelector('.sortable-list-dragging')).toBeNull();
+    touchPointer(b, 'pointerup', 10, 130);
+    expect(onmove).not.toHaveBeenCalled();
+  });
+
+  it('左へスワイプすると行が指に追従し、しきい値を超えて離すと削除を出したままにする（途中で文字の捕捉が解けても続く）', () => {
+    render(vi.fn(), { onremove: vi.fn(), removable: () => true });
+    const b = bodyOf('b');
+    touchPointer(b, 'pointerdown', 200, 50);
+    touchPointer(b, 'pointermove', 190, 51);
+    childCaptureLost('b');
+    touchPointer(b, 'pointermove', 120, 51);
+    expect(b.style.transform).toMatch(/translateX\(-\d/);
+    touchPointer(b, 'pointerup', 120, 51);
+    expect(host!.querySelector('[data-sortable-id="b"] .sortable-list-delete-shown')).not.toBeNull();
+  });
+
+  it('短い横の動き（しきい値に届かない）では削除を出さない', () => {
+    render(vi.fn(), { onremove: vi.fn(), removable: () => true });
+    const b = bodyOf('b');
+    touchPointer(b, 'pointerdown', 200, 50);
+    touchPointer(b, 'pointermove', 180, 50);
+    touchPointer(b, 'pointerup', 180, 50);
+    expect(host!.querySelector('[data-sortable-id="b"] .sortable-list-delete-shown')).toBeNull();
   });
 });
 
