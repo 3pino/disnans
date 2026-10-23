@@ -36,28 +36,7 @@ impl TestServer {
         };
         let (app, state) = disnans_server::build(config).await.unwrap();
         if seed_messages {
-            let (alice, _) = users::get_or_create(&state.pool, "alice", "Alice", None)
-                .await
-                .unwrap();
-            let mut tx = state.pool.begin().await.unwrap();
-            for (id, body) in [("msg-1", "first"), ("msg-2", "second"), ("msg-3", "third")] {
-                messages::insert(
-                    &mut tx,
-                    &messages::MessageRow {
-                        id: id.into(),
-                        author_id: alice.id.clone(),
-                        reply_to: None,
-                        body: body.into(),
-                        created_at: 1,
-                        edited_at: None,
-                        bot_plugin: None,
-                        bot_name: None,
-                    },
-                )
-                .await
-                .unwrap();
-            }
-            tx.commit().await.unwrap();
+            seed_history(&state).await;
         }
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -88,6 +67,60 @@ impl TestServer {
         // Release SQLite handles before removing the temp directory, especially on Windows.
         self.state.pool.close().await;
     }
+}
+
+/// build() は既に定期掃除を起動している。テストデータの書き込みも
+/// 本番の投稿や掃除と同じロックを通し、起動直後に競合させない。
+async fn seed_history(state: &SharedState) {
+    let _guard = state.write_lock().await;
+    let (alice, _) = users::get_or_create(&state.pool, "alice", "Alice", None)
+        .await
+        .unwrap();
+    let mut tx = state.pool.begin().await.unwrap();
+    for (id, body) in [("msg-1", "first"), ("msg-2", "second"), ("msg-3", "third")] {
+        messages::insert(
+            &mut tx,
+            &messages::MessageRow {
+                id: id.into(),
+                author_id: alice.id.clone(),
+                reply_to: None,
+                body: body.into(),
+                created_at: 1,
+                edited_at: None,
+                bot_plugin: None,
+                bot_name: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    tx.commit().await.unwrap();
+}
+
+#[tokio::test]
+async fn seeding_history_waits_for_the_server_write_lock() {
+    let server = TestServer::start(false).await;
+    {
+        let guard = server.state.write_lock().await;
+        let seed = seed_history(&server.state);
+        tokio::pin!(seed);
+        // 時間を空けて競合を避けるのではなく、ロック中は書けないことを確認する。
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut seed)
+                .await
+                .is_err()
+        );
+        assert!(users::list(&server.state.pool).await.unwrap().is_empty());
+        drop(guard);
+        seed.await;
+    }
+    assert!(
+        messages::get_row(&server.state.pool, "msg-3")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    server.stop().await;
 }
 
 impl Drop for TestServer {
