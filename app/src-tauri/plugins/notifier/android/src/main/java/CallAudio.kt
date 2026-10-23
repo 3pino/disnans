@@ -21,9 +21,7 @@ object CallAudio {
     val am = manager(context)
     if (previousMode == null) previousMode = am.mode
     am.mode = AudioManager.MODE_IN_COMMUNICATION
-    val outs = list(context)
-    val first = outs.firstOrNull { it.kind == "bluetooth" } ?: outs.firstOrNull { it.kind == "wired" } ?: outs.firstOrNull { it.kind == "speaker" }
-    if (first != null) set(context, first.id)
+    defaultOf(list(context))?.let { set(context, it.id) }
   }
 
   /** 通話が終わったら元に戻す */
@@ -81,11 +79,15 @@ object CallAudio {
     return out
   }
 
-  /** 現在の出力先の id（わからなければ null） */
+  /** 通話の既定の出力先: Bluetooth、なければイヤホン、なければスピーカー、なければ受話口。begin と、まだ選んでいない時の表示に使う */
+  private fun defaultOf(outs: List<AudioOutput>): AudioOutput? =
+    outs.firstOrNull { it.kind == "bluetooth" } ?: outs.firstOrNull { it.kind == "wired" } ?: outs.firstOrNull { it.kind == "speaker" } ?: outs.firstOrNull()
+
+  /** 現在の出力先の id（わからなければ null）。通話の前は既定を返す（起動時の表示と通話開始の既定を一致させる） */
   fun current(context: Context): String? {
     val am = manager(context)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      val d = am.communicationDevice ?: return null
+      val d = am.communicationDevice ?: return defaultOf(list(context))?.id
       val kind = kindOf(d.type) ?: return null
       val id = if (kind == "earpiece" || kind == "speaker") kind else "$kind:${d.id}"
       // 同じ種類・名前を重ねて隠した分があるので、一覧にある id に寄せる
@@ -96,6 +98,7 @@ object CallAudio {
     return when {
       am.isBluetoothScoOn -> list(context).firstOrNull { it.kind == "bluetooth" }?.id
       am.isSpeakerphoneOn -> "speaker"
+      previousMode == null -> defaultOf(list(context))?.id
       else -> list(context).firstOrNull { it.kind == "wired" }?.id ?: "earpiece"
     }
   }
