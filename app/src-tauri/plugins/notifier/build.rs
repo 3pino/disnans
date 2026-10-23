@@ -18,6 +18,9 @@ const COMMANDS: &[&str] = &[
     "request_recent_images_permission",
     "read_image",
     "clipboard_image",
+    "set_orientation",
+    "set_keep_web_view",
+    "log_call",
 ];
 
 fn main() {

@@ -57,7 +57,7 @@ jobs:
       - run: npx vitest run
       - run: npm run build
       # CLI を配置するスクリプトの単体テスト（配置の名前・ビルドの呼び出し・失敗時の動き）
-      - run: node --test ../scripts/prepare-cli.test.mjs ../scripts/release-latest-json.test.mjs
+      - run: node --test ../scripts/prepare-cli.test.mjs ../scripts/release-latest-json.test.mjs ../scripts/notifier-permissions.test.mjs
 
   # Desktop IPC と共通ファイル移行の Rust 側を Windows のネイティブ環境でも検証する。
   app-windows:

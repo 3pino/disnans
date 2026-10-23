@@ -20,4 +20,8 @@ permissions = [
   "allow-take-launch-target",
   "allow-register-listener",
   "allow-remove-listener",
+  "allow-recent-images",
+  "allow-request-recent-images-permission",
+  "allow-read-image",
+  "allow-clipboard-image",
 ]
