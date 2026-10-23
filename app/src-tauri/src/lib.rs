@@ -11,6 +11,10 @@ mod platform;
 #[cfg(desktop)]
 mod dev_plugins;
 
+// 添付パネルの「最近の画像」（ピクチャのフォルダ）
+#[cfg(desktop)]
+mod recent_images;
+
 // Desktop shared server settings and drafts; browser/Android keep their existing storage.
 // 共有の設定と下書き（デスクトップは既定の場所、Android はアプリのデータの中）
 #[cfg(any(desktop, target_os = "android"))]
@@ -184,7 +188,7 @@ pub fn run() {
     // アップデート: デスクトップは公式の updater、Android は自前のプラグイン
     // 通知: デスクトップは公式の notification、Android は常駐サービスを持つ自前のプラグイン
     // dialog: 開発用フォルダを選ぶ（デスクトップだけ）
-    // fs / clipboard-manager: Linux でのファイルのドロップと、クリップボードの画像の貼り付け（capabilities/linux.json で許可）
+    // fs / clipboard-manager: Linux でのファイルのドロップ（capabilities/linux.json）、クリップボードの画像とピクチャのフォルダの読み込み（capabilities/desktop.json）
     #[cfg(desktop)]
     {
         builder = builder
@@ -198,6 +202,7 @@ pub fn run() {
         {
             builder = builder.invoke_handler(tauri::generate_handler![
                 open_devtools,
+                recent_images::recent_images,
                 dev_plugins::dev_plugins_scan,
                 dev_plugins::dev_plugin_read,
                 snapshot::screen_snapshot,
@@ -245,6 +250,7 @@ pub fn run() {
                 .manage(linux_capture::LinuxScreenState::default())
                 .invoke_handler(tauri::generate_handler![
                     open_devtools,
+                    recent_images::recent_images,
                     dev_plugins::dev_plugins_scan,
                     dev_plugins::dev_plugin_read,
                     snapshot::screen_snapshot,

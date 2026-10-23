@@ -4,8 +4,17 @@
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import X from '@lucide/svelte/icons/x';
   import Button from './ui/Button.svelte';
+  import RecentThumb from './RecentThumb.svelte';
   import IconButton from './ui/IconButton.svelte';
-  import { listRecentImages, type RecentImage } from '../lib/recentImages';
+  import {
+    listRecentImages,
+    permissionNotice,
+    requestRecentImagesPermission,
+    type RecentImage,
+    type RecentPermission,
+  } from '../lib/recentImages';
+  import { hasAskedRecentImages, markAskedRecentImages } from '../lib/recentImagesNative';
+  import { readClipboardImage } from '../lib/clipboardImage';
 
   // 入力欄の上に出す「ファイルを追加」パネル。ボタンは入力欄（Composer）の隠しの入力を開く。見た目は仮
   let {
@@ -13,26 +22,59 @@
     onimage,
     onfile,
     onrecent,
+    onclipboard,
     onclose,
   }: {
     oncamera: () => void;
     onimage: () => void;
     onfile: () => void;
     onrecent: (image: RecentImage) => void;
+    /** クリップボードの画像（先頭に出す）を添付する */
+    onclipboard: (file: File) => void;
     onclose: () => void;
   } = $props();
 
-  let recent = $state<RecentImage[]>([]);
+  /** クリップボードの画像（パネルを開いたときに読む。閉じると消す） */
+  let clip = $state<{ file: File; url: string } | null>(null);
   $effect(() => {
     let alive = true;
-    listRecentImages().then(
-      (list) => {
-        if (alive) recent = list;
+    let url: string | null = null;
+    void readClipboardImage().then(
+      (file) => {
+        if (!alive || !file) return;
+        url = URL.createObjectURL(file);
+        clip = { file, url };
       },
-      () => {
-        if (alive) recent = [];
-      },
+      () => {},
     );
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+      clip = null;
+    };
+  });
+
+  let recent = $state<RecentImage[]>([]);
+  let permission = $state<RecentPermission>('granted');
+  const notice = $derived(permissionNotice(permission));
+  $effect(() => {
+    let alive = true;
+    void (async () => {
+      // 初回のパネルを開いたときだけ、写真の許可を求める（ダイアログが出うる）。失敗しても一覧は読む
+      if (!hasAskedRecentImages()) {
+        markAskedRecentImages();
+        await requestRecentImagesPermission().catch((e: unknown) => console.warn('写真の許可を求められませんでした', e));
+      }
+      try {
+        const res = await listRecentImages();
+        if (!alive) return;
+        recent = res.images;
+        permission = res.permission;
+      } catch (e) {
+        console.warn('最近の画像を読めませんでした', e);
+        if (alive) recent = [];
+      }
+    })();
     return () => {
       alive = false;
     };
@@ -49,14 +91,28 @@
     <IconButton label="パネルを閉じる" onclick={onclose}><X size={16} /></IconButton>
   </div>
   <div class="attach-panel-recent">
+    {#if clip}
+      <button
+        type="button"
+        class="attach-panel-recent-item attach-panel-clipboard"
+        aria-label="クリップボードの画像を添付"
+        onclick={() => clip && onclipboard(clip.file)}
+      >
+        <img class="attach-panel-recent-img" src={clip.url} alt="" decoding="async" />
+      </button>
+    {/if}
     {#each recent as image (image.id)}
       <button type="button" class="attach-panel-recent-item" aria-label="{image.name} を添付" onclick={() => onrecent(image)}>
-        <img class="attach-panel-recent-img" src={image.thumbUrl} alt="" loading="lazy" decoding="async" />
+        <RecentThumb {image} />
       </button>
-    {:else}
-      <p class="muted attach-panel-empty">最近の画像はありません</p>
     {/each}
+    {#if !clip && recent.length === 0 && !notice}
+      <p class="muted attach-panel-empty">最近の画像はありません</p>
+    {/if}
   </div>
+  {#if notice}
+    <p class="muted attach-panel-notice" role="note">{notice}</p>
+  {/if}
 </div>
 
 <style>
@@ -100,9 +156,12 @@
     height: 100%;
     object-fit: cover;
   }
-  .attach-panel-empty {
-    grid-column: 1 / -1;
+  .attach-panel-empty,
+  .attach-panel-notice {
     margin: 0;
     font-size: var(--fs-sm);
+  }
+  .attach-panel-empty {
+    grid-column: 1 / -1;
   }
 </style>

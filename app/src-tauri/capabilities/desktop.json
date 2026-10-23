@@ -1,8 +1,28 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
-  "description": "デスクトップ版のアップデート、通知、開発用フォルダを選ぶダイアログ",
-  "platforms": ["linux", "windows", "macOS"],
-  "windows": ["main"],
-  "permissions": ["updater:default", "process:allow-restart", "notification:default", "dialog:allow-open"]
+  "description": "デスクトップ版のアップデート、通知、開発用フォルダを選ぶダイアログ、クリップボードの画像、最近の画像（ピクチャのフォルダ）の読み込み",
+  "platforms": [
+    "linux",
+    "windows",
+    "macOS"
+  ],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "updater:default",
+    "process:allow-restart",
+    "notification:default",
+    "dialog:allow-open",
+    "clipboard-manager:allow-read-image",
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        {
+          "path": "$PICTURE/**"
+        }
+      ]
+    }
+  ]
 }

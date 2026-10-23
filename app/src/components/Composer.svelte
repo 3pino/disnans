@@ -196,6 +196,11 @@
     if (cameraRequest.pending) untrack(() => (cameraRequest.take() ? takePhoto() : undefined));
   });
 
+  function onpanelclipboard(file: File) {
+    attachPanel.hide();
+    addFiles([file]);
+  }
+
   function onpanelrecent(image: RecentImage) {
     attachPanel.hide();
     void image.load().then(
@@ -451,6 +456,7 @@
         fileEl?.click();
       }}
       onrecent={onpanelrecent}
+      onclipboard={onpanelclipboard}
       onclose={() => attachPanel.hide()}
     />
   {/if}

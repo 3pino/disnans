@@ -1,14 +1,21 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "linux",
-  "description": "Linux 版のファイルのドロップ（パスからの読み込み）とクリップボードの画像",
-  "platforms": ["linux"],
-  "windows": ["main"],
+  "description": "Linux 版のファイルのドロップ（パスからの読み込み）",
+  "platforms": [
+    "linux"
+  ],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     {
       "identifier": "fs:allow-read-file",
-      "allow": [{ "path": "/**" }]
-    },
-    "clipboard-manager:allow-read-image"
+      "allow": [
+        {
+          "path": "/**"
+        }
+      ]
+    }
   ]
 }

@@ -11,7 +11,7 @@
   import { commandHint, slashProvider } from '../lib/suggest/slash';
   import { slashCommands } from '../lib/slashCommands.svelte';
   import { isAndroid, isLinuxDesktop } from '../lib/platform';
-  import { readClipboardImage } from '../lib/clipboardImage';
+  import { readNativeClipboardImage } from '../lib/clipboardImage';
   import { ui } from '../lib/stores/ui.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { enterComboOf, insertNewline, insertsNewlineByDefault } from '../lib/enterKeys';
@@ -258,7 +258,7 @@
 
   async function pasteNativeImage() {
     try {
-      const file = await readClipboardImage();
+      const file = await readNativeClipboardImage();
       if (file && onfiles) onfiles([file]);
     } catch (e) {
       ui.toast(`画像を貼り付けられませんでした: ${e instanceof Error ? e.message : String(e)}`, 'error');

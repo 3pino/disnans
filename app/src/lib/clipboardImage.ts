@@ -1,18 +1,50 @@
-import { isLinuxDesktop } from './platform';
+import { isAndroid, isLinuxDesktop, isTauri } from './platform';
+import { base64ToBytes } from './recentImagesNative';
+
+/** Web の Clipboard API で読む画像の形式（この順で探す） */
+const WEB_IMAGE_TYPES = ['image/png', 'image/webp', 'image/jpeg', 'image/gif'];
 
 /**
  * クリップボードの画像を File にする（Linux の Tauri のみ）。形式は WebP（送る画像の標準）。WebP を作れなければ PNG。
  * WebKitGTK では paste イベントの clipboardData.files が空になることがあるので、そのときの代わりに使う。
- * 画像が無ければ null。
+ * 画像が無ければ null。貼り付け（MessageInput）が使う。ほかの場所からは readClipboardImage を使う。
+ */
+export async function readNativeClipboardImage(): Promise<File | null> {
+  if (!isLinuxDesktop()) return null;
+  return readRustClipboardImage();
+}
+
+/**
+ * 「ファイルを追加」パネルの「クリップボードの画像」。画像が無ければ null。
+ * - Android: notifier の clipboard_image（Kotlin の ClipboardManager）。だめなら下の Web の経路
+ * - デスクトップ（Windows・Linux）: Rust のクリップボード（プラグイン）。WebView の許可に頼らない。
+ *   プラグインが使えない（許可が無い）ときは、下の Web の経路を試す
+ * - ブラウザ: navigator.clipboard.read()（WebView が許さなければ null）
  */
 export async function readClipboardImage(): Promise<File | null> {
-  if (!isLinuxDesktop()) return null;
+  if (isTauri()) {
+    const native = await (isAndroid() ? readAndroidClipboardImage() : readRustClipboardImage()).catch(() => null);
+    if (native) return native;
+  }
+  return readWebClipboardImage();
+}
+
+/** Android のクリップボードの画像（notifier の clipboard_image → {name, mime, data}、無ければ null） */
+async function readAndroidClipboardImage(): Promise<File | null> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const res = await invoke<{ name: string; mime: string; data: string } | null>('plugin:notifier|clipboard_image');
+  if (!res) return null;
+  return new File([base64ToBytes(res.data)], res.name || `clipboard-${Date.now()}`, { type: res.mime, lastModified: Date.now() });
+}
+
+/** Rust のクリップボードから画像を読む（プラグイン。デスクトップのみ）。画像が無ければ null */
+async function readRustClipboardImage(): Promise<File | null> {
   const { readImage } = await import('@tauri-apps/plugin-clipboard-manager');
   let img;
   try {
     img = await readImage();
   } catch {
-    // 画像が無い（テキストなど）
+    // 画像が無い（テキストなど）、または許可が無い
     return null;
   }
   try {
@@ -23,6 +55,30 @@ export async function readClipboardImage(): Promise<File | null> {
   } finally {
     await img.close();
   }
+}
+
+/** Web の Clipboard API で画像を読む。API が無い・許されない・画像が無いときは null */
+async function readWebClipboardImage(): Promise<File | null> {
+  const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+  if (!clip || typeof clip.read !== 'function') return null;
+  let items: ClipboardItems;
+  try {
+    items = await clip.read();
+  } catch {
+    return null;
+  }
+  for (const item of items) {
+    const type = WEB_IMAGE_TYPES.find((t) => item.types.includes(t));
+    if (!type) continue;
+    try {
+      const blob = await item.getType(type);
+      const ext = type === 'image/jpeg' ? 'jpg' : type.slice('image/'.length);
+      return new File([blob], `clipboard-${Date.now()}.${ext}`, { type, lastModified: Date.now() });
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /** RGBA の画素を画像にする（キャンバス経由）。WebP を作れればそれ、作れなければ PNG */

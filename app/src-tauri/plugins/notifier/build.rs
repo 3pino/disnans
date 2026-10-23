@@ -14,6 +14,10 @@ const COMMANDS: &[&str] = &[
     "take_launch_target",
     "register_listener",
     "remove_listener",
+    "recent_images",
+    "request_recent_images_permission",
+    "read_image",
+    "clipboard_image",
 ];
 
 fn main() {

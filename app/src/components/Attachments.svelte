@@ -30,12 +30,20 @@
     return local[a.id] ?? fileUrl(a.id, a.has_thumb);
   }
 
-  // 表示サイズ: 長辺 320px 程度に収める
-  function box(a: Attachment): { w: number; h: number } | null {
-    if (!a.width || !a.height) return null;
-    const max = images.length > 1 ? 200 : 320;
-    const s = Math.min(1, max / Math.max(a.width, a.height));
-    return { w: Math.round(a.width * s), h: Math.round(a.height * s) };
+  /** 画像の行の高さ（px）。複数は、この高さに揃えて横に並べる（幅は縦横の比のまま） */
+  const ROW_H = 200;
+  /** 1 枚だけのときの長辺の上限（px） */
+  const SINGLE_MAX = 320;
+
+  /** 表示の大きさ。複数は行の高さ ROW_H、1 枚は長辺 SINGLE_MAX に収める。寸法が分からなければ正方形 */
+  function box(a: Attachment): { w: number; h: number } {
+    const known = !!a.width && !!a.height;
+    let h = ROW_H;
+    if (images.length === 1) {
+      h = known ? Math.round(a.height! * Math.min(1, SINGLE_MAX / Math.max(a.width!, a.height!))) : SINGLE_MAX;
+    }
+    const ratio = known ? a.width! / a.height! : 1;
+    return { w: Math.round(h * ratio), h };
   }
 
   // ---- 添付の操作（名前の変更・削除）。どの人も変えられる（サーバーの決まり）。変わったことは files.changed で全員に届く ----
@@ -117,6 +125,7 @@
 {/snippet}
 
 {#if images.length > 0}
+  <!-- 横一列。はみ出した分は横にスクロールする（横スワイプ・Shift+ホイール・トラックパッド）。枚数の上限は無い -->
   <div class="attachment-images">
     {#each images as a (a.id)}
       {@const b = box(a)}
@@ -124,8 +133,9 @@
         <button
           type="button"
           class="attachment-image"
-          style:width={b ? `${b.w}px` : undefined}
-          style:aspect-ratio={b ? `${b.w} / ${b.h}` : undefined}
+          style:width="{b.w}px"
+          style:height="{b.h}px"
+          style:aspect-ratio="{b.w} / {b.h}"
           onclick={() => (ui.lightbox = { src: local[a.id] ?? fileUrl(a.id), alt: a.file_name, downloadUrl: fileUrl(a.id) })}
           aria-label="{a.file_name} を開く"
         >
@@ -215,26 +225,34 @@
   }
   .attachment-images {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    align-items: flex-start;
     gap: var(--space-3);
+    width: 100%;
+    min-width: 0;
     margin-top: var(--space-3);
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .attachment-images > .attachment-item {
+    flex: none;
   }
   .attachment-image {
+    display: block;
     padding: 0;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     overflow: hidden;
     background: var(--surface-2);
-    max-width: 100%;
-    min-width: 60px;
-    min-height: 60px;
+    min-width: 40px;
     cursor: zoom-in;
   }
   .attachment-image .attachment-image-thumb {
     display: block;
     width: 100%;
     height: 100%;
-    max-height: 320px;
     object-fit: cover;
   }
   .attachment-files {

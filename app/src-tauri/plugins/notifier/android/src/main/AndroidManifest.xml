@@ -18,6 +18,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 添付パネルの「最近の画像」: 写真アプリの画像を一覧する（実行時の許可は、パネルを初めて開いたときに求める）。
+         33 以上は READ_MEDIA_IMAGES（34 以上で部分的な許可があれば VISUAL_USER_SELECTED）、32 以下は READ_EXTERNAL_STORAGE -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <!-- 標準のカメラアプリを探せるようにする（Android 11 以降は宣言がないと resolveActivity が null になり、
          WebView の <input capture> がカメラを開かずにファイルの選択へ落ちる） -->

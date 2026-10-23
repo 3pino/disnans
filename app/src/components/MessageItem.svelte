@@ -169,7 +169,9 @@
   function onTouchStart(e: TouchEvent) {
     startPress(e);
     const t = e.touches[0];
-    swipeFrom = e.touches.length === 1 && t && canSwipe ? { x: t.clientX, y: t.clientY } : null;
+    // 画像の行の上では、横の動きは行の横スクロールに譲る（返信のスワイプにしない）
+    const inImageRow = e.target instanceof Element && !!e.target.closest('.attachment-images');
+    swipeFrom = e.touches.length === 1 && t && canSwipe && !inImageRow ? { x: t.clientX, y: t.clientY } : null;
     swipeAxisNow = null;
     dragDx = 0;
     swiping = false;

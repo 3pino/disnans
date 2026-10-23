@@ -3,6 +3,8 @@ package dev.disnans.notifier
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
@@ -48,6 +50,16 @@ class StartCallArgs {
 }
 
 @InvokeArg
+class RecentImagesArgs {
+  var limit: Int = 20
+}
+
+@InvokeArg
+class ReadImageArgs {
+  lateinit var id: String
+}
+
+@InvokeArg
 class SetAudioOutputArgs {
   lateinit var id: String
 }
@@ -69,7 +81,12 @@ class LogCallArgs {
 
 @TauriPlugin(
   permissions = [
-    Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = "notifications")
+    Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = "notifications"),
+    // 最近の画像（写真アプリの一覧）。33 以上は READ_MEDIA_IMAGES、34 以上の部分的な許可は VISUAL_USER_SELECTED、
+    // 32 以下は READ_EXTERNAL_STORAGE。文字列で書く（コンパイルの SDK の版に依らない）
+    Permission(strings = ["android.permission.READ_MEDIA_IMAGES"], alias = "media"),
+    Permission(strings = ["android.permission.READ_MEDIA_VISUAL_USER_SELECTED"], alias = "visual"),
+    Permission(strings = ["android.permission.READ_EXTERNAL_STORAGE"], alias = "storage")
   ]
 )
 class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
@@ -250,6 +267,126 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     val ret = JSObject()
     ret.put("shares", arr)
     invoke.resolve(ret)
+  }
+
+  // ---- 最近の画像（添付パネル）。権限は初回のパネルで求め、拒否なら空の一覧 ----
+
+  private val mediaExecutor by lazy { Executors.newSingleThreadExecutor() }
+
+  /** 写真の読み取りの状態。granted / limited（部分的な許可）/ denied */
+  private fun photoPermission(): String {
+    if (Build.VERSION.SDK_INT >= 33) {
+      return when {
+        getPermissionState("media") == PermissionState.GRANTED -> "granted"
+        Build.VERSION.SDK_INT >= 34 && getPermissionState("visual") == PermissionState.GRANTED -> "limited"
+        else -> "denied"
+      }
+    }
+    return if (getPermissionState("storage") == PermissionState.GRANTED) "granted" else "denied"
+  }
+
+  private fun permissionObject(): JSObject {
+    val ret = JSObject()
+    ret.put("permission", photoPermission())
+    return ret
+  }
+
+  /** 新しい写真の一覧。許可が無ければ空（ダイアログは出さない） */
+  @Command
+  fun recentImages(invoke: Invoke) {
+    val args = invoke.parseArgs(RecentImagesArgs::class.java)
+    val permission = photoPermission()
+    if (permission == "denied") {
+      val ret = JSObject()
+      ret.put("permission", permission)
+      ret.put("images", JSArray())
+      invoke.resolve(ret)
+      return
+    }
+    val limit = args.limit.coerceIn(1, 60)
+    mediaExecutor.execute {
+      try {
+        val arr = JSArray()
+        for (item in RecentImages.list(activity, limit)) arr.put(item)
+        val ret = JSObject()
+        ret.put("permission", permission)
+        ret.put("images", arr)
+        activity.runOnUiThread { invoke.resolve(ret) }
+      } catch (ex: Exception) {
+        activity.runOnUiThread { invoke.reject(ex.message ?: "一覧を作れませんでした") }
+      }
+    }
+  }
+
+  /** 許可を求める（JS は初回のパネルを開いたときだけ呼ぶ）。結果の permission を返す */
+  @Command
+  fun requestRecentImagesPermission(invoke: Invoke) {
+    if (photoPermission() != "denied") {
+      invoke.resolve(permissionObject())
+      return
+    }
+    val alias = if (Build.VERSION.SDK_INT >= 33) "media" else "storage"
+    requestPermissionForAlias(alias, invoke, "recentImagesPermissionCallback")
+  }
+
+  @PermissionCallback
+  private fun recentImagesPermissionCallback(invoke: Invoke) {
+    invoke.resolve(permissionObject())
+  }
+
+  /** 写真 1 枚の本体（base64）。id は recentImages の id（content URI） */
+  @Command
+  fun readImage(invoke: Invoke) {
+    val args = invoke.parseArgs(ReadImageArgs::class.java)
+    if (photoPermission() == "denied") {
+      invoke.reject("写真へのアクセスが許可されていません", "denied")
+      return
+    }
+    mediaExecutor.execute {
+      try {
+        val ret = RecentImages.read(activity, args.id)
+        activity.runOnUiThread { invoke.resolve(ret) }
+      } catch (ex: Exception) {
+        activity.runOnUiThread { invoke.reject(ex.message ?: "読めませんでした") }
+      }
+    }
+  }
+
+  /**
+   * クリップボードの画像（前面のときだけ読める）。画像が無ければ null（`resolve()` は JS の null）。
+   * 画像の URI（image/* と分かるもの）を、写真と同じ上限で読む。
+   */
+  @Command
+  fun clipboardImage(invoke: Invoke) {
+    val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    val clip = clipboard?.primaryClip
+    var found: Uri? = null
+    var foundMime = ""
+    if (clip != null) {
+      for (i in 0 until clip.itemCount) {
+        val candidate = clip.getItemAt(i).uri ?: continue
+        val type = activity.contentResolver.getType(candidate) ?: continue
+        if (type.startsWith("image/")) {
+          found = candidate
+          foundMime = type
+          break
+        }
+      }
+    }
+    val uri = found
+    if (uri == null) {
+      invoke.resolve()
+      return
+    }
+    val mime = foundMime
+    mediaExecutor.execute {
+      try {
+        val ret = RecentImages.clipboard(activity, uri, mime)
+        activity.runOnUiThread { invoke.resolve(ret) }
+      } catch (ex: Exception) {
+        activity.runOnUiThread { invoke.reject(ex.message ?: "読めませんでした") }
+      }
+    }
   }
 
   companion object {
