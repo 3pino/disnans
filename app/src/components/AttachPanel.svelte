@@ -2,11 +2,15 @@
   import Camera from '@lucide/svelte/icons/camera';
   import ImageIcon from '@lucide/svelte/icons/image';
   import Paperclip from '@lucide/svelte/icons/paperclip';
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import X from '@lucide/svelte/icons/x';
   import Button from './ui/Button.svelte';
   import RecentThumb from './RecentThumb.svelte';
   import IconButton from './ui/IconButton.svelte';
+  import { untrack } from 'svelte';
   import {
+    RECENT_IMAGE_COUNT,
+    RECENT_IMAGE_COUNT_WIDE,
     listRecentImages,
     permissionNotice,
     requestRecentImagesPermission,
@@ -15,6 +19,7 @@
   } from '../lib/recentImages';
   import { hasAskedRecentImages, markAskedRecentImages } from '../lib/recentImagesNative';
   import { readClipboardImage } from '../lib/clipboardImage';
+  import { ui } from '../lib/stores/ui.svelte';
 
   // 入力欄の上に出す「ファイルを追加」パネル。ボタンは入力欄（Composer）の隠しの入力を開く。見た目は仮
   let {
@@ -56,9 +61,16 @@
 
   let recent = $state<RecentImage[]>([]);
   let permission = $state<RecentPermission>('granted');
+  /** 一覧を読めなかった（空とは区別して出す） */
+  let failed = $state(false);
+  /** 再試行の回数（増えると読み直す） */
+  let attempt = $state(0);
   const notice = $derived(permissionNotice(permission));
   $effect(() => {
+    void attempt;
     let alive = true;
+    // 開いた時点の画面の幅で件数を決める（幅が変わっても読み直さない）
+    const count = untrack(() => (ui.isMobile ? RECENT_IMAGE_COUNT : RECENT_IMAGE_COUNT_WIDE));
     void (async () => {
       // 初回のパネルを開いたときだけ、写真の許可を求める（ダイアログが出うる）。失敗しても一覧は読む
       if (!hasAskedRecentImages()) {
@@ -66,13 +78,17 @@
         await requestRecentImagesPermission().catch((e: unknown) => console.warn('写真の許可を求められませんでした', e));
       }
       try {
-        const res = await listRecentImages();
+        const res = await listRecentImages(count);
         if (!alive) return;
         recent = res.images;
         permission = res.permission;
+        failed = false;
       } catch (e) {
         console.warn('最近の画像を読めませんでした', e);
-        if (alive) recent = [];
+        if (alive) {
+          recent = [];
+          failed = true;
+        }
       }
     })();
     return () => {
@@ -106,7 +122,12 @@
         <RecentThumb {image} />
       </button>
     {/each}
-    {#if !clip && recent.length === 0 && !notice}
+    {#if failed}
+      <div class="attach-panel-empty attach-panel-error" role="alert">
+        <p>最近の画像を読み込めませんでした</p>
+        <Button icon={RefreshCw} onclick={() => attempt++}>再試行</Button>
+      </div>
+    {:else if !clip && recent.length === 0 && !notice}
       <p class="muted attach-panel-empty">最近の画像はありません</p>
     {/if}
   </div>
@@ -142,6 +163,14 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--space-2);
   }
+  /* 広い画面: サムネイルは小さめにして多く見せ、高さは画面の半分まで（中で送る） */
+  @media (min-width: 768px) {
+    .attach-panel-recent {
+      grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+      max-height: 50vh;
+      overflow-y: auto;
+    }
+  }
   .attach-panel-recent-item {
     padding: 0;
     border: 1px solid var(--border);
@@ -163,5 +192,16 @@
   }
   .attach-panel-empty {
     grid-column: 1 / -1;
+  }
+  .attach-panel-error {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    font-size: var(--fs-sm);
+    color: var(--danger);
+  }
+  .attach-panel-error p {
+    margin: 0;
   }
 </style>

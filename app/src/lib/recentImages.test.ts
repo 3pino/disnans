@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { listRecentImages, permissionNotice, RECENT_IMAGE_COUNT, requestRecentImagesPermission, setRecentImageSource } from './recentImages';
+import {
+  listRecentImages,
+  permissionNotice,
+  RECENT_IMAGE_COUNT,
+  RECENT_IMAGE_COUNT_WIDE,
+  requestRecentImagesPermission,
+  setRecentImageSource,
+} from './recentImages';
 import { base64ToBytes, nativeRecentImageSource, toRecentImage, type RecentImageInfo } from './recentImagesNative';
 
 afterEach(() => setRecentImageSource(null));
@@ -35,6 +42,17 @@ describe('最近の画像（出どころ）', () => {
     expect(res.images.map((i) => i.id)).toEqual(['a']);
     expect(seen).toEqual([RECENT_IMAGE_COUNT]);
     expect(await requestRecentImagesPermission()).toBe('limited');
+  });
+
+  it('件数は呼び出し側が指定できる（広い画面は多めに出す）', async () => {
+    const seen: number[] = [];
+    setRecentImageSource({
+      list: async (limit) => (seen.push(limit), { permission: 'granted', images: [] }),
+      requestPermission: async () => 'granted',
+    });
+    await listRecentImages(RECENT_IMAGE_COUNT_WIDE);
+    expect(seen).toEqual([RECENT_IMAGE_COUNT_WIDE]);
+    expect(RECENT_IMAGE_COUNT_WIDE).toBeGreaterThan(RECENT_IMAGE_COUNT);
   });
 });
 
