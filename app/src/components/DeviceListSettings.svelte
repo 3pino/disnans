@@ -74,7 +74,7 @@
 
   {#each deviceList.items as d (d.device_id)}
     {@const self = deviceList.isSelf(d.device_id)}
-    <SettingRow name={d.name} description={meta(d)} class="device-list-settings-row">
+    <SettingRow name={d.name} description={meta(d)} descriptionBelow class="device-list-settings-row">
       {#snippet control()}
         <div class="device-list-settings-controls">
           <TextInput

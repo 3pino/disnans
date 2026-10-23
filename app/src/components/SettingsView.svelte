@@ -343,7 +343,7 @@
               </select>
             {/snippet}
           </SettingRow>
-          <SettingRow name="ナビゲーションバーを隠す" description="画面の下端からスワイプすると一時的に表示します" class="settings-hide-nav-bar-row">
+          <SettingRow name="ナビゲーションバーを隠す" description="画面の下端からスワイプすると一時的に表示します" descriptionBelow class="settings-hide-nav-bar-row">
             {#snippet control()}
               <Toggle checked={ui.hideNavigationBar} label="ナビゲーションバーを隠す" onchange={(on) => ui.setHideNavigationBar(on)} />
             {/snippet}
