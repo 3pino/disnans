@@ -102,6 +102,28 @@
   overflow: hidden;
   background: var(--surface);
 }
+/* 送信中の自分のカメラ（確認用）。音は無く、枠の中に収める */
+.screenshare-self {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.screenshare-self[hidden] {
+  display: none;
+}
+.screenshare-self-label {
+  font-size: var(--fs-xs, 12px);
+  color: var(--text-muted);
+}
+.screenshare-self-video {
+  width: 100%;
+  max-height: min(30vh, 240px);
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: #000;
+}
 .screenshare-panel-bar {
   display: flex;
   align-items: center;

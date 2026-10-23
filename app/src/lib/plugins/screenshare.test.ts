@@ -562,6 +562,8 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,/9j/QUJDRA==');
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  // 自分のカメラの枠を外すときの pause（jsdom は未実装で、stderr に出るため）
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
   Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', { configurable: true, get: () => 1920 });
   Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', { configurable: true, get: () => 1080 });
 });
@@ -1172,5 +1174,102 @@ describe('examples/screenshare', () => {
     expect(s.panel.visible).toBe(false);
     s.r.stop();
     expect(s.panel.remove).toHaveBeenCalled();
+  });
+
+  it('カメラを送っているあいだは、自分のカメラを確認の枠に出し、止めたら外す（新しい取得はしない）', async () => {
+    const s = await setup({ display: true, camera: true });
+    const wrap = s.panel.el.querySelector<HTMLElement>('.screenshare-self')!;
+    const video = s.panel.el.querySelector<HTMLVideoElement>('.screenshare-self-video')!;
+    expect(wrap.hidden).toBe(true);
+    expect(s.panel.visible).toBe(false);
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(video.srcObject).toBe(s.fs.stream);
+    expect(video.muted).toBe(true);
+    expect(wrap.hidden).toBe(false);
+    expect(s.panel.visible).toBe(true);
+    // 取得は 1 回だけ（確認の枠は同じ MediaStream を渡すだけ）
+    expect(s.getUserMedia).toHaveBeenCalledOnce();
+    s.cameraButton()!.onClick();
+    expect(video.srcObject).toBeNull();
+    expect(wrap.hidden).toBe(true);
+    expect(s.panel.visible).toBe(false);
+    s.r.stop();
+  });
+
+  it('画面の共有では自分の枠を出さない。通話を抜けたら、カメラの枠も外す', async () => {
+    const s = await setup({ display: true, camera: true });
+    const wrap = s.panel.el.querySelector<HTMLElement>('.screenshare-self')!;
+    const video = s.panel.el.querySelector<HTMLVideoElement>('.screenshare-self-video')!;
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(wrap.hidden).toBe(true);
+    expect(video.srcObject).toBeFalsy();
+    s.button()!.onClick();
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(wrap.hidden).toBe(false);
+    s.call.joined = false;
+    s.changed();
+    expect(video.srcObject).toBeNull();
+    expect(wrap.hidden).toBe(true);
+    s.r.stop();
+  });
+
+  it('プラグインを外したら、カメラの枠の映像も手放す', async () => {
+    const s = await setup({ display: false, camera: true });
+    const video = s.panel.el.querySelector<HTMLVideoElement>('.screenshare-self-video')!;
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(video.srcObject).toBe(s.fs.stream);
+    s.r.stop();
+    expect(video.srcObject).toBeNull();
+    expect(s.fs.track.stop).toHaveBeenCalled();
+  });
+
+  it('古い取り込みが終わらなくても、切り替えた新しい共有は最初のフレームを送る', async () => {
+    // 取り込みが返らない（ImageCapture の grabFrame が待ったまま）状態を作る
+    const hang = vi.fn(() => new Promise<never>(() => {}));
+    vi.stubGlobal(
+      'ImageCapture',
+      class {
+        grabFrame = hang;
+        constructor(_track: unknown) {}
+      },
+    );
+    try {
+      const s = await setup({ display: false, camera: true });
+      const blank = { drawImage: () => {}, getImageData: () => ({ data: new Uint8ClampedArray(64 * 36 * 4) }) };
+      const opaque = { drawImage: () => {}, getImageData: () => ({ data: new Uint8ClampedArray(64 * 36 * 4).fill(255) }) };
+      vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(blank as never);
+      s.cameraButton()!.onClick();
+      // 映像が空のまま 5 秒たつと ImageCapture に替え、その取り込みで止まる
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(hang).toHaveBeenCalled();
+      expect(emitted(s.call, 'screen.frame')).toHaveLength(0);
+      // 止めて、取り込めるようにしてから、もう一度始める
+      s.cameraButton()!.onClick();
+      vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(opaque as never);
+      s.cameraButton()!.onClick();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(emitted(s.call, 'screen.frame').length).toBeGreaterThan(0);
+      s.r.stop();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('カメラの映像が取れないときの知らせは「カメラ」と言う', async () => {
+    const s = await setup({ display: false, camera: true });
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue({
+      drawImage: () => {},
+      getImageData: () => ({ data: new Uint8ClampedArray(64 * 36 * 4) }),
+    } as never);
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(s.toast).toHaveBeenCalledOnce();
+    expect(s.toast.mock.calls[0][0]).toContain('カメラの映像を取り込めない');
+    expect(s.toast.mock.calls[0][0]).not.toContain('画面');
+    s.r.stop();
   });
 });

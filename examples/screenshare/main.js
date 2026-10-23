@@ -952,8 +952,14 @@ export default class ScreenSharePlugin extends Plugin {
   diffCanvas = null;
   /** @type {ReturnType<typeof setTimeout> | null} */
   timer = null;
-  /** フレームの処理の途中（非同期の取り込みを待っている） */
+  /** フレームの処理の途中（非同期の取り込みを待っている）。古いセッションの処理が終わるのを新しい開始は待たない（tickSeq で見る） */
   ticking = false;
+  /** ticking の処理を始めたセッション（shareSeq） */
+  tickSeq = -1;
+  /** 自分のカメラの表示（送信中のカメラだけ。同じ MediaStream を渡すだけで、取得はしない） */
+  selfWrap = /** @type {HTMLElement | null} */ (null);
+  /** @type {HTMLVideoElement | null} */
+  selfVideo = null;
   frameId = 0;
   lastHeartbeat = 0;
   lastSentAt = 0;
@@ -1088,6 +1094,9 @@ export default class ScreenSharePlugin extends Plugin {
       this.closeViewer();
       this.stopWebPip();
       this.panelStage?.destroy();
+      if (this.selfVideo) this.selfVideo.srcObject = null;
+      this.selfWrap = null;
+      this.selfVideo = null;
       this.panel?.remove();
       this.panel = null;
     });
@@ -1317,6 +1326,7 @@ export default class ScreenSharePlugin extends Plugin {
     else this.button?.update({ label: '共有を止める', icon: 'monitor-off', active: true });
     this.sendState(true);
     this.renderStatus();
+    this.syncSelfPreview();
   }
 
   /**
@@ -1350,6 +1360,7 @@ export default class ScreenSharePlugin extends Plugin {
     this.canvas = null;
     this.diffCanvas = null;
     this.lastDiffData = null;
+    this.syncSelfPreview();
     if (!was) return;
     if (this.source === 'camera') this.cameraButton?.update({ label: 'カメラを共有', icon: 'video', active: false });
     else this.button?.update({ label: '画面を共有', icon: 'monitor-up', active: false });
@@ -1378,15 +1389,21 @@ export default class ScreenSharePlugin extends Plugin {
     this.timer = setTimeout(() => void this.frameTick(), Math.max(0, delay));
   }
 
+  /** 今のセッションの 1 フレームぶんの処理が進行中か（古いセッションの処理は数えない） */
+  inFlight() {
+    return this.ticking && this.tickSeq === this.shareSeq;
+  }
+
   /** 1 フレームぶんの処理。次の呼び出しを自分で予約する */
   async frameTick() {
     this.timer = null;
-    if (!this.sharing || this.ticking) return;
+    if (!this.sharing || this.inFlight()) return;
     const seq = this.shareSeq;
     const t0 = performance.now();
     /** @type {number} */
     let delay;
     this.ticking = true;
+    this.tickSeq = seq;
     try {
       if (!this.call.joined) {
         this.stopShare(false);
@@ -1399,11 +1416,13 @@ export default class ScreenSharePlugin extends Plugin {
     } catch (e) {
       if (seq !== this.shareSeq) return;
       console.error('[screenshare] フレームの送信に失敗', e);
+      const what = sourceLabel(this.source);
       this.stopShare(true);
-      ui.toast(`画面共有を止めました（${describeError(e)}）`, 'error');
+      ui.toast(`${what}共有を止めました（${describeError(e)}）`, 'error');
       return;
     } finally {
-      this.ticking = false;
+      // 別のセッションの処理が始まっていたら、その印は消さない
+      if (this.tickSeq === seq) this.ticking = false;
     }
     if (seq !== this.shareSeq || !this.sharing) return;
     if (this.timer === null) this.timer = setTimeout(() => void this.frameTick(), Math.max(0, delay - (performance.now() - t0)));
@@ -1452,7 +1471,7 @@ export default class ScreenSharePlugin extends Plugin {
     } catch {
       // 読めなくてもよい
     }
-    console.error('[screenshare] 画面の映像を取り込めません', {
+    console.error(`[screenshare] ${sourceLabel(this.source)}の映像を取り込めません`, {
       why,
       readyState: v?.readyState,
       videoWidth: v?.videoWidth,
@@ -1460,7 +1479,7 @@ export default class ScreenSharePlugin extends Plugin {
       track: track && { label: track.label, readyState: track.readyState, muted: track.muted, enabled: track.enabled },
       settings,
     });
-    ui.toast(`画面の映像を取り込めないため、相手には映っていません（${why}）。共有を止めて、もう一度試してください`, 'error');
+    ui.toast(`${sourceLabel(this.source)}の映像を取り込めないため、相手には映っていません（${why}）。共有を止めて、もう一度試してください`, 'error');
   }
 
   /**
@@ -1564,7 +1583,7 @@ export default class ScreenSharePlugin extends Plugin {
     this.sendState(true);
     if (this.backend === 'web') {
       this.audienceKey = '';
-      if (!this.ticking) this.scheduleTick(0);
+      if (!this.inFlight()) this.scheduleTick(0);
     } else if (this.backend === 'native' && this.lastNative && hasAudience(this.call.participants)) {
       this.audienceKey = '';
       this.pendingNative = this.lastNative;
@@ -1885,10 +1904,25 @@ export default class ScreenSharePlugin extends Plugin {
     const panel = this.call.addPanel({ label: '画面共有' });
     this.panel = panel;
     panel.el.classList.add('screenshare-panel');
+    // 送信中の自分のカメラ（確認用。音は無く、muted のまま。取得は本体の取り込みと同じ MediaStream）
+    const selfWrap = document.createElement('div');
+    selfWrap.className = 'screenshare-self';
+    selfWrap.hidden = true;
+    const selfLabel = document.createElement('div');
+    selfLabel.className = 'screenshare-self-label';
+    selfLabel.textContent = '自分のカメラ（送信中）';
+    const selfVideo = document.createElement('video');
+    selfVideo.className = 'screenshare-self-video';
+    selfVideo.muted = true;
+    selfVideo.playsInline = true;
+    selfVideo.setAttribute('aria-label', '自分のカメラ（送信中）');
+    selfWrap.append(selfLabel, selfVideo);
+    this.selfWrap = selfWrap;
+    this.selfVideo = selfVideo;
     const bar = document.createElement('div');
     bar.className = 'screenshare-panel-bar';
     const stage = new ScreenStage({ embedded: true });
-    panel.el.append(bar, stage.el);
+    panel.el.append(selfWrap, bar, stage.el);
     this.panelBar = bar;
     this.panelStage = stage;
     // 通話の画面が開いたら、最新のフレームを出して大きさを測り直す
@@ -1897,6 +1931,38 @@ export default class ScreenSharePlugin extends Plugin {
         if (mounted) this.showPanelFrame();
       }),
     );
+  }
+
+  /** 領域を出すのは、見ている共有者がいるか、自分がカメラを送っているとき */
+  updatePanelVisible() {
+    this.panel?.setVisible(this.panelPeer !== null || this.selfShowing());
+  }
+
+  /** 自分のカメラを確認の枠に出すのは、カメラを送信中のとき（取得できた MediaStream があるときだけ） */
+  selfShowing() {
+    return this.sharing && this.source === 'camera' && this.stream !== null && this.call.joined;
+  }
+
+  /**
+   * 自分のカメラの確認の枠を、送信の状態に合わせる。
+   * 同じ MediaStream を別の <video> に渡すだけ（新しい取得はしない）。止まったら外して、映像を手放す
+   */
+  syncSelfPreview() {
+    const wrap = this.selfWrap;
+    const video = this.selfVideo;
+    if (!wrap || !video) return;
+    const show = this.selfShowing();
+    if (show) {
+      if (video.srcObject !== this.stream) {
+        video.srcObject = this.stream;
+        void Promise.resolve(video.play()).catch((e) => console.warn('[screenshare] 自分のカメラを再生できません', e));
+      }
+    } else if (video.srcObject) {
+      video.pause();
+      video.srcObject = null;
+    }
+    wrap.hidden = !show;
+    this.updatePanelVisible();
   }
 
   /** 通話の画面の領域を、共有者に合わせて作り直す */
@@ -1909,7 +1975,7 @@ export default class ScreenSharePlugin extends Plugin {
       this.panelPeer = first.done ? null : first.value;
       this.panelStage?.reset();
     }
-    panel.setVisible(this.panelPeer !== null);
+    this.updatePanelVisible();
     bar.replaceChildren();
     if (this.panelPeer === null) return;
     const tabs = document.createElement('div');
