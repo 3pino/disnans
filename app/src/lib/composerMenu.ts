@@ -220,6 +220,11 @@ export function addComposerMenuCommand(prefs: ComposerMenuPrefs, available: Comp
   return { order: orderWith(available, prefs, ids), hidden: prefs.hidden.filter((x) => x !== id) };
 }
 
+/** 「＋」メニューから外せるか（外せるのはコマンドだけ。本体・アクションは出す・出さないの切り替えだけ） */
+export function composerMenuRemovable(entry: ComposerMenuEntry): boolean {
+  return entry.kind === 'command';
+}
+
 /** 項目を「＋」メニューから外す（並び順と非表示の印から消す） */
 export function removeComposerMenuEntry(prefs: ComposerMenuPrefs, id: string): ComposerMenuPrefs {
   return { order: prefs.order.filter((x) => x !== id), hidden: prefs.hidden.filter((x) => x !== id) };

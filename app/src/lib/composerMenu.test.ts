@@ -4,6 +4,7 @@ import {
   CALL_JOIN_COMMAND_ID,
   TAKE_PHOTO_COMMAND_ID,
   addComposerMenuCommand,
+  composerMenuRemovable,
   composerMenuAvailable,
   composerMenuItems,
   migrateComposerMenu,
@@ -237,5 +238,13 @@ describe('migrateComposerMenu（本体の写真を撮る → 写真を撮るコ�
 
   it('「＋」メニューに本体の「写真を撮る」は出ない', () => {
     expect(composerMenuAvailable(() => {}).map((x) => x.id)).not.toContain('builtin:camera');
+  });
+});
+
+describe('composerMenuRemovable（「＋」メニューで外せるか）', () => {
+  it('コマンドは外せる。本体・アクションは出す・出さないだけ（外せない）', () => {
+    expect(composerMenuRemovable({ id: 'cmd:x', kind: 'command', label: 'x' })).toBe(true);
+    expect(composerMenuRemovable({ id: 'builtin:file', kind: 'builtin', label: 'f' })).toBe(false);
+    expect(composerMenuRemovable({ id: 'action:y', kind: 'action', label: 'y' })).toBe(false);
   });
 });

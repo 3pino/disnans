@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { dropSlot, finalPositions, moveItem, slotToIndex } from './sortable';
+import {
+  REVEAL_PX,
+  TOUCH_DRAG_HOLD_MS,
+  dropSlot,
+  finalPositions,
+  keyMoveTarget,
+  moveItem,
+  revealAfterEnd,
+  rowGesture,
+  sameIdOrder,
+  slotToIndex,
+} from './sortable';
 
 describe('dropSlot', () => {
   const rows = [
@@ -69,5 +80,97 @@ describe('finalPositions', () => {
         pos.forEach((p, k) => expect(moved[p]).toBe(String(k)));
       }
     }
+  });
+});
+
+describe('rowGesture（行の指の動きで何を始めるか）', () => {
+  it('8px に届くまでは決めない（小さな揺れ）', () => {
+    expect(rowGesture('mouse', 3, 4, false)).toBeNull();
+    expect(rowGesture('touch', -7, 0, false)).toBeNull();
+  });
+
+  it('マウス・ペンは、縦に動けば並べ替え', () => {
+    expect(rowGesture('mouse', 0, 12, false)).toBe('drag');
+    expect(rowGesture('pen', 2, -20, false)).toBe('drag');
+  });
+
+  it('タッチは、長押しの前の縦はページのスクロール。長押しのあとは並べ替え', () => {
+    expect(rowGesture('touch', 0, 12, false)).toBe('scroll');
+    expect(rowGesture('touch', 0, 12, true)).toBe('drag');
+  });
+
+  it('左への横の動きは削除のスワイプ（タッチも、マウスも）', () => {
+    expect(rowGesture('touch', -30, 2, false)).toBe('swipe');
+    expect(rowGesture('mouse', -30, 2, false)).toBe('swipe');
+  });
+
+  it('右への横の動きは何もしない（縦が強ければ縦として扱う）', () => {
+    expect(rowGesture('mouse', 30, 2, false)).toBe('ignore');
+    expect(rowGesture('mouse', 10, 30, false)).toBe('drag');
+  });
+
+  it('横の判定は、縦より横が大きいとき（斜めは縦）', () => {
+    expect(rowGesture('mouse', -10, -10, false)).toBe('drag');
+  });
+});
+
+describe('タッチの長押しと削除ボタン', () => {
+  it('長押しの時間と削除ボタンの幅は、既定の値（変えたら設計に理由を書く）', () => {
+    expect(TOUCH_DRAG_HOLD_MS).toBe(400);
+    expect(REVEAL_PX).toBe(88);
+  });
+});
+
+describe('keyMoveTarget（上下キー・Home・End）', () => {
+  it('上下キーは一つずつ、Home・End は端へ', () => {
+    expect(keyMoveTarget('ArrowDown', 1, 4)).toBe(2);
+    expect(keyMoveTarget('ArrowUp', 2, 4)).toBe(1);
+    expect(keyMoveTarget('Home', 2, 4)).toBe(0);
+    expect(keyMoveTarget('End', 1, 4)).toBe(3);
+  });
+
+  it('端では動かさない（null）。同じ位置へも動かさない', () => {
+    expect(keyMoveTarget('ArrowUp', 0, 4)).toBeNull();
+    expect(keyMoveTarget('ArrowDown', 3, 4)).toBeNull();
+    expect(keyMoveTarget('Home', 0, 4)).toBeNull();
+    expect(keyMoveTarget('End', 3, 4)).toBeNull();
+  });
+
+  it('ほかのキーでは動かさない（Enter・Space・文字など）', () => {
+    for (const key of ['Enter', ' ', 'a', 'Tab']) expect(keyMoveTarget(key, 1, 4)).toBeNull();
+  });
+
+  it('項目が一つ以下なら何も動かさない', () => {
+    expect(keyMoveTarget('ArrowDown', 0, 1)).toBeNull();
+    expect(keyMoveTarget('End', 0, 0)).toBeNull();
+  });
+});
+
+describe('revealAfterEnd（指を離したあと、削除ボタンを出すか）', () => {
+  it('しきい値を超えて離したら出す。届かなければ出さない', () => {
+    expect(revealAfterEnd(-60, false)).toBe(true);
+    expect(revealAfterEnd(-59, false)).toBe(false);
+    expect(revealAfterEnd(0, false)).toBe(false);
+  });
+
+  it('取り消し（pointercancel など）では、しきい値を超えていても出さない', () => {
+    expect(revealAfterEnd(-120, true)).toBe(false);
+  });
+
+  it('右への動きでは出さない', () => {
+    expect(revealAfterEnd(80, false)).toBe(false);
+  });
+});
+
+describe('sameIdOrder（並びの変化を見つける）', () => {
+  it('同じ ID の同じ順なら同じ', () => {
+    expect(sameIdOrder(['a', 'b'], ['a', 'b'])).toBe(true);
+    expect(sameIdOrder([], [])).toBe(true);
+  });
+
+  it('順が違う・増減・ID が違うなら違う', () => {
+    expect(sameIdOrder(['a', 'b'], ['b', 'a'])).toBe(false);
+    expect(sameIdOrder(['a', 'b'], ['a'])).toBe(false);
+    expect(sameIdOrder(['a', 'b'], ['a', 'c'])).toBe(false);
   });
 });

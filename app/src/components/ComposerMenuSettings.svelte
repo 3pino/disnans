@@ -14,6 +14,7 @@
     addComposerMenuCommand,
     composerMenuAvailable,
     composerMenuItems,
+    composerMenuRemovable,
     removeComposerMenuEntry,
     reorderComposerMenuEntry,
     setComposerMenuHidden,
@@ -21,7 +22,7 @@
   import { prefs } from '../lib/stores/prefs.svelte';
 
   // 設定の「＋メニュー」: 入力欄の「＋」を押したときに出す項目を、並べ替え・表示の切り替え・コマンドの追加で決める。
-  // 並べ替えは共通の SortableList（左のつまみをドラッグ。つまみにフォーカスして上下キーでも動かせる）。
+  // 並べ替えは共通の SortableList（行をドラッグ。行にフォーカスして上下キーでも動かせる。コマンドは左へスワイプで削除）。
   // 保存はサーバー（prefs）で、同じユーザーのデバイスで共有する。削除したプラグインの項目は、出ないだけで設定には残る
 
   let pickerOpen = $state(false);
@@ -52,11 +53,19 @@
 
 <Section title="＋メニュー" class="composer-menu-settings">
   <p class="muted composer-menu-settings-note">
-    入力欄の「＋」を押したときに出す項目です。左のつまみをドラッグして並べ替えられます（つまみにフォーカスして上下キーでも動かせます）。
-    出さない項目は右の切り替えで外し、追加したコマンドは × で外します。この設定はほかのデバイスとも共有されます
+    入力欄の「＋」を押したときに出す項目です。行をドラッグして並べ替えられます（タッチは押したまま動かします。行を選んで上下キーでも動かせます）。
+    出さない項目は右の切り替えで外します。追加したコマンドは、左へスワイプして「削除」か、× で外します。この設定はほかのデバイスとも共有されます
   </p>
 
-  <SortableList items={items} getId={(x) => x.entry.id} getLabel={(x) => x.entry.label} onmove={reorder} class="composer-menu-settings-list">
+  <SortableList
+    items={items}
+    getId={(x) => x.entry.id}
+    getLabel={(x) => x.entry.label}
+    onmove={reorder}
+    removable={(x) => composerMenuRemovable(x.entry)}
+    onremove={remove}
+    class="composer-menu-settings-list"
+  >
     {#snippet row(x)}
       <SettingRow
         name={x.entry.label}

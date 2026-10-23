@@ -12,11 +12,11 @@
   import SettingRow from './ui/SettingRow.svelte';
   import SortableList from './ui/SortableList.svelte';
   import { commandList, type AppCommand } from '../lib/commands.svelte';
-  import { addNavItem, DEFAULT_NAV_LABELS, NAV_REQUIRED_IDS, removeNavItem, reorderNavItem } from '../lib/navBar';
+  import { addNavItem, DEFAULT_NAV_LABELS, NAV_REQUIRED_IDS, navItemRemovable, removeNavItem, reorderNavItem } from '../lib/navBar';
   import { navBar } from '../lib/stores/navBar.svelte';
 
   // 設定の「ナビゲーションバー」: 出すコマンドを、並べ替え・追加・削除で決める。
-  // 並べ替えは共通の SortableList（左のつまみをドラッグ。つまみにフォーカスして上下キーでも動かせる）。
+  // 並べ替えは共通の SortableList（行をドラッグ。行にフォーカスして上下キーでも動かせる。左へスワイプで削除）。
   // 保存は同じアカウントのデバイスで共有する（ユーザーごとの設定）。チャットと設定は外せない（設定に戻れるように）
   // 表示名は項目ごとに入力欄で決める（空欄で保存するとコマンド名になる。入力欄を空のままにすると既定の名前）
 
@@ -55,7 +55,15 @@
     狭い画面では下、広い画面では左に出る項目です。並べ替えや、追加・削除ができます。チャットと設定は外せません。この設定は同じアカウントのデバイスで共有されます
   </p>
 
-  <SortableList items={shown} getId={(c) => c.id} getLabel={(c) => c.name} onmove={reorder} class="nav-bar-settings-list">
+  <SortableList
+    items={shown}
+    getId={(c) => c.id}
+    getLabel={(c) => c.name}
+    onmove={reorder}
+    removable={(c) => navItemRemovable(c.id)}
+    onremove={remove}
+    class="nav-bar-settings-list"
+  >
     {#snippet row(c)}
       <SettingRow name={c.name} description={c.source ?? '本体'} icon={c.icon ?? Puzzle}>
         {#snippet control()}

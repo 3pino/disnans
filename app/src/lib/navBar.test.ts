@@ -5,7 +5,9 @@ import {
   DEFAULT_NAV_LABELS,
   NAV_CALL_ID,
   NAV_CHAT_ID,
+  NAV_REQUIRED_IDS,
   NAV_SEARCH_ID,
+  navItemRemovable,
   NAV_SETTINGS_ID,
   NAV_REMOVED_IDS,
   navItemLabel,
@@ -93,5 +95,12 @@ describe('表示名', () => {
     expect(setNavLabel(base, NAV_CHAT_ID, '  会話 ')).toEqual({ [NAV_CALL_ID]: '通話', [NAV_CHAT_ID]: '会話' });
     expect(setNavLabel(base, NAV_CALL_ID, '   ')).toEqual({ [NAV_CALL_ID]: '' });
     expect(base).toEqual({ [NAV_CALL_ID]: '通話' });
+  });
+});
+
+describe('navItemRemovable（左スワイプ・× で外せるか）', () => {
+  it('必須（チャット・設定）は外せず、ほかは外せる（removeNavItem と同じ条件）', () => {
+    for (const id of NAV_REQUIRED_IDS) expect(navItemRemovable(id)).toBe(false);
+    expect(navItemRemovable(NAV_SEARCH_ID)).toBe(true);
   });
 });
