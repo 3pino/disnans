@@ -6,6 +6,7 @@
   import { authorOf } from '../lib/author';
   import { jumpToMessage } from '../lib/jump';
   import { mentionsToText } from '../lib/markdown';
+  import { attachmentsToText } from '../lib/fileLink';
 
   // 返信のメッセージの本文の上に出す、返信先の小さな引用。押すと元のメッセージまでスクロールする。
   // 返信先が削除されていれば、押せない「削除されたメッセージ」にする
@@ -14,7 +15,7 @@
   const preview = $derived(message.reply_preview);
   const author = $derived(preview ? authorOf(preview, client.users) : null);
   const text = $derived(
-    preview ? mentionsToText(preview.body, (id) => client.nameOf(id)) || (preview.has_attachments ? '[添付ファイル]' : '') : '',
+    preview ? mentionsToText(attachmentsToText(preview.body), (id) => client.nameOf(id)) || (preview.has_attachments ? '[添付ファイル]' : '') : '',
   );
 
   function open(e: MouseEvent) {

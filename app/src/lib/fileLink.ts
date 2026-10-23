@@ -85,3 +85,57 @@ export function attachmentActionText(e: unknown): string {
   const message = e instanceof Error ? e.message : String(e);
   return errorText(code, message);
 }
+
+/** 本文の中の添付のリンク（`attachments/` のもの。`[[attachments/名前|別名]]`・`![別名](attachments/名前)` など） */
+export type AttachmentRef = { start: number; end: number; name: string; alias: string | null; embed: boolean };
+
+const WIKI_LINK = /(!?)\[\[attachments\/([^\]|\r\n]+)(?:\|([^\]\r\n]*))?\]\]/g;
+const MD_LINK_HEAD = /(!?)\[([^\[\]\r\n]+)\]\(attachments\//g;
+
+/**
+ * 本文の中の添付のリンクを出現順に集める。括弧の対になる `)` までを名前とする（名前に `(2)` を含めるため）。
+ * コードの中も見るが、その分は本文の表示より多く拾うだけで、添付を取りこぼすことはない
+ */
+export function attachmentRefs(body: string): AttachmentRef[] {
+  const out: AttachmentRef[] = [];
+  for (const m of body.matchAll(WIKI_LINK)) {
+    out.push({ start: m.index, end: m.index + m[0].length, name: m[2], alias: m[3] || null, embed: m[1] === '!' });
+  }
+  for (const m of body.matchAll(MD_LINK_HEAD)) {
+    const from = m.index + m[0].length;
+    let depth = 0;
+    let i = from;
+    for (; i < body.length; i++) {
+      const c = body[i];
+      if (c === '\r' || c === '\n') break;
+      if (c === '(') depth++;
+      else if (c === ')') {
+        if (depth === 0) break;
+        depth--;
+      }
+    }
+    if (i >= body.length || body[i] !== ')') continue;
+    out.push({ start: m.index, end: i + 1, name: body.slice(from, i), alias: m[2], embed: m[1] === '!' });
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+/** 本文が参照している添付の名前（小文字）。この名前の添付は本文の中に出るので、別枠に出さない */
+export function bodyAttachmentNames(body: string): Set<string> {
+  return new Set(attachmentRefs(body).map((r) => r.name.toLowerCase()));
+}
+
+/**
+ * 返信先の要約などに使う、添付のリンクの文字。埋め込みの画像は「画像」、そのほかは別名か名前にする（リンクの書き方は消す）。
+ * `![[disnans:file/…]]`（送信の途中の書き方）は「添付」
+ */
+export function attachmentsToText(body: string): string {
+  let out = '';
+  let last = 0;
+  for (const r of attachmentRefs(body)) {
+    out += body.slice(last, r.start);
+    out += r.embed && isImage(r.name) ? '画像' : (r.alias ?? r.name);
+    last = r.end;
+  }
+  return (out + body.slice(last)).replace(/!\[\[disnans:file\/[^\]]*\]\]/g, '添付');
+}

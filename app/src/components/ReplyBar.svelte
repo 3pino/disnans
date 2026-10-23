@@ -7,6 +7,7 @@
   import { reply } from '../lib/stores/reply.svelte';
   import { authorOf } from '../lib/author';
   import { mentionsToText } from '../lib/markdown';
+  import { attachmentsToText } from '../lib/fileLink';
   import { replyPreviewOf } from '../lib/reply';
 
   // 入力欄の上に出す「返信先のアイコン 本文の冒頭 ×」のバー（名前は出さず、アイコンで相手を示す）
@@ -15,7 +16,7 @@
   const text = $derived.by(() => {
     if (!target) return '';
     const p = replyPreviewOf(target);
-    return mentionsToText(p.body, (id) => client.nameOf(id)) || (p.has_attachments ? '[添付ファイル]' : target.card ? target.card.title : '');
+    return mentionsToText(attachmentsToText(p.body), (id) => client.nameOf(id)) || (p.has_attachments ? '[添付ファイル]' : target.card ? target.card.title : '');
   });
 </script>
 

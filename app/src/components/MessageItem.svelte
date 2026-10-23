@@ -109,7 +109,8 @@
       ui.editing = null;
       return;
     }
-    if (!body && message.attachments.length === 0) {
+    // 添付は本文のリンクなので、本文が空になれば（リンクも消えれば）メッセージを消す
+    if (!body) {
       ui.editing = null;
       void removeMessage(message as Message);
       return;
@@ -317,7 +318,7 @@
             </div>
           {/if}
           {#if message.attachments.length > 0}
-            <Attachments attachments={message.attachments} />
+            <Attachments attachments={message.attachments} body={message.body} />
           {/if}
         {/if}
 
