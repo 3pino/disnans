@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import Button from './ui/Button.svelte';
   import IconButton from './ui/IconButton.svelte';
   import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
@@ -26,11 +25,11 @@
     return fmt.format(new Date(ms));
   }
 
+  /** 補足: このデバイスか、最後に使った日時（登録日時は出さない） */
   function meta(d: DeviceInfo): string {
     const parts: string[] = [];
     if (deviceList.isSelf(d.device_id)) parts.push('このデバイス');
-    parts.push(`登録 ${when(d.created_at)}`);
-    parts.push(`最後に使った ${when(d.last_seen_at)}`);
+    parts.push(`最終ログイン ${when(d.last_seen_at)}`);
     if (!d.has_prefs) parts.push('設定はまだありません');
     return parts.join(' · ');
   }
@@ -56,10 +55,6 @@
 </script>
 
 <Section title="デバイス" class="device-list-settings">
-  <p class="muted device-list-settings-note">
-    同じアカウントのデバイスです。設定はデバイスごとに保存されます。使わなくなったデバイスは削除できます。このデバイスは削除できません。
-  </p>
-
   {#if deviceList.error}
     <StatusLine kind="error" class="device-list-settings-error">{deviceList.error}</StatusLine>
   {/if}
@@ -92,12 +87,31 @@
             onchange={(e) => void rename(d, e.currentTarget.value)}
           />
           {#if !self}
-            <Button class="device-list-settings-delete" variant="danger" icon={Trash2} label="このデバイスを削除" disabled={busy} onclick={() => void remove(d)}>
-              削除
-            </Button>
+            <IconButton class="device-list-settings-delete" label="このデバイスを削除" disabled={busy} onclick={() => void remove(d)}>
+              <Trash2 size={16} />
+            </IconButton>
           {/if}
         </div>
       {/snippet}
     </SettingRow>
   {/each}
 </Section>
+
+<style>
+  /* 名前の入力と削除ボタンを 1 段に並べる。入力は小さめ */
+  .device-list-settings-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .device-list-settings-controls :global(.device-list-settings-name) {
+    width: 140px;
+    min-width: 0;
+    height: 30px;
+    padding: 0 var(--space-4);
+    font-size: var(--fs-sm);
+  }
+  .device-list-settings-controls :global(.device-list-settings-delete) {
+    flex: none;
+  }
+</style>

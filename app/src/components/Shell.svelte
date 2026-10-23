@@ -169,6 +169,9 @@
     inset: 0;
     z-index: 30;
     border: none;
+    /* 全画面のパネルは、ステータスバー・ノッチの分を、ここでまとめて空ける（中のヘッダーでは足さない） */
+    padding-top: env(safe-area-inset-top);
+    box-sizing: border-box;
     animation: slide 0.18s ease-out;
   }
   @keyframes slide {

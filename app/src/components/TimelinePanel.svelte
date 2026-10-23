@@ -103,7 +103,7 @@
   }
   @media (max-width: 767px) {
     .timeline-panel-header {
-      padding: calc(env(safe-area-inset-top) + var(--space-2)) var(--space-4) var(--space-2) var(--space-2);
+      padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
       height: auto;
       border-bottom: none;
     }

@@ -88,7 +88,6 @@
     { value: 'navBar', name: 'ナビゲーションバー' },
     { value: 'composerMenu', name: '＋メニュー' },
     { value: 'call', name: '通話' },
-    ...(isTauri() ? [{ value: 'devices' as const, name: 'デバイス' }] : []),
   ];
 
   const themes: { value: ThemePref; label: string; icon: typeof Sun }[] = [
@@ -403,6 +402,11 @@
           </p>
           {#if devUser}<p class="muted settings-small-text">開発ユーザー: {devUser}</p>{/if}
           {#if isTauri()}
+            <SettingRow name="デバイス" class="settings-operation-row" onclick={() => ui.openSettingsSub('devices')}>
+              {#snippet control()}
+                <span class="settings-operation-icon" aria-hidden="true"><Settings size={18} /></span>
+              {/snippet}
+            </SettingRow>
             <Button class="settings-change-server" onclick={changeServer}>サーバーを変更</Button>
           {/if}
         </Section>
