@@ -7,6 +7,7 @@ import { toPluginUser } from '../plugins/sessions';
 import { createCallApi } from './api';
 import { callSettings } from './settings.svelte';
 import { CallStore } from './store.svelte';
+import { viewTexts } from '../viewTexts';
 
 /** アプリの通話（シングルトン）。画面・コマンド・プラグイン API が使う */
 export const call = new CallStore({
@@ -27,7 +28,7 @@ export const call = new CallStore({
 /** プラグイン向けの disnans.call */
 export const callApi: Disnans.Call = createCallApi(call, (id) => {
   const u = client.user(id);
-  return u ? toPluginUser(u) : { id, login_name: '', display_name: '不明なユーザー', avatar_url: null };
+  return u ? toPluginUser(u) : { id, login_name: '', display_name: viewTexts.unknownUser, avatar_url: null };
 });
 
 let started = false;

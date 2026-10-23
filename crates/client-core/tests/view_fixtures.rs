@@ -183,3 +183,12 @@ fn tricky_inputs_never_panic_and_keep_the_text() {
         let _ = markdown::extract_mentions(input);
     }
 }
+
+#[test]
+fn unknown_user_name_matches_the_fixture() {
+    let file = load("texts.json");
+    assert_eq!(
+        json!(disnans_client_core::view::UNKNOWN_USER_NAME),
+        file["unknownUser"]
+    );
+}

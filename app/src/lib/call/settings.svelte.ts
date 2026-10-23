@@ -1,6 +1,6 @@
 import { prefs } from '../stores/prefs.svelte';
 import { deviceSettings } from '../stores/deviceSettings.svelte';
-import { DEFAULT_CALL_SETTINGS, parseCallSettings, type CallSettingsData } from './pure';
+import { DEFAULT_CALL_SETTINGS, type CallSettingsData } from './pure';
 import { CALL_DEVICE_KEYS, CALL_USER_KEYS } from '../settingsModel';
 
 // 通話の設定。機器によらない項目はユーザーごと（prefs）、入力・出力の機器はデバイスごと（deviceSettings）に保存する
@@ -42,7 +42,8 @@ export class CallSettings {
   /** いまの設定（保存済みの値に、動かしている途中の値を重ねたもの） */
   get value(): CallSettingsData {
     const d = this.src.device();
-    const saved = parseCallSettings({ ...this.src.user(), inputId: d.inputId, output: d.output });
+    // 値は Rust が正規化したもの（prefs・deviceSettings）。ここでは重ねるだけ
+    const saved: CallSettingsData = { ...DEFAULT_CALL_SETTINGS, ...this.src.user(), inputId: d.inputId, output: d.output as CallSettingsData['output'] };
     return { ...saved, ...this.draft };
   }
 

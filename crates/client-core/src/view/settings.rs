@@ -54,6 +54,8 @@ pub enum Kind {
     NavItems,
     /// ナビの表示名（`navBar.ts` の `normalizeNavLabels`）。文字列の値だけ、前後の空白を除く（空欄は残す）
     NavLabels,
+    /// 通話の出力先（`{id, kind, label}` の文字列の 3 つがそろったものだけ。それ以外は null）
+    AudioOutput,
 }
 
 /// 既定値
@@ -232,7 +234,7 @@ pub const DEFINITIONS: &[Def] = &[
     Def {
         key: "output",
         scope: Scope::Device,
-        kind: Kind::Any,
+        kind: Kind::AudioOutput,
         default: DefaultValue::Null,
     },
     Def {
@@ -350,6 +352,7 @@ pub fn normalize_value(def: &Def, value: Option<&Value>) -> Value {
         (Kind::ComposerMenu, Some(v)) => composer_menu(v),
         (Kind::NavItems, Some(v)) => nav_items(v),
         (Kind::NavLabels, Some(v)) => nav_labels(v),
+        (Kind::AudioOutput, Some(v)) => audio_output(v),
         (_, None) => fallback(),
         _ => fallback(),
     }
@@ -375,6 +378,19 @@ fn nav_items(raw: &Value) -> Value {
         }
     }
     Value::Array(out)
+}
+
+/// 出力先: `id`・`kind`・`label` が文字列のとき、その 3 つだけを残す。そろわなければ null（未選択と同じ）
+fn audio_output(raw: &Value) -> Value {
+    let Value::Object(map) = raw else {
+        return Value::Null;
+    };
+    match (map.get("id"), map.get("kind"), map.get("label")) {
+        (Some(Value::String(id)), Some(Value::String(kind)), Some(Value::String(label))) => {
+            serde_json::json!({"id": id, "kind": kind, "label": label})
+        }
+        _ => Value::Null,
+    }
 }
 
 /// `normalizeNavLabels`: オブジェクトでなければ空。文字列の値だけ残し、前後の空白を除く（空欄は「設定済み」なので残す）
@@ -559,6 +575,7 @@ fn kind_json(kind: Kind) -> Value {
         Kind::ComposerMenu => serde_json::json!({"type": "composerMenu"}),
         Kind::NavItems => serde_json::json!({"type": "navItems"}),
         Kind::NavLabels => serde_json::json!({"type": "navLabels"}),
+        Kind::AudioOutput => serde_json::json!({"type": "audioOutput"}),
     }
 }
 

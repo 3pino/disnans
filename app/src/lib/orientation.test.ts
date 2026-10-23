@@ -1,21 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_ORIENTATION, nativeOrientation, normalizeOrientationMode, orientationLock } from './orientation';
-
-describe('normalizeOrientationMode', () => {
-  it('読めない値は既定（自動回転）', () => {
-    expect(DEFAULT_ORIENTATION).toBe('auto');
-    expect(normalizeOrientationMode(null)).toBe('auto');
-    expect(normalizeOrientationMode(undefined)).toBe('auto');
-    expect(normalizeOrientationMode('landscape')).toBe('auto');
-    expect(normalizeOrientationMode('')).toBe('auto');
-  });
-
-  it('3 択はそのまま', () => {
-    expect(normalizeOrientationMode('portrait')).toBe('portrait');
-    expect(normalizeOrientationMode('media')).toBe('media');
-    expect(normalizeOrientationMode('auto')).toBe('auto');
-  });
-});
+import { nativeOrientation, orientationLock } from './orientation';
 
 describe('orientationLock', () => {
   it('自動回転は、全画面かどうかによらず回す', () => {

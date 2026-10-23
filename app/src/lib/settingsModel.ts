@@ -9,12 +9,11 @@
  * 以前の localStorage の値は、サーバーに無いときだけ一度取り込む（legacy*Values）。
  */
 
-import { DEFAULT_NAV_ITEMS, normalizeNavItems, normalizeNavLabels } from './navBar';
-import { DEFAULT_CALL_SETTINGS, parseCallSettings } from './call/pure';
+import { DEFAULT_NAV_ITEMS } from './navBar';
+import { DEFAULT_CALL_SETTINGS } from './call/pure';
 import { DEFAULT_ENTER_KEYS } from './enterKeys';
 import { DEFAULT_COMPOSER_MENU } from './composerMenu';
 import { DEFAULT_MESSAGE_LAYOUT } from './messageLayout';
-import { normalizeOrientationMode } from './orientation';
 
 export type Raw = Record<string, unknown>;
 
@@ -95,9 +94,6 @@ export const LEGACY = {
   pluginsDevDir: 'disnans.plugins.devDir',
 } as const;
 
-/** デバイスの種類（deviceKind.svelte.ts と同じ一覧） */
-const DEVICE_KIND_LIST = ['smartphone', 'tablet', 'laptop', 'monitor'];
-
 export type LegacyRead = (key: string) => string | null;
 
 /** 保存された JSON を読む。読めなければ undefined（無いのと同じ扱い） */
@@ -123,23 +119,20 @@ function legacyCall(read: LegacyRead): Raw | null {
 
 /**
  * 以前の localStorage から、ユーザー共通の値を読む（あったものだけ。無いものは含めない）。
- * 通話の値は parseCallSettings で範囲に収めてから入れる
+ * 値は型を見ずにそのまま入れる。保存のあとの表示は Rust が正規化する（段 E。TS では直さない）
  */
 export function legacyUserValues(read: LegacyRead): Raw {
   const out: Raw = {};
   const theme = read(LEGACY.theme);
-  if (theme !== null && (THEME_CHOICES as readonly string[]).includes(theme)) out.theme = theme;
+  if (theme !== null) out.theme = theme;
   const custom = read(LEGACY.customTheme);
   if (custom !== null && custom !== '') out.customTheme = custom;
   const items = readJson(read, LEGACY.navBarItems);
-  if (Array.isArray(items)) out.navBarItems = normalizeNavItems(items);
+  if (Array.isArray(items)) out.navBarItems = items;
   const labels = readJson(read, LEGACY.navBarLabels);
-  if (isObject(labels)) out.navBarLabels = normalizeNavLabels(labels);
+  if (isObject(labels)) out.navBarLabels = labels;
   const call = legacyCall(read);
-  if (call) {
-    const parsed = parseCallSettings(call);
-    for (const k of CALL_USER_KEYS) if (k in call) out[k] = parsed[k];
-  }
+  if (call) for (const k of CALL_USER_KEYS) if (k in call) out[k] = call[k];
   return out;
 }
 
@@ -149,17 +142,16 @@ export function legacyDeviceValues(read: LegacyRead): Raw {
   const hide = read(LEGACY.hideNavigationBar);
   if (hide !== null) out.hideNavigationBar = hide === '1';
   const orientation = read(LEGACY.orientation);
-  if (orientation !== null) out.orientation = normalizeOrientationMode(orientation);
+  if (orientation !== null) out.orientation = orientation;
   const kind = read(LEGACY.deviceKind);
-  if (kind !== null && DEVICE_KIND_LIST.includes(kind)) out.deviceKind = kind;
+  if (kind !== null) out.deviceKind = kind;
   const disabled = readJson(read, LEGACY.pluginsDisabled);
   if (Array.isArray(disabled)) out.pluginsDisabled = disabled.filter((x): x is string => typeof x === 'string');
   const dir = read(LEGACY.pluginsDevDir);
   if (dir !== null && dir.trim() !== '') out.pluginsDevDir = dir.trim();
   const call = legacyCall(read);
   if (call) {
-    const parsed = parseCallSettings(call);
-    for (const k of CALL_DEVICE_KEYS) if (k in call) out[k] = parsed[k];
+    for (const k of CALL_DEVICE_KEYS) if (k in call) out[k] = call[k];
   }
   return out;
 }

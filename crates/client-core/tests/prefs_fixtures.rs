@@ -13,6 +13,32 @@ fn load() -> Value {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{path}: {e}"))
 }
 
+fn load_named(name: &str) -> Value {
+    let path = format!("{}/tests/fixtures/prefs/{name}", env!("CARGO_MANIFEST_DIR"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// 通話の設定（機器・ユーザー共通）の読み方。expected は削除前の TS の parseCallSettings の出力
+#[test]
+fn call_settings_read_like_the_old_gui_parser() {
+    let file = load_named("call_settings.json");
+    let cases = file["cases"].as_array().expect("cases");
+    let mut failures = Vec::new();
+    for case in cases {
+        let key = case["key"].as_str().unwrap();
+        let def = find_definition(key).unwrap_or_else(|| panic!("no definition for {key}"));
+        let actual = normalize_value(def, Some(&case["input"]));
+        if !same_json(&actual, &case["expected"]) {
+            failures.push(format!(
+                "{key} / {}: got {actual}, expected {}",
+                case["name"], case["expected"]
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "failed:\n{}", failures.join("\n"));
+}
+
 #[test]
 fn user_prefs_read_like_the_gui_normalizers() {
     let file = load();

@@ -67,7 +67,7 @@
 
 - 保存先: ユーザー共通は `stores/prefs.svelte.ts`（`/api/me/prefs`）、デバイスごとは `stores/deviceSettings.svelte.ts`（Tauri では `api_device_*`、ブラウザ版は localStorage のキャッシュだけ）。どちらも起動時の値はデバイスのキャッシュ（`disnans.prefs` / `disnans.devicePrefs`）から始め、サーバーの値が届いたら置き換える。
 - 項目の振り分け: `lib/settingsModel.ts`（キーの一覧・既定・以前の localStorage の読み方）。テーマ・ナビバー・通話の機器によらない設定はユーザー共通、通話の機器・デバイスの種類・ナビバーを隠す・画面の向き・プラグインの無効化・開発フォルダはデバイスごと。
-- 移行: 以前の localStorage の値は、サーバーに無いときだけ一度取り込む（既存の値は上書きしない）。以前の保存先のキーは読むだけで、消さない。
+- 移行: 以前の localStorage の値は、サーバーに無いときだけ一度取り込む（既存の値は上書きしない）。型は直さずそのまま raw に入れ、表示は Rust が正規化する。以前の保存先のキーは読むだけで、消さない。
 - デバイス: 起動時に `client_device_id` で ID を得て登録する。名前は既定で OS の名前（Windows・Linux・Android など。ホスト名は取らない）。`deviceSettings.renameDevice` で変えられる（設定の画面は未作成）。
 - 読み直し: デバイスごとの設定は、設定画面を開いたとき（`refresh`）に読む。ユーザー共通は従来どおり `prefs.updated` で届く。
 

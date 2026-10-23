@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_CALL_SETTINGS,
+  type CallSettingsData,
   micConstraints,
   micRawFlag,
   ctxRateFlag,
@@ -15,7 +16,6 @@ import {
   base64ToPcm,
   byteLevel,
   clampLimitDb,
-  clampVolume,
   clipCurve,
   dbToLinear,
   diffPeers,
@@ -25,7 +25,6 @@ import {
   limiterStrengthPatch,
   normalizeDevice,
   notificationContent,
-  parseCallSettings,
   pcmToBase64,
   pickOutput,
   rms,
@@ -35,15 +34,10 @@ import {
 } from './pure';
 import { describeDevices } from '../plugins/audio';
 
-describe('音量と出力先', () => {
-  it('clampVolume は範囲に収め、数でなければ既定値', () => {
-    expect(clampVolume(3, 2)).toBe(2);
-    expect(clampVolume(-1, 2)).toBe(0);
-    expect(clampVolume(0.5, 1)).toBe(0.5);
-    expect(clampVolume('x', 2, 1)).toBe(1);
-    expect(clampVolume(NaN, 2, 0.7)).toBe(0.7);
-  });
+/** 既定の通話の設定に、渡した項目を重ねる（limiterStrength の入力用） */
+const withDefaults = (p: Partial<CallSettingsData>): CallSettingsData => ({ ...DEFAULT_CALL_SETTINGS, ...p });
 
+describe('音量と出力先', () => {
   it('pickOutput は ID、なければ同じ種類と名前、なければ同じ種類で探す', () => {
     const outs = [
       { id: 'speaker', label: 'スピーカー', kind: 'speaker', selected: false },
@@ -70,73 +64,38 @@ describe('音量と出力先', () => {
   });
 });
 
-describe('設定の読み込み', () => {
-  it('壊れた値・足りない値は既定値にし、範囲外は丸める', () => {
-    expect(parseCallSettings(null)).toEqual(DEFAULT_CALL_SETTINGS);
-    expect(parseCallSettings('x')).toEqual(DEFAULT_CALL_SETTINGS);
-    const s = parseCallSettings({
-      stun: 'stun:a', // 古い保存値は無視する
-      relayOnly: true,
-      joinMuted: true,
-      micVolume: 9,
-      outVolume: -1,
-      inputId: 5,
-      output: { id: 'speaker', kind: 'speaker', label: 'スピーカー' },
-    });
-    expect(s).toEqual({
-      joinMuted: true,
-      micVolume: 2,
-      outVolume: 0,
-      inputId: '',
-      output: { id: 'speaker', kind: 'speaker', label: 'スピーカー' },
-      limiter: true,
-      limitDb: -6,
-    });
-    expect(parseCallSettings({ output: { id: 1 } }).output).toBeNull();
-  });
-
-  it('大きい音を抑える設定は、既定で入、上限は範囲に収める（保存値が壊れていれば既定）', () => {
-    expect(DEFAULT_CALL_SETTINGS.limiter).toBe(true);
-    expect(DEFAULT_CALL_SETTINGS.limitDb).toBe(-6);
-    expect(parseCallSettings({ limiter: false, limitDb: -12 })).toMatchObject({ limiter: false, limitDb: -12 });
-    expect(parseCallSettings({ limiter: 'no', limitDb: 'x' })).toMatchObject({ limiter: true, limitDb: -6 });
-    expect(parseCallSettings({ limitDb: -40 }).limitDb).toBe(-18);
-    expect(parseCallSettings({ limitDb: 5 }).limitDb).toBe(-3);
-  });
-});
-
 describe('音量キャップの4段階', () => {
   it('既定・以前のオン／オフと3つの上限を引き継ぐ', () => {
     expect(limiterStrength(DEFAULT_CALL_SETTINGS)).toBe('medium');
-    expect(limiterStrength(parseCallSettings({ limiter: false, limitDb: -12 }))).toBe('none');
-    expect(limiterStrength(parseCallSettings({ limiter: true, limitDb: -3 }))).toBe('weak');
-    expect(limiterStrength(parseCallSettings({ limiter: true, limitDb: -6 }))).toBe('medium');
-    expect(limiterStrength(parseCallSettings({ limiter: true, limitDb: -12 }))).toBe('strong');
+    expect(limiterStrength(withDefaults({ limiter: false, limitDb: -12 }))).toBe('none');
+    expect(limiterStrength(withDefaults({ limiter: true, limitDb: -3 }))).toBe('weak');
+    expect(limiterStrength(withDefaults({ limiter: true, limitDb: -6 }))).toBe('medium');
+    expect(limiterStrength(withDefaults({ limiter: true, limitDb: -12 }))).toBe('strong');
   });
 
   it('選択した強さの上限とオンを一緒に設定する', () => {
     for (const [level, db] of [['weak', -3], ['medium', -6], ['strong', -12]] as const) {
-      const previous = parseCallSettings({ limiter: false, limitDb: -6 });
-      const saved = parseCallSettings({ ...previous, ...limiterStrengthPatch(level) });
+      const previous = withDefaults({ limiter: false, limitDb: -6 });
+      const saved = withDefaults({ ...previous, ...limiterStrengthPatch(level) });
       expect(saved).toMatchObject({ limiter: true, limitDb: db });
       expect(limiterStrength(saved)).toBe(level);
     }
   });
 
   it('なしはオフにするが、以前の上限を消さない', () => {
-    const previous = parseCallSettings({ limiter: true, limitDb: -12 });
-    const saved = parseCallSettings({ ...previous, ...limiterStrengthPatch('none') });
+    const previous = withDefaults({ limiter: true, limitDb: -12 });
+    const saved = withDefaults({ ...previous, ...limiterStrengthPatch('none') });
     expect(saved).toMatchObject({ limiter: false, limitDb: -12 });
     expect(limiterStrength(saved)).toBe('none');
   });
 
   it('中間の保存値は近い段階で表示し、表示だけでは設定を変えない', () => {
-    const saved = parseCallSettings({ limitDb: -8 });
+    const saved = withDefaults({ limitDb: -8 });
     expect(limiterStrength(saved)).toBe('medium');
     expect(saved.limitDb).toBe(-8);
-    expect(limiterStrength(parseCallSettings({ limitDb: -4 }))).toBe('weak');
-    expect(limiterStrength(parseCallSettings({ limitDb: -9 }))).toBe('strong');
-    expect(limiterStrength(parseCallSettings({ limitDb: NaN }))).toBe('medium');
+    expect(limiterStrength(withDefaults({ limitDb: -4 }))).toBe('weak');
+    expect(limiterStrength(withDefaults({ limitDb: -9 }))).toBe('strong');
+    expect(limiterStrength(withDefaults({ limitDb: NaN }))).toBe('medium');
   });
 });
 

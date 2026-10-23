@@ -8,11 +8,6 @@ export type OrientationMode = 'portrait' | 'media' | 'auto';
 export const ORIENTATION_MODES: readonly OrientationMode[] = ['portrait', 'media', 'auto'];
 export const DEFAULT_ORIENTATION: OrientationMode = 'auto';
 
-/** 読めない値は既定（自動回転） */
-export function normalizeOrientationMode(raw: unknown): OrientationMode {
-  return (ORIENTATION_MODES as readonly unknown[]).includes(raw) ? (raw as OrientationMode) : DEFAULT_ORIENTATION;
-}
-
 /** ネイティブへ渡す向きの固定の状態 */
 export type OrientationLock = 'portrait' | 'unlocked';
 

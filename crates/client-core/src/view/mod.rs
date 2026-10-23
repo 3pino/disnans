@@ -4,7 +4,7 @@
 //! - 描画に依存しない。文字列の幅・折り返し・桁合わせは各 UI が行う。
 //! - サーバー由来の文字列は **生の値のまま**返す。表示用のエスケープ（制御文字・双方向制御）は各 UI が行う。
 //! - 時刻の日付（暦の日）はタイムゾーンを持つ `Calendar` が決める。文言（「今日」「昨日」など）は UI が作る。
-//! - 名前が分からないユーザーは `name: None`。「不明なユーザー」などの文言は UI が選ぶ。
+//! - 名前が分からないユーザーは `name: None`。その表示の文言は [`UNKNOWN_USER_NAME`]（GUI は同じ値を TS の定数に持ち、fixture で一致を確かめる）。
 //! - スレッドはモデルに含めない（`thread`・`thread_id` は見ない）。
 //!
 //! 行の列（`timeline_rows`）は、TUI の transcript と同じ並びを表す:
@@ -23,6 +23,9 @@ pub use calendar::{Calendar, Day, UtcCalendar};
 
 /// この時間内の同じ人の発言は、まとめて 1 つの続きとみなす（web の GROUP_MS と同じ）
 pub const GROUP_MS: i64 = 5 * 60_000;
+
+/// 名前が分からないユーザーの表示（GUI・TUI が同じ文言を出す）。`fixtures/view/texts.json` と一致する
+pub const UNKNOWN_USER_NAME: &str = "不明なユーザー";
 
 /// 投稿者のアバター。`Own` はサーバーの相対パス（`/api/avatars/…`）、`External` は https の絶対 URL（Tailscale など）
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,7 +55,7 @@ pub struct BotView {
 #[serde(rename_all = "camelCase")]
 pub struct Head {
     pub author_id: String,
-    /// 表示名。分からないときは `None`（UI が「不明なユーザー」などを出す）。ボットなら、ボットの名前
+    /// 表示名。分からないときは `None`（UI が [`UNKNOWN_USER_NAME`] を出す）。ボットなら、ボットの名前
     pub name: Option<String>,
     pub avatar: Option<Avatar>,
     pub bot: Option<BotView>,

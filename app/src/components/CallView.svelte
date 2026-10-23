@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { viewTexts } from '../lib/viewTexts';
   import { onMount } from 'svelte';
   import AudioLines from '@lucide/svelte/icons/audio-lines';
   import Smartphone from '@lucide/svelte/icons/smartphone';
@@ -33,7 +34,7 @@
   const people = $derived(call.participants);
 
   function nameOf(userId: string): string {
-    return client.user(userId)?.display_name || '不明なユーザー';
+    return client.user(userId)?.display_name || viewTexts.unknownUser;
   }
 
   function title(p: (typeof people)[number]): string {

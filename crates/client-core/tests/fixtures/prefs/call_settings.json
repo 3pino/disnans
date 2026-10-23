@@ -1,0 +1,258 @@
+{
+  "schema": 1,
+  "note": "通話の設定の読み方（機器・ユーザー共通の項目）。expected は TS の parseCallSettings（削除前の旧実装）の出力を記録したもの。Rust の normalize_value が同じ値を返すことを tests/prefs_fixtures.rs で確かめる。",
+  "cases": [
+    {
+      "key": "joinMuted",
+      "name": "joinMuted / true",
+      "input": true,
+      "expected": true
+    },
+    {
+      "key": "joinMuted",
+      "name": "joinMuted / false",
+      "input": false,
+      "expected": false
+    },
+    {
+      "key": "joinMuted",
+      "name": "joinMuted / \"yes\"",
+      "input": "yes",
+      "expected": false
+    },
+    {
+      "key": "joinMuted",
+      "name": "joinMuted / null",
+      "input": null,
+      "expected": false
+    },
+    {
+      "key": "joinMuted",
+      "name": "joinMuted / 1",
+      "input": 1,
+      "expected": false
+    },
+    {
+      "key": "micVolume",
+      "name": "micVolume / 0.5",
+      "input": 0.5,
+      "expected": 0.5
+    },
+    {
+      "key": "micVolume",
+      "name": "micVolume / 0",
+      "input": 0,
+      "expected": 0
+    },
+    {
+      "key": "micVolume",
+      "name": "micVolume / 2",
+      "input": 2,
+      "expected": 2
+    },
+    {
+      "key": "micVolume",
+      "name": "micVolume / 3",
+      "input": 3,
+      "expected": 2
+    },
+    {
+      "key": "micVolume",
+      "name": "micVolume / -1",
+      "input": -1,
+      "expected": 0
+    },
+    {
+      "key": "micVolume",
+      "name": "micVolume / \"loud\"",
+      "input": "loud",
+      "expected": 1
+    },
+    {
+      "key": "micVolume",
+      "name": "micVolume / null",
+      "input": null,
+      "expected": 1
+    },
+    {
+      "key": "outVolume",
+      "name": "outVolume / 0.5",
+      "input": 0.5,
+      "expected": 0.5
+    },
+    {
+      "key": "outVolume",
+      "name": "outVolume / 1",
+      "input": 1,
+      "expected": 1
+    },
+    {
+      "key": "outVolume",
+      "name": "outVolume / 1.5",
+      "input": 1.5,
+      "expected": 1
+    },
+    {
+      "key": "outVolume",
+      "name": "outVolume / 2",
+      "input": 2,
+      "expected": 1
+    },
+    {
+      "key": "outVolume",
+      "name": "outVolume / -0.5",
+      "input": -0.5,
+      "expected": 0
+    },
+    {
+      "key": "outVolume",
+      "name": "outVolume / \"x\"",
+      "input": "x",
+      "expected": 1
+    },
+    {
+      "key": "limiter",
+      "name": "limiter / false",
+      "input": false,
+      "expected": false
+    },
+    {
+      "key": "limiter",
+      "name": "limiter / true",
+      "input": true,
+      "expected": true
+    },
+    {
+      "key": "limiter",
+      "name": "limiter / \"no\"",
+      "input": "no",
+      "expected": true
+    },
+    {
+      "key": "limiter",
+      "name": "limiter / null",
+      "input": null,
+      "expected": true
+    },
+    {
+      "key": "limitDb",
+      "name": "limitDb / -30",
+      "input": -30,
+      "expected": -18
+    },
+    {
+      "key": "limitDb",
+      "name": "limitDb / 0",
+      "input": 0,
+      "expected": -3
+    },
+    {
+      "key": "limitDb",
+      "name": "limitDb / -6",
+      "input": -6,
+      "expected": -6
+    },
+    {
+      "key": "limitDb",
+      "name": "limitDb / -12.5",
+      "input": -12.5,
+      "expected": -12.5
+    },
+    {
+      "key": "limitDb",
+      "name": "limitDb / \"x\"",
+      "input": "x",
+      "expected": -6
+    },
+    {
+      "key": "limitDb",
+      "name": "limitDb / null",
+      "input": null,
+      "expected": -6
+    },
+    {
+      "key": "inputId",
+      "name": "inputId / \"mic-1\"",
+      "input": "mic-1",
+      "expected": "mic-1"
+    },
+    {
+      "key": "inputId",
+      "name": "inputId / \"\"",
+      "input": "",
+      "expected": ""
+    },
+    {
+      "key": "inputId",
+      "name": "inputId / 5",
+      "input": 5,
+      "expected": ""
+    },
+    {
+      "key": "inputId",
+      "name": "inputId / null",
+      "input": null,
+      "expected": ""
+    },
+    {
+      "key": "output",
+      "name": "output / {\"id\":\"o\",\"kind\":\"speaker\",\"label\":\"Spk\"}",
+      "input": {
+        "id": "o",
+        "kind": "speaker",
+        "label": "Spk"
+      },
+      "expected": {
+        "id": "o",
+        "kind": "speaker",
+        "label": "Spk"
+      }
+    },
+    {
+      "key": "output",
+      "name": "output / {\"id\":\"o\",\"kind\":\"x\"}",
+      "input": {
+        "id": "o",
+        "kind": "x"
+      },
+      "expected": null
+    },
+    {
+      "key": "output",
+      "name": "output / {\"id\":1,\"kind\":\"a\",\"label\":\"b\"}",
+      "input": {
+        "id": 1,
+        "kind": "a",
+        "label": "b"
+      },
+      "expected": null
+    },
+    {
+      "key": "output",
+      "name": "output / {\"id\":\"o\",\"kind\":\"k\",\"label\":\"l\",\"extra\":1}",
+      "input": {
+        "id": "o",
+        "kind": "k",
+        "label": "l",
+        "extra": 1
+      },
+      "expected": {
+        "id": "o",
+        "kind": "k",
+        "label": "l"
+      }
+    },
+    {
+      "key": "output",
+      "name": "output / \"speaker\"",
+      "input": "speaker",
+      "expected": null
+    },
+    {
+      "key": "output",
+      "name": "output / null",
+      "input": null,
+      "expected": null
+    }
+  ]
+}

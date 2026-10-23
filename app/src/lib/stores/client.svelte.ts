@@ -24,6 +24,7 @@ import { resumeReconnect } from './chatResume';
 import { EV_AUDIO } from '../call/pure';
 import { AUDIO_MAX_IN_FLIGHT, callLatency } from '../call/latency';
 import { sharedIndex } from './sharedIndex.svelte';
+import { viewTexts } from '../viewTexts';
 
 type Listener = (ev: ServerEvent) => void;
 
@@ -227,7 +228,7 @@ class Client {
   }
 
   nameOf(id: string): string {
-    return this.users[id]?.display_name ?? '不明なユーザー';
+    return this.users[id]?.display_name ?? viewTexts.unknownUser;
   }
 
   /** 通知のもとのメッセージを送った人の見た目（読み込まれていなければ null） */

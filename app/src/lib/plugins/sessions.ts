@@ -4,6 +4,7 @@ import { avatarSrc } from '../config';
 import { errorMessage, isVersionConflict, type Cleanup, type HostServices } from './types';
 import { PluginError, VersionConflictError } from './errors';
 import { sameViewers, uniqueViewers } from '../presence';
+import { viewTexts } from '../viewTexts';
 
 export { VersionConflictError };
 
@@ -11,7 +12,7 @@ type EventListener = (payload: unknown, from: Disnans.User) => void;
 
 /** session.event の from に使う（いないユーザー） */
 function unknownUser(id: string): Disnans.User {
-  return { id, login_name: '', display_name: '不明なユーザー', avatar_url: null };
+  return { id, login_name: '', display_name: viewTexts.unknownUser, avatar_url: null };
 }
 
 function toPluginUser(u: User): Disnans.User {

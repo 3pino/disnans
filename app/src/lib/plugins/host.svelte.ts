@@ -31,6 +31,7 @@ import { orientation } from '../stores/orientation.svelte';
 import { callApi } from '../call/instance.svelte';
 import { loadLucide, registerIcon } from '../icons.svelte';
 import { API_VERSION, errorMessage, type HostServices, type Manifest, type PluginClass } from './types';
+import { viewTexts } from '../viewTexts';
 
 const DEV_POLL_MS = 1000;
 const DARK_QUERY = '(prefers-color-scheme: dark)';
@@ -184,7 +185,7 @@ class PluginHost {
     app: {
       get me() {
         const me = client.me;
-        return me ? toPluginUser(me) : { id: '', login_name: '', display_name: '不明なユーザー', avatar_url: null };
+        return me ? toPluginUser(me) : { id: '', login_name: '', display_name: viewTexts.unknownUser, avatar_url: null };
       },
       get users() {
         return client.userList.map(toPluginUser);

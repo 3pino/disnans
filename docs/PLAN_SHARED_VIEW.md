@@ -26,7 +26,7 @@
 | V3 | Markdown の木を `view/markdown.rs` に移す。Tauri の応答・イベントに `markdown` として付け、GUI はそれを描く | 完了 |
 | V4 | 作成・名前・通知の文言 | 縮小版で完了。通知の文言はサーバーが作る（`crates/server/src/notify.rs`）。名前は TS の users マップから引く（改名に追従するため）。「不明なユーザー」の文言は core に無く、TUI が自分の定数を持つ（段 D で core に寄せる） |
 | V5 | 設定項目の定義（ユーザー・デバイス・このデバイスだけ）と既定値・正規化 | 完了（core の `view/settings.rs`。GUI の読み出しは段 C） |
-| V6 | GUI に残る重複の削除 | 進行中。段 A 実装済み。段 B〜E は下 |
+| V6 | GUI に残る重複の削除 | 段 A・C・D・E 実装済み（レビュー待ち）。段 B（並び）は (a) で決定し、判定は GUI に残す（fixture で core と揃える） |
 
 ## V6 の段
 
@@ -35,8 +35,8 @@
 - **段 A（Markdown の製品経路）**: TS の Markdown 解析を削除。木は Rust が作る（Tauri の履歴・検索・チャットのイベント、送信・編集の仮表示）。木がまだ無いとき（送信・編集の直後、Rust の木が返るまで）と、ブラウザー（開発）は、プレーンの木（書式なし。改行と `<@id>` のメンションだけ保つ）。旧 TS の出力を fixture に記録してから削除し、Rust がその全件と一致することを確かめた。
 - **段 B（並び・日付）**: 続き（同じ人・5 分）と日付の区切りの扱いは未決定（下の「未決定」1）。
 - **段 C（設定の定義と正規化）**: 実装済み（レビュー待ち）。ユーザー共通は `api_prefs` / `api_set_prefs` が `{ raw, view }` を返し、GUI は `view` を表示に、`raw` を保存の下地に使う（[PLAN_SERVER_SETTINGS.md](PLAN_SERVER_SETTINGS.md) の「項目の定義」）。デバイスは `api_device_prefs_*` が正規化済みの値を返すので、その値を表示と保存に使う。TS の表示用の `normalize*` は削除（残すのは旧 localStorage の取り込み `legacy*` と、composerMenu の版 2 移行）。`navBarLabels` は Rust の正規化に加えた（`NavLabels`）。既定の写しは `defaults.json` と照合。`api_settings_definitions` は登録済みだが GUI は読んでいない（既定の写しで足りるため。読むかは未決定）。
-- **段 D（名前と文言）**: 「不明なユーザー」を core の定数にして、定義の応答で GUI に渡す。GUI の 9 か所ほど（投稿者・通話・プラグインのユーザー）を、それに寄せる。名前の差し込みは TS の users マップに残す。
-- **段 E（掃除）**: 残った TS の重複と、不要になった fixture の TS 側の検証を整理する。
+- **段 D（名前と文言）**: 実装済み（レビュー待ち）。「不明なユーザー」は core の `view::UNKNOWN_USER_NAME` が正。TS は `viewTexts.unknownUser`（`lib/viewTexts.ts` の定数）を使い、値は `fixtures/view/texts.json` と照合する（Rust の `unknown_user_name_matches_the_fixture`、TS の `viewTexts.test.ts`）。起動時に core から読むことはしない（起動を待たせないため）。名前の差し込みは TS の users マップに残す。TUI の `UNKNOWN_USER`（cli-tui の領域）は未接続。
+- **段 E（掃除）**: 実装済み（レビュー待ち）。通話の設定の読み方（`parseCallSettings`・`clampVolume`）を TS から削除し、値は Rust の正規化を使う（`call/settings.svelte.ts` は重ねるだけ）。出力先は Rust の `AudioOutput`（`{id, kind, label}` の 3 つがそろったものだけ）を追加し、旧 TS の出力を `tests/fixtures/prefs/call_settings.json`（38 件）に記録して照合する。旧 localStorage の取り込み（`legacy*`）は型を直さずに raw に入れる（表示は Rust）。削除した TS の正規化: `normalizeNavItems`・`normalizeNavLabels`・`normalizeOrientationMode`・`parseCallSettings`・`clampVolume`。残す: `normalizeComposerMenu`（版 2 の移行）、`clampLimitDb`・`dbToLinear`（DSP の上限）、既定の写し（`userDefaults`・`DEVICE_DEFAULTS` など、defaults.json と照合）。
 
 ## 段 A で決めたこと
 

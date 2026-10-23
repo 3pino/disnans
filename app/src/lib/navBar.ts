@@ -22,17 +22,6 @@ export const NAV_REQUIRED_IDS: readonly string[] = [NAV_CHAT_ID, NAV_SETTINGS_ID
 /** 既定の並び */
 export const DEFAULT_NAV_ITEMS: readonly string[] = [NAV_CHAT_ID, NAV_SETTINGS_ID];
 
-/**
- * 保存したもの（ユーザーの設定）を読む。配列でなければ既定。文字列でないものと重複は捨てる。
- * 必須の項目がなければ末尾に足す
- */
-export function normalizeNavItems(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [...DEFAULT_NAV_ITEMS];
-  const out = [...new Set(raw.filter((x): x is string => typeof x === 'string' && x !== '' && !NAV_REMOVED_IDS.includes(x)))];
-  for (const id of NAV_REQUIRED_IDS) if (!out.includes(id)) out.push(id);
-  return out;
-}
-
 /** 出す項目を、並びの順に返す。本体の2つは常に出し、ほかは登録されている（available に入っている）ものだけ */
 export function visibleNavItems(list: readonly string[], available: ReadonlySet<string>): string[] {
   return list.filter((id) => !NAV_REMOVED_IDS.includes(id) && (available.has(id) || NAV_BUILTIN_IDS.includes(id)));
@@ -71,19 +60,6 @@ export const DEFAULT_NAV_LABELS: Readonly<Record<string, string>> = {
   [NAV_CALL_ID]: 'Call',
   [NAV_SEARCH_ID]: 'Search',
 };
-
-/**
- * 保存した表示名（ユーザーの設定）を読む。オブジェクトでなければ空。文字列でない値は捨てる。
- * 空欄（""）は「設定済みで空欄」の意味なので残す（未設定＝キーがないこととは区別する）
- */
-export function normalizeNavLabels(raw: unknown): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
-  for (const [id, v] of Object.entries(raw)) {
-    if (typeof v === 'string') out[id] = v.trim();
-  }
-  return out;
-}
 
 /**
  * 項目の表示名を決める。

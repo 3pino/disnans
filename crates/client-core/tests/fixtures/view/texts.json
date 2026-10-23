@@ -1,0 +1,5 @@
+{
+  "schema": 1,
+  "note": "表示の文言。Rust の view::UNKNOWN_USER_NAME と、TS の viewTexts.ts の VIEW_TEXT_DEFAULTS は、この値と同じでなければならない（変えるときは三か所とも）。GUI は起動時に読まず、TS の定数を使う。",
+  "unknownUser": "不明なユーザー"
+}

@@ -9,8 +9,6 @@ import {
   NAV_SETTINGS_ID,
   NAV_REMOVED_IDS,
   navItemLabel,
-  normalizeNavItems,
-  normalizeNavLabels,
   removeNavItem,
   reorderNavItem,
   setNavLabel,
@@ -18,23 +16,6 @@ import {
 } from './navBar';
 
 const ALL = new Set([NAV_CHAT_ID, NAV_SETTINGS_ID, 'dice:roll', 'app:next']);
-
-describe('normalizeNavItems', () => {
-  it('配列でなければ既定の並び', () => {
-    expect(normalizeNavItems(null)).toEqual(DEFAULT_NAV_ITEMS);
-    expect(normalizeNavItems('x')).toEqual(DEFAULT_NAV_ITEMS);
-    expect(normalizeNavItems({})).toEqual(DEFAULT_NAV_ITEMS);
-  });
-
-  it('文字列でないもの・空・重複は捨てる。知らない ID は残す（入れ直したプラグインのため）', () => {
-    expect(normalizeNavItems([1, '', 'dice:roll', 'dice:roll', NAV_CHAT_ID, NAV_SETTINGS_ID])).toEqual(['dice:roll', NAV_CHAT_ID, NAV_SETTINGS_ID]);
-  });
-
-  it('必須の項目（チャット・設定）がなければ末尾に足す', () => {
-    expect(normalizeNavItems(['dice:roll'])).toEqual(['dice:roll', NAV_CHAT_ID, NAV_SETTINGS_ID]);
-    expect(normalizeNavItems([])).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID]);
-  });
-});
 
 describe('visibleNavItems', () => {
   it('登録されているものだけ、並びの順に出す', () => {
@@ -49,7 +30,6 @@ describe('visibleNavItems', () => {
   it('廃止した項目（スレッド）は、保存されていても出さない', () => {
     const list = [NAV_REMOVED_IDS[0], NAV_CHAT_ID, NAV_SETTINGS_ID];
     expect(visibleNavItems(list, ALL)).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID]);
-    expect(normalizeNavItems(list)).toEqual([NAV_CHAT_ID, NAV_SETTINGS_ID]);
   });
 });
 
@@ -113,15 +93,5 @@ describe('表示名', () => {
     expect(setNavLabel(base, NAV_CHAT_ID, '  会話 ')).toEqual({ [NAV_CALL_ID]: '通話', [NAV_CHAT_ID]: '会話' });
     expect(setNavLabel(base, NAV_CALL_ID, '   ')).toEqual({ [NAV_CALL_ID]: '' });
     expect(base).toEqual({ [NAV_CALL_ID]: '通話' });
-  });
-
-  it('normalizeNavLabels: オブジェクトでなければ空。文字列でない値は捨て、空欄は残す（未設定とは別）', () => {
-    expect(normalizeNavLabels(null)).toEqual({});
-    expect(normalizeNavLabels(['x'])).toEqual({});
-    expect(normalizeNavLabels('x')).toEqual({});
-    expect(normalizeNavLabels({ [NAV_CALL_ID]: '', [NAV_CHAT_ID]: 3, 'dice:roll': ' Dice ' })).toEqual({
-      [NAV_CALL_ID]: '',
-      'dice:roll': 'Dice',
-    });
   });
 });

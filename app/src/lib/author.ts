@@ -4,6 +4,7 @@
  */
 import type { Message } from './protocol/Message';
 import type { User } from './protocol/User';
+import { viewTexts } from './viewTexts';
 
 export type AuthorView = {
   name: string;
@@ -35,7 +36,7 @@ export function authorOf(
   }
   const user = usersById instanceof Map ? usersById.get(message.author_id) : (usersById as Record<string, User | undefined>)[message.author_id];
   return {
-    name: user?.display_name ?? '不明なユーザー',
+    name: user?.display_name ?? viewTexts.unknownUser,
     avatarUrl: user?.avatar_url ?? null,
     isBot: false,
   };

@@ -4,6 +4,7 @@ import { SessionsImpl, type SessionImpl } from './sessions';
 import { PluginError } from './errors';
 import { PluginFiles, hasPermission, PERMISSION_FILES } from './files';
 import { errorMessage, type Cleanup, type HostTimelineEntry, type HostTimelineHandle, type HostServices, type Manifest, type PluginClass } from './types';
+import { viewTexts } from '../viewTexts';
 
 /** パネルの上部（題名・アイコン）。null は既定（プラグイン名・プラグインのアイコン）、空文字列は出さない */
 export type ViewHeader = { title: string | null; icon: string | null };
@@ -527,7 +528,7 @@ export class PluginRuntime {
     const from = this.services.app.user(fromId) ?? {
       id: fromId,
       login_name: '',
-      display_name: '不明なユーザー',
+      display_name: viewTexts.unknownUser,
       avatar_url: null,
     };
     for (const cb of [...set]) {

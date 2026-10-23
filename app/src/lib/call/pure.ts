@@ -100,30 +100,6 @@ export function dbToLinear(db: number): number {
   return Math.pow(10, db / 20);
 }
 
-/** 音量の値を範囲に収める。数でなければ既定値 */
-export function clampVolume(v: unknown, max: number, fallback = 1): number {
-  if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
-  return Math.min(max, Math.max(0, v));
-}
-
-/** 保存した設定を読む。壊れた値・足りない値は既定値にする */
-export function parseCallSettings(saved: unknown): CallSettingsData {
-  const s: CallSettingsData = { ...DEFAULT_CALL_SETTINGS };
-  if (!saved || typeof saved !== 'object') return s;
-  const r = saved as Record<string, unknown>;
-  if (typeof r.joinMuted === 'boolean') s.joinMuted = r.joinMuted;
-  s.micVolume = clampVolume(r.micVolume, MIC_VOLUME_MAX, 1);
-  s.outVolume = clampVolume(r.outVolume, OUT_VOLUME_MAX, 1);
-  if (typeof r.inputId === 'string') s.inputId = r.inputId;
-  if (typeof r.limiter === 'boolean') s.limiter = r.limiter;
-  s.limitDb = clampLimitDb(r.limitDb);
-  const o = r.output as Record<string, unknown> | null | undefined;
-  if (o && typeof o.id === 'string' && typeof o.kind === 'string' && typeof o.label === 'string') {
-    s.output = { id: o.id, kind: o.kind, label: o.label };
-  }
-  return s;
-}
-
 /** 前に選んだ出力先を、いまの一覧から探す。ID が変わることがあるので、同じ種類・名前も見る */
 export function pickOutput(outputs: Disnans.AudioOutput[], saved: SavedOutput | null): Disnans.AudioOutput | null {
   if (!saved) return null;

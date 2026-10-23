@@ -7,7 +7,7 @@ function store(entries: Record<string, string>) {
 }
 
 describe('legacyUserValues（以前の localStorage からユーザーごとの値）', () => {
-  it('テーマ・選んだテーマ・ナビの項目と表示名を読む', () => {
+  it('テーマ・選んだテーマ・ナビの項目と表示名を、型を直さずに読む（表示の正規化は Rust）', () => {
     const v = legacyUserValues(
       store({
         [LEGACY.theme]: 'dark',
@@ -18,21 +18,21 @@ describe('legacyUserValues（以前の localStorage からユーザーごとの�
     );
     expect(v.theme).toBe('dark');
     expect(v.customTheme).toBe('midnight');
-    expect(v.navBarItems).toEqual(expect.arrayContaining(['chat', 'settings']));
-    expect(v.navBarLabels).toEqual({ chat: 'ホーム' });
+    expect(v.navBarItems).toEqual(['app:open-settings', 'chat', 'settings']);
+    expect(v.navBarLabels).toEqual({ chat: 'ホーム', x: 3 });
   });
 
   it('何も無ければ空（既定はサーバーの側に任せる）', () => {
     expect(legacyUserValues(store({}))).toEqual({});
   });
 
-  it('知らないテーマは入れない', () => {
-    expect(legacyUserValues(store({ [LEGACY.theme]: 'pink' }))).toEqual({});
+  it('知らないテーマもそのまま入れる（保存の応答のあと、表示は Rust が既定に直す）', () => {
+    expect(legacyUserValues(store({ [LEGACY.theme]: 'pink' }))).toEqual({ theme: 'pink' });
   });
 
-  it('通話の値は、ユーザーごとのものだけ（範囲に収める）', () => {
+  it('通話の値は、ユーザーごとのものだけ（型も範囲もそのまま。表示は Rust が直す）', () => {
     const v = legacyUserValues(store({ [LEGACY.call]: JSON.stringify({ joinMuted: true, micVolume: 9, limitDb: -100, inputId: 'mic1', output: null }) }));
-    expect(v).toEqual({ joinMuted: true, micVolume: 2, limitDb: -18 });
+    expect(v).toEqual({ joinMuted: true, micVolume: 9, limitDb: -100 });
     expect(v).not.toHaveProperty('inputId');
   });
 
@@ -64,9 +64,9 @@ describe('legacyDeviceValues（以前の localStorage からデバイスごと�
     });
   });
 
-  it('"1" 以外は偽、知らない値は入れない', () => {
+  it('"1" 以外は偽。値はそのまま入れる（表示は Rust が直す）', () => {
     const v = legacyDeviceValues(store({ [LEGACY.hideNavigationBar]: '0', [LEGACY.deviceKind]: 'phone' }));
-    expect(v).toEqual({ hideNavigationBar: false });
+    expect(v).toEqual({ hideNavigationBar: false, deviceKind: 'phone' });
   });
 
   it('通話の機器（入力・出力）はデバイスごと', () => {
