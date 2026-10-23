@@ -6,10 +6,12 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.os.Build
 import android.net.Uri
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Base64
+import android.util.Log
 import app.tauri.plugin.JSObject
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -27,6 +29,8 @@ object RecentImages {
   const val MAX_BODY_BYTES = 200L * 1024 * 1024
 
   private const val MEDIA_AUTHORITY = "media"
+  /** 診断ログ（adb logcat -s disnans）。件数と権限の状態だけを出す */
+  private const val LOG_TAG = "disnans"
 
   private val PROJECTION = arrayOf(
     MediaStore.Images.Media._ID,
@@ -46,14 +50,23 @@ object RecentImages {
     val resolver = context.contentResolver
     val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
     val out = ArrayList<JSObject>()
+    // 書き込み中のファイル（IS_PENDING）は読めないことがあるので外す（Android 10 以降にある列）
+    val selection = if (Build.VERSION.SDK_INT >= 29) "${MediaStore.MediaColumns.IS_PENDING} = 0" else null
     val cursor = resolver.query(
       collection,
       PROJECTION,
-      null,
+      selection,
       null,
       "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
-    ) ?: return out
+    )
+    if (cursor == null) {
+      Log.i(LOG_TAG, "[photos] query returned null (limit=$limit)")
+      return out
+    }
+    var rows = 0
+    var thumbless = 0
     cursor.use { c ->
+      rows = c.count
       val idCol = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
       val nameCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
       val mimeCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE)
@@ -64,7 +77,13 @@ object RecentImages {
       while (out.size < limit && c.moveToNext()) {
         val itemUri = ContentUris.withAppendedId(collection, c.getLong(idCol))
         // BitmapFactory が読めない形式（HEIC など）も一覧に残す。サムネイルは null（GUI が名前の枠を出す）
-        val thumb = thumbOf(resolver, itemUri, c.getInt(orientCol))
+        val thumb = try {
+          thumbOf(resolver, itemUri, c.getInt(orientCol))
+        } catch (ex: Exception) {
+          // 1 枚が読めなくても一覧全体は止めない（開けない・消えた写真）
+          null
+        }
+        if (thumb == null) thumbless++
         val item = JSObject()
         item.put("id", itemUri.toString())
         item.put("name", c.getString(nameCol) ?: "image")
@@ -77,6 +96,7 @@ object RecentImages {
         out.add(item)
       }
     }
+    Log.i(LOG_TAG, "[photos] rows=$rows listed=${out.size} thumbless=$thumbless limit=$limit")
     return out
   }
 

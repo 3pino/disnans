@@ -296,6 +296,7 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   fun recentImages(invoke: Invoke) {
     val args = invoke.parseArgs(RecentImagesArgs::class.java)
     val permission = photoPermission()
+    Log.i(LOG_TAG, "[photos] recent_images permission=$permission sdk=${Build.VERSION.SDK_INT}")
     if (permission == "denied") {
       val ret = JSObject()
       ret.put("permission", permission)
@@ -318,15 +319,25 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
-  /** 許可を求める（JS は初回のパネルを開いたときだけ呼ぶ）。結果の permission を返す */
+  /**
+   * 許可を求める。結果の permission を返す。
+   * 34 以上は READ_MEDIA_IMAGES と READ_MEDIA_VISUAL_USER_SELECTED を一緒に求める（片方だけだと部分的な許可の選択肢が出ない）。
+   * 部分的な許可のときも、全部の許可へ上げられるように求め直す（システムが出すかは OS の判断）。
+   */
   @Command
   fun requestRecentImagesPermission(invoke: Invoke) {
-    if (photoPermission() != "denied") {
+    val state = photoPermission()
+    if (state == "granted") {
       invoke.resolve(permissionObject())
       return
     }
-    val alias = if (Build.VERSION.SDK_INT >= 33) "media" else "storage"
-    requestPermissionForAlias(alias, invoke, "recentImagesPermissionCallback")
+    val aliases = when {
+      Build.VERSION.SDK_INT >= 34 -> arrayOf("media", "visual")
+      Build.VERSION.SDK_INT >= 33 -> arrayOf("media")
+      else -> arrayOf("storage")
+    }
+    Log.i(LOG_TAG, "[photos] request permission from=$state aliases=${aliases.joinToString()}")
+    requestPermissionForAliases(aliases, invoke, "recentImagesPermissionCallback")
   }
 
   @PermissionCallback
