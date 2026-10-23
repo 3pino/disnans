@@ -44,9 +44,12 @@
   @container setting-row (max-width: 30em) {
     :global(.enter-key-settings-row .setting-row-control) {
       grid-column: 1 / -1;
-      grid-row: 3;
+      grid-row: 2;
       width: 100%;
       margin: var(--space-3) 0 0;
+    }
+    :global(.enter-key-settings-row .setting-row-description) {
+      grid-row: 3;
     }
   }
   :global(.enter-key-settings-picker) {
