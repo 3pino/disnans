@@ -8,7 +8,8 @@
  * 1. 通話の全画面の [画面を共有] を押すと画面を選び、縮小した画像（JPEG / WebP / PNG）を一定間隔で call.emit（サーバー中継）に流す。
  *    もう一度押すと止まる。OS 側で止めた・通話から抜けたときも止まる。
  *    取得は、本体のネイティブ（Android の MediaProjection、Linux の portal / PipeWire）を優先し、無ければ getDisplayMedia（Windows / ブラウザー）
- * 2. 誰かが共有を始めると、ステータス欄に [○○の画面を見る] が出る。押すと全画面の表示が開き、共有者が複数なら上のタブで切り替えられる。
+ *    [カメラを共有] を押すと、画面の代わりにカメラの映像（getUserMedia）を同じ流れで送る。画面とカメラは同時には送らない（押したほうに切り替わる）
+ * 2. 誰かが共有を始めると、ステータス欄に [○○の画面を見る]（カメラなら [○○のカメラを見る]）が出る。押すと全画面の表示が開き、共有者が複数なら上のタブで切り替えられる。
  *    通話の画面（「通話を開く」）にも、参加者の上に配信が出る（call.addPanel）。
  *    既定は画面全体が収まる表示。ピンチ・Ctrl+ホイール（トラックパッドのピンチ）でカーソルの位置を中心に拡大縮小、
  *    拡大中はドラッグ・ホイールで移動、ダブルタップ（ダブルクリック）で拡大／元に戻す。
@@ -153,6 +154,31 @@ const WHEEL_MAX_DELTA = 120;
  */
 export function canShareScreen(nav) {
   return typeof nav?.mediaDevices?.getDisplayMedia === 'function';
+}
+
+/**
+ * カメラの映像（getUserMedia）が使える環境か。
+ * @param {{ mediaDevices?: { getUserMedia?: unknown } } | undefined | null} nav
+ */
+export function canShareCamera(nav) {
+  return typeof nav?.mediaDevices?.getUserMedia === 'function';
+}
+
+/**
+ * 共有の知らせ（screen.state）の source を読む。カメラのほかは画面（source のない前の版も画面）
+ * @param {unknown} payload
+ * @returns {ShareSource}
+ */
+export function parseSource(payload) {
+  return typeof payload === 'object' && payload !== null && /** @type {{ source?: unknown }} */ (payload).source === 'camera' ? 'camera' : 'screen';
+}
+
+/**
+ * 共有するものの呼び方（「○○の画面を見る」「○○のカメラを見る」）
+ * @param {ShareSource} source
+ */
+export function sourceLabel(source) {
+  return source === 'camera' ? 'カメラ' : '画面';
 }
 
 /**
@@ -874,10 +900,16 @@ class ScreenStage {
 // ---- 受け取る側 ----
 
 /**
+ * 共有するもの。screen=画面、camera=カメラの映像
+ * @typedef {'screen' | 'camera'} ShareSource
+ */
+
+/**
  * 共有している人 1 人分。
  * @typedef {object} Sharer
  * @property {string} peer
  * @property {Disnans.User} user
+ * @property {ShareSource} source     画面かカメラか
  * @property {FrameAssembler} assembler
  * @property {string | null} frame    最新のフレーム（base64）
  * @property {string | null} mime     frame の形式
@@ -904,6 +936,9 @@ export default class ScreenSharePlugin extends Plugin {
   /** 画面の取り方（共有中だけ） */
   /** @type {'web' | 'native' | null} */
   backend = null;
+  /** 共有しているもの（共有中だけ意味がある） */
+  /** @type {ShareSource} */
+  source = 'screen';
   /** @type {MediaStream | null} */
   stream = null;
   /** @type {HTMLVideoElement | null} */
@@ -979,6 +1014,8 @@ export default class ScreenSharePlugin extends Plugin {
   statusEl = /** @type {HTMLElement} */ (/** @type {unknown} */ (null));
   /** @type {Disnans.CallButton | null} */
   button = null;
+  /** @type {Disnans.CallButton | null} */
+  cameraButton = null;
 
   // 通話の画面の領域（call.addPanel）
   /** @type {Disnans.CallPanel | null} */
@@ -1014,6 +1051,15 @@ export default class ScreenSharePlugin extends Plugin {
         onClick: () => void this.toggleShare(),
       });
       this.register(() => this.button?.remove());
+    }
+    if (canShareCamera(navigator)) {
+      this.cameraButton = this.call.addButton({
+        icon: 'video',
+        label: 'カメラを共有',
+        location: 'view',
+        onClick: () => void this.toggleCamera(),
+      });
+      this.register(() => this.cameraButton?.remove());
     }
 
     this.statusEl = this.addStatusBarItem();
@@ -1064,16 +1110,31 @@ export default class ScreenSharePlugin extends Plugin {
     this.framesSinceProbe = 0;
   }
 
+  /** 画面の共有を始める・止める。カメラを共有中なら、画面に切り替える */
   async toggleShare() {
-    if (this.sharing) this.stopShare(true);
-    else await this.startShare();
+    await this.toggleSource('screen');
   }
 
-  async startShare() {
+  /** カメラの共有を始める・止める。画面を共有中なら、カメラに切り替える */
+  async toggleCamera() {
+    await this.toggleSource('camera');
+  }
+
+  /** @param {ShareSource} source */
+  async toggleSource(source) {
+    if (this.starting) return;
+    const was = this.sharing ? this.source : null;
+    // 切り替えでも、いったん止めたことを知らせる（受け手は新しい source で出し直す）
+    if (was) this.stopShare(true);
+    if (was !== source) await this.startShare(source);
+  }
+
+  /** @param {ShareSource} [source] */
+  async startShare(source = 'screen') {
     if (this.sharing || this.starting) return;
-    const backend = shareBackend(navigator, disnans.screenCapture);
+    const backend = source === 'camera' ? (canShareCamera(navigator) ? 'web' : null) : shareBackend(navigator, disnans.screenCapture);
     if (!backend) {
-      ui.toast('この環境では画面を共有できません（見ることはできます）', 'error');
+      ui.toast(source === 'camera' ? 'この環境ではカメラを共有できません' : 'この環境では画面を共有できません（見ることはできます）', 'error');
       return;
     }
     if (!this.call.joined) {
@@ -1084,7 +1145,7 @@ export default class ScreenSharePlugin extends Plugin {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     this.starting = true;
     try {
-      if (backend === 'web') await this.startWeb();
+      if (backend === 'web') await this.startWeb(source);
       else await this.startNative();
     } finally {
       this.starting = false;
@@ -1114,6 +1175,22 @@ export default class ScreenSharePlugin extends Plugin {
   }
 
   /**
+   * カメラを開く。許可しない（NotAllowedError）・カメラがないときは例外（呼び出し側が知らせる）。
+   * 制約を受け付けない環境のために、だめなら制約なしでもう一度試す
+   * @param {number} fps
+   * @returns {Promise<MediaStream>}
+   */
+  async pickCamera(fps) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: { frameRate: { ideal: fps, max: 30 } }, audio: false });
+    } catch (e) {
+      if (!(e instanceof DOMException && (e.name === 'OverconstrainedError' || e.name === 'TypeError'))) throw e;
+      console.warn('[screenshare] 制約つきの getUserMedia に失敗。制約なしで試します', e);
+    }
+    return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  }
+
+  /**
    * getDisplayMedia の映像を映す <video>。WebKitGTK などは、文書に入っていない <video> のフレームを canvas に描けないことがあるので、
    * 見えない大きさで文書に入れておく
    * @param {MediaStream} stream
@@ -1130,16 +1207,20 @@ export default class ScreenSharePlugin extends Plugin {
     return video;
   }
 
-  /** getDisplayMedia で画面を選んで始める */
-  async startWeb() {
+  /**
+   * getDisplayMedia で画面を選んで（camera なら getUserMedia でカメラを開いて）始める
+   * @param {ShareSource} [source]
+   */
+  async startWeb(source = 'screen') {
     const seq = this.shareSeq;
+    const what = sourceLabel(source);
     /** @type {MediaStream | null} */
     let stream;
     try {
-      stream = await this.pickDisplay(this.settings.fps);
+      stream = source === 'camera' ? await this.pickCamera(this.settings.fps) : await this.pickDisplay(this.settings.fps);
     } catch (e) {
-      console.error('[screenshare] 画面を取得できません', e);
-      ui.toast(`画面を取得できませんでした（${describeError(e)}）`, 'error');
+      console.error(`[screenshare] ${what}を取得できません`, e);
+      ui.toast(`${what}を取得できませんでした（${describeError(e)}）`, 'error');
       return;
     }
     if (!stream) return;
@@ -1151,7 +1232,7 @@ export default class ScreenSharePlugin extends Plugin {
 
     const track = stream.getVideoTracks()[0];
     try {
-      console.info('[screenshare] 画面の取得を始めます', track?.label, track?.getSettings?.());
+      console.info(`[screenshare] ${what}の取得を始めます`, track?.label, track?.getSettings?.());
     } catch {
       // getSettings が無い環境
     }
@@ -1159,7 +1240,7 @@ export default class ScreenSharePlugin extends Plugin {
     this.video = this.makeCaptureVideo(stream);
     this.imageCapture = null;
     this.backend = 'web';
-    this.beginSharing();
+    this.beginSharing(source);
     // OS の「共有を停止」ボタンなどで止められたとき
     for (const t of stream.getVideoTracks()) {
       t.addEventListener('ended', () => {
@@ -1209,14 +1290,18 @@ export default class ScreenSharePlugin extends Plugin {
       return;
     }
     this.backend = 'native';
-    this.beginSharing();
+    this.beginSharing('screen');
     // 最初の 1 枚が start の応答より早く届いても捨てない（静止した画面でもすぐ見える）
     if (firstFrame) this.onNativeFrame(firstFrame);
   }
 
-  /** 共有の開始の共通の処理 */
-  beginSharing() {
+  /**
+   * 共有の開始の共通の処理
+   * @param {ShareSource} source
+   */
+  beginSharing(source) {
     this.sharing = true;
+    this.source = source;
     this.shareSeq++;
     this.lastDiffData = null;
     this.lastSentAt = 0;
@@ -1228,7 +1313,8 @@ export default class ScreenSharePlugin extends Plugin {
     this.pendingNative = null;
     this.nativeNextAt = 0;
     this.resetTuning();
-    this.button?.update({ label: '共有を止める', icon: 'monitor-off', active: true });
+    if (source === 'camera') this.cameraButton?.update({ label: 'カメラを止める', icon: 'video-off', active: true });
+    else this.button?.update({ label: '共有を止める', icon: 'monitor-off', active: true });
     this.sendState(true);
     this.renderStatus();
   }
@@ -1265,7 +1351,8 @@ export default class ScreenSharePlugin extends Plugin {
     this.diffCanvas = null;
     this.lastDiffData = null;
     if (!was) return;
-    this.button?.update({ label: '画面を共有', icon: 'monitor-up', active: false });
+    if (this.source === 'camera') this.cameraButton?.update({ label: 'カメラを共有', icon: 'video', active: false });
+    else this.button?.update({ label: '画面を共有', icon: 'monitor-up', active: false });
     if (notify && this.call.joined) this.sendState(false);
     this.renderStatus();
   }
@@ -1273,7 +1360,7 @@ export default class ScreenSharePlugin extends Plugin {
   /** @param {boolean} on */
   sendState(on) {
     try {
-      this.call.emit(EVENT_STATE, { on });
+      this.call.emit(EVENT_STATE, on ? { on, source: this.source } : { on });
       this.lastHeartbeat = Date.now();
     } catch (e) {
       // 通話から抜けた直後など。次の onChange で片付く
@@ -1551,7 +1638,7 @@ export default class ScreenSharePlugin extends Plugin {
   sharerFor(peer, user) {
     let s = this.sharers.get(peer);
     if (!s) {
-      s = { peer, user, assembler: new FrameAssembler(), frame: null, mime: null, lastSeen: Date.now() };
+      s = { peer, user, source: 'screen', assembler: new FrameAssembler(), frame: null, mime: null, lastSeen: Date.now() };
       this.sharers.set(peer, s);
       this.renderStatus();
     }
@@ -1563,7 +1650,12 @@ export default class ScreenSharePlugin extends Plugin {
   onState(e) {
     const on = typeof e.payload === 'object' && e.payload !== null && /** @type {{ on?: unknown }} */ (e.payload).on === true;
     if (on) {
-      this.sharerFor(e.peer, e.user);
+      const source = parseSource(e.payload);
+      const s = this.sharerFor(e.peer, e.user);
+      if (s.source !== source) {
+        s.source = source;
+        this.renderStatus();
+      }
     } else {
       this.removeSharer(e.peer);
     }
@@ -1692,8 +1784,8 @@ export default class ScreenSharePlugin extends Plugin {
       for (const s of this.sharers.values()) {
         el.append(
           ui.button({
-            text: `${s.user.display_name} の画面を見る`,
-            icon: 'monitor-play',
+            text: `${s.user.display_name} の${sourceLabel(s.source)}を見る`,
+            icon: s.source === 'camera' ? 'video' : 'monitor-play',
             variant: 'ghost',
             onClick: () => this.openViewer(s.peer),
           }),
@@ -1782,8 +1874,8 @@ export default class ScreenSharePlugin extends Plugin {
     const stage = this.stage;
     const s = this.viewing === null ? undefined : this.sharers.get(this.viewing);
     if (!stage || !s) return;
-    if (!s.frame) stage.showWaiting(`${s.user.display_name} の画面を待っています…`);
-    else stage.showImage(`data:${s.mime ?? 'image/jpeg'};base64,${s.frame}`, `${s.user.display_name} の共有画面`);
+    if (!s.frame) stage.showWaiting(`${s.user.display_name} の${sourceLabel(s.source)}を待っています…`);
+    else stage.showImage(`data:${s.mime ?? 'image/jpeg'};base64,${s.frame}`, `${s.user.display_name} の共有${sourceLabel(s.source)}`);
   }
 
   // ---- 通話の画面の領域（call.addPanel） ----
@@ -1824,8 +1916,8 @@ export default class ScreenSharePlugin extends Plugin {
     tabs.className = 'screenshare-tabs';
     for (const s of this.sharers.values()) {
       const b = ui.button({
-        text: `${s.user.display_name} の画面`,
-        icon: 'monitor-play',
+        text: `${s.user.display_name} の${sourceLabel(s.source)}`,
+        icon: s.source === 'camera' ? 'video' : 'monitor-play',
         variant: 'ghost',
         onClick: () => {
           this.panelPeer = s.peer;
@@ -1847,8 +1939,8 @@ export default class ScreenSharePlugin extends Plugin {
     const stage = this.panelStage;
     const s = this.panelPeer === null ? undefined : this.sharers.get(this.panelPeer);
     if (!stage || !s || !this.panel?.mounted || this.overlay) return;
-    if (!s.frame) stage.showWaiting(`${s.user.display_name} の画面を待っています…`);
-    else stage.showImage(`data:${s.mime ?? 'image/jpeg'};base64,${s.frame}`, `${s.user.display_name} の共有画面`);
+    if (!s.frame) stage.showWaiting(`${s.user.display_name} の${sourceLabel(s.source)}を待っています…`);
+    else stage.showImage(`data:${s.mime ?? 'image/jpeg'};base64,${s.frame}`, `${s.user.display_name} の共有${sourceLabel(s.source)}`);
   }
 
   // ---- 全画面 ----

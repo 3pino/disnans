@@ -176,6 +176,20 @@ describe('間隔・画質の調整', () => {
     expect(snapshotFailureReason(new Error('この環境では画面を撮れません'))).toBe('この環境では画面を撮れません');
   });
 
+  it('canShareCamera / parseSource / sourceLabel', async () => {
+    const { canShareCamera, parseSource, sourceLabel } = await load();
+    expect(canShareCamera(undefined)).toBe(false);
+    expect(canShareCamera({ mediaDevices: {} })).toBe(false);
+    expect(canShareCamera({ mediaDevices: { getUserMedia: () => {} } })).toBe(true);
+    expect(parseSource({ on: true, source: 'camera' })).toBe('camera');
+    // source の無い前の版・知らない値は画面
+    expect(parseSource({ on: true })).toBe('screen');
+    expect(parseSource({ on: true, source: 'x' })).toBe('screen');
+    expect(parseSource(null)).toBe('screen');
+    expect(sourceLabel('camera')).toBe('カメラ');
+    expect(sourceLabel('screen')).toBe('画面');
+  });
+
   it('hasAudience / canShareScreen / parseSettings', async () => {
     const { hasAudience, canShareScreen, parseSettings } = await load();
     expect(hasAudience([{ self: true }])).toBe(false);
@@ -405,6 +419,7 @@ function makeCall() {
   const handlers = new Map<string, Handler>();
   let change: () => void = () => {};
   let buttonOpts: Disnans.CallButtonOptions | null = null;
+  let cameraOpts: Disnans.CallButtonOptions | null = null;
   const panelEl = document.createElement('div');
   const panel = {
     el: panelEl,
@@ -434,9 +449,12 @@ function makeCall() {
       return () => {};
     },
     addButton: vi.fn((o: Disnans.CallButtonOptions) => {
-      buttonOpts = { ...o };
+      // 画面の共有ボタンとカメラのボタンを、作ったときのアイコンで分ける
+      const opts = { ...o };
+      if (o.icon === 'video') cameraOpts = opts;
+      else buttonOpts = opts;
       return {
-        update: (p: Partial<Disnans.CallButtonOptions>) => Object.assign(buttonOpts!, p),
+        update: (p: Partial<Disnans.CallButtonOptions>) => Object.assign(opts, p),
         remove: vi.fn(),
       };
     }),
@@ -447,6 +465,7 @@ function makeCall() {
     call,
     panel,
     button: () => buttonOpts,
+    cameraButton: () => cameraOpts,
     fire: (name: string, peer: string, userKey: 'a' | 'b', payload: unknown) => handlers.get(name)!({ peer, user: users[userKey], payload }),
     files: { api: {} as never, onChanged: () => () => {} },
     changed: () => change(),
@@ -485,14 +504,16 @@ function fakeImageLoad(width: number, height: number): () => void {
   };
 }
 
-async function setup(opts: { display: boolean; native?: Partial<Disnans.ScreenCapture>; pip?: Partial<Disnans.Pip> }) {
+async function setup(opts: { display: boolean; camera?: boolean; native?: Partial<Disnans.ScreenCapture>; pip?: Partial<Disnans.Pip> }) {
   const c = makeCall();
   (g.disnans as { call: unknown }).call = c.call;
   (g.disnans as { screenCapture: unknown }).screenCapture = opts.native;
   (g.disnans as { pip: unknown }).pip = opts.pip;
   const fs = fakeStream();
   const getDisplayMedia = vi.fn(async () => fs.stream);
-  Object.defineProperty(nav, 'mediaDevices', { configurable: true, value: opts.display ? { getDisplayMedia } : undefined });
+  const getUserMedia = vi.fn(async (_c: MediaStreamConstraints) => fs.stream);
+  const media = { ...(opts.display ? { getDisplayMedia } : {}), ...(opts.camera ? { getUserMedia } : {}) };
+  Object.defineProperty(nav, 'mediaDevices', { configurable: true, value: opts.display || opts.camera ? media : undefined });
   const status: HTMLElement[] = [];
   const toast = vi.fn();
   hooks.toast = toast;
@@ -527,7 +548,7 @@ async function setup(opts: { display: boolean; native?: Partial<Disnans.ScreenCa
   // 読み込んだときに、共有中の人を問い合わせる（screen.query）。ほかのテストの邪魔にならないよう、ここで確かめて消す
   expect(c.call.emit).toHaveBeenCalledWith('screen.query', {});
   c.call.emit.mockClear();
-  return { ...c, r, fs, getDisplayMedia, status: () => status[0], toast };
+  return { ...c, r, fs, getDisplayMedia, getUserMedia, status: () => status[0], toast };
 }
 
 const emitted = (c: ReturnType<typeof makeCall>['call'], name: string) =>
@@ -626,7 +647,7 @@ describe('examples/screenshare', () => {
     s.button()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
     expect(s.getDisplayMedia).toHaveBeenCalledOnce();
-    expect(emitted(s.call, 'screen.state')[0]).toEqual({ on: true });
+    expect(emitted(s.call, 'screen.state')[0]).toEqual({ on: true, source: 'screen' });
     expect(s.button()!.active).toBe(true);
     const frames = emitted(s.call, 'screen.frame');
     expect(frames).toEqual([{ f: 0, i: 0, n: 1, d: '/9j/QUJDRA==' }]);
@@ -642,6 +663,58 @@ describe('examples/screenshare', () => {
     s.call.emit.mockClear();
     await vi.advanceTimersByTimeAsync(10000);
     expect(s.call.emit).not.toHaveBeenCalled();
+    s.r.stop();
+  });
+
+  it('カメラを共有すると getUserMedia の映像を送り、同じボタンで止まる', async () => {
+    const s = await setup({ display: true, camera: true });
+    expect(s.cameraButton()).toMatchObject({ icon: 'video', label: 'カメラを共有', location: 'view' });
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.getUserMedia).toHaveBeenCalledOnce();
+    expect(s.getUserMedia.mock.calls[0]![0]).toMatchObject({ audio: false });
+    expect(s.getDisplayMedia).not.toHaveBeenCalled();
+    expect(emitted(s.call, 'screen.state')[0]).toEqual({ on: true, source: 'camera' });
+    expect(s.cameraButton()).toMatchObject({ active: true, icon: 'video-off' });
+    expect(s.button()!.active).toBeFalsy();
+    expect(emitted(s.call, 'screen.frame')).toHaveLength(1);
+    s.cameraButton()!.onClick();
+    expect(s.fs.track.stop).toHaveBeenCalled();
+    expect(emitted(s.call, 'screen.state').at(-1)).toEqual({ on: false });
+    expect(s.cameraButton()).toMatchObject({ active: false, icon: 'video' });
+    s.r.stop();
+  });
+
+  it('カメラの共有中に画面の共有を押すと、画面に切り替わる', async () => {
+    const s = await setup({ display: true, camera: true });
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.getDisplayMedia).toHaveBeenCalledOnce();
+    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true, source: 'camera' }, { on: false }, { on: true, source: 'screen' }]);
+    expect(s.cameraButton()!.active).toBe(false);
+    expect(s.button()!.active).toBe(true);
+    s.r.stop();
+  });
+
+  it('カメラを開けなければ知らせて、共有中にしない', async () => {
+    const s = await setup({ display: false, camera: true });
+    s.getUserMedia.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'));
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.toast).toHaveBeenCalledWith(expect.stringContaining('カメラを取得できませんでした'), 'error');
+    expect(s.cameraButton()!.active).toBeFalsy();
+    expect(emitted(s.call, 'screen.state')).toHaveLength(0);
+    s.r.stop();
+  });
+
+  it('カメラの共有は「○○のカメラを見る」と出る', async () => {
+    const s = await setup({ display: false });
+    s.fire('screen.state', 'pa', 'a', { on: true, source: 'camera' });
+    expect(s.status().querySelector('button')!.textContent).toContain('アリス のカメラを見る');
+    s.fire('screen.state', 'pa', 'a', { on: true });
+    expect(s.status().querySelector('button')!.textContent).toContain('アリス の画面を見る');
     s.r.stop();
   });
 
@@ -865,7 +938,7 @@ describe('examples/screenshare', () => {
     expect(start).toHaveBeenCalledOnce();
     expect(opts).toMatchObject({ maxEdge: 1280, fps: 5, color: 'full', format: 'jpeg' });
     expect(s.button()!.active).toBe(true);
-    expect(emitted(s.call, 'screen.state')[0]).toEqual({ on: true });
+    expect(emitted(s.call, 'screen.state')[0]).toEqual({ on: true, source: 'screen' });
 
     onFrame({ data: '/9j/QUJDRA==', mime: 'image/jpeg', width: 1280, height: 720 });
     expect(emitted(s.call, 'screen.frame')).toEqual([{ f: 0, i: 0, n: 1, d: '/9j/QUJDRA==' }]);
@@ -1016,7 +1089,7 @@ describe('examples/screenshare', () => {
     await vi.advanceTimersByTimeAsync(1000);
     s.call.emit.mockClear();
     s.fire('screen.query', 'pa', 'a', {});
-    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true }]);
+    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true, source: 'screen' }]);
     await vi.advanceTimersByTimeAsync(1);
     // 画面が変わっていなくても、問い合わせた人のために送る
     expect(emitted(s.call, 'screen.frame')).toHaveLength(1);
@@ -1030,7 +1103,7 @@ describe('examples/screenshare', () => {
     s.call.emit.mockClear();
     s.call.participants = [...s.call.participants, { peer: 'pb', self: false }];
     s.changed();
-    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true }]);
+    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true, source: 'screen' }]);
     await vi.advanceTimersByTimeAsync(1);
     expect(emitted(s.call, 'screen.frame')).toHaveLength(1);
     s.r.stop();
