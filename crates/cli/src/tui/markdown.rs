@@ -150,6 +150,57 @@ fn blocks(list: &[Block], name_of: &dyn Fn(&str) -> String, blank_between: bool)
     out
 }
 
+/// 本文にある画像の埋め込み（`![[パス]]` など）の共有フォルダのパス。順に、重複なし。
+/// 画像の拡張子のものだけ（画像以外は今のリンク表示のまま）。
+pub fn embed_paths(body: &str) -> Vec<String> {
+    fn inlines(items: &[Inline], out: &mut Vec<String>) {
+        for item in items {
+            match item {
+                Inline::FileLink {
+                    path, embed: true, ..
+                } if is_image_path(path) => {
+                    if let Ok(path) = disnans_client_core::shared_path(path)
+                        && !out.contains(&path)
+                    {
+                        out.push(path);
+                    }
+                }
+                Inline::Bold { children }
+                | Inline::Italic { children }
+                | Inline::Underline { children }
+                | Inline::Strike { children }
+                | Inline::Highlight { children } => inlines(children, out),
+                _ => {}
+            }
+        }
+    }
+    fn walk(list: &[Block], out: &mut Vec<String>) {
+        for block in list {
+            match block {
+                Block::Paragraph { lines } => lines.iter().for_each(|l| inlines(l, out)),
+                Block::Code { .. } => {}
+                Block::Quote { children } => walk(children, out),
+                Block::List { items, .. } => {
+                    for item in items {
+                        item.lines.iter().for_each(|l| inlines(l, out));
+                        walk(&item.children, out);
+                    }
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&markdown::parse(body), &mut out);
+    out
+}
+
+fn is_image_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    ["png", "jpg", "jpeg", "gif", "webp"]
+        .iter()
+        .any(|ext| lower.rsplit_once('.').is_some_and(|(_, e)| e == *ext))
+}
+
 fn inline_cells(items: &[Inline], deco: Deco, name_of: &dyn Fn(&str) -> String) -> Vec<Cell> {
     let mut out = Vec::new();
     for item in items {
@@ -182,10 +233,14 @@ fn inline_cells(items: &[Inline], deco: Deco, name_of: &dyn Fn(&str) -> String) 
                     out.extend(cells(&shown, style));
                 }
             }
-            // 仮の表示: 共有フォルダのファイルは別名か、なければパスを文字で出す（開く・埋め込みは後で）
+            // 共有フォルダのファイル: 別名か、なければパスを、リンクの見た目（テーマの accent + 下線）で出す。
+            // 開く・画像の埋め込み（embed）は後で。
             Inline::FileLink { path, alias, .. } => {
                 let shown = alias.as_deref().unwrap_or(path);
-                out.extend(cells(&sanitize::escape_text(shown, false), deco));
+                out.extend(cells(
+                    &sanitize::escape_text(shown, false),
+                    deco.with(Deco::LINK),
+                ));
             }
             Inline::Mention { user_id } => {
                 let shown = format!("@{}", name_of(user_id));
@@ -285,6 +340,12 @@ fn to_text(cells: &[Cell]) -> (String, Vec<(usize, usize, Deco)>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn embed_paths_keep_only_embedded_images_in_order_without_duplicates() {
+        let body = "![[a/x.PNG]] と [[b.png]] と ![[doc.txt]] と **![[c.webp|名前]]** と ![[a/x.PNG]]\n```\n![[d.png]]\n```";
+        assert_eq!(embed_paths(body), ["a/x.PNG", "c.webp"]);
+    }
 
     fn name(id: &str) -> String {
         if id == "u1" {

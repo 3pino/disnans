@@ -340,9 +340,48 @@ async fn fetch_bytes(rest: &RestClient, path: &str) -> Result<Vec<u8>, String> {
     if super::transcript::is_external_avatar(path) {
         return fetch_external(path).await;
     }
+    if let Some(shared) = path.strip_prefix("shared:") {
+        return fetch_shared(rest, shared).await;
+    }
     rest.get_bytes(path, MAX_IMAGE_BYTES)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// 共有フォルダの画像（本文の埋め込み）。`attachments/` の添付は軽いサムネイル、
+/// それ以外は 5MB 以下のときだけ本体を取る。
+async fn fetch_shared(rest: &RestClient, path: &str) -> Result<Vec<u8>, String> {
+    const SHARED_MAX: u64 = 5 << 20;
+    let entry = rest
+        .shared_stat(path)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "共有フォルダに見つかりません".to_owned())?;
+    if entry.kind != disnans_shared::SharedKind::File {
+        return Err("ファイルではありません".to_owned());
+    }
+    if let Some(id) = entry.file_id.as_deref() {
+        let thumb = format!(
+            "/api/files/{}/thumb",
+            disnans_client_core::encode_path_segment(id)
+        );
+        return rest
+            .get_bytes(&thumb, MAX_IMAGE_BYTES)
+            .await
+            .map_err(|e| e.to_string());
+    }
+    if entry.size > SHARED_MAX {
+        return Err("画像が大きすぎます".to_owned());
+    }
+    let mut download = rest.shared_get(path).await.map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    while let Some(chunk) = download.chunk().await.map_err(|e| e.to_string())? {
+        if out.len() + chunk.len() > SHARED_MAX as usize {
+            return Err("画像が大きすぎます".to_owned());
+        }
+        out.extend_from_slice(&chunk);
+    }
+    Ok(out)
 }
 
 /// サーバー外の https 画像（Tailscale のアイコン等）。認証情報は送らない。

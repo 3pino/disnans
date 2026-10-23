@@ -38,6 +38,25 @@ pub struct Row {
     pub image: Option<ImageSlot>,
 }
 
+/// 本文の画像の埋め込みの状態（画像のキー → 取得済みの大きさ）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Embed {
+    /// 取得中（まだ大きさが分からない）。取得を依頼するための 1 行だけ予約する。
+    Pending,
+    /// 取得済み（元の幅・高さ。ピクセル）。
+    Ready(u32, u32),
+    /// 取得できなかった・使えない。リンクの文字のまま。
+    Failed,
+}
+
+/// 1 メッセージに出す埋め込み画像の数の上限。
+const EMBED_MAX: usize = 4;
+
+/// 埋め込み画像のキー（取得先。`net.rs` が `shared:` を見て共有フォルダから取る）。
+pub fn embed_key(path: &str) -> String {
+    format!("shared:{path}")
+}
+
 /// 画像の予約領域の1行分。`row` 行目（0 始まり）/ 全 `rows` 行。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageSlot {
@@ -151,6 +170,7 @@ pub fn timeline_for(
     zone: Option<&TimeZone>,
     gfx: Option<(u16, u16)>,
     me: Option<&str>,
+    embeds: &dyn Fn(&str) -> Embed,
 ) -> Vec<Row> {
     let calendar = ZoneCalendar { zone };
     let ctx = view::Context::new(users, me, &calendar);
@@ -175,6 +195,7 @@ pub fn timeline_for(
             width,
             gfx,
             continuation,
+            embeds,
         ));
         previous = Some(message);
     }
@@ -189,7 +210,7 @@ pub fn timeline(
     zone: Option<&TimeZone>,
     gfx: Option<(u16, u16)>,
 ) -> Vec<Row> {
-    timeline_for(messages, users, width, zone, gfx, None)
+    timeline_for(messages, users, width, zone, gfx, None, &|_| Embed::Failed)
 }
 
 #[cfg(test)]
@@ -200,7 +221,7 @@ pub fn message_rows(
     zone: Option<&TimeZone>,
     gfx: Option<(u16, u16)>,
 ) -> Vec<Row> {
-    message_rows_for(message, users, width, zone, gfx, None)
+    message_rows_for(message, users, width, zone, gfx, None, &|_| Embed::Failed)
 }
 
 /// 1メッセージ分の行。`width` は履歴の表示幅（桁）。
@@ -212,11 +233,12 @@ pub fn message_rows_for(
     _zone: Option<&TimeZone>,
     gfx: Option<(u16, u16)>,
     me: Option<&str>,
+    embeds: &dyn Fn(&str) -> Embed,
 ) -> Vec<Row> {
     let calendar = view::UtcCalendar;
     let ctx = view::Context::new(users, me, &calendar);
     let model = view::message_rows(message, &ctx);
-    message_rows_with(message, &model, users, width, gfx, false)
+    message_rows_with(message, &model, users, width, gfx, false, embeds)
 }
 
 /// 表示データ（core の行）を、TUI の行（幅で折り返し、接頭辞と画像の予約を付ける）に変える。
@@ -228,6 +250,7 @@ fn message_rows_with(
     width: usize,
     gfx: Option<(u16, u16)>,
     continuation: bool,
+    embeds: &dyn Fn(&str) -> Embed,
 ) -> Vec<Row> {
     let head = match model.first() {
         Some(view::Row::Message {
@@ -281,6 +304,36 @@ fn message_rows_with(
                     for line in markdown::render(&message.body, &name_of) {
                         for (text, decos) in markdown::layout_line(&line, inner) {
                             content.push((RowKind::Body, text, decos));
+                        }
+                    }
+                    // 画像の埋め込み: 本文のあとに、取得できた画像を並べる（対応ターミナルのみ）。
+                    if let Some(cell) = gfx {
+                        for path in markdown::embed_paths(&message.body)
+                            .into_iter()
+                            .take(EMBED_MAX)
+                        {
+                            let key = embed_key(&path);
+                            let (cols, rows) = match embeds(&key) {
+                                Embed::Failed => continue,
+                                Embed::Pending => (0, 1),
+                                Embed::Ready(w, h) if w > 0 && h > 0 => {
+                                    image_cells(w, h, inner, cell)
+                                }
+                                Embed::Ready(..) => continue,
+                            };
+                            for row in 0..rows {
+                                images.push((
+                                    content.len(),
+                                    ImageSlot {
+                                        key: key.clone(),
+                                        row: row as u16,
+                                        rows: rows as u16,
+                                        cols: cols as u16,
+                                        offset: lead_w as u16,
+                                    },
+                                ));
+                                content.push((RowKind::Meta, String::new(), Vec::new()));
+                            }
                         }
                     }
                 }
@@ -480,6 +533,33 @@ pub mod tests_support {
 mod tests {
     use super::tests_support::{message, user};
     use super::*;
+
+    #[test]
+    fn embedded_images_reserve_rows_by_state_and_only_on_graphics_terminals() {
+        let users = [user("u1", "Alice")];
+        let m = message("m", "u1", "見て ![[pics/a.png]]");
+        let with =
+            |gfx, state: Embed| message_rows_for(&m, &users, 60, None, gfx, None, &move |_| state);
+        let plain = with(None, Embed::Ready(100, 100));
+        assert!(plain.iter().all(|r| r.image.is_none()));
+        assert!(plain[0].text.contains("pics/a.png"));
+        // 取得中は、取得を依頼するための 1 行だけ
+        let pending = with(Some((8, 16)), Embed::Pending);
+        let slots: Vec<_> = pending.iter().filter_map(|r| r.image.as_ref()).collect();
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].key, "shared:pics/a.png");
+        // 取得済みは画像の行数ぶん
+        let ready = with(Some((8, 16)), Embed::Ready(160, 160));
+        let n = ready.iter().filter(|r| r.image.is_some()).count();
+        assert!(n > 1);
+        assert_eq!(ready.len(), plain.len() + n);
+        // 失敗は文字のリンクのまま
+        assert!(
+            with(Some((8, 16)), Embed::Failed)
+                .iter()
+                .all(|r| r.image.is_none())
+        );
+    }
     use disnans_shared::{Attachment, BotInfo, MessageCard, Reaction, ReplyPreview};
 
     #[test]

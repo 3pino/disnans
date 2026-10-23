@@ -336,7 +336,17 @@ impl App {
             self.zone.as_ref(),
             self.gfx,
             self.me.as_ref().map(|u| u.id.as_str()),
+            &|key| self.embed(key),
         )
+    }
+
+    /// 本文の画像の埋め込みの状態（まだ取得を始めていなければ、取得中として扱う）。
+    fn embed(&self, key: &str) -> transcript::Embed {
+        match self.images.get(key) {
+            None | Some(ImageState::Loading) => transcript::Embed::Pending,
+            Some(ImageState::Ready(p)) => transcript::Embed::Ready(p.rgba.width(), p.rgba.height()),
+            Some(ImageState::Failed) => transcript::Embed::Failed,
+        }
     }
 
     fn message_height(&self, message: &Message) -> usize {
@@ -347,6 +357,7 @@ impl App {
             self.zone.as_ref(),
             self.gfx,
             self.me.as_ref().map(|u| u.id.as_str()),
+            &|key| self.embed(key),
         )
         .len()
     }
