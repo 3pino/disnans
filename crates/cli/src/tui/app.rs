@@ -184,6 +184,8 @@ pub struct App {
     pub gfx: Option<(u16, u16)>,
     /// 画像（キーは取得先のパス）。
     pub images: HashMap<String, ImageState>,
+    /// メッセージごとの画像の横スクロール（左端の画像の番号）。選択を外すと戻す。
+    hscroll: HashMap<String, usize>,
     /// 取得を始めるべき画像（描画が見つけたもの）。
     pending_images: Vec<String>,
     /// 直近の描画で画像を出す場所。
@@ -239,6 +241,7 @@ impl App {
             focus: Focus::Input,
             gfx: None,
             images: HashMap::new(),
+            hscroll: HashMap::new(),
             pending_images: Vec::new(),
             placements: Vec::new(),
             messages: Vec::new(),
@@ -329,15 +332,27 @@ impl App {
     }
 
     pub fn rows(&self) -> Vec<Row> {
-        transcript::timeline_for(
-            &self.messages,
-            &self.users,
-            self.viewport.0,
-            self.zone.as_ref(),
-            self.gfx,
-            self.me.as_ref().map(|u| u.id.as_str()),
-            &|key| self.embed(key),
-        )
+        self.with_media(|media| {
+            transcript::timeline_for(
+                &self.messages,
+                &self.users,
+                self.viewport.0,
+                self.zone.as_ref(),
+                self.gfx,
+                self.me.as_ref().map(|u| u.id.as_str()),
+                media,
+            )
+        })
+    }
+
+    /// 画像の状態とスクロールを引くもの（`f` に渡す。参照を返せないのでコールバックにする）。
+    fn with_media<R>(&self, f: impl FnOnce(&transcript::Media) -> R) -> R {
+        let embed = |key: &str| self.embed(key);
+        let first = |id: &str| self.hscroll.get(id).copied().unwrap_or(0);
+        f(&transcript::Media {
+            embed: &embed,
+            first: &first,
+        })
     }
 
     /// 本文の画像の埋め込みの状態（まだ取得を始めていなければ、取得中として扱う）。
@@ -350,16 +365,18 @@ impl App {
     }
 
     fn message_height(&self, message: &Message) -> usize {
-        transcript::message_rows_for(
-            message,
-            &self.users,
-            self.viewport.0,
-            self.zone.as_ref(),
-            self.gfx,
-            self.me.as_ref().map(|u| u.id.as_str()),
-            &|key| self.embed(key),
-        )
-        .len()
+        self.with_media(|media| {
+            transcript::message_rows_for(
+                message,
+                &self.users,
+                self.viewport.0,
+                self.zone.as_ref(),
+                self.gfx,
+                self.me.as_ref().map(|u| u.id.as_str()),
+                media,
+            )
+            .len()
+        })
     }
 
     fn total_rows(&self) -> usize {
@@ -487,6 +504,33 @@ impl App {
         }
     }
 
+    /// 選んでいるメッセージの画像の帯を、1 枚ぶん横へ動かす（`delta` は ±1）。
+    fn scroll_images(&mut self, delta: isize) {
+        let Some(id) = self.selected.clone() else {
+            return;
+        };
+        let rows = self.rows();
+        let Some(strip) = rows
+            .iter()
+            .filter(|r| r.message_id == id)
+            .find_map(|r| r.strip)
+        else {
+            return;
+        };
+        let next = if delta < 0 {
+            strip.first.saturating_sub(1)
+        } else if strip.end < strip.total {
+            strip.first + 1
+        } else {
+            strip.first
+        };
+        if next != strip.first {
+            self.hscroll.insert(id, next);
+            // 高さが変わり得る（画像ごとに高さが違う）ので、選択を見える位置に保つ
+            self.reveal_selected();
+        }
+    }
+
     /// コマンド ID を実行する（キーとの対応は `commands::from_key`）。
     fn run_command(&mut self, id: &str, effects: &mut Vec<Effect>) {
         match id {
@@ -505,7 +549,10 @@ impl App {
             commands::MESSAGE_SELECT_CANCEL => {
                 self.mode = Mode::Input;
                 self.selected = None;
+                self.hscroll.clear();
             }
+            commands::MESSAGE_IMAGES_PREV => self.scroll_images(-1),
+            commands::MESSAGE_IMAGES_NEXT => self.scroll_images(1),
             commands::MESSAGE_REPLY => {
                 if let Some(id) = self.selected.take() {
                     self.reply_to = Some(id);

@@ -196,9 +196,11 @@ pub fn embed_paths(body: &str) -> Vec<String> {
 
 fn is_image_path(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
-    ["png", "jpg", "jpeg", "gif", "webp"]
-        .iter()
-        .any(|ext| lower.rsplit_once('.').is_some_and(|(_, e)| e == *ext))
+    [
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "ico", "avif",
+    ]
+    .iter()
+    .any(|ext| lower.rsplit_once('.').is_some_and(|(_, e)| e == *ext))
 }
 
 fn inline_cells(items: &[Inline], deco: Deco, name_of: &dyn Fn(&str) -> String) -> Vec<Cell> {

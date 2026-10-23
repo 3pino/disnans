@@ -6,7 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Padding, Paragraph};
 
-use super::app::{App, ConnState, Focus, ImageState, SendState};
+use super::app::{App, ConnState, Focus, SendState};
 use super::commands::Mode;
 use super::graphics::Placement;
 use super::markdown::Deco;
@@ -285,13 +285,7 @@ fn deco_spans(
     spans
 }
 
-fn row_line(
-    row: &Row,
-    color: Color,
-    hide_icon: bool,
-    note: Option<&str>,
-    selected: bool,
-) -> Line<'static> {
+fn row_line(row: &Row, color: Color, hide_icon: bool, selected: bool) -> Line<'static> {
     match row.kind {
         RowKind::Separator => Line::from(Span::styled(
             row.text.clone(),
@@ -316,12 +310,6 @@ fn row_line(
                 &row.decos,
                 rest_style,
             ));
-            if let Some(note) = note {
-                spans.push(Span::styled(
-                    note.to_owned(),
-                    Style::new().fg(t().text_muted),
-                ));
-            }
             if selected {
                 let mark = Style::new().bg(t().surface);
                 for span in &mut spans {
@@ -378,15 +366,16 @@ pub fn plan(area: Rect, app: &mut App) {
                 });
             }
         }
-        if let Some(slot) = &row.image {
+        for slot in &row.images {
             app.want_image(&slot.key);
             if app.ready_image(&slot.key).is_none() {
                 continue;
             }
-            match placements.last_mut() {
+            // 同じ画像の続きの行なら 1 つの配置にまとめる（横に並んだ別の画像とは混ぜない）。
+            match placements.iter_mut().rev().find(|p| p.key == slot.key) {
                 Some(last)
-                    if last.key == slot.key
-                        && last.row + last.rows == y
+                    if last.row + last.rows == y
+                        && last.col == r.history.x + slot.offset
                         && last.src_end == slot.row =>
                 {
                     last.rows += 1;
@@ -460,16 +449,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                 .avatar
                 .as_deref()
                 .is_some_and(|k| app.ready_image(k).is_some());
-            let note = row.image.as_ref().filter(|s| s.row == 0).and_then(|s| {
-                match app.images.get(&s.key) {
-                    Some(ImageState::Failed) => Some("(画像を表示できません)"),
-                    Some(ImageState::Ready(_)) => None,
-                    _ => Some("(画像を読み込み中…)"),
-                }
-            });
             let selected =
                 app.mode != Mode::Input && app.selected.as_deref() == Some(row.message_id.as_str());
-            row_line(row, author_color(app, row), hide_icon, note, selected)
+            row_line(row, author_color(app, row), hide_icon, selected)
         })
         .collect();
     // 少ないときは下に寄せる（最新が入力欄の近くにある）。
@@ -555,7 +537,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     frame.render_widget(
         Paragraph::new(sanitize::truncate(
             &if app.mode == Mode::Select {
-                "↑↓/j k: 選択 | r: リアクション | 1-5: 👍🎉😂😮🙏 | p/Enter: 返信 | Esc: 戻る"
+                "↑↓/j k: 選択 | ←→/h l: 画像を横へ | r: リアクション | 1-5: 👍🎉😂😮🙏 | p/Enter: 返信 | Esc: 戻る"
                     .to_owned()
             } else if app.mode == Mode::React {
                 "Enter: 付ける/外す | Esc: 戻る".to_owned()

@@ -68,7 +68,7 @@ fn list(limit: usize) -> RecentImages {
                 }
             }
         }
-        found.sort_by(|a, b| b.1.cmp(&a.1));
+        found.sort_by_key(|f| std::cmp::Reverse(f.1));
         for (path, modified) in found {
             if images.len() >= limit {
                 break;

@@ -25,6 +25,9 @@ pub const MESSAGE_SELECT_CANCEL: &str = "message.select.cancel";
 /// 選んだメッセージへ返信する（入力欄へ戻り、返信先を付ける）。
 pub const MESSAGE_REPLY: &str = "message.reply";
 pub const MESSAGE_REPLY_CANCEL: &str = "message.reply.cancel";
+/// 選んだメッセージの画像の帯を左右へ 1 枚ずつ動かす。
+pub const MESSAGE_IMAGES_PREV: &str = "message.images.prev";
+pub const MESSAGE_IMAGES_NEXT: &str = "message.images.next";
 /// 絵文字の入力を始める。
 pub const MESSAGE_REACT: &str = "message.react";
 pub const MESSAGE_REACT_APPLY: &str = "message.react.apply";
@@ -52,6 +55,8 @@ pub fn from_key(mode: Mode, action: &Action, has_reply: bool) -> Option<&'static
             Action::Up | Action::Insert('k') => Some(MESSAGE_SELECT_PREV),
             Action::Down | Action::Insert('j') => Some(MESSAGE_SELECT_NEXT),
             Action::Cancel => Some(MESSAGE_SELECT_CANCEL),
+            Action::Left | Action::Insert('h') => Some(MESSAGE_IMAGES_PREV),
+            Action::Right | Action::Insert('l') => Some(MESSAGE_IMAGES_NEXT),
             Action::Insert('r') => Some(MESSAGE_REACT),
             Action::Insert('p') | Action::Send | Action::Newline => Some(MESSAGE_REPLY),
             Action::Insert(c @ '1'..='5') => Some(QUICK_REACTIONS[usize::from(*c as u8 - b'1')].0),
@@ -107,6 +112,14 @@ mod tests {
             Some("message.react.quick.3")
         );
         assert_eq!(from_key(Mode::Select, &Action::Insert('z'), false), None);
+        assert_eq!(
+            from_key(Mode::Select, &Action::Left, false),
+            Some(MESSAGE_IMAGES_PREV)
+        );
+        assert_eq!(
+            from_key(Mode::Select, &Action::Insert('l'), false),
+            Some(MESSAGE_IMAGES_NEXT)
+        );
         assert_eq!(
             from_key(Mode::React, &Action::Newline, false),
             Some(MESSAGE_REACT_APPLY)
