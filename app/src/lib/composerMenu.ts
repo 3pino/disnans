@@ -1,5 +1,4 @@
 import Paperclip from '@lucide/svelte/icons/paperclip';
-import Camera from '@lucide/svelte/icons/camera';
 import type { IconRef } from './icons.svelte';
 import { composerActions } from './composerActions';
 import { commandList, runCommand } from './commands.svelte';
@@ -38,15 +37,18 @@ export type ComposerMenuPrefs = {
 };
 
 export const BUILTIN_FILE_ID = 'builtin:file';
-export const BUILTIN_CAMERA_ID = 'builtin:camera';
+/** 以前は本体の「＋」メニューの項目だった「写真を撮る」。いまは出さず、コマンド「写真を撮る」に置き換えた */
+export const LEGACY_CAMERA_ID = 'builtin:camera';
+/** 「写真を撮る」コマンドの「＋」メニューの id */
+export const TAKE_PHOTO_COMMAND_ID = 'cmd:app:take-photo';
 export const DEFAULT_COMPOSER_MENU: Readonly<ComposerMenuPrefs> = Object.freeze({ order: [], hidden: [] });
 
 /** 以前は「＋」メニューの既定の項目だった「通話に参加」（登録した操作の id）。いまは出さず、コマンド「通話に参加する」に置き換えた */
 export const LEGACY_CALL_JOIN_ACTION_ID = 'action:app:call-join';
 /** 「通話に参加する」コマンドの「＋」メニューの id */
 export const CALL_JOIN_COMMAND_ID = 'cmd:app:call-join';
-/** composerMenu の移行の版。これより古い（版のない）保存値は、読むときに移行する */
-export const COMPOSER_MENU_VERSION = 2;
+/** composerMenu の移行の版。これより古い保存値は、読むときに移行する */
+export const COMPOSER_MENU_VERSION = 3;
 
 /** 保存したもの（サーバーの設定の composerMenu）を読む。文字列でないものと重複は捨てる。知らない id は残す（入れ直したプラグインのため） */
 export function normalizeComposerMenu(raw: unknown): ComposerMenuPrefs {
@@ -60,41 +62,68 @@ export function normalizeComposerMenu(raw: unknown): ComposerMenuPrefs {
 }
 
 /**
- * 保存した composerMenu を新しい版に移す（一度だけ）。版のない保存値は、既定で「通話に参加」が出ていた扱いにする。
- * 出していた（隠していない）なら「通話に参加する」コマンドを、「ファイルを添付」の直後（並び順にあれば同じ位置）に入れる。
- * 隠していたなら、何も入れない。どちらでも、旧い「通話に参加」の項目の印は消す。
+ * 旧い既定の項目（legacyId）を、コマンド（commandId）に置き換える。
+ * 出していた（隠していない）なら、並び順の同じ位置に入れる。並び順になければ、placeUnlisted で位置を決める。
+ * 隠していたなら、何も入れない。どちらでも、旧い項目の印は消す
+ */
+function replaceLegacyEntry(
+  prefs: ComposerMenuPrefs,
+  legacyId: string,
+  commandId: string,
+  placeUnlisted: (order: string[]) => string[],
+): ComposerMenuPrefs {
+  const on = !prefs.hidden.includes(legacyId);
+  const hidden = prefs.hidden.filter((id) => id !== legacyId);
+  let order = prefs.order.filter((id) => id !== legacyId);
+  if (on && !order.includes(commandId)) {
+    const legacyAt = prefs.order.indexOf(legacyId);
+    order = legacyAt >= 0 ? [...order.slice(0, legacyAt), commandId, ...order.slice(legacyAt)] : placeUnlisted(order);
+  }
+  return { order, hidden };
+}
+
+/** 版 2: 「通話に参加」（操作）→「通話に参加する」コマンド。並び順になければ「ファイルを添付」の直後（並び順が空なら既定の並びを書き出す） */
+function migrateCallJoin(prefs: ComposerMenuPrefs): ComposerMenuPrefs {
+  return replaceLegacyEntry(prefs, LEGACY_CALL_JOIN_ACTION_ID, CALL_JOIN_COMMAND_ID, (order) => {
+    const list = order.length > 0 ? order : [BUILTIN_FILE_ID];
+    const at = list.indexOf(BUILTIN_FILE_ID);
+    return [...list.slice(0, at + 1), CALL_JOIN_COMMAND_ID, ...list.slice(at + 1)];
+  });
+}
+
+/**
+ * 版 3: 本体の「写真を撮る」→「写真を撮る」コマンド。並び順になかった本体の「写真を撮る」は、
+ * 並び順の項目の後ろ（「ファイルを添付」も並び順になければ、その後ろ）に出ていたので、同じ位置に入れる
+ */
+function migrateCamera(prefs: ComposerMenuPrefs): ComposerMenuPrefs {
+  return replaceLegacyEntry(prefs, LEGACY_CAMERA_ID, TAKE_PHOTO_COMMAND_ID, (order) => [
+    ...order,
+    ...(order.includes(BUILTIN_FILE_ID) ? [] : [BUILTIN_FILE_ID]),
+    TAKE_PHOTO_COMMAND_ID,
+  ]);
+}
+
+/**
+ * 保存した composerMenu を新しい版に移す（版ごとに一度だけ）。版のない保存値は版 1 として扱う。
  * changed は、版を書き込む必要があるとき true（保存し直す）。移行後の値は版の印を持つので、二度は変えない
  */
 export function migrateComposerMenu(raw: unknown): { value: Record<string, unknown>; changed: boolean } {
   const base: Record<string, unknown> = raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
-  if (base.v === COMPOSER_MENU_VERSION) return { value: base, changed: false };
-  const prefs = normalizeComposerMenu(base);
-  const callJoinOn = !prefs.hidden.includes(LEGACY_CALL_JOIN_ACTION_ID);
-  let order = prefs.order.filter((id) => id !== LEGACY_CALL_JOIN_ACTION_ID);
-  if (callJoinOn && !order.includes(CALL_JOIN_COMMAND_ID)) {
-    // 並び順が空なら、既定の並び（ファイルを添付が先頭）を書き出してから入れる
-    const list = prefs.order.length > 0 ? prefs.order.filter((id) => id !== LEGACY_CALL_JOIN_ACTION_ID) : [BUILTIN_FILE_ID];
-    const legacyAt = prefs.order.indexOf(LEGACY_CALL_JOIN_ACTION_ID);
-    if (legacyAt >= 0) {
-      // 並び順に「通話に参加」があれば、その位置に置き換える
-      order = [...order.slice(0, legacyAt), CALL_JOIN_COMMAND_ID, ...order.slice(legacyAt)];
-    } else {
-      const at = list.indexOf(BUILTIN_FILE_ID);
-      order = [...list.slice(0, at + 1), CALL_JOIN_COMMAND_ID, ...list.slice(at + 1)];
-    }
-  }
-  const value = { ...base, order, hidden: prefs.hidden.filter((id) => id !== LEGACY_CALL_JOIN_ACTION_ID), v: COMPOSER_MENU_VERSION };
-  return { value, changed: true };
+  const from = typeof base.v === 'number' ? base.v : 1;
+  if (from >= COMPOSER_MENU_VERSION) return { value: base, changed: false };
+  let prefs = normalizeComposerMenu(base);
+  if (from < 2) prefs = migrateCallJoin(prefs);
+  if (from < 3) prefs = migrateCamera(prefs);
+  return { value: { ...base, ...prefs, v: COMPOSER_MENU_VERSION }, changed: true };
 }
 
 /**
  * 「＋」メニューの項目。本体の「ファイルを添付」→ 登録された操作 → アプリのコマンド（登録順）。
  * pickFiles は本体の「ファイルを添付」が使う
  */
-export function composerMenuAvailable(pickFiles: () => void, takePhoto: () => void = () => {}): ComposerMenuItem[] {
+export function composerMenuAvailable(pickFiles: () => void): ComposerMenuItem[] {
   return [
     { id: BUILTIN_FILE_ID, kind: 'builtin', label: 'ファイルを選択', icon: Paperclip, run: () => pickFiles() },
-    { id: BUILTIN_CAMERA_ID, kind: 'builtin', label: '写真を撮る', icon: Camera, run: () => takePhoto() },
     ...composerActions().map(
       (a): ComposerMenuItem => ({
         id: `action:${a.id}`,

@@ -13,7 +13,7 @@ const { DEFAULT_NAV_ITEMS } = await import('../navBar');
 const { prefsResultOf: res } = await import('../settingsModel');
 
 /** 版の印のある「＋」メニュー（移行の保存を起こさないため） */
-const BASE = { composerMenu: { v: 2, order: [], hidden: [] } };
+const BASE = { composerMenu: { v: 3, order: [], hidden: [] } };
 
 const LOAD = (p: InstanceType<typeof Prefs>) => (p as unknown as { load(): Promise<void> }).load();
 

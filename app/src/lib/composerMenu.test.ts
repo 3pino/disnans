@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   CALL_JOIN_COMMAND_ID,
+  TAKE_PHOTO_COMMAND_ID,
   addComposerMenuCommand,
   composerMenuAvailable,
   composerMenuItems,
@@ -148,40 +149,40 @@ describe('migrateComposerMenu（通話に参加 → 通話に参加する）', (
   it('版のない保存値（既定で「通話に参加」が出ていた）には、ファイルの直後に通話に参加するを入れ、版の印を付ける', () => {
     const r = migrateComposerMenu(undefined);
     expect(r.changed).toBe(true);
-    expect(r.value).toEqual({ order: ['builtin:file', CALL_JOIN_COMMAND_ID], hidden: [], v: 2 });
+    expect(r.value).toEqual({ order: ['builtin:file', CALL_JOIN_COMMAND_ID, TAKE_PHOTO_COMMAND_ID], hidden: [], v: 3 });
   });
 
   it('並び順に「通話に参加」があれば、その位置に置き換える（ほかの並びは変えない）', () => {
     const r = migrateComposerMenu({ order: ['action:plugin:dice:roll', 'action:app:call-join', 'builtin:file'], hidden: ['action:plugin:poll:new'] });
-    expect(r.value).toEqual({ order: ['action:plugin:dice:roll', CALL_JOIN_COMMAND_ID, 'builtin:file'], hidden: ['action:plugin:poll:new'], v: 2 });
+    expect(r.value).toEqual({ order: ['action:plugin:dice:roll', CALL_JOIN_COMMAND_ID, 'builtin:file', TAKE_PHOTO_COMMAND_ID], hidden: ['action:plugin:poll:new'], v: 3 });
     expect(r.changed).toBe(true);
   });
 
   it('隠していた「通話に参加」は入れない（印は消す）', () => {
-    const r = migrateComposerMenu({ order: ['builtin:file'], hidden: ['action:app:call-join', 'action:plugin:dice:roll'] });
-    expect(r.value).toEqual({ order: ['builtin:file'], hidden: ['action:plugin:dice:roll'], v: 2 });
+    const r = migrateComposerMenu({ order: ['builtin:file'], hidden: ['action:app:call-join', 'builtin:camera', 'action:plugin:dice:roll'] });
+    expect(r.value).toEqual({ order: ['builtin:file'], hidden: ['action:plugin:dice:roll'], v: 3 });
   });
 
   it('並び順が空で、隠していなければ、ファイルの直後に入る', () => {
-    expect(migrateComposerMenu({ order: [], hidden: [] }).value.order).toEqual(['builtin:file', CALL_JOIN_COMMAND_ID]);
+    expect(migrateComposerMenu({ order: [], hidden: ['builtin:camera'] }).value.order).toEqual(['builtin:file', CALL_JOIN_COMMAND_ID]);
   });
 
   it('並び順にファイルがなければ先頭に入る', () => {
-    expect(migrateComposerMenu({ order: ['action:plugin:dice:roll'], hidden: [] }).value.order).toEqual([CALL_JOIN_COMMAND_ID, 'action:plugin:dice:roll']);
+    expect(migrateComposerMenu({ order: ['action:plugin:dice:roll'], hidden: ['builtin:camera'] }).value.order).toEqual([CALL_JOIN_COMMAND_ID, 'action:plugin:dice:roll']);
   });
 
   it('コマンドがすでに並び順にあれば、二重に入れない', () => {
-    expect(migrateComposerMenu({ order: ['builtin:file', CALL_JOIN_COMMAND_ID, 'action:app:call-join'], hidden: [] }).value.order).toEqual(['builtin:file', CALL_JOIN_COMMAND_ID]);
+    expect(migrateComposerMenu({ order: ['builtin:file', CALL_JOIN_COMMAND_ID, 'action:app:call-join'], hidden: ['builtin:camera'] }).value.order).toEqual(['builtin:file', CALL_JOIN_COMMAND_ID]);
   });
 
   it('版の印があれば何もしない（二度目以降は保存し直さない）', () => {
-    const v = { order: ['builtin:file'], hidden: [], v: 2 };
+    const v = { order: ['builtin:file'], hidden: [], v: 3 };
     expect(migrateComposerMenu(v)).toEqual({ value: v, changed: false });
   });
 
   it('知らない項目は残す', () => {
     const r = migrateComposerMenu({ order: [], hidden: [], other: 'x' });
-    expect(r.value).toMatchObject({ other: 'x', v: 2 });
+    expect(r.value).toMatchObject({ other: 'x', v: 3 });
   });
 
   it('移行のあと、「＋」メニューに通話に参加するが出る（旧い項目は登録されないので出ない）', () => {
@@ -198,21 +199,33 @@ describe('migrateComposerMenu（通話に参加 → 通話に参加する）', (
   });
 });
 
-describe('「写真を撮る」（本体の＋メニューの項目）', () => {
-  it('「写真を撮る」は本体の項目で、既定では「ファイルを添付」の次に出る（takePhoto を呼ぶ）', () => {
-    const takePhoto = vi.fn();
-    const items = composerMenuAvailable(() => {}, takePhoto);
-    expect(items.slice(0, 2).map((x) => x.id)).toEqual(['builtin:file', 'builtin:camera']);
-    expect(ids(composerMenuItems(items, none))).toEqual(['builtin:file', 'builtin:camera']);
-    items[1]!.run();
-    expect(takePhoto).toHaveBeenCalledOnce();
+describe('migrateComposerMenu（本体の写真を撮る → 写真を撮るコマンド）', () => {
+  it('版 2 で本体の「写真を撮る」を出していた（並び順にない）なら、並び順の後ろにコマンドを入れる', () => {
+    const r = migrateComposerMenu({ order: ['builtin:file', CALL_JOIN_COMMAND_ID], hidden: [], v: 2 });
+    expect(r).toEqual({ value: { order: ['builtin:file', CALL_JOIN_COMMAND_ID, TAKE_PHOTO_COMMAND_ID], hidden: [], v: 3 }, changed: true });
   });
 
-  it('並び順を保存していた人にも、「写真を撮る」は末尾に出る（隠したものは出ない）', () => {
-    const items = composerMenuAvailable(() => {});
-    const saved = { order: ['builtin:file'], hidden: [] };
-    expect(ids(composerMenuItems(items, saved)).slice(0, 2)).toEqual(['builtin:file', 'builtin:camera']);
-    const hidden = { order: ['builtin:file'], hidden: ['builtin:camera'] };
-    expect(ids(composerMenuItems(items, hidden))).not.toContain('builtin:camera');
+  it('並び順に本体の「写真を撮る」があれば、その位置に置き換える', () => {
+    const r = migrateComposerMenu({ order: ['builtin:camera', 'builtin:file', 'action:plugin:dice:roll'], hidden: [], v: 2 });
+    expect(r.value.order).toEqual([TAKE_PHOTO_COMMAND_ID, 'builtin:file', 'action:plugin:dice:roll']);
+  });
+
+  it('並び順に「ファイルを添付」がなければ、その後ろに入れる（見えていた並びのまま）', () => {
+    const r = migrateComposerMenu({ order: ['action:plugin:dice:roll'], hidden: [], v: 2 });
+    expect(r.value.order).toEqual(['action:plugin:dice:roll', 'builtin:file', TAKE_PHOTO_COMMAND_ID]);
+  });
+
+  it('隠していたなら入れない（印は消す）', () => {
+    const r = migrateComposerMenu({ order: ['builtin:file', 'builtin:camera'], hidden: ['builtin:camera'], v: 2 });
+    expect(r.value).toEqual({ order: ['builtin:file'], hidden: [], v: 3 });
+  });
+
+  it('コマンドをもう足していたら、二重に入れない', () => {
+    const r = migrateComposerMenu({ order: ['builtin:file', TAKE_PHOTO_COMMAND_ID], hidden: [], v: 2 });
+    expect(r.value.order).toEqual(['builtin:file', TAKE_PHOTO_COMMAND_ID]);
+  });
+
+  it('「＋」メニューに本体の「写真を撮る」は出ない', () => {
+    expect(composerMenuAvailable(() => {}).map((x) => x.id)).not.toContain('builtin:camera');
   });
 });

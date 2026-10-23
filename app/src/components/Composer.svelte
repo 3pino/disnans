@@ -236,10 +236,7 @@
   // 「＋」メニューの項目。並び順と出す項目は利用者の設定（設定 > 一般 > ＋メニュー）
   const actions = $derived(
     composerMenuItems(
-      composerMenuAvailable(
-        () => fileEl?.click(),
-        () => takePhoto(),
-      ).filter((a) => !a.when || a.when()),
+      composerMenuAvailable(() => fileEl?.click()).filter((a) => !a.when || a.when()),
       prefs.composerMenu,
     ).map((x) => x.entry),
   );
