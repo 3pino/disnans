@@ -5,8 +5,3 @@
 export type MessageLayout = 'list' | 'bubble';
 
 export const DEFAULT_MESSAGE_LAYOUT: MessageLayout = 'list';
-
-/** 保存したもの（サーバーの設定の messageLayout）を読む。読めない値は既定（リスト） */
-export function normalizeMessageLayout(raw: unknown): MessageLayout {
-  return raw === 'bubble' ? 'bubble' : DEFAULT_MESSAGE_LAYOUT;
-}

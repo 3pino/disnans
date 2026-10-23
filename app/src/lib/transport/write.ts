@@ -15,6 +15,7 @@ import { HttpError, request, toError } from './http';
 import { toBridgeError } from './tauri';
 import type { BridgeContext, Invoke } from './types';
 import { encodeBody, type BodyMode } from './body';
+import { prefsResultOf, type PrefsResult } from '../settingsModel';
 
 /**
  * 書込 REST の経路（契約 .pi/step4-ipc-contract.md §9）。`api` の書込メソッドと同じ引数・戻り値。
@@ -28,7 +29,7 @@ export interface WriteApi {
   updateMe(body: UpdateMe): Promise<User>;
   setAvatar(file: Blob, fileName: string): Promise<User>;
   clearAvatar(): Promise<User>;
-  setPrefs(prefs: Record<string, unknown>): Promise<Record<string, unknown>>;
+  setPrefs(prefs: Record<string, unknown>): Promise<PrefsResult>;
   sampleNotification(): Promise<void>;
   markRead(body: MarkRead): Promise<ReadMarker>;
   deletePlugin(id: string): Promise<void>;
@@ -57,7 +58,7 @@ export function createHttpWriteApi(): WriteApi {
       return (await res.json()) as User;
     },
     clearAvatar: () => request<User>('DELETE', '/api/me/avatar'),
-    setPrefs: (prefs) => request<Record<string, unknown>>('PUT', '/api/me/prefs', prefs),
+    setPrefs: async (prefs) => prefsResultOf(await request('PUT', '/api/me/prefs', prefs)),
     sampleNotification: () => request<void>('POST', '/api/notify/sample'),
     markRead: (body) => request<ReadMarker>('PUT', '/api/me/read', body),
     deletePlugin: (id) => request<void>('DELETE', `/api/plugins/${encodeURIComponent(id)}`),
@@ -116,7 +117,7 @@ export function createTauriWriteApi(invoke: Invoke, ctx: BridgeContext, bodyMode
     setAvatar: async (file, fileName) =>
       raw('api_set_avatar', await bytes(file), { fileName, mime: file.type || null }, false),
     clearAvatar: () => call('api_clear_avatar', {}, false),
-    setPrefs: (prefs) => call('api_set_prefs', { body: prefs }, false),
+    setPrefs: (prefs) => call<PrefsResult>('api_set_prefs', { body: prefs }, false),
     sampleNotification: () => call('api_sample_notification', {}, true),
     markRead: (body) => call('api_mark_read', { body }, false),
     deletePlugin: (id) => call('api_delete_plugin', { id }, false),

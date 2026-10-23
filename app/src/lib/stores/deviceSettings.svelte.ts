@@ -3,8 +3,8 @@ import { getItem, setItem } from '../storage';
 import { devUser, getServerUrl } from '../config';
 import { createDeviceApi, type DeviceApi } from '../transport/device';
 import { tauriInvoke } from '../transport/tauri';
-import { normalizeOrientationMode, type OrientationMode } from '../orientation';
-import { DEVICE_DEFAULTS, legacyDeviceValues, normalizeDevicePrefs, reportSettingsError, type Raw } from '../settingsModel';
+import type { OrientationMode } from '../orientation';
+import { DEVICE_DEFAULTS, fillDeviceDefaults, legacyDeviceValues, reportSettingsError, type Raw } from '../settingsModel';
 import { createRefreshGate } from '../refreshGate';
 
 /** デバイスごとの設定の起動時キャッシュ（サーバーの値を受けるたびに書き直す。起動直後に使える） */
@@ -47,7 +47,7 @@ export type DeviceDeps = {
  * 書き込みは順番に送り、キャッシュ（localStorage）にも残す。
  */
 export class DeviceSettings {
-  /** 正規化した設定（キャッシュ → サーバーの順に置き換わる） */
+  /** 表示と保存に使う設定（Rust が正規化したもの。キャッシュ → サーバーの順に置き換わる。書き込みは全体を送り、Rust が正規化する） */
   raw = $state.raw<Raw>({ ...DEVICE_DEFAULTS });
   /** 起動時の読み込みが済んだか（サーバーを使わない環境では、すぐ true） */
   ready = $state(false);
@@ -70,7 +70,7 @@ export class DeviceSettings {
     }
     // キャッシュが無ければ、以前の localStorage の値から始める（取り込みは start で、サーバーに無いときに行う）
     const base = cached !== null && typeof cached === 'object' ? cached : legacyDeviceValues(deps.get);
-    this.raw = normalizeDevicePrefs({ ...DEVICE_DEFAULTS, ...(base as Raw) });
+    this.raw = fillDeviceDefaults(base as Raw);
   }
 
   // ---- 値（リアクティブ） ----
@@ -89,7 +89,7 @@ export class DeviceSettings {
     return this.raw.hideNavigationBar === true;
   }
   get orientation(): OrientationMode {
-    return normalizeOrientationMode(this.raw.orientation);
+    return this.raw.orientation as OrientationMode;
   }
   get pluginsDisabled(): string[] {
     return this.raw.pluginsDisabled as string[];
@@ -114,7 +114,7 @@ export class DeviceSettings {
 
   /** 1項目を変えて保存する（キャッシュにはすぐ残す。サーバーへは順番に送る） */
   set(key: string, value: unknown): void {
-    this.commit(normalizeDevicePrefs({ ...this.raw, [key]: value }));
+    this.commit({ ...this.raw, [key]: value });
   }
 
   /** このデバイスの名前を変える（登録し直す）。空なら OS の名前に戻す */
@@ -175,7 +175,7 @@ export class DeviceSettings {
   // ---- 内部 ----
 
   private apply(prefs: unknown): void {
-    this.raw = normalizeDevicePrefs(prefs);
+    this.raw = fillDeviceDefaults(prefs as Raw);
     this.deps.set(DEVICE_CACHE_KEY, JSON.stringify(this.raw));
     this.notify();
   }

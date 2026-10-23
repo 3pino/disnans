@@ -14,11 +14,6 @@ export const DEVICE_KIND_LABELS: Record<DeviceKind, string> = {
   monitor: 'デスクトップ',
 };
 
-/** 保存した値を読む。知らない値・空は null */
-export function normalizeDeviceKind(raw: unknown): DeviceKind | null {
-  return typeof raw === 'string' && (DEVICE_KINDS as readonly string[]).includes(raw) ? (raw as DeviceKind) : null;
-}
-
 /** 初めて開いたときの推測。Android はスマートフォン、それ以外はノート PC */
 export function guessDeviceKind(userAgent?: string): DeviceKind {
   // 引数が無いときは、このデバイスが Android か（Rust の値があればそれ。無ければ UA。platform.ts）
@@ -29,7 +24,7 @@ export function guessDeviceKind(userAgent?: string): DeviceKind {
 class DeviceKindStore {
   /** このデバイスの種類（リアクティブ）。未設定なら推測 */
   get value(): DeviceKind {
-    return normalizeDeviceKind(deviceSettings.deviceKind) ?? guessDeviceKind();
+    return (deviceSettings.deviceKind as DeviceKind | null) ?? guessDeviceKind();
   }
 
   /** 変える。null で推測に戻す */

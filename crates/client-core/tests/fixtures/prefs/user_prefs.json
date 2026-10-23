@@ -328,6 +328,25 @@
         "app:open-settings",
         "app:open-chat"
       ]
+    },
+    {
+      "key": "navBarLabels",
+      "name": "nav labels: not an object becomes empty",
+      "input": "x",
+      "expected": {}
+    },
+    {
+      "key": "navBarLabels",
+      "name": "nav labels: trimmed, non-strings dropped, empty kept",
+      "input": {
+        "app:open-chat": " 会話 ",
+        "app:x": 3,
+        "app:call": ""
+      },
+      "expected": {
+        "app:open-chat": "会話",
+        "app:call": ""
+      }
     }
   ]
 }

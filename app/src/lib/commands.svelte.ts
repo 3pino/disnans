@@ -119,17 +119,6 @@ export async function runCommand(cmd: AppCommand, ctx: CommandContext): Promise<
  */
 export type HotkeyOverrides = Record<string, string[]>;
 
-/** 保存したもの（サーバーの設定の hotkeys）を読む。文字列（1つだけの古い形）は一覧にする。それ以外は捨てる */
-export function normalizeHotkeys(raw: unknown): HotkeyOverrides {
-  const out: HotkeyOverrides = {};
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
-  for (const [id, v] of Object.entries(raw)) {
-    if (typeof v === 'string') out[id] = v === '' ? [] : [v];
-    else if (Array.isArray(v)) out[id] = [...new Set(v.filter((x): x is string => typeof x === 'string' && x !== ''))];
-  }
-  return out;
-}
-
 /** 既定のホットキー（なければ空の一覧） */
 export function defaultHotkeys(cmd: AppCommand): string[] {
   return ([] as string[]).concat(cmd.defaultHotkey ?? []).filter((t) => t !== '');

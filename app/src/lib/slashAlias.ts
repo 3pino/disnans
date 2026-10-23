@@ -6,14 +6,6 @@ import { SLASH_NAME_RE } from './slashCommands.svelte';
 
 export type SlashAliases = Record<string, string>;
 
-/** 保存したもの（prefs の slashNames）を読む。文字列でない・不正な名前は捨てる */
-export function normalizeSlashAliases(raw: unknown): SlashAliases {
-  const out: SlashAliases = {};
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
-  for (const [id, v] of Object.entries(raw)) if (typeof v === 'string' && SLASH_NAME_RE.test(v)) out[id] = v;
-  return out;
-}
-
 /** 別名を付ける（null で消す）。ほかのコマンドの別名は変えない */
 export function setSlashAlias(aliases: SlashAliases, commandId: string, alias: string | null): SlashAliases {
   const next = { ...aliases };

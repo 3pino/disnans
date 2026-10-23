@@ -1,46 +1,18 @@
-// ユーザー共通の設定（prefs）の読み方を、TS の normalize* が fixture どおりに返すことを確かめる（V5）。
-// fixture: crates/client-core/tests/fixtures/prefs/user_prefs.json（Rust の tests/prefs_fixtures.rs も読む）
+// 既定値が fixture（crates/client-core/tests/fixtures/prefs/defaults.json）と同じかを確かめる（V5）。
+// 読み方（正規化）の fixture（user_prefs.json）は Rust の tests/prefs_fixtures.rs だけが読む。GUI は Rust の正規化を表示に使うため（段 C）。
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { normalizeHotkeys } from './commands.svelte';
-import { DEFAULT_ENTER_KEYS, normalizeEnterKeys } from './enterKeys';
-import { DEFAULT_COMPOSER_MENU, normalizeComposerMenu } from './composerMenu';
-import { DEFAULT_MESSAGE_LAYOUT, normalizeMessageLayout } from './messageLayout';
-import { normalizeSlashAliases } from './slashAlias';
-import { DEFAULT_NAV_ITEMS, normalizeNavItems } from './navBar';
 import { DEFAULT_CALL_SETTINGS } from './call/pure';
 import { DEFAULT_ORIENTATION } from './orientation';
+import { DEVICE_DEFAULTS, userDefaults } from './settingsModel';
 
-const FILE = fileURLToPath(new URL('../../../crates/client-core/tests/fixtures/prefs/user_prefs.json', import.meta.url));
-
-type Case = { key: string; name: string; input: unknown; expected: unknown };
-
-const READERS: Record<string, (raw: unknown) => unknown> = {
-  hotkeys: normalizeHotkeys,
-  slashNames: normalizeSlashAliases,
-  enterKeys: normalizeEnterKeys,
-  composerMenu: normalizeComposerMenu,
-  messageLayout: normalizeMessageLayout,
-  navBarItems: normalizeNavItems,
-};
-
-const cases = (JSON.parse(readFileSync(FILE, 'utf8')) as { cases: Case[] }).cases;
-
-describe('fixtures (V5): user prefs', () => {
-  it.each(cases.map((c) => [`${c.key} / ${c.name}`, c] as const))('%s', (_name, c) => {
-    const read = READERS[c.key];
-    expect(read, `reader for ${c.key}`).toBeTypeOf('function');
-    expect(read(c.input)).toEqual(c.expected);
-  });
-});
+const DEFAULTS = fileURLToPath(new URL('../../../crates/client-core/tests/fixtures/prefs/defaults.json', import.meta.url));
 
 describe('fixtures (V5): defaults', () => {
-  const file = JSON.parse(readFileSync(fileURLToPath(new URL('../../../crates/client-core/tests/fixtures/prefs/defaults.json', import.meta.url)), 'utf8')) as {
-    defaults: Record<string, unknown>;
-  };
-  const d = file.defaults;
-  it('call settings', () => {
+  const d = (JSON.parse(readFileSync(DEFAULTS, 'utf8')) as { defaults: Record<string, unknown> }).defaults;
+
+  it('call settings（ユーザー共通と機器の項目）', () => {
     expect({
       joinMuted: DEFAULT_CALL_SETTINGS.joinMuted,
       micVolume: DEFAULT_CALL_SETTINGS.micVolume,
@@ -59,11 +31,17 @@ describe('fixtures (V5): defaults', () => {
       output: d.output,
     });
   });
-  it('enter keys, composer menu, message layout, nav items, orientation', () => {
-    expect(DEFAULT_ENTER_KEYS).toEqual(d.enterKeys);
-    expect(DEFAULT_COMPOSER_MENU).toEqual(d.composerMenu);
-    expect(DEFAULT_MESSAGE_LAYOUT).toBe(d.messageLayout);
-    expect(DEFAULT_NAV_ITEMS).toEqual(d.navBarItems);
+
+  it('ユーザー共通の既定値（表示の補完に使う）', () => {
+    const u = userDefaults();
+    for (const [key, value] of Object.entries(u)) expect(value, key).toEqual(d[key]);
+  });
+
+  it('デバイスごとの既定値（表示の補完に使う）', () => {
+    for (const [key, value] of Object.entries(DEVICE_DEFAULTS)) expect(value, key).toEqual(d[key]);
+  });
+
+  it('画面の向きの既定', () => {
     expect(DEFAULT_ORIENTATION).toBe(d.orientation);
   });
 });

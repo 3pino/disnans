@@ -3,6 +3,7 @@ import type { PluginInfo } from '../protocol/PluginInfo';
 import type { ReadMarker } from '../protocol/ReadMarker';
 import type { Session } from '../protocol/Session';
 import type { User } from '../protocol/User';
+import type { PrefsResult } from '../settingsModel';
 
 /**
  * 読取 REST の経路（ステップ4 段1）。`api` の読取メソッドと同じ引数・戻り値。
@@ -11,7 +12,7 @@ import type { User } from '../protocol/User';
 export interface ReadApi {
   me(): Promise<User>;
   users(): Promise<User[]>;
-  prefs(): Promise<Record<string, unknown>>;
+  prefs(): Promise<PrefsResult>;
   messages(opts: { before?: string | null; limit?: number }): Promise<Message[]>;
   searchMessages(opts: { q: string; before?: string | null; limit?: number }): Promise<Message[]>;
   readMarkers(): Promise<ReadMarker[]>;

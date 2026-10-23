@@ -1,22 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_MESSAGE_LAYOUT, normalizeMessageLayout } from './messageLayout';
+import { DEFAULT_MESSAGE_LAYOUT } from './messageLayout';
 
-describe('normalizeMessageLayout', () => {
+// 値の読み方（知らない値は既定）は Rust の正規化（tests/fixtures/prefs/user_prefs.json）が見る
+describe('messageLayout', () => {
   it('既定はリスト（Slack 風）', () => {
     expect(DEFAULT_MESSAGE_LAYOUT).toBe('list');
-    expect(normalizeMessageLayout(undefined)).toBe('list');
-    expect(normalizeMessageLayout(null)).toBe('list');
-  });
-
-  it('保存された値をそのまま読む', () => {
-    expect(normalizeMessageLayout('list')).toBe('list');
-    expect(normalizeMessageLayout('bubble')).toBe('bubble');
-  });
-
-  it('知らない値・型が違う値は既定', () => {
-    expect(normalizeMessageLayout('card')).toBe('list');
-    expect(normalizeMessageLayout('Bubble')).toBe('list');
-    expect(normalizeMessageLayout(1)).toBe('list');
-    expect(normalizeMessageLayout({ layout: 'bubble' })).toBe('list');
   });
 });

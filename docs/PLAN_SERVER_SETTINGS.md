@@ -50,7 +50,9 @@
 - **項目の定義**（`crates/client-core/src/view/settings.rs`）: キー・保存先（`user` / `device` / `local`）・型（`Kind`）・既定値を一覧にした `DEFINITIONS`。`device_defaults()`、`normalize_device_prefs(raw)`（型の合わない値は既定、範囲外の数は範囲内に、定義に無いキーは残す）、`definitions_json()`。
   - 既定値は GUI の今の値と合わせる（`DEFAULT_CALL_SETTINGS` など）。テストで確かめている。
   - 既存のユーザー prefs（`hotkeys`・`slashNames`・`enterKeys`・`composerMenu`・`messageLayout`、ナビの `navBarItems`）も入れた。読み方（`normalize_value`）は GUI の TypeScript の `normalize*` と同じ規則で、fixture `crates/client-core/tests/fixtures/prefs/user_prefs.json` を TS（`app/src/lib/prefsFixtures.test.ts`）と Rust（`tests/prefs_fixtures.rs`）の両方が通す。既定値は `defaults.json` を TS の定数と core の定義の両方で確かめる。
-  - 読むだけの規則。GUI は今どおり、保存するときは元のオブジェクトを保って書く（`composerMenu` の版の印 `v` を落とさないため）。`composerMenu` の移行（版 2）は TypeScript のまま。
+  - 読むだけの規則。保存するときは元のオブジェクトを保って書く（`composerMenu` の版の印 `v` を落とさないため）。`composerMenu` の移行（版 2）は TypeScript のまま。
+  - ユーザー共通の読み方は `normalize_user_prefs`（定義の項目だけを正規化し、知らない項目は残す）。`api_prefs` と `api_set_prefs` は `{ raw, view }` を返す。`raw` はサーバーの元のオブジェクト（保存の下地。既定を書き込まない）、`view` は正規化した値（表示に使う）。GUI は表示を `view` から読み、変更は `raw` に項目を足して送り、応答で両方を置き換える。ローカルの変更は型のついた値を `view` に直接入れる（TypeScript の正規化はしない）。
+  - ブラウザー（開発）は Rust を通さないので、`view` は `raw` に既定の値を足しただけ（`prefsResultOf`）。既定の写しは `settingsModel.ts` の `userDefaults` と `DEVICE_DEFAULTS`。`defaults.json` と照合する。
   - 下書き・プラグインの保存データ・テーマ CSS のキャッシュ・開発用フラグ（`disnans.rustApi` など）は、キーが動的か文字列の値のため、この一覧には入れていない（このデバイスだけの保存のまま）。
 - **Tauri コマンド**（`app/src-tauri`）:
   - `client_device_id()` → `string`（このデバイス（tauri）のデバイス ID。無ければ作る）

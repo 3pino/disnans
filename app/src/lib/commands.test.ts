@@ -12,7 +12,6 @@ import {
   findHotkeyConflicts,
   hotkeyOverride,
   isHotkeyCustomized,
-  normalizeHotkeys,
   registerCommand,
   removeHotkey,
   runCommand,
@@ -108,17 +107,10 @@ describe('hotkeys', () => {
     expect(hotkeyOverride(multi, ['F2', 'Mod+P'])).toEqual(['F2', 'Mod+P']);
   });
 
-  it('保存値の移行: 古い1つだけの文字列も読み、"" は「なし」。配列はそのまま', () => {
-    expect(normalizeHotkeys({ 'app:a': 'Mod+K', 'dice:b': '', 'app:c': ['Mod+P', 'F2', 'F2', ''], bad: 1, 'app:d': 3 })).toEqual({
-      'app:a': ['Mod+K'],
-      'dice:b': [],
-      'app:c': ['Mod+P', 'F2'],
-    });
-    expect(normalizeHotkeys(null)).toEqual({});
-    expect(normalizeHotkeys([1])).toEqual({});
-    // 古い形の設定も、いまの効き方のまま
-    expect(effectiveHotkeys(a, normalizeHotkeys({ 'app:a': '' }))).toEqual([]);
-    expect(effectiveHotkeys(a, normalizeHotkeys({ 'app:a': 'Mod+K' }))).toEqual(['Mod+K']);
+  it('保存値（Rust が正規化した形）: "" は「なし」（空の一覧）、一覧はそのまま', () => {
+    // 古い1つだけの文字列の読み方・重複の除き方は Rust の正規化（tests/fixtures/prefs/user_prefs.json）が見る
+    expect(effectiveHotkeys(a, { 'app:a': [] })).toEqual([]);
+    expect(effectiveHotkeys(a, { 'app:a': ['Mod+K'] })).toEqual(['Mod+K']);
   });
 
   it('同じキーのコマンドを見つける（書き方が違っても同じキーなら。複数のどれかが同じでも）', () => {

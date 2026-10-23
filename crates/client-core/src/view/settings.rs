@@ -52,6 +52,8 @@ pub enum Kind {
     ComposerMenu,
     /// ナビの項目の並び（`navBar.ts` の `normalizeNavItems`）。削除した項目は捨て、本体の 2 つは必ず入れる
     NavItems,
+    /// ナビの表示名（`navBar.ts` の `normalizeNavLabels`）。文字列の値だけ、前後の空白を除く（空欄は残す）
+    NavLabels,
 }
 
 /// 既定値
@@ -145,7 +147,7 @@ pub const DEFINITIONS: &[Def] = &[
     Def {
         key: "navBarLabels",
         scope: Scope::User,
-        kind: Kind::Any,
+        kind: Kind::NavLabels,
         default: DefaultValue::EmptyObject,
     },
     Def {
@@ -304,6 +306,11 @@ pub fn device_definitions() -> impl Iterator<Item = &'static Def> {
     DEFINITIONS.iter().filter(|d| d.scope == Scope::Device)
 }
 
+/// ユーザー共通の項目（`/api/me/prefs` の中身）
+pub fn user_definitions() -> impl Iterator<Item = &'static Def> {
+    DEFINITIONS.iter().filter(|d| d.scope == Scope::User)
+}
+
 /// 既定値のデバイスごとの設定（オブジェクト）
 pub fn device_defaults() -> Value {
     Value::Object(
@@ -342,6 +349,7 @@ pub fn normalize_value(def: &Def, value: Option<&Value>) -> Value {
         (Kind::EnterKeys, Some(v)) => enter_keys(v),
         (Kind::ComposerMenu, Some(v)) => composer_menu(v),
         (Kind::NavItems, Some(v)) => nav_items(v),
+        (Kind::NavLabels, Some(v)) => nav_labels(v),
         (_, None) => fallback(),
         _ => fallback(),
     }
@@ -367,6 +375,21 @@ fn nav_items(raw: &Value) -> Value {
         }
     }
     Value::Array(out)
+}
+
+/// `normalizeNavLabels`: オブジェクトでなければ空。文字列の値だけ残し、前後の空白を除く（空欄は「設定済み」なので残す）
+fn nav_labels(raw: &Value) -> Value {
+    let Value::Object(map) = raw else {
+        return Value::Object(Map::new());
+    };
+    Value::Object(
+        map.iter()
+            .filter_map(|(id, v)| {
+                v.as_str()
+                    .map(|s| (id.clone(), Value::String(s.trim().to_owned())))
+            })
+            .collect(),
+    )
 }
 
 /// 定義をキーで探す
@@ -488,6 +511,20 @@ pub fn normalize_device_prefs(raw: &Value) -> Value {
     Value::Object(out)
 }
 
+/// ユーザー共通の設定を正規化する（読むときの規則。保存は元のオブジェクトのまま）。
+/// 型の合わないものは既定値に、足りないものは既定値で埋める。定義に無いキーは残す。オブジェクトでない値は既定値だけ。
+pub fn normalize_user_prefs(raw: &Value) -> Value {
+    let mut out = match raw {
+        Value::Object(map) => map.clone(),
+        _ => Map::new(),
+    };
+    for def in user_definitions() {
+        let value = normalize_value(def, raw.get(def.key));
+        out.insert(def.key.to_owned(), value);
+    }
+    Value::Object(out)
+}
+
 /// 保存する値の検査用に、定義の一覧を JSON にする（GUI が起動時に一度読む想定）
 pub fn definitions_json() -> Value {
     Value::Array(
@@ -521,6 +558,7 @@ fn kind_json(kind: Kind) -> Value {
         Kind::EnterKeys => serde_json::json!({"type": "enterKeys"}),
         Kind::ComposerMenu => serde_json::json!({"type": "composerMenu"}),
         Kind::NavItems => serde_json::json!({"type": "navItems"}),
+        Kind::NavLabels => serde_json::json!({"type": "navLabels"}),
     }
 }
 
@@ -647,6 +685,36 @@ mod tests {
         for raw in [json!(null), json!([1]), json!("x"), json!(3)] {
             let out = normalize_device_prefs(&raw);
             assert_eq!(out, device_defaults(), "input {raw}");
+        }
+    }
+
+    #[test]
+    fn user_prefs_fill_defaults_and_keep_unknown_keys() {
+        let raw = json!({"theme": "dark", "futureKey": {"x": 1}});
+        let out = normalize_user_prefs(&raw);
+        assert_eq!(out["theme"], "dark");
+        assert_eq!(out["futureKey"], json!({"x": 1}), "unknown keys are kept");
+        assert_eq!(
+            out["limitDb"],
+            json!(-6.0),
+            "missing user keys get defaults"
+        );
+        assert!(
+            out.get("inputId").is_none(),
+            "device keys are not user prefs"
+        );
+        for d in user_definitions() {
+            assert!(out.get(d.key).is_some(), "{} is filled", d.key);
+        }
+    }
+
+    #[test]
+    fn non_object_user_prefs_become_all_defaults() {
+        for raw in [json!(null), json!([1]), json!("x")] {
+            let out = normalize_user_prefs(&raw);
+            for d in user_definitions() {
+                assert_eq!(out[d.key], default_of(d), "{} for {raw}", d.key);
+            }
         }
     }
 

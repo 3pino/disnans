@@ -449,9 +449,16 @@ pub async fn api_users(args: Base) -> Result<Value, ReadFailure> {
     read_users(&args).await
 }
 
+/// 設定の応答: `raw`（サーバーの元のオブジェクト。書き戻しに使う。知らない項目も残す）と
+/// `view`（core で正規化したもの。表示に使う）。GUI は表示を view から読み、保存は raw に変更を足して送る
+fn prefs_response(raw: Value) -> Value {
+    let view = disnans_client_core::view::settings::normalize_user_prefs(&raw);
+    serde_json::json!({ "raw": raw, "view": view })
+}
+
 #[tauri::command]
 pub async fn api_prefs(args: Base) -> Result<Value, ReadFailure> {
-    read_prefs(&args).await
+    read_prefs(&args).await.map(prefs_response)
 }
 
 #[tauri::command]
@@ -525,7 +532,7 @@ pub async fn api_clear_avatar(args: Base) -> Result<Value, ReadFailure> {
 
 #[tauri::command]
 pub async fn api_set_prefs(args: BodyArgs) -> Result<Value, ReadFailure> {
-    set_prefs(&args).await
+    set_prefs(&args).await.map(prefs_response)
 }
 
 #[tauri::command]
@@ -809,6 +816,20 @@ mod tests {
         );
         assert_eq!(out[1]["markdown"][0]["type"], "paragraph");
         assert_eq!(out[1]["body"], "b");
+    }
+
+    #[test]
+    fn prefs_response_keeps_the_raw_object_and_adds_the_normalized_view() {
+        let raw = serde_json::json!({"theme": "dark", "futureKey": 1});
+        let out = prefs_response(raw.clone());
+        assert_eq!(out["raw"], raw, "raw is the server object as it was");
+        assert_eq!(out["view"]["theme"], "dark");
+        assert_eq!(out["view"]["futureKey"], 1, "unknown keys stay in the view");
+        assert_eq!(
+            out["view"]["limitDb"], -6.0,
+            "missing keys get the defaults"
+        );
+        assert!(out["raw"].get("limitDb").is_none(), "raw gets no defaults");
     }
 
     #[test]

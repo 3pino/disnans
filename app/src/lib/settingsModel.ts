@@ -9,11 +9,21 @@
  * 以前の localStorage の値は、サーバーに無いときだけ一度取り込む（legacy*Values）。
  */
 
-import { normalizeNavItems, normalizeNavLabels } from './navBar';
-import { parseCallSettings, type CallSettingsData } from './call/pure';
-import { normalizeOrientationMode, type OrientationMode } from './orientation';
+import { DEFAULT_NAV_ITEMS, normalizeNavItems, normalizeNavLabels } from './navBar';
+import { DEFAULT_CALL_SETTINGS, parseCallSettings } from './call/pure';
+import { DEFAULT_ENTER_KEYS } from './enterKeys';
+import { DEFAULT_COMPOSER_MENU } from './composerMenu';
+import { DEFAULT_MESSAGE_LAYOUT } from './messageLayout';
+import { normalizeOrientationMode } from './orientation';
 
 export type Raw = Record<string, unknown>;
+
+/**
+ * 設定の読み書きの結果（Rust の api_prefs / api_set_prefs と、ブラウザーの HTTP で同じ形）。
+ * raw: サーバーの元のオブジェクト（保存するときの下地。知らない項目も残す）。
+ * view: 表示に使う値（Rust が正規化したもの。ブラウザーでは足りない項目を既定で埋めただけ）。
+ */
+export type PrefsResult = { raw: Raw; view: Raw };
 
 export const THEME_CHOICES = ['system', 'light', 'dark'] as const;
 export type ThemeChoice = (typeof THEME_CHOICES)[number];
@@ -27,6 +37,37 @@ export const CALL_DEVICE_KEYS = ['inputId', 'output'] as const;
 
 /** デバイスごとの項目（サーバーのデバイスの prefs のキー） */
 export const DEVICE_KEYS = ['inputId', 'output', 'deviceKind', 'hideNavigationBar', 'orientation', 'pluginsDisabled', 'pluginsDevDir'] as const;
+
+/** ユーザー共通の既定値（crates/client-core/src/view/settings.rs の DEFINITIONS と同じ。ブラウザーの表示の補完だけに使う） */
+export function userDefaults(): Raw {
+  return {
+    theme: 'system',
+    customTheme: null,
+    navBarItems: [...DEFAULT_NAV_ITEMS],
+    navBarLabels: {},
+    joinMuted: DEFAULT_CALL_SETTINGS.joinMuted,
+    micVolume: DEFAULT_CALL_SETTINGS.micVolume,
+    outVolume: DEFAULT_CALL_SETTINGS.outVolume,
+    limiter: DEFAULT_CALL_SETTINGS.limiter,
+    limitDb: DEFAULT_CALL_SETTINGS.limitDb,
+    hotkeys: {},
+    slashNames: {},
+    enterKeys: { ...DEFAULT_ENTER_KEYS },
+    composerMenu: { ...DEFAULT_COMPOSER_MENU },
+    messageLayout: DEFAULT_MESSAGE_LAYOUT,
+  };
+}
+
+/** 表示の値の補完（足りない項目だけ既定で埋める。値の型は直さない。直すのは Rust の正規化） */
+export function fillUserDefaults(raw: Raw): Raw {
+  return { ...userDefaults(), ...raw };
+}
+
+/** Rust を通さない（ブラウザーの開発）ときの設定の結果。raw はそのまま、view は既定で埋めたもの */
+export function prefsResultOf(raw: unknown): PrefsResult {
+  const o = isObject(raw) ? raw : {};
+  return { raw: o, view: fillUserDefaults(o) };
+}
 
 /** デバイスの既定値（crates/client-core/src/view/settings.rs の DEFINITIONS と同じ） */
 export const DEVICE_DEFAULTS: Readonly<Raw> = Object.freeze({
@@ -123,31 +164,9 @@ export function legacyDeviceValues(read: LegacyRead): Raw {
   return out;
 }
 
-/** デバイスの設定を型に合わせる（キャッシュから読んだものに使う。サーバーの正規化と同じ形にそろえる） */
-export function normalizeDevicePrefs(raw: unknown): Raw {
-  const o = isObject(raw) ? raw : {};
-  const kind = o.deviceKind;
-  const output = o.output;
-  return {
-    ...o,
-    inputId: typeof o.inputId === 'string' ? o.inputId : '',
-    output: isObject(output) && typeof output.id === 'string' ? output : null,
-    deviceKind: typeof kind === 'string' && DEVICE_KIND_LIST.includes(kind) ? kind : null,
-    hideNavigationBar: o.hideNavigationBar === true,
-    orientation: normalizeOrientationMode(o.orientation) as OrientationMode,
-    pluginsDisabled: Array.isArray(o.pluginsDisabled) ? o.pluginsDisabled.filter((x): x is string => typeof x === 'string') : [],
-    pluginsDevDir: typeof o.pluginsDevDir === 'string' && o.pluginsDevDir !== '' ? o.pluginsDevDir : null,
-  };
-}
-
-/** テーマの値（知らない値は system） */
-export function normalizeTheme(raw: unknown): ThemeChoice {
-  return (THEME_CHOICES as readonly unknown[]).includes(raw) ? (raw as ThemeChoice) : 'system';
-}
-
-/** 通話のユーザー共通の値（範囲に収める） */
-export function callUserSettings(raw: Raw): CallSettingsData {
-  return parseCallSettings(raw);
+/** デバイスの設定の表示の補完（足りない項目だけ既定で埋める。型は直さない。直すのは Rust の正規化） */
+export function fillDeviceDefaults(raw: Raw): Raw {
+  return { ...DEVICE_DEFAULTS, ...raw };
 }
 
 /** 設定の変更の失敗などを、利用者に知らせるための口（App が起動時に差し替える。既定は console） */

@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkSlashAlias, normalizeSlashAliases, setSlashAlias } from './slashAlias';
-
-describe('normalizeSlashAliases', () => {
-  it('正しい名前の文字列だけを残す', () => {
-    expect(normalizeSlashAliases({ 'dice:roll': 'roll2', 'app:x': 'Bad Name', 'app:y': '', 'app:z': 3, 'app:w': 'ok-1' })).toEqual({
-      'dice:roll': 'roll2',
-      'app:w': 'ok-1',
-    });
-    expect(normalizeSlashAliases(null)).toEqual({});
-    expect(normalizeSlashAliases(['a'])).toEqual({});
-  });
-});
+import { checkSlashAlias, setSlashAlias } from './slashAlias';
 
 describe('setSlashAlias', () => {
   it('付ける・消す。ほかのコマンドの別名は変えない', () => {

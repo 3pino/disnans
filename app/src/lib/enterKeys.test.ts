@@ -2,11 +2,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_ENTER_KEYS,
+  type EnterKeyPrefs,
   enterComboLabel,
   enterComboOf,
   insertNewline,
   insertsNewlineByDefault,
-  normalizeEnterKeys,
   resolveEnterAction,
   sendCombos,
 } from './enterKeys';
@@ -40,22 +40,12 @@ describe('resolveEnterAction', () => {
   });
 
   it('設定に従う', () => {
-    const prefs = normalizeEnterKeys({ enter: 'newline', shift: 'none', ctrl: 'send', alt: 'newline' });
+    const prefs: EnterKeyPrefs = { enter: 'newline', shift: 'none', ctrl: 'send', alt: 'newline' };
     expect(resolveEnterAction(ev(), prefs)).toBe('newline');
     expect(resolveEnterAction(ev({ shiftKey: true }), prefs)).toBe('none');
     expect(resolveEnterAction(ev({ metaKey: true }), prefs)).toBe('send');
     expect(resolveEnterAction(ev({ altKey: true }), prefs)).toBe('newline');
     expect(sendCombos(prefs)).toEqual(['ctrl']);
-  });
-});
-
-describe('normalizeEnterKeys', () => {
-  it('読めない項目は既定', () => {
-    expect(normalizeEnterKeys(null)).toEqual(DEFAULT_ENTER_KEYS);
-    expect(normalizeEnterKeys('x')).toEqual(DEFAULT_ENTER_KEYS);
-    expect(normalizeEnterKeys({ enter: 'newline', shift: 'explode', ctrl: 1 })).toEqual({ ...DEFAULT_ENTER_KEYS, enter: 'newline' });
-    // 送信に使うキーがなくてもよい（送信ボタンがある）
-    expect(sendCombos(normalizeEnterKeys({ enter: 'none', ctrl: 'none', alt: 'none' }))).toEqual([]);
   });
 });
 

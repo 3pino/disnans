@@ -18,19 +18,6 @@ export const DEFAULT_ENTER_KEYS: Readonly<EnterKeyPrefs> = Object.freeze({
   alt: 'send',
 });
 
-const ACTIONS: EnterAction[] = ['send', 'newline', 'none'];
-
-/** 保存したもの（サーバーの設定の enterKeys）を読む。読めない項目は既定 */
-export function normalizeEnterKeys(raw: unknown): EnterKeyPrefs {
-  const out = { ...DEFAULT_ENTER_KEYS };
-  if (!raw || typeof raw !== 'object') return out;
-  for (const k of ENTER_COMBOS) {
-    const v = (raw as Record<string, unknown>)[k];
-    if (typeof v === 'string' && (ACTIONS as string[]).includes(v)) out[k] = v as EnterAction;
-  }
-  return out;
-}
-
 /** 表示用の名前（"Ctrl+Enter"。macOS では "⌘+Enter"） */
 export function enterComboLabel(combo: EnterCombo, mac = isMac()): string {
   switch (combo) {

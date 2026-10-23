@@ -1,27 +1,38 @@
 import { api } from '../api';
 import { getItem, setItem } from '../storage';
-import { normalizeEnterKeys, type EnterAction, type EnterCombo, type EnterKeyPrefs } from '../enterKeys';
-import { normalizeHotkeys, type HotkeyOverrides } from '../commands.svelte';
-import { normalizeSlashAliases, setSlashAlias, type SlashAliases } from '../slashAlias';
-import { migrateComposerMenu, normalizeComposerMenu, type ComposerMenuPrefs } from '../composerMenu';
-import { normalizeMessageLayout, type MessageLayout } from '../messageLayout';
-import { normalizeNavItems, normalizeNavLabels } from '../navBar';
-import { parseCallSettings, type CallSettingsData } from '../call/pure';
-import { CALL_USER_KEYS, USER_KEYS, legacyUserValues, normalizeTheme, reportSettingsError, type Raw, type ThemeChoice } from '../settingsModel';
+import { DEFAULT_ENTER_KEYS, type EnterAction, type EnterCombo, type EnterKeyPrefs } from '../enterKeys';
+import type { HotkeyOverrides } from '../commands.svelte';
+import { setSlashAlias, type SlashAliases } from '../slashAlias';
+import { migrateComposerMenu, type ComposerMenuPrefs } from '../composerMenu';
+import type { MessageLayout } from '../messageLayout';
+import { DEFAULT_CALL_SETTINGS, type CallSettingsData } from '../call/pure';
+import {
+  CALL_USER_KEYS,
+  USER_KEYS,
+  fillUserDefaults,
+  legacyUserValues,
+  reportSettingsError,
+  type PrefsResult,
+  type Raw,
+  type ThemeChoice,
+} from '../settingsModel';
 import { client } from './client.svelte';
 import { createRefreshGate } from '../refreshGate';
 
-/** 起動したときにすぐ使えるように、最後に読んだものをデバイスにも置いておく */
+/** 起動したときにすぐ使えるように、最後に読んだもの（raw と view）をデバイスにも置いておく */
 const CACHE_KEY = 'disnans.prefs';
 
 function isObject(v: unknown): v is Raw {
   return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
-function loadCache(): Raw {
+/** キャッシュ。版が古いものは、元のオブジェクトだけ（raw と同じ）だった */
+function loadCache(): { raw?: Raw; view?: Raw } {
   try {
     const v = JSON.parse(getItem(CACHE_KEY) ?? '{}') as unknown;
-    return isObject(v) ? v : {};
+    if (!isObject(v)) return {};
+    if (isObject(v.raw) && isObject(v.view)) return { raw: v.raw, view: v.view };
+    return { raw: v };
   } catch {
     return {};
   }
@@ -33,15 +44,36 @@ function migrateRaw(v: Raw): { value: Raw; changed: boolean } {
   return { value: { ...v, composerMenu: m.value }, changed: m.changed };
 }
 
+/** 起動直後の raw と view: キャッシュ → 以前のデバイスの値の順に、無いものは既定で埋める（正規化はしない） */
+function bootValues(): { raw: Raw; view: Raw } {
+  const legacy = legacyUserValues((key) => getItem(key));
+  const cached = loadCache();
+  return {
+    raw: migrateRaw({ ...legacy, ...(cached.raw ?? {}) }).value,
+    view: fillUserDefaults({ ...legacy, ...(cached.view ?? cached.raw ?? {}) }),
+  };
+}
+
+const BOOT = bootValues();
+
+/** 通話のユーザー共通の項目だけを取り出す（既定の通話の設定に重ねる） */
+function callUserOf(view: Raw): CallSettingsData {
+  const out: Raw = { ...DEFAULT_CALL_SETTINGS };
+  for (const k of CALL_USER_KEYS) if (k in view) out[k] = view[k];
+  return out as unknown as CallSettingsData;
+}
+
 /**
  * ユーザーごとの設定。サーバー（/api/me/prefs）に置き、同じユーザーのデバイスで共有する。
- * ホットキー・スラッシュコマンドの別名・Enter キー・「＋」メニュー・メッセージの表示のほか、
- * テーマ・選んだテーマ・ナビゲーションバーの項目と表示名・通話の機器によらない設定を入れる。
- * 中身は JSON のオブジェクトで、知らない項目（新しい版が足したものなど）もそのまま残して保存する。
+ * 表示は view（Rust が正規化したもの）から読み、保存は raw（サーバーの元のオブジェクト）に変えた項目を足して送る。
+ * 変更は手元の view に型のついた値を直接入れて、サーバーの応答で両方を置き換える。
+ * 中身は JSON のオブジェクトで、知らない項目（新しい版が足したものなど）も raw にそのまま残す。
  */
 export class Prefs {
-  // 起動直後の値: デバイスのキャッシュ（無ければ、以前のデバイスの値）。サーバーの値が届くと置き換わる
-  private raw = $state.raw<Raw>(migrateRaw({ ...legacyUserValues((key) => getItem(key)), ...loadCache() }).value);
+  /** サーバーの元のオブジェクト（保存の下地。既定では埋めない） */
+  private raw = $state.raw<Raw>(BOOT.raw);
+  /** 表示に使う値（Rust の正規化の結果。足りない項目は既定で埋める） */
+  private view = $state.raw<Raw>(BOOT.view);
   /** 保存中の数（その間に届いた prefs.updated は、自分の保存の知らせなので無視する） */
   private saving = 0;
   private started = false;
@@ -52,25 +84,25 @@ export class Prefs {
     this.gate = createRefreshGate(now);
   }
 
-  /** コマンド ID → ホットキーの一覧（空の一覧は「なし」。項目がなければ既定）。古い1つだけの形も読む */
-  readonly hotkeys = $derived<HotkeyOverrides>(normalizeHotkeys(this.raw.hotkeys));
+  /** コマンド ID → ホットキーの一覧（空の一覧は「なし」。項目がなければ既定） */
+  readonly hotkeys = $derived(this.view.hotkeys as HotkeyOverrides);
   /** コマンド ID → スラッシュコマンドの別名（項目がなければ元の名前） */
-  readonly slashNames = $derived<SlashAliases>(normalizeSlashAliases(this.raw.slashNames));
-  readonly enterKeys = $derived<EnterKeyPrefs>(normalizeEnterKeys(this.raw.enterKeys));
+  readonly slashNames = $derived(this.view.slashNames as SlashAliases);
+  readonly enterKeys = $derived((this.view.enterKeys ?? DEFAULT_ENTER_KEYS) as EnterKeyPrefs);
   /** 入力欄の「＋」メニューの並び順と出す項目 */
-  readonly composerMenu = $derived(normalizeComposerMenu(this.raw.composerMenu));
+  readonly composerMenu = $derived(this.view.composerMenu as ComposerMenuPrefs);
   /** メッセージの表示（リスト・吹き出し）。既定はリスト */
-  readonly messageLayout = $derived<MessageLayout>(normalizeMessageLayout(this.raw.messageLayout));
+  readonly messageLayout = $derived(this.view.messageLayout as MessageLayout);
   /** テーマ（system・light・dark）。起動直後はデバイスのキャッシュの値 */
-  readonly theme = $derived<ThemeChoice>(normalizeTheme(this.raw.theme));
+  readonly theme = $derived(this.view.theme as ThemeChoice);
   /** 選んだプラグインのテーマの ID（なければ null） */
-  readonly customTheme = $derived<string | null>(typeof this.raw.customTheme === 'string' && this.raw.customTheme !== '' ? this.raw.customTheme : null);
+  readonly customTheme = $derived(this.view.customTheme as string | null);
   /** ナビゲーションバーの項目の並び（出さないものも含む） */
-  readonly navBarItems = $derived<string[]>(normalizeNavItems(this.raw.navBarItems));
+  readonly navBarItems = $derived(this.view.navBarItems as string[]);
   /** ナビゲーションバーの項目ごとの表示名（設定したものだけ） */
-  readonly navBarLabels = $derived<Record<string, string>>(normalizeNavLabels(this.raw.navBarLabels));
+  readonly navBarLabels = $derived(this.view.navBarLabels as Record<string, string>);
   /** 通話の設定のうち、ユーザー共通のもの（機器の項目は含まない） */
-  readonly callUser = $derived<CallSettingsData>(parseCallSettings(this.raw));
+  readonly callUser = $derived(callUserOf(this.view));
 
   /** 接続を始めたあとに1回呼ぶ。hello のたびにサーバーから読み直し、ほかのデバイスでの変更を受け取る */
   start(): void {
@@ -78,7 +110,7 @@ export class Prefs {
     this.started = true;
     client.subscribe((ev) => {
       if (ev.type === 'hello') void this.load();
-      else if (ev.type === 'prefs.updated' && this.saving === 0) this.apply(ev.prefs);
+      else if (ev.type === 'prefs.updated' && this.saving === 0) void this.load();
     });
     if (client.ready) void this.load();
   }
@@ -118,13 +150,19 @@ export class Prefs {
     }
   }
 
-  private apply(v: unknown): void {
-    if (!isObject(v)) return;
-    const m = migrateRaw(v);
-    this.raw = m.value;
-    setItem(CACHE_KEY, JSON.stringify(m.value));
+  private apply(v: PrefsResult): void {
+    if (!isObject(v.raw) || !isObject(v.view)) return;
+    const m = migrateRaw(v.raw);
+    // 足りない項目だけ既定で埋める（値の型は直さない。直すのは Rust の正規化）
+    this.set(m.value, fillUserDefaults(v.view));
     // 古い版の保存値を移したときは、サーバーにも書き直す（一度きり。移したあとの値は版の印を持つ）
     if (m.changed && this.saving === 0) void this.merge({ composerMenu: m.value.composerMenu });
+  }
+
+  private set(raw: Raw, view: Raw): void {
+    this.raw = raw;
+    this.view = view;
+    setItem(CACHE_KEY, JSON.stringify({ raw, view }));
     this.notify();
   }
 
@@ -138,10 +176,10 @@ export class Prefs {
     }
   }
 
-  /** 項目をまとめて変えて保存する（まず手元に反映し、サーバーの返事に合わせる） */
+  /** 項目をまとめて変えて保存する（まず手元の raw と view に反映し、サーバーの返事に合わせる） */
   private async merge(patch: Raw): Promise<void> {
     const next = { ...this.raw, ...patch };
-    this.apply(next);
+    this.set(next, { ...this.view, ...patch });
     this.saving++;
     try {
       const saved = await api.setPrefs(next);
@@ -196,11 +234,11 @@ export class Prefs {
   }
 
   setNavBarItems(items: string[]): void {
-    void this.update('navBarItems', normalizeNavItems(items));
+    void this.update('navBarItems', items);
   }
 
   setNavBarLabels(labels: Record<string, string>): void {
-    void this.update('navBarLabels', normalizeNavLabels(labels));
+    void this.update('navBarLabels', labels);
   }
 
   /** 通話のユーザー共通の設定のうち、渡したものだけ変える */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEVICE_DEFAULTS, LEGACY, legacyDeviceValues, legacyUserValues, normalizeDevicePrefs, normalizeTheme } from './settingsModel';
+import { DEVICE_DEFAULTS, LEGACY, fillDeviceDefaults, fillUserDefaults, legacyDeviceValues, legacyUserValues, prefsResultOf } from './settingsModel';
 
 /** 手元の localStorage の代わり */
 function store(entries: Record<string, string>) {
@@ -75,28 +75,23 @@ describe('legacyDeviceValues（以前の localStorage からデバイスごと�
   });
 });
 
-describe('normalizeDevicePrefs', () => {
-  it('足りないものは既定、型の合わないものは既定に戻す。知らない項目は残す', () => {
-    const n = normalizeDevicePrefs({ hideNavigationBar: 'yes', orientation: 'sideways', deviceKind: 'phone', pluginsDisabled: 'x', extra: 1 });
-    expect(n).toEqual({ ...DEVICE_DEFAULTS, extra: 1 });
+describe('表示の補完（正規化は Rust。ここは足りない項目を既定で埋めるだけ）', () => {
+  it('デバイスの補完は足りない項目だけ既定で埋め、値の型は直さない', () => {
+    expect(fillDeviceDefaults({ deviceKind: 'laptop', extra: 1 })).toEqual({ ...DEVICE_DEFAULTS, deviceKind: 'laptop', extra: 1 });
+    expect(fillDeviceDefaults({ orientation: 'sideways' }).orientation).toBe('sideways');
   });
 
-  it('オブジェクトでなければ既定', () => {
-    expect(normalizeDevicePrefs(null)).toEqual({ ...DEVICE_DEFAULTS });
-    expect(normalizeDevicePrefs('x')).toEqual({ ...DEVICE_DEFAULTS });
+  it('ユーザーの補完は既定で埋め、知らない項目は残す', () => {
+    const v = fillUserDefaults({ theme: 'dark', future: true });
+    expect(v).toMatchObject({ theme: 'dark', future: true, limitDb: -6, navBarItems: ['app:open-chat', 'app:open-settings'] });
+    expect(fillUserDefaults({}).hotkeys).toEqual({});
   });
 
-  it('正しい値はそのまま', () => {
-    const n = normalizeDevicePrefs({ deviceKind: 'laptop', orientation: 'portrait', pluginsDisabled: ['a'], pluginsDevDir: '/x', output: { id: 'o' }, inputId: 'm' });
-    expect(n).toMatchObject({ deviceKind: 'laptop', orientation: 'portrait', pluginsDisabled: ['a'], pluginsDevDir: '/x', output: { id: 'o' }, inputId: 'm' });
-  });
-});
-
-describe('normalizeTheme', () => {
-  it('system・light・dark だけ通す', () => {
-    expect(normalizeTheme('dark')).toBe('dark');
-    expect(normalizeTheme('blue')).toBe('system');
-    expect(normalizeTheme(undefined)).toBe('system');
+  it('Rust を通さない結果（ブラウザー）は raw をそのまま、view は既定で埋めたもの', () => {
+    const r = prefsResultOf({ theme: 'light' });
+    expect(r.raw).toEqual({ theme: 'light' });
+    expect(r.view).toMatchObject({ theme: 'light', messageLayout: 'list' });
+    expect(prefsResultOf('x')).toEqual({ raw: {}, view: fillUserDefaults({}) });
   });
 });
 

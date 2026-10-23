@@ -1,6 +1,7 @@
 import type { ApiError } from '../protocol/ApiError';
 import { apiUrl, authHeaders } from '../config';
 import { errorText } from '../errors';
+import { prefsResultOf } from '../settingsModel';
 import type { ReadApi } from './types';
 
 export class HttpError extends Error {
@@ -55,7 +56,7 @@ export function createHttpReadApi(): ReadApi {
   return {
     me: () => request('GET', '/api/me'),
     users: () => request('GET', '/api/users'),
-    prefs: () => request('GET', '/api/me/prefs'),
+    prefs: async () => prefsResultOf(await request('GET', '/api/me/prefs')),
     messages: (opts) => request('GET', '/api/messages' + qs({ before: opts.before, limit: opts.limit })),
     searchMessages: (opts) =>
       request('GET', '/api/messages/search' + qs({ q: opts.q, before: opts.before, limit: opts.limit })),
