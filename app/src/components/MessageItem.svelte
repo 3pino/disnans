@@ -552,7 +552,6 @@
     display: block;
     min-width: 0;
   }
-  /* 本文は行の幅いっぱい。カードや添付は、ふつうの大きさのまま */
   .message-stack {
     display: flex;
     flex-direction: column;
