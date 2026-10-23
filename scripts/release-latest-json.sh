@@ -6,7 +6,8 @@ set -euo pipefail
 TAG=$1; VERSION=$2; REPO=$3
 dir=$(mktemp -d)
 gh release download "$TAG" --repo "$REPO" --dir "$dir" --pattern '*.sig'
-base="https://github.com/$REPO/releases/latest/download"
+# メタデータを取得した後で次の版が公開されても、URL と署名の組を変えない。
+base="https://github.com/$REPO/releases/download/$TAG"
 APPIMAGE="disnans_${VERSION}_amd64.AppImage"
 DEB="disnans_${VERSION}_amd64.deb"
 NSIS="disnans_${VERSION}_x64-setup.exe"

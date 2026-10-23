@@ -20,12 +20,13 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-class Updater {
+export class Updater {
   version = $state<string | null>(null);
   state = $state<UpdateState>({ kind: 'idle' });
   /** Tauri 版だけがアップデートできる */
   readonly supported = capabilities().updater !== null;
   private apply: (() => Promise<void>) | null = null;
+  private busy = false;
 
   async loadVersion(): Promise<void> {
     if (!this.supported || this.version) return;
@@ -39,25 +40,39 @@ class Updater {
 
   /** quiet なら（定期の確認）、失敗しても画面にエラーを出さず、待機中に戻す */
   async check(opts: { quiet?: boolean } = {}): Promise<void> {
-    if (!this.supported) return;
-    this.state = { kind: 'checking' };
-    this.apply = null;
+    if (!this.supported || this.busy) return;
+    this.busy = true;
     try {
-      await this.loadVersion();
-      if (capabilities().updater === 'android') await this.checkAndroid();
-      else await this.checkDesktop();
+      await this.refresh(false);
     } catch (e) {
       this.state = opts.quiet ? { kind: 'idle' } : { kind: 'error', message: errorMessage(e) };
+    } finally {
+      this.busy = false;
     }
   }
 
   async install(): Promise<void> {
-    if (!this.apply) return;
+    if (!this.supported || this.busy || (this.state.kind !== 'available' && this.state.kind !== 'permission')) return;
+    this.busy = true;
     try {
-      await this.apply();
+      // 通知後に次の版が出ていることがある。古い URL や Update を使わず、
+      // 許可画面から戻った場合も含め、押すたびに最新を確認してから取得する。
+      await this.refresh(true);
+      await this.apply?.();
     } catch (e) {
       this.state = { kind: 'error', message: errorMessage(e) };
+    } finally {
+      this.apply = null;
+      this.busy = false;
     }
+  }
+
+  private async refresh(prepareInstall: boolean): Promise<void> {
+    this.state = { kind: 'checking' };
+    this.apply = null;
+    await this.loadVersion();
+    if (capabilities().updater === 'android') await this.checkAndroid(prepareInstall);
+    else await this.checkDesktop(prepareInstall);
   }
 
   async openReleasePage(): Promise<void> {
@@ -65,36 +80,50 @@ class Updater {
     await openUrl(RELEASES_URL);
   }
 
-  private async checkDesktop(): Promise<void> {
+  private async checkDesktop(prepareInstall: boolean): Promise<void> {
     const { check } = await import('@tauri-apps/plugin-updater');
-    const update = await check();
+    const update = await check({ headers: { 'Cache-Control': 'no-cache' } });
     if (!update) {
       this.state = { kind: 'latest' };
       return;
     }
     this.state = { kind: 'available', version: update.version, notes: update.body ?? null };
+    if (!prepareInstall) {
+      await update.close();
+      return;
+    }
     this.apply = async () => {
-      let downloaded = 0;
-      let total: number | null = null;
-      this.state = { kind: 'downloading', downloaded, total };
-      await update.downloadAndInstall((ev) => {
-        if (ev.event === 'Started') total = ev.data.contentLength ?? null;
-        else if (ev.event === 'Progress') downloaded += ev.data.chunkLength;
-        else if (ev.event === 'Finished') {
-          this.state = { kind: 'installing' };
-          return;
-        }
-        this.state = { kind: 'downloading', downloaded, total };
-      });
-      this.state = { kind: 'installing' };
-      const { relaunch } = await import('@tauri-apps/plugin-process');
-      await relaunch();
+      try {
+        await this.installDesktop(update);
+      } finally {
+        // インストーラー側で既に解放されている場合は無視する。
+        await update.close().catch(() => {});
+      }
     };
   }
 
-  private async checkAndroid(): Promise<void> {
+  private async installDesktop(update: import('@tauri-apps/plugin-updater').Update): Promise<void> {
+    let downloaded = 0;
+    let total: number | null = null;
+    this.state = { kind: 'downloading', downloaded, total };
+    await update.downloadAndInstall((ev) => {
+      if (ev.event === 'Started') total = ev.data.contentLength ?? null;
+      else if (ev.event === 'Progress') downloaded += ev.data.chunkLength;
+      else if (ev.event === 'Finished') {
+        this.state = { kind: 'installing' };
+        return;
+      }
+      this.state = { kind: 'downloading', downloaded, total };
+    });
+    this.state = { kind: 'installing' };
+    const { relaunch } = await import('@tauri-apps/plugin-process');
+    await relaunch();
+  }
+
+  private async checkAndroid(prepareInstall: boolean): Promise<void> {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
       headers: { Accept: 'application/vnd.github+json' },
+      cache: 'no-store',
     });
     if (res.status === 404) throw new Error('リリースが見つかりません');
     if (!res.ok) throw new Error(`GitHub に接続できません (HTTP ${res.status})`);
@@ -114,6 +143,7 @@ class Updater {
     if (!apk) throw new Error(`v${latest} に APK がありません`);
 
     this.state = { kind: 'available', version: latest, notes: rel.body };
+    if (!prepareInstall) return;
     const notes = rel.body;
     this.apply = async () => {
       const { invoke, Channel } = await import('@tauri-apps/api/core');
