@@ -73,8 +73,8 @@
 
 ### 共通表示データ（client-core の view）の GUI 切り替え（V3 以降）
 
-- 状態: 進行中
-- 現状・メモ: V0〜V5 は完了（GUI は Rust の Markdown の木を使い、設定項目の定義は client-core に一か所）。残りは V6（TS 側に残る重複の削除。GUI が core の定義・行データを読むようになってから）。
+- 状態: 修正済み（次の版で確認）
+- 現状・メモ: V6 まで完了。GUI の本文は Rust の木だけ（送信中・編集の仮表示も 1 回の呼び出しで木を付ける。開発用のブラウザーは書式なし）。設定は Rust が {raw, view} を返し、TS の表示用の正規化は削除。並び（続き・日付の区切り）は GUI に残し、fixture で core と一致を保つ。
 - 詳細: [docs/PLAN_SHARED_VIEW.md](docs/PLAN_SHARED_VIEW.md)
 
 ### ファイルシステムとしてアクセスできるような状態にしたい
