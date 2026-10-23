@@ -90,7 +90,7 @@ object RecentImages {
     return body(resolver, uri, displayName(resolver, uri) ?: uri.lastPathSegment ?: "image", resolver.getType(uri))
   }
 
-  /** クリップボードの画像（content URI）の本体（base64）。呼び出し側が image/* を確かめた URI だけ渡す */
+  /** クリップボードの画像（content URI）の本体（base64）。呼び出し側が画像の MIME を確かめた URI だけ渡す */
   fun clipboard(context: Context, uri: Uri, mime: String): JSObject {
     val resolver = context.contentResolver
     val name = displayName(resolver, uri) ?: "clipboard.${extensionOf(mime)}"

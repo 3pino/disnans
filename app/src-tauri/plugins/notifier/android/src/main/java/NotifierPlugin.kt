@@ -354,7 +354,7 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
 
   /**
    * クリップボードの画像（前面のときだけ読める）。画像が無ければ null（`resolve()` は JS の null）。
-   * 画像の URI（image/* と分かるもの）を、写真と同じ上限で読む。
+   * 画像の URI（MIME が画像と分かるもの）を、写真と同じ上限で読む。
    */
   @Command
   fun clipboardImage(invoke: Invoke) {
