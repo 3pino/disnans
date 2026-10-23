@@ -34,7 +34,7 @@ DISNANS_DEV=1 cargo run -p disnans-server
 curl -H 'X-Dev-User: alice@example' http://127.0.0.1:8080/api/me
 ```
 
-CORS はすべてのオリジンを許可している（開発中のフロントエンドや Tauri の WebView はサーバーと別のオリジンになるため）。
+CORS は `/api` についてすべてのオリジンを許可している（開発中のフロントエンドや Tauri の WebView はサーバーと別のオリジンになるため）。
 
 テスト:
 
@@ -67,25 +67,36 @@ cargo test -p disnans-server
 
 ## 共有フォルダ（WebDAV）
 
-`/dav/` で、共有フォルダを WebDAV として見せる（エクスプローラーやファイルマネージャーからネットワークドライブとしてつなぐ）。設計は [`docs/PLAN_FILES.md`](../../docs/PLAN_FILES.md)。
+`/dav/` で、全員が同じ共有フォルダを WebDAV として使う（エクスプローラーやファイルマネージャーからネットワークドライブとしてつなぐ）。ユーザー別の領域や容量上限は無い。操作の契約は [`docs/API.md`](../../docs/API.md)。
 
-- 直下に `attachments/` があり、添付の一覧が並ぶ（投稿されたものと、直接作ったもの）。別名はアップロードの時に決まり、同名は `名前 (2).拡張子`。名前に `[` `]` `|` は使えない。中身の差し替え・名前の変更・削除ができる（`attachments/` と共有フォルダの間の移動は不可、コピーは可）。詳細は `docs/PLAN_FILES.md` の 3 節と `docs/API.md`。
+- 直下に `attachments/` があり、添付の一覧が並ぶ（投稿されたものと、直接作ったもの）。別名はアップロードの時に決まり、同名は `名前 (2).拡張子`。名前に `[` `]` `|` は使えない。中身の差し替え・名前の変更・削除ができる（`attachments/` と共有フォルダの間の移動は不可、コピーは可）。実体は `data/files/<ID>` で、別名は DB に保存する。詳細は [`docs/API.md`](../../docs/API.md)。
 - それ以外は共有フォルダ（`data/shared/`、全員で同じもの）。作成・上書き・移動・コピー・削除ができる。
-- 許可するメソッド: OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY, LOCK, UNLOCK。PROPPATCH は 405。`attachments/` への書き込み・削除・改名は 403。
+- 許可するメソッド: OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY, LOCK, UNLOCK。PROPPATCH は 405。`attachments/` フォルダそのものの削除・改名は 403（中のファイルの操作は可能）。ルートの削除も拒否する。
 - 名前: `..`・区切り文字・Windows で使えない文字（`: * ? " < > |`）・予約名（CON・NUL・COM1 など）・末尾の `.` や空白は拒否。`.disnans-` で始まる名前は内部用。
 - シンボリックリンクは辿らない（途中のどこかがリンクなら拒否）。一覧にも出さない。
 - 書き込みは一時ファイル（`.disnans-tmp-*`）に書いてから rename する。上書きでも既存の実体の中身は書き換えない（バックアップのハードリンクを守るため）。
-- 認証は `/api` と同じ（whois。Tailscale Serve 経由なら Serve のヘッダーを、接続元がループバックのときだけ信じる）。
-- Serve の例: `tailscale serve --https=443 --set-path /dav http://127.0.0.1:8080/dav`（`DISNANS_LOCAL_BIND=127.0.0.1:8080` が要る）。
+- 認証は `/api` と同じ（whois）。Tailscale Serve 経由では接続元がループバックになるため、その場合だけ `Tailscale-User-Login` / `-Name` / `-Profile-Pic` を使う。RFC 2047 の Q 符号化も復号する。外部からの同名ヘッダーは無視する。サーバーのホスト上のプロセスは信頼する前提。タグ付きノードのように利用者の情報が無い場合の接続は保証しない。
+- Serve の例: `tailscale serve --bg --https=8445 --set-path /dav http://127.0.0.1:8080/dav`（`DISNANS_LOCAL_BIND=127.0.0.1:8080` が要る）。TLS は Serve で終端する。ポートは既存のサービスと衝突しないものを選ぶ。
+  - Windows: `\\<ホストのTailscale名>@SSL@8445\dav`
+  - Linux: `davs://<ホストのTailscale名>:8445/dav`
+  - Windows WebClient には OS 側の転送サイズ制限などがあり、大きなファイルやプレビューの動作はファイラーに依存する。CLI の `disnans files` も使える。Basic 認証を新設したり、レジストリを自動変更したりはしない。
 - CORS は `/api` だけに付ける（`/dav` の OPTIONS は WebDAV の `DAV:` と `Allow` を返す必要があるため）。
 - 同じ中身を REST で見せる: `/api/shared`（[`docs/API.md`](../../docs/API.md)）。変更は WebSocket の `files.changed` で全員に知らせる。
+
+## 添付の別名の移行
+
+- 適用済みの migration は変更しない。`0015_attachment_names.sql` で `alias_key`・`library`・`deleted_at` と一意インデックスを追加する。
+- 既存の別名は起動時に Rust で割り当てる。Unicode の `to_lowercase()` を比較キーに使うため、SQL の `lower()` だけでは処理しない。
+- `alias_key IS NULL` の行を 1 トランザクションで処理する。投稿の古い順（同時刻は ID 順）、その後に投稿前の行を処理し、同名には ` (2)` 以降を付ける。再起動しても付け直さない。失敗したら起動を止める。
+- 禁止文字 `[` `]` `|` を含む既存名の補正も、必要なときだけ実行する。DB の移行・名前の補正前に `data/backup/pre-migrate-*.db` を残す。
+- 未投稿アップロードの別名も予約される。`library = 0` の未投稿分は 24 時間で片付けるが、共有フォルダから直接作った `library = 1` は対象外。
 
 ## バックアップ
 
 `<データ>/backup/` に、DB と共有フォルダと添付の実体を組で残す（既定で有効。`DISNANS_BACKUP=0` で止める）。
 
 - 組の名前は時刻（UTC、`YYYYMMDD-HHMMSS-mmm`）: `disnans-<時刻>.db`（DB を VACUUM INTO で複製）、`shared-<時刻>/`（共有フォルダ）、`files-<時刻>/`（添付の実体）、`avatars-<時刻>/`、`plugins-<時刻>/`。
-- 各フォルダはハードリンクで写す（コピーしない）。ファイルの中身は書き換えないので、上書き・削除をしてもバックアップの中身は古いまま残る。
+- 各フォルダはハードリンクで写す（失敗した場合はコピーする）。ファイルの中身は書き換えないので、上書き・削除をしてもバックアップの中身は古いまま残る。
 - 取る時: 自動更新で入れ替える直前、と、前回から 24 時間たったとき（起動の数分後から 10 分ごとに確認）。
 - 残す数: 20 組。古い組の DB とフォルダは消す。
 - 含まないもの: 一時ファイル（`.disnans-tmp-*`）。アバターとプラグインも含む（どちらも書き換えず、一時ファイルから差し替える）。

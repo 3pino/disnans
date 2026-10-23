@@ -1,5 +1,5 @@
 /**
- * 設定の保存先の決まり（docs/PLAN_SERVER_SETTINGS.md・crates/client-core/src/view/settings.rs と合わせる）。
+ * 設定の保存先の決まり（docs/DESIGN.md の「設定の保存先」・crates/client-core/src/view/settings.rs と合わせる）。
  *
  * - ユーザー共通（`/api/me/prefs`）: テーマ・選んだテーマ・ナビゲーションバーの項目と表示名・通話の機器によらない設定
  * - デバイスごと（`/api/me/devices/{id}/prefs`）: 通話の入力・出力の機器・デバイスの種類・ナビバーを隠す・画面の向き・プラグインの無効化・開発フォルダ

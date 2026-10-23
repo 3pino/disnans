@@ -8,7 +8,7 @@ GUI（Tauri）・CLI・TUI が共有するクライアント側の部品。URL �
 - `crates/client-core`（このクレート）: 通信・保存・デバイスの方針（`platform`）・表示データ（`view`: 行の並び、同じ人の続き、Markdown の木、メンションの取り出し）。描画・文字の幅・色は持たない。
 - `crates/cli`: CLI と TUI。core を直接使い、TUI は `view` の行をターミナルの幅で描く。
 - `app/src-tauri`: Tauri の薄い橋（invoke の受け口、チャットの橋、共通ファイルの橋、デバイスの情報の注入）。方針は core に置き、橋は呼ぶだけ。
-- `app`（Svelte / TypeScript）: 画面、状態、Android の通知サービス（`notifier` プラグイン）。Tauri（Windows・Linux・Android）のチャットは Rust の接続を使う。ブラウザー開発版は TypeScript の WebSocket のまま。GUI の Markdown と表示は、まだ TypeScript の実装を使っている（[表示データの切り替え](../../docs/PLAN_SHARED_VIEW.md)）。
+- `app`（Svelte / TypeScript）: 画面、状態、Android の通知サービス（`notifier` プラグイン）。Tauri（Windows・Linux・Android）のチャットは Rust の接続を使う。ブラウザー開発版は TypeScript の WebSocket のまま。GUI の本文は Rust が作った Markdown の木を描画し、設定の正規化も core を使う。続き・日付の区切りは GUI に判定を残し、fixture で一致を保つ（[共通表示データ](../../docs/DESIGN.md#クライアントと共通表示データ)）。
 - デバイスごとの方針（`platform::capabilities_for`）は core に一つだけ置く。Tauri・TUI・CLI の値はここから決まる。
 
 ## 通信の基本
@@ -26,11 +26,11 @@ Linux uses XDG config/data roots (falling back to `~/.config` and `~/.local/shar
 
 ## WebSocket client (feature `ws`)
 
-Enable with `features = ["ws"]`. The desktop GUI keeps its TypeScript WebSocket and does not enable this feature.
+Enable with `features = ["ws"]`. The Tauri GUI (Windows, Linux and Android), CLI and TUI use this Rust connection. Only the browser opened through `vite dev` keeps the development TypeScript WebSocket.
 
 - `ChatConnection::connect(&server, ConnectOptions)` opens `/api/ws` (`ws://` or `wss://`). The development identity goes in the `X-Dev-User` header (visible ASCII only), never in the URL. Redirects are never followed. TLS uses the webpki root set. Frames larger than 8 MiB are rejected. The connection waits for `hello`; events before `hello` are ignored. `me()` and `users()` come from `hello`.
 - `ConnectOptions::idle_timeout` (default 90 s, matching the server): if no frame arrives for this long, `next_event` returns `Disconnected` with reason `"idle timeout"`. `send_message` refuses to write once this much time has passed without the client writing anything, because the server would have dropped the connection. Pongs are only written while the connection is being read.
-- `ChatConnection::send_message(body, silent, ack_timeout)` and `send_message_with_id(client_id, body, silent, ack_timeout)` send one main-chat message and return a `SendOutcome`. `new_client_id()` creates an ID you can print before sending. Only a `message.created` or `error` carrying this call's `client_id` on the same connection settles the result; errors for other IDs are ignored. `Rejected` is returned only for codes that guarantee the message was not committed (`empty_message`, `body_too_long`, `reply_not_found`, `reply_other_place`, `invalid_attachment`). Everything else after the write is `Unknown`. Messages are never resent automatically. `NotSent` means nothing was written. Other events received while waiting are discarded, so do not use the same connection as a watch.
+- `ChatConnection::send_message(body, silent, ack_timeout)` and `send_message_with_id(client_id, body, silent, ack_timeout)` send one main-chat message and return a `SendOutcome`. `new_client_id()` creates an ID you can print before sending. Only a `message.created` or `error` carrying this call's `client_id` on the same connection settles the result; errors for other IDs are ignored. `Rejected` is returned only for codes that guarantee the message was not committed (`empty_message`, `body_too_long`, `reply_not_found`, `reply_other_place`, `invalid_attachment`, `invalid_link`). Everything else after the write is `Unknown`. Messages are never resent automatically. `NotSent` means nothing was written. Other events received while waiting are discarded, so do not use the same connection as a watch.
 - `ChatConnection::next_event()` is cancel-safe and returns `ServerEvent`s. Ping frames are answered internally.
 - `ChatWatch::start(&server, ConnectOptions)` opens the first connection and returns its error without retrying. `next()` yields:
   - `Connected { generation, me }`: generation 1 is the first connection.
@@ -48,6 +48,6 @@ Enable with `features = ["ws"]`. The desktop GUI keeps its TypeScript WebSocket 
   - `emit(ClientEvent)`: fire-and-forget events (edit, delete, reactions, call and plugin signalling). Returns once written. `message.send` is refused with `EmitError::SendNotAllowed`.
   Sends and emits made while not connected return `NotSent` / `EmitError::NotConnected` without writing.
 - `session.reconnect_now()` ends a running backoff at once and resets it to the first step. It does nothing while connected or while an attempt is in progress.
-- Rejected codes are the five that the server returns before committing (`empty_message`, `body_too_long`, `reply_not_found`, `reply_other_place`, `invalid_attachment`). The server rolls back the transaction on those paths.
+- Rejected codes are the six that the server returns before committing (`empty_message`, `body_too_long`, `reply_not_found`, `reply_other_place`, `invalid_attachment`, `invalid_link`). The server rolls back the transaction on those paths.
 
 Both types must be used inside a Tokio runtime.
