@@ -1,8 +1,9 @@
 import type { SharedEntry } from '../protocol/SharedEntry';
 import type { SharedListing } from '../protocol/SharedListing';
 import type { SharedOp } from '../protocol/SharedOp';
+import type { ApiError } from '../protocol/ApiError';
 import { apiUrl, authHeaders } from '../config';
-import { request, toError } from './http';
+import { HttpError, request, toError } from './http';
 import { sharedPath } from '../sharedPath';
 
 /**
@@ -60,4 +61,47 @@ function withOverwrite(body: MoveCopyOp, overwrite: boolean | undefined): MoveCo
 
 function op(body: SharedOp | MoveCopyOp): Promise<SharedEntry> {
   return request<SharedEntry>('POST', '/api/shared', body);
+}
+
+/**
+ * ファイルを共有フォルダへ送る（作成・上書き）。進みを出すため XHR で送る（fetch は送信の進みが取れない）。
+ * onProgress は 0〜1。中止できる（呼ぶ側へは aborted を返す）。同名は黙って上書きするので、呼ぶ前に確かめる（sharedOps.planUpload）
+ */
+export function uploadShared(
+  path: string,
+  file: Blob,
+  onProgress?: (ratio: number) => void,
+): { promise: Promise<SharedEntry>; abort: () => void } {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise<SharedEntry>((resolve, reject) => {
+    xhr.open('PUT', sharedUrl(path));
+    for (const [k, v] of Object.entries(authHeaders())) xhr.setRequestHeader(k, v);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as SharedEntry);
+        } catch {
+          reject(new HttpError(xhr.status, 'bad_response', 'サーバーの応答を読めませんでした'));
+        }
+        return;
+      }
+      let code = 'http_' + xhr.status;
+      let message = `HTTP ${xhr.status}`;
+      try {
+        const e = JSON.parse(xhr.responseText) as ApiError;
+        code = e.code;
+        message = e.message;
+      } catch {
+        // そのまま
+      }
+      reject(new HttpError(xhr.status, code, message));
+    };
+    xhr.onerror = () => reject(new HttpError(0, 'network', 'ネットワークエラー'));
+    xhr.onabort = () => reject(new HttpError(0, 'aborted', '中止しました'));
+    xhr.send(file);
+  });
+  return { promise, abort: () => xhr.abort() };
 }

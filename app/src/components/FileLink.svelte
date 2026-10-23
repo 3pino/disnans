@@ -9,8 +9,8 @@
   import { ui } from '../lib/stores/ui.svelte';
   import { deletedAttachmentNames, fileLinkView } from '../lib/fileLink';
   import { formatSize } from '../lib/format';
-  import { baseName, parentOf } from '../lib/sharedPath';
-  import AttachmentActions from './AttachmentActions.svelte';
+  import { parentOf } from '../lib/sharedPath';
+  import SharedEntryActions from './SharedEntryActions.svelte';
 
   // 本文のファイルリンク（`[別名](パス)`）と埋め込み（`![…](パス)`）。どちらも共有フォルダのパスを今の一覧と突き合わせて表す。
   // 見た目は仮（利用者の確認を取る）。判断の決まりは lib/fileLink.ts
@@ -65,7 +65,7 @@
 {#if path.startsWith('attachments/') && (view.kind === 'link' || view.kind === 'image' || view.kind === 'embedImage' || view.kind === 'embedFile')}
   <span class="file-link-attachment">
     {@render content()}
-    <AttachmentActions name={baseName(path)} placement={view.kind === 'embedImage' || view.kind === 'embedFile' ? 'overlay' : 'inline'} />
+    <SharedEntryActions {path} placement={view.kind === 'embedImage' || view.kind === 'embedFile' ? 'overlay' : 'inline'} />
   </span>
 {:else}
   {@render content()}

@@ -66,4 +66,24 @@ describe('添付パネルの最近の画像', () => {
     await vi.waitFor(() => expect(el.textContent).toContain('最近の画像はありません'));
     expect(el.textContent).not.toContain('読み込めませんでした');
   });
+
+  it('読み込み中は「読み込み中」を出し、読めて 0 件になるまで空の文言を出さない', async () => {
+    let finish: (v: { permission: 'granted'; images: never[] }) => void = () => {};
+    const el = await render({
+      list: () => new Promise((resolve) => (finish = resolve)),
+      requestPermission: async () => 'granted',
+    });
+    await vi.waitFor(() => expect(el.textContent).toContain('読み込み中'));
+    expect(el.textContent).not.toContain('最近の画像はありません');
+    finish({ permission: 'granted', images: [] });
+    await vi.waitFor(() => expect(el.textContent).toContain('最近の画像はありません'));
+    expect(el.textContent).not.toContain('読み込み中');
+  });
+
+  it('ボタンの行は一覧の下に置く（一覧だけがスクロールする）', async () => {
+    const el = await render({ list: async () => ({ permission: 'granted', images: [] }), requestPermission: async () => 'granted' });
+    const recent = el.querySelector('.attach-panel-recent')!;
+    const buttons = el.querySelector('.attach-panel-buttons')!;
+    expect(recent.compareDocumentPosition(buttons) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

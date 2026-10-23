@@ -11,7 +11,7 @@
   import IconButton from './ui/IconButton.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
-  import { onMount, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { messageSearch } from '../lib/stores/search.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
@@ -27,7 +27,10 @@
   import { cameraRequest } from '../lib/stores/cameraRequest.svelte';
   import { isAndroid } from '../lib/platform';
   import { type RecentImage } from '../lib/recentImages';
-  import { readImageInfo, canCropImage, type CropRect, type ImageInfo } from '../lib/imageCrop';
+  import { prepareUpload, readImageInfo, canCropImage } from '../lib/imageCrop';
+  import { uploadFile } from '../lib/api';
+  import { sharedApi } from '../lib/transport/shared';
+  import { ComposerAttachments, type StagedItem } from '../lib/composerAttachments.svelte';
   import { shareInbox } from '../lib/stores/shareInbox.svelte';
   import { composerMenuAvailable, composerMenuItems, type ComposerMenuItem } from '../lib/composerMenu';
   import { parseSlashInput, runSlashCommand } from '../lib/slashCommands.svelte';
@@ -37,27 +40,36 @@
 
   let { placeholder }: { placeholder: string } = $props();
 
-  /** 添付するファイル。送るまでアップロードしない（手元に File を持つだけ） */
-  type Staged = {
-    key: number;
-    file: File;
-    preview: string | null;
-    /** 寸法など（画像のときだけ。読めなければ null） */
-    info: ImageInfo | null;
-    /** 送る前に切り抜く範囲（null は全体） */
-    crop: CropRect | null;
-  };
-
   let input: MessageInput | undefined = $state();
   let fileEl: HTMLInputElement | undefined = $state();
-  let staged = $state<Staged[]>([]);
+  /** 添付（アップロードの途中・できた・失敗）。できたものは本文に埋め込まれる（lib/composerAttachments） */
+  const attach = new ComposerAttachments({
+    prepare: prepareUpload,
+    upload: (file, onProgress) => uploadFile(file, onProgress),
+    remove: (att) =>
+      sharedApi.remove(`attachments/${att.file_name}`).catch((e: unknown) => {
+        console.warn('投稿されなかった添付を消せませんでした', e);
+      }),
+    insert: (embed) => {
+      if (!input) return false;
+      input.insertAtCaret(embed);
+      return true;
+    },
+    replace: (from, to) => input?.replaceText(from, to) ?? false,
+    unembed: (embed) => {
+      input?.replaceText(embed, '');
+    },
+    readInfo: readImageInfo,
+    preview: (file) => (file.type.startsWith('image/') ? URL.createObjectURL(file) : null),
+    revoke: (url) => URL.revokeObjectURL(url),
+    toast: (text) => ui.toast(text, 'error'),
+  });
   /** 切り抜く範囲を選んでいる画像 */
-  let cropping = $state<Staged | null>(null);
+  let cropping = $state<StagedItem | null>(null);
   let menuOpen = $state(false);
   let hasText = $state(false);
   /** コマンドを実行中（終わるまで次を送らない） */
   let running = $state(false);
-  let seq = 0;
 
   /** 下書きを保存する場所（接続先・ユーザー・メインチャット/スレッドごと）。 */
   const desktopShared = isDesktopStorageSupported() ? getDesktopSharedStorage() : null;
@@ -85,7 +97,7 @@
       await tick();
       await draftLoadPromise;
       await tick();
-      if (staged.length > 0) throw new Error('未送信の添付ファイルがあります');
+      if (attach.uploading) throw new Error('アップロード中の添付ファイルがあります');
       if (running) throw new Error('コマンド実行中です');
       if (shareInbox.files.length > 0 || shareInbox.text !== '') throw new Error('未処理の共有データがあります');
       const target = draftTarget;
@@ -175,10 +187,14 @@
     void tick().then(() => input?.focus());
   }
 
-  const canSend = $derived((hasText || staged.length > 0) && client.ready);
+  // 送れるのは、本文があって、アップロードが終わったとき（埋め込みはまだ本文に無いものがある）
+  const canSend = $derived(hasText && client.ready && !attach.uploading);
+
+  // 途中のアップロードは中止する（できたものは下書きの本文に埋め込みが残るので消さない）
+  onDestroy(() => attach.dispose());
 
   /** 切り抜きできる画像か（寸法が読めて、アニメーションでないもの） */
-  function croppable(s: Staged): boolean {
+  function croppable(s: StagedItem): boolean {
     return canCropImage(s.info);
   }
 
@@ -250,18 +266,9 @@
     }
   }
 
-  /** 添付に加える（アップロードは送るときに行う） */
+  /** 添付に加える。すぐアップロードし、できたら本文に埋め込む */
   export function addFiles(files: File[]) {
-    for (const file of files) {
-      const key = ++seq;
-      const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
-      staged.push({ key, file, preview, info: null, crop: null });
-      // 寸法は、大きさを選ぶときとサムネイルの表示のために、先に読んでおく
-      void readImageInfo(file).then((info) => {
-        const s = staged.find((x) => x.key === key);
-        if (s) s.info = info;
-      });
-    }
+    attach.add(files);
     input?.focus();
   }
 
@@ -274,11 +281,6 @@
     input?.focus();
   }
 
-  function removeStaged(s: Staged) {
-    if (s.preview) URL.revokeObjectURL(s.preview);
-    if (cropping?.key === s.key) cropping = null;
-    staged = staged.filter((x) => x.key !== s.key);
-  }
 
   /** silent は通知を送らない（送信ボタンを上へスワイプして送ったとき） */
   function submit(silent = false) {
@@ -290,22 +292,24 @@
       if (client.ready) void runCommand(parsed.name, parsed.args, target, input, draftIdentity, input.getRawBody());
       return;
     }
+    if (attach.uploading) {
+      ui.toast('添付をアップロードしています。終わってから送ってください');
+      return;
+    }
     if (!canSend) return;
     const body = parsed.body;
-    if (!body && staged.length === 0) return;
+    if (!body) return;
     if (body.length > MAX_BODY) {
       ui.toast(`メッセージが長すぎます（${body.length} / ${MAX_BODY}文字）`, 'error');
       return;
     }
-    // アップロードと送信は client の仮表示の中で行う。入力欄はすぐ空にする
-    client.sendMessage({ body, files: staged.map((s) => ({ file: s.file, crop: s.crop })), replyTo: reply.get(), silent });
+    client.sendMessage({ body, replyTo: reply.get(), silent });
+    // 本文に残った添付は送られる。埋め込みを消した添付は消す
+    attach.settle(body);
     reply.clear();
     input.clear();
     hasText = false;
     if (target) persistDraft(target, '');
-    // 一覧用の見本の URL は、ここで破棄する（送るファイルは client が持つ）
-    for (const s of staged) if (s.preview) URL.revokeObjectURL(s.preview);
-    staged = [];
   }
 
   /** 送信ボタンを押したまま上へなぞっている量（px）。0 なら押しているだけ */
@@ -396,13 +400,13 @@
     <ReplyBar />
   {/if}
 
-  {#if staged.length > 0 && !searching}
+  {#if attach.items.length > 0 && !searching}
     <div class="composer-upload-tray">
-      {#each staged as s (s.key)}
-        <div class="composer-upload" title={s.file.name}>
+      {#each attach.items as s (s.key)}
+        <div class="composer-upload" class:composer-upload-failed={s.status === 'failed'} title={s.file.name}>
           {#if s.preview}
-            {#if croppable(s)}
-              <!-- 画像は、タップすると切り抜く範囲を選べる -->
+            {#if s.status === 'ready' && croppable(s)}
+              <!-- 画像は、タップすると切り抜く範囲を選べる（送れたあとに切り抜くと、送るものが入れ替わる） -->
               <button type="button" class="composer-upload-thumb" aria-label="{s.file.name} を切り抜く" onclick={() => (cropping = s)}>
                 <img class="composer-upload-preview" src={s.preview} alt="" />
               </button>
@@ -413,8 +417,14 @@
           {:else}
             <div class="composer-upload-file-icon"><FileIcon size={20} /><span>{formatSize(s.file.size)}</span></div>
           {/if}
+          {#if s.status === 'uploading'}
+            <span class="composer-upload-state">{Math.round(s.progress * 100)}%</span>
+          {:else if s.status === 'failed'}
+            <span class="composer-upload-state composer-upload-error" role="alert">{s.error}</span>
+            <button type="button" class="composer-upload-retry" onclick={() => attach.retry(s.key)}>再試行</button>
+          {/if}
           <span class="composer-upload-name">{s.file.name}</span>
-          <button type="button" class="composer-upload-remove" aria-label="取り消す" onclick={() => removeStaged(s)}><X size={12} /></button>
+          <button type="button" class="composer-upload-remove" aria-label="取り消す" onclick={() => attach.cancel(s.key)}><X size={12} /></button>
         </div>
       {/each}
     </div>
@@ -546,8 +556,9 @@
       info={target.info!}
       value={target.crop}
       onpick={(crop) => {
-        target.crop = crop;
         cropping = null;
+        // 送れたあとの切り抜きは、切り抜いたものを上げ直して埋め込みを入れ替える
+        attach.recrop(target.key, crop);
       }}
       onclose={() => (cropping = null)}
     />
@@ -717,6 +728,24 @@
     justify-items: center;
     gap: var(--space-1);
     color: var(--text-muted);
+    font-size: var(--fs-xs);
+  }
+  .composer-upload-state {
+    display: block;
+    padding: var(--space-1) var(--space-3) 0;
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+  }
+  .composer-upload-error {
+    color: var(--danger);
+    overflow-wrap: anywhere;
+  }
+  .composer-upload-retry {
+    display: block;
+    padding: 0 var(--space-3);
+    border: none;
+    background: none;
+    color: var(--accent);
     font-size: var(--fs-xs);
   }
   .composer-upload-name {

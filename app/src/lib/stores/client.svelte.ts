@@ -1,5 +1,4 @@
-import { api, uploadFile } from '../api';
-import { prepareUpload } from '../imageCrop';
+import { api } from '../api';
 import { mentionsToText, setTree } from '../markdown';
 import { markdownTreeOf } from '../transport/markdownTree';
 import { authorOf } from '../author';
@@ -10,7 +9,7 @@ import type { User } from '../protocol/User';
 import { Socket, type SocketStatus } from '../ws';
 import { wsUrl } from '../config';
 import { isAndroid, isTauri } from '../platform';
-import { Timeline, type OutgoingFile, type PendingMessage } from './timeline.svelte';
+import { Timeline, type PendingMessage } from './timeline.svelte';
 import { ui, type ToastAvatar } from './ui.svelte';
 import { notifications } from './notifications.svelte';
 import { page, unread } from './unread.svelte';
@@ -249,7 +248,10 @@ class Client {
    * メッセージを送る。添付は送るときにアップロードし、そのあとでメッセージを送る（送信中は仮表示）。
    * 失敗したら仮表示を「送信できませんでした」にして、再送・取り消しに任せる
    */
-  sendMessage(opts: { body: string; files: OutgoingFile[]; replyTo?: Message | null; silent?: boolean }): void {
+  /**
+   * メッセージを送る（仮表示を出して、送信する）。添付は入力欄で先に上げて本文に埋め込んであるので、ここでは本文だけを送る。
+   */
+  sendMessage(opts: { body: string; replyTo?: Message | null; silent?: boolean }): void {
     const me = this.me;
     if (!me) return;
     const clientId = `c-${Date.now().toString(36)}-${(++this.seq).toString(36)}`;
@@ -260,7 +262,7 @@ class Client {
       author_id: me.id,
       reply_to: opts.replyTo?.id ?? null,
       reply_preview: opts.replyTo ? replyPreviewOf(opts.replyTo) : null,
-      body: opts.body,
+      body,
       attachments: [],
       reactions: [],
       created_at: Date.now(),
@@ -272,16 +274,6 @@ class Client {
       unknown: false,
       attachment_ids: [],
       silent: opts.silent ?? false,
-      files: opts.files.map((f) => ({
-        key: ++this.seq,
-        file: f.file,
-        crop: f.crop,
-        preview: f.file.type.startsWith('image/') ? URL.createObjectURL(f.file) : null,
-        progress: 0,
-        attachment: null,
-        error: null,
-        abort: null,
-      })),
       busy: false,
     });
     // 本文の木は Rust に作らせて付ける。返るまでは、同じ本文をプレーンに描く
@@ -292,7 +284,7 @@ class Client {
     void this.deliver(clientId);
   }
 
-  /** 送信できなかったものを、もう一度送る（アップロード済みのファイルは上げ直さない） */
+  /** 送信できなかったものを、もう一度送る */
   retry(clientId: string): void {
     const p = this.main.pending.find((x) => x.client_id === clientId);
     // 結果が分からないもの（unknown）は、二重投稿になるので再送しない
@@ -300,10 +292,7 @@ class Client {
     void this.deliver(clientId);
   }
 
-  /**
-   * 仮表示のメッセージを先へ進める: まだ上げていないファイルを順に上げ、そろったらメッセージを送る。
-   * 失敗したところで止め、failed にする（同じ操作をもう一度すれば続きから）
-   */
+  /** 仮表示のメッセージを送る（失敗したら failed にする。同じ操作をもう一度すれば送り直す） */
   private async deliver(clientId: string): Promise<void> {
     const find = () => this.main.pending.find((x) => x.client_id === clientId);
     const p = find();
@@ -311,32 +300,6 @@ class Client {
     p.busy = true;
     p.failed = false;
     try {
-      for (const f of p.files) {
-        if (f.attachment) continue;
-        f.error = null;
-        try {
-          const file = await prepareUpload(f.file, f.crop);
-          if (!find()) return; // 取り消された
-          const h = uploadFile(file, (r) => (f.progress = r));
-          f.progress = 0;
-          f.abort = h.abort;
-          f.attachment = await h.promise;
-          f.progress = 1;
-        } catch (e) {
-          f.abort = null;
-          if (!find()) return; // 取り消したときの中止は、失敗として扱わない
-          f.error = e instanceof Error ? e.message : String(e);
-          p.failed = true;
-          ui.toast(`送信できませんでした: ${f.error}`, 'error');
-          return;
-        }
-        f.abort = null;
-        p.attachments = p.files.flatMap((x) => (x.attachment ? [x.attachment] : []));
-      }
-      if (!find()) return;
-      const ids = p.files.flatMap((x) => (x.attachment ? [x.attachment.id] : []));
-      p.attachment_ids = ids;
-      p.attachments = p.files.flatMap((x) => (x.attachment ? [x.attachment] : []));
       if (this.chat) {
         await this.submitChat(p);
         return;
@@ -345,7 +308,7 @@ class Client {
         type: 'message.send',
         client_id: clientId,
         body: p.body,
-        attachment_ids: ids,
+        attachment_ids: [],
         reply_to: p.reply_to,
         silent: p.silent,
       });
@@ -589,6 +552,14 @@ class Client {
    * 添付の名前・削除は、本文の表示（サーバーが次に返すときの今の名前）と添付の一覧に出る。
    * 名前の変更では message.updated が届かないので、添付やリンクを持つ最新のページを読み直す（短い間にまとめる）。
    */
+  /**
+   * 本文に添付のリンクがあれば、添付の一覧（attachments/ の写し）を捨てる。投稿の確定（未投稿だった添付が投稿済みになる）は
+   * files.changed を出さないので、ここで読み直させる（投稿済みの添付だけが一覧に出る）
+   */
+  private dropAttachmentListing(body: string): void {
+    if (body.includes('attachments/')) sharedIndex.invalidate('attachments');
+  }
+
   private scheduleAttachmentRefresh(): void {
     if (this.attachmentTimer !== null) return;
     this.attachmentTimer = setTimeout(() => {
@@ -631,6 +602,7 @@ class Client {
       }
       case 'message.created': {
         const m = ev.message;
+        this.dropAttachmentListing(m.body);
         this.main.upsert(m, ev.client_id);
         // 自分のものは数えない。見ている場所なら、MessageList がすぐに既読にする
         unread.onMessage(m);
@@ -638,6 +610,7 @@ class Client {
       }
       case 'message.updated': {
         const m = ev.message;
+        this.dropAttachmentListing(m.body);
         this.main.upsert(m);
         this.main.setReplyPreview(m.id, replyPreviewOf(m));
         break;

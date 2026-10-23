@@ -7,7 +7,7 @@
   import { formatSize } from '../lib/format';
   import { bodyAttachmentNames } from '../lib/fileLink';
   import { ui } from '../lib/stores/ui.svelte';
-  import AttachmentActions from './AttachmentActions.svelte';
+  import SharedEntryActions from './SharedEntryActions.svelte';
 
   // 本文に埋め込まれた添付は、本文の中（FileLink）で出す。ここは本文に無い添付（送信の途中の仮表示など）だけを出す
   let {
@@ -63,7 +63,7 @@
         >
           <img class="attachment-image-thumb" src={thumbSrc(a)} alt={a.file_name} loading="lazy" decoding="async" />
         </button>
-        <AttachmentActions name={a.file_name} />
+        <SharedEntryActions path={`attachments/${a.file_name}`} />
       </div>
     {/each}
   </div>
@@ -79,7 +79,7 @@
           <span class="attachment-file-size">{formatSize(a.size)}</span>
           <Download size={16} />
         </a>
-        <AttachmentActions name={a.file_name} />
+        <SharedEntryActions path={`attachments/${a.file_name}`} />
       </div>
     {/each}
   </div>

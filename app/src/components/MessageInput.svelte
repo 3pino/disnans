@@ -15,6 +15,7 @@
   import { ui } from '../lib/stores/ui.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
   import { enterComboOf, insertNewline, insertsNewlineByDefault } from '../lib/enterKeys';
+  import { insertAt, replaceFirst } from '../lib/composerAttach';
 
   let {
     initial = '',
@@ -83,8 +84,32 @@
     text = text === '' ? add : `${text.replace(/\s+$/, '')}\n${add}`;
     oninput?.(text);
   }
+  /** 本文のキャレットの位置（なければ末尾）に文を入れる。入れたあとのキャレットは文の直後 */
+  export function insertAtCaret(add: string): void {
+    applyEdit(insertAt(text, ta?.selectionStart ?? text.length, add));
+  }
+  /** 本文の中の最初の一致を置き換える。見つからなければ false（本文は変えない） */
+  export function replaceText(from: string, to: string): boolean {
+    const next = replaceFirst(text, from, to);
+    if (next) applyEdit(next);
+    return next !== null;
+  }
+  /** 本文の中に、その文字があるか */
+  export function includesText(part: string): boolean {
+    return text.includes(part);
+  }
   export function focus(): void {
     ta?.focus();
+  }
+
+  /** 本文を書き換える（キャレットは指定の位置へ。フォーカスは動かさない） */
+  function applyEdit(next: { text: string; caret: number }): void {
+    text = next.text;
+    oninput?.(text);
+    void tick().then(() => {
+      ta?.setSelectionRange(next.caret, next.caret);
+      resize();
+    });
   }
 
   /** 写しに写す、入力欄の字体と余白のスタイル（折り返しを入力欄と同じに数えるため） */

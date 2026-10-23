@@ -2,9 +2,12 @@
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Trash from '@lucide/svelte/icons/trash';
-  import { attachmentActionText, attachmentNameError } from '../lib/fileLink';
+  import { attachmentActionText } from '../lib/fileLink';
+  import { deleteConfirm, nameError, renameNote, renameTarget } from '../lib/sharedOps';
   import { sharedApi } from '../lib/transport/shared';
+  import { sharedIndex } from '../lib/stores/sharedIndex.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { parentOf, baseName } from '../lib/sharedPath';
   import IconButton from './ui/IconButton.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
@@ -12,10 +15,15 @@
   import TextInput from './ui/TextInput.svelte';
   import Button from './ui/Button.svelte';
 
-  // 添付（attachments/ の中のファイル）の操作: 名前の変更・削除。どの人も変えられる（サーバーの決まり）。
-  // 本文のリンクの中の添付（埋め込み・リンク）と、本文の外の添付のどちらからも使う
-  let { name, placement = 'overlay' }: { name: string; placement?: 'overlay' | 'inline' } = $props();
+  // 共有フォルダの項目の操作: 名前の変更・削除。どの人も変えられる（サーバーの決まり）。
+  // 添付（本文のリンクの中・添付の一覧）と、共有フォルダの一覧の両方で使う。変わったことは files.changed で全員に届く
+  let {
+    path,
+    dir = false,
+    placement = 'overlay',
+  }: { path: string; dir?: boolean; placement?: 'overlay' | 'inline' } = $props();
 
+  const name = $derived(baseName(path));
   let open = $state(false);
   let renaming = $state(false);
   let renameTo = $state('');
@@ -33,7 +41,7 @@
     e.preventDefault();
     if (renameBusy) return;
     const to = renameTo.trim();
-    const bad = attachmentNameError(to);
+    const bad = nameError(parentOf(path), to);
     if (bad) {
       renameError = bad;
       return;
@@ -44,7 +52,8 @@
     }
     renameBusy = true;
     try {
-      await sharedApi.move(`attachments/${name}`, `attachments/${to}`);
+      await sharedApi.move(path, renameTarget(path, to));
+      sharedIndex.invalidate(path);
       renaming = false;
     } catch (err) {
       renameError = attachmentActionText(err);
@@ -55,22 +64,18 @@
 
   async function remove() {
     open = false;
-    const ok = await ui.confirm({
-      title: `「${name}」を削除しますか`,
-      body: '本文のリンクは「削除されたファイル」になります。元に戻せません',
-      okLabel: '削除',
-      danger: true,
-    });
+    const ok = await ui.confirm(deleteConfirm(path, dir));
     if (!ok) return;
     try {
-      await sharedApi.remove(`attachments/${name}`);
+      await sharedApi.remove(path);
+      sharedIndex.invalidate(path);
     } catch (err) {
       ui.toast(attachmentActionText(err), 'error');
     }
   }
 </script>
 
-<span class="attachment-actions" class:attachment-actions-inline={placement === 'inline'}>
+<span class="shared-entry-actions" class:shared-entry-actions-inline={placement === 'inline'}>
   <IconButton
     class="attachment-action-button"
     label="{name} の操作"
@@ -80,7 +85,7 @@
     onclick={() => (open = !open)}
   />
   {#if open}
-    <Menu class="attachment-menu" label="添付の操作" onclose={() => (open = false)}>
+    <Menu class="attachment-menu" label="項目の操作" onclose={() => (open = false)}>
       <MenuItem class="attachment-menu-item" icon={Pencil} onclick={openRename}>名前を変更</MenuItem>
       <MenuItem class="attachment-menu-item" icon={Trash} danger onclick={() => void remove()}>削除</MenuItem>
     </Menu>
@@ -92,7 +97,7 @@
     <form class="attachment-rename" onsubmit={submitRename}>
       <TextInput bind:value={renameTo} aria-label="新しい名前" />
       {#if renameError}<p class="attachment-rename-error" role="alert">{renameError}</p>{/if}
-      <p class="muted attachment-rename-note">本文のリンクは、新しい名前で表示されます</p>
+      <p class="muted attachment-rename-note">{renameNote(path)}</p>
       <div class="modal-actions">
         <Button onclick={() => (renaming = false)}>キャンセル</Button>
         <Button type="submit" variant="primary" disabled={renameBusy}>変更</Button>
@@ -102,22 +107,24 @@
 {/if}
 
 <style>
-  .attachment-actions {
+  .shared-entry-actions {
     position: absolute;
     top: var(--space-2);
     right: var(--space-2);
   }
-  .attachment-actions-inline {
+  .shared-entry-actions-inline {
     position: relative;
     top: auto;
     right: auto;
     display: inline-flex;
+    flex: none;
     vertical-align: middle;
   }
-  .attachment-actions > :global(.attachment-menu) {
+  .shared-entry-actions > :global(.attachment-menu) {
     position: absolute;
     top: calc(100% + 6px);
     right: 0;
+    z-index: 5;
   }
   .attachment-rename {
     display: flex;

@@ -110,7 +110,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const sendText = (body: string) => client.sendMessage({ body, files: [] });
+const sendText = (body: string) => client.sendMessage({ body });
 const pendingOf = () => client.timeline().pending;
 
 describe('chat over Rust: receiving', () => {
@@ -197,7 +197,7 @@ describe('chat over Rust: sending', () => {
 
   it('rejected allows a retry with the same client_id', async () => {
     chat.respond = (d) => ({ outcome: 'rejected', clientId: d.clientId, code: 'empty_message', message: 'x' });
-    client.sendMessage({ body: '', files: [] });
+    client.sendMessage({ body: '' });
     await flush();
     const clientId = pendingOf()[0].client_id;
     expect(pendingOf()[0]).toMatchObject({ failed: true, unknown: false });
@@ -273,7 +273,7 @@ describe('chat over Rust: sending', () => {
 
   it('a duplicate error for an already failed send keeps the same state', async () => {
     chat.respond = (d) => ({ outcome: 'rejected', clientId: d.clientId, code: 'empty_message', message: 'x' });
-    client.sendMessage({ body: '', files: [] });
+    client.sendMessage({ body: '' });
     await flush();
     const clientId = pendingOf()[0].client_id;
     chat.push({ kind: 'event', generation: 1, event: { type: 'error', client_id: clientId, code: 'empty_message', message: 'x' } });

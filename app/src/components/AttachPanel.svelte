@@ -61,6 +61,8 @@
 
   let recent = $state<RecentImage[]>([]);
   let permission = $state<RecentPermission>('granted');
+  /** 読み込み中（初期は読み込み中。読めて 0 件のときだけ空の文言を出す） */
+  let loading = $state(true);
   /** 一覧を読めなかった（空とは区別して出す） */
   let failed = $state(false);
   /** 再試行の回数（増えると読み直す） */
@@ -69,6 +71,8 @@
   $effect(() => {
     void attempt;
     let alive = true;
+    loading = true;
+    failed = false;
     // 開いた時点の画面の幅で件数を決める（幅が変わっても読み直さない）
     const count = untrack(() => (ui.isMobile ? RECENT_IMAGE_COUNT : RECENT_IMAGE_COUNT_WIDE));
     void (async () => {
@@ -82,13 +86,14 @@
         if (!alive) return;
         recent = res.images;
         permission = res.permission;
-        failed = false;
       } catch (e) {
         console.warn('最近の画像を読めませんでした', e);
         if (alive) {
           recent = [];
           failed = true;
         }
+      } finally {
+        if (alive) loading = false;
       }
     })();
     return () => {
@@ -98,14 +103,7 @@
 </script>
 
 <div class="attach-panel" role="group" aria-label="ファイルを追加">
-  <div class="attach-panel-head">
-    <div class="attach-panel-buttons">
-      <Button icon={Camera} onclick={oncamera}>カメラ</Button>
-      <Button icon={ImageIcon} onclick={onimage}>画像</Button>
-      <Button icon={Paperclip} onclick={onfile}>ファイル</Button>
-    </div>
-    <IconButton label="パネルを閉じる" onclick={onclose}><X size={16} /></IconButton>
-  </div>
+  <!-- 最近の画像の一覧だけがスクロールし、ボタンの行はパネルの下に残す -->
   <div class="attach-panel-recent">
     {#if clip}
       <button
@@ -122,7 +120,9 @@
         <RecentThumb {image} />
       </button>
     {/each}
-    {#if failed}
+    {#if loading}
+      <p class="muted attach-panel-empty">読み込み中</p>
+    {:else if failed}
       <div class="attach-panel-empty attach-panel-error" role="alert">
         <p>最近の画像を読み込めませんでした</p>
         <Button icon={RefreshCw} onclick={() => attempt++}>再試行</Button>
@@ -134,6 +134,14 @@
   {#if notice}
     <p class="muted attach-panel-notice" role="note">{notice}</p>
   {/if}
+  <div class="attach-panel-head">
+    <div class="attach-panel-buttons">
+      <Button icon={Camera} onclick={oncamera}>カメラ</Button>
+      <Button icon={ImageIcon} onclick={onimage}>画像</Button>
+      <Button icon={Paperclip} onclick={onfile}>ファイル</Button>
+    </div>
+    <IconButton label="パネルを閉じる" onclick={onclose}><X size={16} /></IconButton>
+  </div>
 </div>
 
 <style>
@@ -158,17 +166,18 @@
     flex-wrap: wrap;
     gap: var(--space-3);
   }
+  /* 一覧の高さは画面の半分まで（中で送る）。ボタンの行は下に残る */
   .attach-panel-recent {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--space-2);
+    max-height: 50vh;
+    overflow-y: auto;
   }
-  /* 広い画面: サムネイルは小さめにして多く見せ、高さは画面の半分まで（中で送る） */
+  /* 広い画面: サムネイルは小さめにして多く見せる */
   @media (min-width: 768px) {
     .attach-panel-recent {
       grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-      max-height: 50vh;
-      overflow-y: auto;
     }
   }
   .attach-panel-recent-item {

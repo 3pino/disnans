@@ -22,6 +22,8 @@
   onMount(() => commandHost.start());
   // モバイルではパネルがチャットを覆う
   const chatVisible = $derived(showChat && !(ui.isMobile && panelOpen));
+  // 狭い画面のファイルエクスプローラーは全画面に覆わず、ナビゲーションバーの上に収める（ナビバーを見せたまま）
+  const filesDocked = $derived(ui.isMobile && ui.panel?.kind === 'files');
 </script>
 
 {#snippet mainEmpty()}
@@ -35,7 +37,7 @@
 <!-- 画面上部の共通の枠（通話のバー・プラグインのステータス欄）。どのタブでも一番上に出る -->
 <TopBarSlot />
 <div class="shell" class:shell-mobile={ui.isMobile} class:shell-with-panel={panelOpen} data-tab={ui.tab}>
-  <main id="main-chat" class="shell-main-chat" class:shell-main-chat-hidden={!showChat}>
+  <main id="main-chat" class="shell-main-chat" class:shell-main-chat-hidden={!showChat} class:shell-main-chat-away={filesDocked}>
     <header class="top-bar"></header>
     <ConnectionBanner />
     <ChatView placeholder="メッセージを送信" empty={mainEmpty} active={chatVisible} />
@@ -71,7 +73,7 @@
     </div>
   {:else if ui.panel?.kind === 'files'}
     <!-- 共有フォルダの閲覧 -->
-    <div class="shell-panel">
+    <div class="shell-panel" class:shell-panel-docked={filesDocked}>
       <FileExplorer />
     </div>
   {:else if ui.panel?.kind === 'plugin'}
@@ -82,7 +84,7 @@
   {/if}
 
   <!-- 狭い画面ではパネルが開いている間は出さない（下の横並びが覆われるため）。広い画面では左に縦に出し続ける -->
-  {#if !ui.isMobile || !panelOpen}
+  {#if !ui.isMobile || !panelOpen || filesDocked}
     <NavBar />
   {/if}
 </div>
@@ -163,6 +165,20 @@
   }
   .shell-main-chat.shell-main-chat-hidden {
     display: none;
+  }
+  /* エクスプローラーを下に出すとき、チャットは高さを取らない（表示は残し、戻ったときの位置を保つ） */
+  .shell-mobile .shell-main-chat.shell-main-chat-away {
+    flex: 0 0 0;
+    height: 0;
+    overflow: hidden;
+  }
+  .shell-mobile .shell-panel.shell-panel-docked {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    flex: 1;
+    min-height: 0;
+    animation: none;
   }
   .shell-mobile .shell-panel {
     position: fixed;

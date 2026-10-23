@@ -151,7 +151,7 @@ describe('client message delivery (JS path)', () => {
     s.sent.map((x) => JSON.parse(x) as ClientEvent).filter((e) => e.type === 'message.send');
 
   it('a disconnect after sending makes the message unknown and never resends it', () => {
-    client.sendMessage({ body: 'hi', files: [] });
+    client.sendMessage({ body: 'hi' });
     const s = sockets()[0];
     expect(sentMessages(s)).toHaveLength(1);
     const pending = client.timeline().pending[0];
@@ -168,7 +168,7 @@ describe('client message delivery (JS path)', () => {
   });
 
   it('a rejected error allows a retry with the same client_id', () => {
-    client.sendMessage({ body: '', files: [] });
+    client.sendMessage({ body: '' });
     const s = sockets()[0];
     const clientId = client.timeline().pending[0].client_id;
     s.receive({ type: 'error', client_id: clientId, code: 'empty_message', message: 'x' });
@@ -180,7 +180,7 @@ describe('client message delivery (JS path)', () => {
   });
 
   it('an unknown error (e.g. internal) does not allow a retry', () => {
-    client.sendMessage({ body: 'x', files: [] });
+    client.sendMessage({ body: 'x' });
     const s = sockets()[0];
     const clientId = client.timeline().pending[0].client_id;
     s.receive({ type: 'error', client_id: clientId, code: 'internal', message: 'x' });
@@ -190,7 +190,7 @@ describe('client message delivery (JS path)', () => {
   });
 
   it('the echo of the message removes the pending placeholder', () => {
-    client.sendMessage({ body: 'hi', files: [] });
+    client.sendMessage({ body: 'hi' });
     const s = sockets()[0];
     const clientId = client.timeline().pending[0].client_id;
     s.drop();
