@@ -12,39 +12,35 @@ afterEach(async () => {
   target = undefined;
 });
 
-function render(descriptionBelow = false, description: string | undefined = '補足') {
+function render(props: { description?: string; control?: boolean } = {}) {
   target = document.createElement('div');
   document.body.appendChild(target);
   instance = mount(SettingRow, {
     target,
     props: {
-      name: '項目', description, descriptionBelow,
-      control: createRawSnippet(() => ({ render: () => '<span>操作</span>' })),
+      name: '項目',
+      description: props.description,
+      ...(props.control === false ? {} : { control: createRawSnippet(() => ({ render: () => '<span>操作</span>' })) }),
     },
   });
   flushSync();
   return target.querySelector<HTMLElement>('.setting-row')!;
 }
 
-describe('SettingRow の補足の配置（DOM の契約）', () => {
-  it('既定では補足は名前の領域の中にある', () => {
-    const row = render();
-    expect(row.querySelector('.setting-row-info .setting-row-description')?.textContent).toBe('補足');
-    expect(row.classList.contains('setting-row-wrap')).toBe(false);
+// プラグインの ui.setting（lib/plugins/ui.ts）も同じ DOM を作る。折り返しは CSS（app.css）が受け持つので、DOM は 1 種類だけ
+describe('SettingRow の DOM の契約', () => {
+  it('名前と説明は info の中、操作は info の次に並ぶ', () => {
+    const row = render({ description: '補足' });
+    expect([...row.children].map((el) => el.className)).toEqual(['setting-row-info', 'setting-row-control']);
+    expect(row.querySelector('.setting-row-info > .setting-row-name')?.textContent).toBe('項目');
+    expect(row.querySelector('.setting-row-info > .setting-row-description')?.textContent).toBe('補足');
   });
 
-  it('別段を指定した補足は、名前と操作のあとに独立して置く', () => {
-    const row = render(true);
-    expect([...row.children].map((el) => el.className)).toEqual([
-      'setting-row-info', 'setting-row-control', 'setting-row-description setting-row-description-below',
-    ]);
-    expect(row.querySelector('.setting-row-info .setting-row-description')).toBeNull();
-    expect(row.classList.contains('setting-row-wrap')).toBe(true);
+  it('説明がなければ説明の要素を作らない', () => {
+    expect(render().querySelector('.setting-row-description')).toBeNull();
   });
 
-  it('補足がなければ、別段を指定しても空の段を作らない', () => {
-    const row = render(true, '');
-    expect(row.querySelector('.setting-row-description')).toBeNull();
-    expect(row.classList.contains('setting-row-wrap')).toBe(false);
+  it('操作がなければ control を作らない', () => {
+    expect(render({ control: false }).querySelector('.setting-row-control')).toBeNull();
   });
 });

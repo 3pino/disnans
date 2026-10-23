@@ -343,7 +343,7 @@
               </select>
             {/snippet}
           </SettingRow>
-          <SettingRow name="ナビゲーションバーを隠す" description="画面の下端からスワイプすると一時的に表示します" descriptionBelow class="settings-hide-nav-bar-row">
+          <SettingRow name="ナビゲーションバーを隠す" description="画面の下端からスワイプすると一時的に表示します" class="settings-hide-nav-bar-row">
             {#snippet control()}
               <Toggle checked={ui.hideNavigationBar} label="ナビゲーションバーを隠す" onchange={(on) => ui.setHideNavigationBar(on)} />
             {/snippet}
@@ -396,10 +396,15 @@
 
       {#if isTauri() || devUser}
         <Section title="接続" class="settings-connection">
-          <p class="muted settings-small-text settings-server-line">
-            <Server size={13} />
-            <span class="settings-server-url">{getServerUrl() || '同じオリジン（開発用プロキシ）'}</span>
-          </p>
+          <div class="settings-server">
+            <p class="muted settings-small-text settings-server-line">
+              <Server size={13} />
+              <span class="settings-server-url">{getServerUrl() || '同じオリジン（開発用プロキシ）'}</span>
+            </p>
+            {#if isTauri()}
+              <Button class="settings-change-server" onclick={changeServer}>サーバーを変更</Button>
+            {/if}
+          </div>
           {#if devUser}<p class="muted settings-small-text">開発ユーザー: {devUser}</p>{/if}
           {#if isTauri()}
             <SettingRow name="デバイス" class="settings-operation-row" onclick={() => ui.openSettingsSub('devices')}>
@@ -407,7 +412,6 @@
                 <span class="settings-operation-icon" aria-hidden="true"><Settings size={18} /></span>
               {/snippet}
             </SettingRow>
-            <Button class="settings-change-server" onclick={changeServer}>サーバーを変更</Button>
           {/if}
         </Section>
       {/if}
@@ -614,7 +618,17 @@
     font-size: var(--fs-sm);
     margin: 0;
   }
+  /* サーバーの表示と「サーバーを変更」を横に並べる。狭いときは折り返す */
+  .settings-server {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-6);
+  }
   .settings-server-line {
+    flex: 1 1 12em;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: var(--space-3);

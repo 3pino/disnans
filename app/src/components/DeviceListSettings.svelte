@@ -74,7 +74,7 @@
 
   {#each deviceList.items as d (d.device_id)}
     {@const self = deviceList.isSelf(d.device_id)}
-    <SettingRow name={d.name} description={meta(d)} descriptionBelow class="device-list-settings-row">
+    <SettingRow name={d.name} description={meta(d)} class="device-list-settings-row">
       {#snippet control()}
         <div class="device-list-settings-controls">
           <TextInput
@@ -90,6 +90,9 @@
             <IconButton class="device-list-settings-delete" label="このデバイスを削除" disabled={busy} onclick={() => void remove(d)}>
               <Trash2 size={16} />
             </IconButton>
+          {:else}
+            <!-- 削除ボタンの幅を空けて、入力欄の位置をそろえる -->
+            <span class="device-list-settings-delete-space" aria-hidden="true"></span>
           {/if}
         </div>
       {/snippet}
@@ -98,20 +101,33 @@
 </Section>
 
 <style>
-  /* 名前の入力と削除ボタンを 1 段に並べる。入力は小さめ */
+  /* 名前の入力と削除ボタンを 1 段に並べる */
   .device-list-settings-controls {
     display: flex;
     align-items: center;
     gap: var(--space-3);
+    flex: 1;
+    min-width: 0;
   }
   .device-list-settings-controls :global(.device-list-settings-name) {
-    width: 140px;
-    min-width: 0;
-    height: 30px;
-    padding: 0 var(--space-4);
-    font-size: var(--fs-sm);
+    flex: 1;
+    min-width: 160px;
   }
   .device-list-settings-controls :global(.device-list-settings-delete) {
     flex: none;
+    color: var(--danger);
+  }
+  /* IconButton（34px）と同じ幅 */
+  .device-list-settings-delete-space {
+    flex: none;
+    width: 34px;
+  }
+  /* 幅が狭いときは、操作を行の最下段に出して、入力欄の幅を確保する */
+  @container setting-row (max-width: 30em) {
+    :global(.device-list-settings-row .setting-row-control) {
+      grid-column: 1 / -1;
+      grid-row: 3;
+      margin: var(--space-3) 0 0;
+    }
   }
 </style>
