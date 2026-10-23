@@ -94,6 +94,7 @@
     <SettingRow name="音の出力先" icon={Headphones}>
       {#snippet control()}
         <select class="input call-select" aria-label="音の出力先" value={selectedOutput} onchange={(e) => void call.chooseOutput(e.currentTarget.value)}>
+          {#if !selectedOutput}<option value="" disabled>未選択</option>{/if}
           {#each call.outputs as o (o.id)}
             <option value={o.id}>{o.label}</option>
           {/each}

@@ -154,6 +154,7 @@
         <label class="call-view-output" title="音の出力先">
           <Speaker size={18} aria-hidden="true" />
           <select class="input call-view-output-select" aria-label="音の出力先" value={selectedOutput} onchange={(e) => void call.chooseOutput(e.currentTarget.value)}>
+            {#if !selectedOutput}<option value="" disabled>未選択</option>{/if}
             {#each call.outputs as o (o.id)}
               <option value={o.id}>{o.label}</option>
             {/each}

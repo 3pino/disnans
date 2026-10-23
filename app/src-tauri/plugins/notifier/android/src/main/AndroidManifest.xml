@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- 通話中だけ CPU を起こしておく（画面を消しても音声が止まらないように） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 長押しで削除モードに入るときの振動（WebView の navigator.vibrate に必要） -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- 通話の出力先に Bluetooth を選ぶ（Android 12 以降） -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
