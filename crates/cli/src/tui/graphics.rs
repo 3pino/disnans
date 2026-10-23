@@ -148,6 +148,40 @@ fn detect_from(
     }
 }
 
+/// tmux のペインの左上の、外側のターミナルでの位置（行, 桁）。取れなければ `None`。
+/// このプログラムのペイン（`TMUX_PANE`）を指定する（操作中の別ペインを見ない）。
+pub fn tmux_origin() -> Option<(u16, u16)> {
+    let pane = std::env::var("TMUX_PANE").ok().filter(|p| !p.is_empty())?;
+    let text = tmux_query(&[
+        "display-message",
+        "-p",
+        "-t",
+        &pane,
+        "#{pane_top} #{pane_left} #{status} #{status-position}",
+    ])?;
+    parse_origin(&text)
+}
+
+/// `pane_top pane_left status status-position`。status は `off` / `on`（1 行）/ 行数。
+/// status 行が上にあるときだけ、その行数を行へ足す。読めない・あふれるときは `None`。
+fn parse_origin(text: &str) -> Option<(u16, u16)> {
+    let mut it = text.split_whitespace();
+    let top: u16 = it.next()?.parse().ok()?;
+    let left: u16 = it.next()?.parse().ok()?;
+    let status_rows: u16 = match it.next()? {
+        "off" => 0,
+        "on" => 1,
+        n => n.parse().ok()?,
+    };
+    let at_top = it.next() == Some("top");
+    let top = if at_top {
+        top.checked_add(status_rows)?
+    } else {
+        top
+    };
+    Some((top, left))
+}
+
 /// tmux のパススルーで包む。中の ESC は 2 つにする。
 fn wrap_tmux(seq: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(seq.len() + 16);
@@ -179,6 +213,9 @@ pub struct Graphics {
     pub protocol: Protocol,
     /// 画像の命令を tmux のパススルーで包む。
     tmux: bool,
+    /// tmux のペインの左上の、外側のターミナルでの位置（行, 桁。0 始まり）。
+    /// `None` は不明（tmux の中で位置が分からないときは、ずれて描くより画像を出さない）。
+    origin: Option<(u16, u16)>,
     last: Vec<Placement>,
 }
 
@@ -187,6 +224,7 @@ impl Graphics {
         Self {
             protocol,
             tmux: false,
+            origin: None,
             last: Vec::new(),
         }
     }
@@ -194,6 +232,13 @@ impl Graphics {
     pub fn with_tmux(mut self, tmux: bool) -> Self {
         self.tmux = tmux;
         self
+    }
+
+    /// ペインの位置を更新する。変わった（不明になった）なら `true`（呼び出し側が描き直す）。
+    pub fn set_origin(&mut self, origin: Option<(u16, u16)>) -> bool {
+        let changed = self.origin != origin;
+        self.origin = origin;
+        changed
     }
 
     /// 画像の命令 1 つを `out` に足す（tmux の中ならパススルーで包む）。
@@ -261,14 +306,41 @@ impl Graphics {
             if png.is_empty() {
                 continue;
             }
-            let _ = write!(out, "\x1b[{};{}H", p.row + 1, p.col + 1);
+            // tmux の中では、位置合わせも保存・復元も外側のターミナルへ通す必要がある
+            // （tmux に送るだけだと外側のカーソルは動かず、画像が右下などにずれる）。
+            // 外側の座標は、ペインの左上（status 行込み）を足した値。
+            let (oy, ox) = if self.tmux {
+                let Some((oy, ox)) = self.origin else {
+                    continue;
+                };
+                (oy, ox)
+            } else {
+                (0, 0)
+            };
+            let (Some(row), Some(col)) = (p.row.checked_add(oy), p.col.checked_add(ox)) else {
+                continue;
+            };
             let mut seq = Vec::new();
+            if self.tmux {
+                seq.extend_from_slice(b"\x1b7");
+            }
+            let _ = write!(
+                seq,
+                "\x1b[{};{}H",
+                row.saturating_add(1),
+                col.saturating_add(1)
+            );
             match self.protocol {
                 Protocol::Kitty => kitty(&mut seq, png, p.cols, p.rows),
                 Protocol::Iterm2 => iterm2(&mut seq, png, p.cols, p.rows),
                 Protocol::None => {}
             }
-            self.emit(out, &seq);
+            if self.tmux {
+                seq.extend_from_slice(b"\x1b8");
+                self.emit(out, &seq);
+            } else {
+                out.extend_from_slice(&seq);
+            }
         }
         out.extend_from_slice(b"\x1b8");
         self.last = next.to_vec();
@@ -426,6 +498,48 @@ mod tests {
     }
 
     #[test]
+    fn tmux_images_move_the_outer_cursor_inside_the_passthrough_with_pane_origin() {
+        assert_eq!(parse_origin("3 10 off top"), Some((3, 10)));
+        assert_eq!(parse_origin("3 10 on top"), Some((4, 10)));
+        assert_eq!(parse_origin("3 10 2 top"), Some((5, 10)));
+        assert_eq!(parse_origin("3 10 on bottom"), Some((3, 10)));
+        assert_eq!(parse_origin("x"), None);
+        assert_eq!(parse_origin("3 10 weird top"), None);
+        assert_eq!(parse_origin("65535 1 on top"), None);
+        let img = image();
+        let mut g = Graphics::new(Protocol::Iterm2).with_tmux(true);
+        assert!(g.set_origin(Some((2, 7))));
+        assert!(!g.set_origin(Some((2, 7))));
+        let next = vec![placement(1, 0, 4)]; // 画面内 row 5, col 3
+        let mut out = Vec::new();
+        g.begin(&next, false, &mut out);
+        g.finish(&next, |_| Some(&img), &mut out);
+        let text = String::from_utf8_lossy(&out).into_owned();
+        // 外側の座標 = (5+2+1, 3+7+1) を、パススルーの内側(ESC 二重)で指定し、保存・復元も内側
+        assert!(
+            text.contains("\x1bPtmux;\x1b\x1b7\x1b\x1b[8;11H\x1b\x1b]1337;File=inline=1"),
+            "{text:?}"
+        );
+        assert!(text.contains("\x07\x1b\x1b8\x1b\\"), "{text:?}");
+        // 包みの外には、画像の位置合わせ(8;11H)を出さない
+        assert!(!text.replace("\x1b\x1b[8;11H", "").contains("[8;11H"));
+    }
+
+    #[test]
+    fn tmux_without_a_known_pane_origin_draws_no_images() {
+        let img = image();
+        let mut g = Graphics::new(Protocol::Iterm2).with_tmux(true);
+        let next = vec![placement(1, 0, 4)];
+        let mut out = Vec::new();
+        g.begin(&next, false, &mut out);
+        g.finish(&next, |_| Some(&img), &mut out);
+        assert!(!String::from_utf8_lossy(&out).contains("1337"));
+        // 位置が変わったら true（描き直しの合図）
+        assert!(g.set_origin(Some((1, 1))));
+        assert!(g.set_origin(None));
+    }
+
+    #[test]
     fn tmux_passthrough_doubles_escapes_only_around_image_commands() {
         assert_eq!(
             wrap_tmux(b"\x1b_Gx\x1b\\"),
@@ -433,17 +547,18 @@ mod tests {
         );
         let img = image();
         let mut g = Graphics::new(Protocol::Iterm2).with_tmux(true);
+        g.set_origin(Some((0, 0)));
         let next = vec![placement(1, 0, 4)];
         let mut out = Vec::new();
         assert!(g.begin(&next, false, &mut out));
         g.finish(&next, |_| Some(&img), &mut out);
         let text = String::from_utf8_lossy(&out).into_owned();
-        // 位置合わせ(CSI)は包まず、画像の命令だけ包む
+        // 位置合わせも画像と同じ包みの中（外側のカーソルを動かすため）
         assert!(
-            text.contains("\x1b[6;4H\x1bPtmux;\x1b\x1b]1337;File=inline=1"),
+            text.contains("\x1bPtmux;\x1b\x1b7\x1b\x1b[6;4H\x1b\x1b]1337;File=inline=1"),
             "{text}"
         );
-        assert!(text.contains("\x07\x1b\\"));
+        assert!(text.contains("\x07\x1b\x1b8\x1b\\"));
     }
 
     fn placement(rows: u16, start: u16, end: u16) -> Placement {

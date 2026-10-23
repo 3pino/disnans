@@ -404,19 +404,12 @@ fn message_rows_with(
                         ),
                     ),
                     view::Meta::Attachment {
-                        file_name,
-                        size,
-                        thumb,
-                        ..
+                        file_name, thumb, ..
                     } => {
                         push(
                             &mut content,
                             RowKind::Meta,
-                            &format!(
-                                "[添付: {} ({})]",
-                                sanitize::inline(file_name),
-                                format_size(*size)
-                            ),
+                            &format!("[添付: {}]", sanitize::inline(file_name)),
                         );
                         if let (Some(_), Some(thumb)) = (gfx, thumb) {
                             strip_items.push(StripItem {
@@ -600,21 +593,6 @@ fn image_cells(w: u32, h: u32, inner: usize, cell: (u16, u16)) -> (usize, usize)
         cols = ((rows * ch * w) / (h * cw)).clamp(1, cols);
     }
     (cols as usize, rows as usize)
-}
-
-fn format_size(bytes: u64) -> String {
-    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 {
-        format!("{bytes} B")
-    } else {
-        format!("{value:.1} {}", UNITS[unit])
-    }
 }
 
 #[cfg(test)]
@@ -852,7 +830,7 @@ mod tests {
         m.edited_at = Some(2);
         let rows = message_rows(&m, &[], 60, None, None);
         let text: Vec<&str> = rows.iter().map(|r| r.text.as_str()).collect();
-        assert!(text[0].ends_with("[添付: photo.png (1.5 KB)]"), "{text:?}");
+        assert!(text[0].ends_with("[添付: photo.png]"), "{text:?}");
         assert!(text.iter().any(|l| l.ends_with("\u{e0b6}👍 2\u{e0b4}")));
         assert!(text.iter().any(|l| l.ends_with("(編集済み)")));
         assert_eq!(text.len(), 3);

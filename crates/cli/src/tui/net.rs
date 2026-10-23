@@ -75,6 +75,7 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
         app.enable_images(cell_pixels());
     }
     let mut force_images = false;
+    let mut origin_checked: Option<std::time::Instant> = None;
     let mut last_selection = (app.mode, app.selected.clone());
 
     let (tx, mut rx) = unbounded_channel::<NetEvent>();
@@ -97,6 +98,17 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
             last_selection = selection;
         }
         let mut image_out = Vec::new();
+        // tmux: ペインの位置は、一定間隔（1 秒）で読み直し、変わったら描き直す
+        // （ペインの入れ替えなど、同じ大きさのまま動く場合も拾う）。読めなければ画像は出さない。
+        if environment.tmux
+            && graphics.protocol != Protocol::None
+            && origin_checked.is_none_or(|at| at.elapsed() >= Duration::from_secs(1))
+        {
+            origin_checked = Some(std::time::Instant::now());
+            if graphics.set_origin(graphics::tmux_origin()) {
+                force_images = true;
+            }
+        }
         let images_changed = match terminal.size() {
             Ok(size) if graphics.protocol != Protocol::None => {
                 view::plan(Rect::new(0, 0, size.width, size.height), &mut app);
@@ -151,6 +163,8 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
                 pending_draft = Some((app.draft_value(), Instant::now()));
                 break Ok(());
             }
+            // tmux では、ペインの位置の変化を拾うため 1 秒ごとに起きる。
+            () = tokio::time::sleep(Duration::from_secs(1)), if environment.tmux => Vec::new(),
             () = sleep_until(draft_due), if draft_due.is_some() => {
                 let (value, _) = pending_draft.take().expect("checked");
                 save_draft(&store, &key, value, &tx).await;
