@@ -19,7 +19,7 @@
   import type { Message } from '../lib/protocol/Message';
   import type { PendingMessage } from '../lib/stores/timeline.svelte';
   import { client } from '../lib/stores/client.svelte';
-  import { authorOf, isOwnMessage } from '../lib/author';
+  import { authorOf } from '../lib/author';
   import { ui } from '../lib/stores/ui.svelte';
   import { reply } from '../lib/stores/reply.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
@@ -43,19 +43,14 @@
     replied?: boolean;
   } = $props();
 
-  /** 吹き出しのときの、他人の発言のアイコンの大きさ（px）。ふだんの半分くらい */
-  const AVATAR_PX = 20;
-  /** リストのときのアイコンの大きさ（px） */
+  /** アイコンの大きさ（px） */
   const AVATAR_LIST_PX = 28;
 
-  /** 表示の仕方（設定）。吹き出しのときだけ、自分の発言を右に寄せ、時刻を吹き出しの横に出す */
+  /** 表示の仕方（一覧のみ。吹き出しは撤去） */
   const layout = $derived(prefs.messageLayout);
-  const bubble = $derived(layout === 'bubble');
   const pending = $derived('client_id' in message ? (message as PendingMessage) : null);
   /** 投稿者の表示（ボットなら名前とプラグインのアイコン） */
   const author = $derived(authorOf(message, client.users));
-  /** 自分の発言（吹き出しの右側）。ボットの発言は、自分が実行したものでも他人の発言として出す */
-  const isMine = $derived(isOwnMessage(message, client.me?.id));
   const mentionsMe = $derived(!!client.me && mentionIds(treeOfMessage(message)).includes(client.me.id));
   const editing = $derived(ui.editing === message.id && !pending && !message.card);
   /** 返信できるか（同じ場所のメッセージに返信する） */
@@ -74,8 +69,8 @@
 
   /** 一覧のとき、名前と時刻（ヘッダー）を出しているか。アイコンを押すと出し入れする（既定は隠す）。画面全体で1つだけ（ui.headerMessage） */
   const headerShown = $derived(ui.headerMessage === message.id);
-  /** アイコンで名前と時刻を出し入れできるか（一覧のグループ先頭の発言だけ。吹き出しは対象外） */
-  const headerToggle = $derived(!bubble && !grouped);
+  /** アイコンで名前と時刻を出し入れできるか（一覧のグループ先頭の発言だけ） */
+  const headerToggle = $derived(!grouped);
 
   let picker = $state<DOMRect | null>(null);
   let sheet = $state(false);
@@ -233,20 +228,10 @@
   <time class={cls} datetime={new Date(message.created_at).toISOString()} title={formatFull(message.created_at)}>{text}</time>
 {/snippet}
 
-<!-- 吹き出しの横の時刻（続きの発言は、ホバーしたときだけ出す） -->
-{#snippet stamp()}
-  {#if grouped}
-    {@render timeTag('message-hover-time', formatTime(message.created_at))}
-  {:else}
-    {@render timeTag('message-time', formatStamp(message.created_at, ui.now))}
-  {/if}
-{/snippet}
-
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="message-item"
   data-layout={layout}
-  class:message-item-mine={isMine}
   class:message-item-grouped={grouped}
   class:message-item-pending={!!pending}
   class:message-item-failed={pending?.failed}
@@ -266,9 +251,8 @@
     }
   }}
 >
-  {#if !bubble || !isMine}
-    <!-- 一覧の先頭の発言のアイコンは、押すと名前と時刻を出し入れする（長押しとスワイプは上のタッチ処理で扱う） -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <!-- 一覧の先頭の発言のアイコンは、押すと名前と時刻を出し入れする（長押しとスワイプは上のタッチ処理で扱う） -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div
       class="message-gutter"
       class:message-gutter-toggle={headerToggle}
@@ -281,21 +265,14 @@
     >
       {#if grouped}
         <!-- 一覧の続きの発言は、ホバーしたときだけ左に時刻を出す -->
-        {#if !bubble}{@render timeTag('message-hover-time', formatTime(message.created_at))}{/if}
+        {@render timeTag('message-hover-time', formatTime(message.created_at))}
       {:else}
-        <AuthorAvatar {author} user={client.user(message.author_id)} id={message.author_id} size={bubble ? AVATAR_PX : AVATAR_LIST_PX} />
+        <AuthorAvatar {author} user={client.user(message.author_id)} id={message.author_id} size={AVATAR_LIST_PX} />
       {/if}
     </div>
-  {/if}
 
   <div class="message-column">
-    {#if bubble}
-      {#if !isMine && !grouped}
-        <div class="message-author">
-          {author.name}{#if author.isBot}<span class="message-bot-badge">BOT</span>{/if}
-        </div>
-      {/if}
-    {:else if !grouped && headerShown}
+    {#if !grouped && headerShown}
       <div class="message-header">
         <span class="message-author">{author.name}</span>
         {#if author.isBot}<span class="message-bot-badge">BOT</span>{/if}
@@ -304,9 +281,7 @@
     {/if}
 
     <div class="message-line">
-      {#if bubble && isMine}{@render stamp()}{/if}
-
-      <!-- 本文（吹き出し）と、その下の付属物（リアクション・カードなど）。スワイプではまとめて動く -->
+      <!-- 本文と、その下の付属物（リアクション・カードなど）。スワイプではまとめて動く -->
       <div class="message-stack" class:message-stack-editing={editing} style:transform="translateX({swipeX}px)">
         {#if editing}
           <div class="message-editor">
@@ -334,10 +309,10 @@
             <ReplyQuote {message} />
           {/if}
           {#if message.card}
-            <!-- プラグインのセッションのカード。吹き出しの代わりに、その下に出す -->
+            <!-- プラグインのセッションのカード -->
             <MessageCard card={message.card} />
           {:else if message.body}
-            <div class="message-bubble" class:message-bubble-mine={bubble && isMine} class:message-bubble-other={bubble && !isMine}>
+            <div class="message-text">
               <div class="message-body">
                 <Markdown body={message.body} markdown={'markdown' in message ? message.markdown : undefined} suffix={message.edited_at || repliedInline ? bodySuffix : undefined} />
               </div>
@@ -379,7 +354,6 @@
         <span class="message-replied-alone">{@render repliedButton()}</span>
       {/if}
 
-      {#if bubble && !isMine}{@render stamp()}{/if}
     </div>
   </div>
 
@@ -436,8 +410,6 @@
 
 <style>
   .message-item {
-    /* 自分の吹き出しの左に残す幅（時刻を含む）。吹き出しのときだけ使う */
-    --mine-gap: 72px;
     position: relative;
     display: flex;
     gap: var(--space-4);
@@ -543,7 +515,6 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  /* 返信を受けたメッセージの目印（スレッドはないとき）。吹き出しでは右、一覧では本文の右端に出す */
   /* 返信を受けたメッセージの目印（押すと返信のツリー）。本文の末尾に続けて出す */
   .message-replied {
     display: inline-grid;
@@ -566,7 +537,7 @@
     color: var(--text);
     background: var(--surface-2);
   }
-  /* 本文がないメッセージ用。吹き出しの横の下端 / 一覧では右下 */
+  /* 本文がないメッセージ用。一覧では右下 */
   .message-replied-alone {
     flex: none;
     align-self: flex-end;
@@ -591,11 +562,6 @@
     letter-spacing: 0.04em;
     vertical-align: 1px;
   }
-  /* 吹き出し: 相手の名前は吹き出しの上に小さく */
-  .message-item[data-layout='bubble'] .message-author {
-    font-size: var(--fs-xs);
-    margin: 0 0 var(--space-1) var(--space-1);
-  }
   .message-line {
     display: flex;
     align-items: flex-end;
@@ -604,14 +570,6 @@
   }
   .message-item[data-layout='list'] .message-line {
     display: block;
-  }
-  .message-item[data-layout='bubble'] .message-line time {
-    font-size: var(--fs-xs);
-    line-height: 1;
-    margin-bottom: var(--space-1);
-  }
-  .message-item[data-layout='bubble'].message-item-mine .message-line {
-    justify-content: flex-end;
   }
   .message-stack {
     display: flex;
@@ -626,20 +584,6 @@
     width: 100%;
     max-width: none;
   }
-  /* 吹き出し・自分の発言は横幅を固定する（右寄せで幅が揃わないと読みにくいので）。左に --mine-gap だけ空け、文字は左寄せ。
-     吹き出しとカードは幅いっぱいに広げ、写真などはそのままの大きさで右に寄せる */
-  .message-item[data-layout='bubble'].message-item-mine .message-stack:not(.message-stack-editing) {
-    align-items: flex-end;
-    width: calc(100% - var(--mine-gap));
-    max-width: none;
-  }
-  .message-item[data-layout='bubble'].message-item-mine .message-bubble {
-    align-self: stretch;
-  }
-  .message-item[data-layout='bubble'].message-item-mine .message-stack > :global(.message-card) {
-    align-self: stretch;
-    max-width: none;
-  }
   .message-stack.message-stack-editing {
     max-width: 100%;
     width: 100%;
@@ -647,25 +591,10 @@
   .message-item.message-item-swiping .message-stack {
     transition: none;
   }
-  .message-bubble {
+  .message-text {
     max-width: 100%;
     min-width: 0;
     overflow-wrap: anywhere;
-  }
-  .message-bubble.message-bubble-mine,
-  .message-bubble.message-bubble-other {
-    padding: 7px var(--space-6);
-    border-radius: var(--radius-xl);
-  }
-  /* 自分の発言：アクセント色を薄く混ぜた、右側の吹き出し */
-  .message-bubble.message-bubble-mine {
-    background: color-mix(in oklch, var(--accent) 16%, var(--surface));
-    border-bottom-right-radius: 4px;
-  }
-  /* 他人の発言：灰色の、左寄せの吹き出し */
-  .message-bubble.message-bubble-other {
-    background: var(--surface-2);
-    border-bottom-left-radius: 4px;
   }
   .message-body {
     min-width: 0;
@@ -718,10 +647,6 @@
     margin-top: var(--space-1);
     color: var(--danger);
     font-size: var(--fs-sm);
-  }
-  /* 付属物（リアクションの並び）は、吹き出しと同じ側に寄せる */
-  .message-item[data-layout='bubble'].message-item-mine :global(.reactions) {
-    justify-content: flex-end;
   }
   .message-swipe-hint {
     position: absolute;

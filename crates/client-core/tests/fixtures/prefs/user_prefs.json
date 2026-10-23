@@ -269,9 +269,9 @@
     },
     {
       "key": "messageLayout",
-      "name": "bubble",
+      "name": "removed bubble falls back to list",
       "input": "bubble",
-      "expected": "bubble"
+      "expected": "list"
     },
     {
       "key": "messageLayout",

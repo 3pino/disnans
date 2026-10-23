@@ -41,7 +41,6 @@
   import DeviceKindSettings from './DeviceKindSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
-  import type { MessageLayout } from '../lib/messageLayout';
   import { ui, type SettingsSubpage, type ThemePref } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
   import { applyServerUrl, devUser, getServerUrl, isCustomAvatar } from '../lib/config';
@@ -101,11 +100,6 @@
     { value: 'portrait', label: '向きを固定' },
     { value: 'media', label: 'メディアのみ自動回転' },
     { value: 'auto', label: '自動回転' },
-  ];
-
-  const messageLayouts: { value: MessageLayout; label: string }[] = [
-    { value: 'list', label: 'リスト' },
-    { value: 'bubble', label: '吹き出し' },
   ];
 
   const perm = $derived(notifications.permission);
@@ -352,16 +346,6 @@
             {/snippet}
           </SettingRow>
         {/if}
-      </Section>
-
-      <Section title="メッセージの表示" class="settings-message-layout">
-        <SegmentedButton
-          class="settings-message-layout-picker"
-          label="メッセージの表示"
-          options={messageLayouts}
-          value={prefs.messageLayout}
-          onchange={(v) => prefs.setMessageLayout(v)}
-        />
       </Section>
 
       <Section title="操作" class="settings-operations">

@@ -59,9 +59,16 @@ describe('mention provider', () => {
 describe('emoji provider', () => {
   const p = emojiProvider();
 
-  it('needs two letters', () => {
-    expect(findSuggestion([p], ':s', 2)).toBeNull();
+  it('starts at one letter after the colon', () => {
+    expect(findSuggestion([p], ':', 1)).toBeNull();
+    expect(findSuggestion([p], ':s', 2)).not.toBeNull();
+    expect(findSuggestion([p], 'hi :s', 5)!.start).toBe(3);
+  });
+
+  it('does not start in the middle of a word or a time', () => {
     expect(findSuggestion([p], 'at 10:30', 8)).toBeNull();
+    expect(findSuggestion([p], 'at 10:3', 7)).toBeNull();
+    expect(findSuggestion([p], 'mail:s', 6)).toBeNull();
   });
 
   it('suggests by short code', () => {
@@ -73,6 +80,24 @@ describe('emoji provider', () => {
   it('shows the matched alias', () => {
     const s = findSuggestion([p], ':sak', 4)!;
     expect(s.items[0]).toMatchObject({ emoji: '🌸', title: ':sakura:' });
+  });
+
+  it('ignores letter case', () => {
+    const lower = findSuggestion([p], ':thu', 4)!.items.map((i) => i.emoji);
+    expect(findSuggestion([p], ':THU', 4)!.items.map((i) => i.emoji)).toEqual(lower);
+    expect(findSuggestion([p], ':Sak', 4)!.items[0]).toMatchObject({ emoji: '🌸', title: ':sakura:' });
+  });
+
+  it('shows nothing when no name matches', () => {
+    expect(findSuggestion([p], ':qqqq', 5)).toBeNull();
+    expect(findSuggestion([p], ':q', 2)).toBeNull();
+  });
+
+  it('confirming replaces the colon and the letters with the emoji only', () => {
+    const text = 'hi :sa there';
+    const s = findSuggestion([p], text, 6)!;
+    const picked = s.items[0];
+    expect(applySuggestion(text, s, picked.insert)).toEqual({ text: `hi ${picked.insert} there`, caret: 3 + picked.insert.length });
   });
 });
 

@@ -4,12 +4,12 @@ import type { SuggestProvider } from './types';
 
 const entries = Object.entries(EMOJI_NAMES);
 
-/** `:` ＋2文字以上で絵文字を出す。選んだら絵文字そのものを入れる */
+/** `:` の直後の 1 文字から絵文字を出す（大文字小文字は区別しない）。選んだら絵文字そのものを入れる */
 export function emojiProvider(): SuggestProvider {
   return {
     label: '絵文字',
     match(text, caret) {
-      const q = tokenBefore(text, caret, ':', '[A-Za-z0-9_+-]', { min: 2 });
+      const q = tokenBefore(text, caret, ':', '[A-Za-z0-9_+-]', { min: 1 });
       return q && { ...q, end: caret };
     },
     items(_text, range) {

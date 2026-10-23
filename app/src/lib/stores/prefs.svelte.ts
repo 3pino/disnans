@@ -4,7 +4,7 @@ import { DEFAULT_ENTER_KEYS, type EnterAction, type EnterCombo, type EnterKeyPre
 import type { HotkeyOverrides } from '../commands.svelte';
 import { setSlashAlias, type SlashAliases } from '../slashAlias';
 import { migrateComposerMenu, type ComposerMenuPrefs } from '../composerMenu';
-import type { MessageLayout } from '../messageLayout';
+import { DEFAULT_MESSAGE_LAYOUT, type MessageLayout } from '../messageLayout';
 import { DEFAULT_CALL_SETTINGS, type CallSettingsData } from '../call/pure';
 import {
   CALL_USER_KEYS,
@@ -91,8 +91,8 @@ export class Prefs {
   readonly enterKeys = $derived((this.view.enterKeys ?? DEFAULT_ENTER_KEYS) as EnterKeyPrefs);
   /** 入力欄の「＋」メニューの並び順と出す項目 */
   readonly composerMenu = $derived(this.view.composerMenu as ComposerMenuPrefs);
-  /** メッセージの表示（リスト・吹き出し）。既定はリスト */
-  readonly messageLayout = $derived(this.view.messageLayout as MessageLayout);
+  /** メッセージの表示は一覧に固定（吹き出しは撤去。保存された旧い値は見ない） */
+  readonly messageLayout: MessageLayout = DEFAULT_MESSAGE_LAYOUT;
   /** テーマ（system・light・dark）。起動直後はデバイスのキャッシュの値 */
   readonly theme = $derived(this.view.theme as ThemeChoice);
   /** 選んだプラグインのテーマの ID（なければ null） */
@@ -218,10 +218,6 @@ export class Prefs {
   setComposerMenu(next: ComposerMenuPrefs): void {
     const raw = this.raw.composerMenu;
     void this.update('composerMenu', { ...(isObject(raw) ? raw : {}), ...next });
-  }
-
-  setMessageLayout(layout: MessageLayout): void {
-    void this.update('messageLayout', layout);
   }
 
   setTheme(theme: ThemeChoice): void {

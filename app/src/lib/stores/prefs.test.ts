@@ -123,6 +123,13 @@ describe('Prefs（ユーザーごとの設定）', () => {
     expect(p.messageLayout).toBe('list');
   });
 
+  it('吹き出しは撤去。旧い値 bubble が残っていても一覧として扱う', async () => {
+    apiMock.prefs.mockResolvedValue({ raw: { ...BASE, messageLayout: 'bubble' }, view: { ...res({}).view, messageLayout: 'bubble' } });
+    const p = new Prefs();
+    await LOAD(p);
+    expect(p.messageLayout).toBe('list');
+  });
+
   it('保存するときは raw（サーバーの元のオブジェクト）に変えた項目を足す。view の既定は書き戻さない', async () => {
     apiMock.prefs.mockResolvedValue({ raw: { ...BASE, futureKey: 1 }, view: { ...res({}).view, futureKey: 1 } });
     const p = new Prefs();
