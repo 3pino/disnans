@@ -13,6 +13,8 @@ pub enum Mode {
     Select,
     /// 検索（語の入力・結果の選択）。
     Search,
+    /// 下の画面切替バー（Chat / Settings）にフォーカスがある。
+    Nav,
 }
 
 pub const CHAT_SEND: &str = "chat.send";
@@ -37,6 +39,12 @@ pub const MESSAGE_REACT: &str = "message.react";
 pub const MESSAGE_REACT_APPLY: &str = "message.react.apply";
 /// 選んだメッセージの操作メニューを開く。
 /// 設定画面を開く。
+/// 入力欄の最下行から、画面切替バーへ移る。
+pub const NAV_FOCUS: &str = "nav.focus";
+pub const NAV_PREV: &str = "nav.prev";
+pub const NAV_NEXT: &str = "nav.next";
+pub const NAV_ACTIVATE: &str = "nav.activate";
+pub const NAV_BACK: &str = "nav.back";
 pub const SETTINGS_OPEN: &str = "settings.open";
 pub const MESSAGE_MENU: &str = "message.menu";
 /// 結果が不明だった送信を、確認のうえで改めて送る。
@@ -51,7 +59,11 @@ pub const QUICK_REACTIONS: [(&str, &str); 5] = [
     ("message.react.quick.5", "🙏"),
 ];
 
-pub const MODE_NAMES: [(&str, Mode); 2] = [("input", Mode::Input), ("select", Mode::Select)];
+pub const MODE_NAMES: [(&str, Mode); 3] = [
+    ("input", Mode::Input),
+    ("select", Mode::Select),
+    ("nav", Mode::Nav),
+];
 
 /// 設定のキー名（`j`・`Down`・`Enter`・`Esc`・`Ctrl+F`・`Alt+Enter` など）を操作にする。読めなければ `None`。
 /// Enter は、入力欄の設定に関わらず「送る」「改行」のどちらの操作にも当たる。
@@ -112,6 +124,14 @@ impl Default for Bindings {
             (Mode::Input, SendSilent, CHAT_SEND_SILENT),
             (Mode::Input, Action::Search, SEARCH_OPEN),
             (Mode::Input, Cancel, MESSAGE_SELECT),
+            (Mode::Input, Down, NAV_FOCUS),
+            (Mode::Nav, Left, NAV_PREV),
+            (Mode::Nav, Right, NAV_NEXT),
+            (Mode::Nav, Send, NAV_ACTIVATE),
+            (Mode::Nav, Newline, NAV_ACTIVATE),
+            (Mode::Nav, Insert(' '), NAV_ACTIVATE),
+            (Mode::Nav, Up, NAV_BACK),
+            (Mode::Nav, Cancel, NAV_BACK),
             (Mode::Select, Up, MESSAGE_SELECT_PREV),
             (Mode::Select, Insert('k'), MESSAGE_SELECT_PREV),
             (Mode::Select, Down, MESSAGE_SELECT_NEXT),

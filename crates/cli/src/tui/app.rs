@@ -210,6 +210,8 @@ pub enum ImageState {
 pub enum Focus {
     Input,
     SendButton,
+    /// 下の画面切替バー。0 = Chat、1 = Settings。
+    Nav(usize),
 }
 
 pub struct App {
@@ -248,6 +250,8 @@ pub struct App {
     pub bindings: Bindings,
     /// モーダルのスタック。最上位だけが操作を受ける。
     pub modals: Vec<Modal>,
+    /// 画面切替バーの位置（行, 幅）。描画で決まる。
+    pub navbar: Option<(u16, u16)>,
     /// 設定（読み込めるまで `None`）。
     pub settings: Option<Loaded>,
     /// 入力欄の補完（`@` `:` `/`）。
@@ -309,6 +313,7 @@ impl App {
             selected: None,
             bindings: Bindings::default(),
             modals: Vec::new(),
+            navbar: None,
             settings: None,
             suggest: None,
             mentions: Vec::new(),
@@ -461,6 +466,31 @@ impl App {
                     self.on_action(action, &mut effects);
                     return effects;
                 }
+                if let Focus::Nav(index) = self.focus {
+                    match self.bindings.command(Mode::Nav, &action, false) {
+                        Some(command) => self.run_nav(command, index, &mut effects),
+                        None if matches!(
+                            action,
+                            Action::Insert(_) | Action::Backspace | Action::Delete
+                        ) =>
+                        {
+                            self.focus = Focus::Input;
+                            self.on_action(action, &mut effects);
+                        }
+                        None => self.on_action(action, &mut effects),
+                    }
+                    return effects;
+                }
+                if self.mode == Mode::Input
+                    && self.focus == Focus::Input
+                    && self.suggest.is_none()
+                    && self.bindings.command(Mode::Input, &action, false)
+                        == Some(commands::NAV_FOCUS)
+                    && self.input_on_last_line()
+                {
+                    self.focus = Focus::Nav(0);
+                    return effects;
+                }
                 if self.focus == Focus::SendButton {
                     let plain = key.modifiers.is_empty()
                         && key.kind != crossterm::event::KeyEventKind::Release;
@@ -555,12 +585,15 @@ impl App {
             self.on_modal_action(action, effects);
             return;
         }
-        if self.suggest.is_some() && self.mode == Mode::Input && self.on_suggest_action(&action) {
+        if self.suggest.is_some()
+            && self.mode == Mode::Input
+            && self.on_suggest_action(&action, effects)
+        {
             self.draft_changed(effects);
             return;
         }
         match self.mode {
-            Mode::Input => {}
+            Mode::Input | Mode::Nav => {}
             Mode::Select => {
                 if commands::is_passthrough(&action) {
                     self.on_input_action(action, effects);
@@ -856,7 +889,7 @@ impl App {
     }
 
     /// 補完の候補が出ているときのキー。扱ったら true（入力が変わったときは呼び出し側が下書きを保存する）。
-    fn on_suggest_action(&mut self, action: &Action) -> bool {
+    fn on_suggest_action(&mut self, action: &Action, effects: &mut Vec<Effect>) -> bool {
         let Some(s) = self.suggest.as_mut() else {
             return false;
         };
@@ -864,6 +897,17 @@ impl App {
             Action::Up => s.step(-1),
             Action::Down => s.step(1),
             Action::Cancel => self.suggest = None,
+            Action::FocusButton | Action::Send | Action::Newline
+                if s.kind == suggest::Kind::Slash =>
+            {
+                // Enter の設定（改行など）に関わらず、選んだコマンドをそのまま実行する。
+                let name = s.current().insert.trim_start_matches('/').to_owned();
+                self.input.clear();
+                self.suggest = None;
+                effects.push(Effect::SaveDraftNow(None));
+                self.run_slash(&name, effects);
+                return true;
+            }
             Action::FocusButton | Action::Send | Action::Newline => {
                 let (chars, item) = (s.token_chars, s.current().clone());
                 self.input.replace_before_cursor(chars, &item.insert);
@@ -945,6 +989,12 @@ impl App {
             return;
         }
         if self.modals.is_empty() {
+            if let Some((_, width)) = self.navbar.filter(|(y, _)| *y == mouse.row) {
+                let index = usize::from(mouse.column >= width / 2);
+                self.focus = Focus::Nav(index);
+                self.activate_nav(index, effects);
+                return;
+            }
             self.focus = match self.send_button {
                 Some((x, y, w, h))
                     if (x..x + w).contains(&mouse.column) && (y..y + h).contains(&mouse.row) =>
@@ -1056,6 +1106,29 @@ impl App {
         }
     }
 
+    /// カーソルが入力欄の最後の行（改行で区切った行）にあるか。
+    fn input_on_last_line(&self) -> bool {
+        !self.input.as_str()[self.input.before_cursor().len()..].contains('\n')
+    }
+
+    fn run_nav(&mut self, command: &str, index: usize, effects: &mut Vec<Effect>) {
+        match command {
+            commands::NAV_PREV => self.focus = Focus::Nav(index.saturating_sub(1)),
+            commands::NAV_NEXT => self.focus = Focus::Nav((index + 1).min(1)),
+            commands::NAV_BACK => self.focus = Focus::Input,
+            commands::NAV_ACTIVATE => self.activate_nav(index, effects),
+            _ => {}
+        }
+    }
+
+    fn activate_nav(&mut self, index: usize, _effects: &mut Vec<Effect>) {
+        if index == 0 {
+            self.focus = Focus::Input;
+        } else {
+            self.open_settings();
+        }
+    }
+
     fn run_slash(&mut self, name: &str, effects: &mut Vec<Effect>) {
         match name {
             "search" => self.open_search(),
@@ -1153,6 +1226,14 @@ impl App {
             Action::ScrollTop => self.scroll_up(usize::MAX, effects),
             Action::ScrollBottom => self.scroll = 0,
             Action::Ignore | Action::FocusButton | Action::FocusInput => {}
+            Action::Newline
+                if suggest::SLASH
+                    .iter()
+                    .any(|(name, _)| self.input.as_str() == format!("/{name}")) =>
+            {
+                // 入力が `/settings` などの名前だけなら、Enter の設定（改行）に関わらず実行する。
+                self.send_pressed(false, effects);
+            }
             edit => {
                 if self.input_locked() {
                     return;
@@ -2498,5 +2579,54 @@ mod tests {
                 .command(Mode::Select, &Action::Insert('n'), false),
             Some(commands::MESSAGE_SELECT_NEXT)
         );
+    }
+
+    fn loaded_settings(app: &mut App) {
+        net(
+            app,
+            NetEvent::Settings(Ok(Box::new(Loaded {
+                device_id: "dev".into(),
+                device_name: "n".into(),
+                user: serde_json::json!({}),
+                device: serde_json::json!({}),
+            }))),
+        );
+    }
+
+    #[test]
+    fn down_on_the_last_line_moves_to_the_nav_bar_and_enter_opens_settings() {
+        let mut app = make();
+        connect(&mut app, 1);
+        loaded_settings(&mut app);
+        type_text(&mut app, "a\nb");
+        press(&mut app, KeyCode::Left, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        // 最下行ではない間の ↓ は入力欄の中の移動
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.focus, Focus::Input);
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.focus, Focus::Nav(0));
+        press(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(app.focus, Focus::Nav(1));
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(app.modals.last(), Some(Modal::Settings(_))));
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(app.focus, Focus::Nav(1));
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!((app.focus, app.input.as_str()), (Focus::Input, "a\nb"));
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(app.focus, Focus::Input);
+    }
+
+    #[test]
+    fn enter_runs_a_typed_slash_command_even_when_enter_is_newline() {
+        let mut app = make();
+        connect(&mut app, 1);
+        loaded_settings(&mut app);
+        type_text(&mut app, "/settings");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(app.modals.last(), Some(Modal::Settings(_))));
+        assert!(app.input.is_empty());
     }
 }

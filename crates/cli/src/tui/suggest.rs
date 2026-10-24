@@ -41,7 +41,7 @@ pub fn detect(before: &str, users: &[User]) -> Option<Suggest> {
 /// `commands` は名前と説明の組。
 pub fn detect_in(before: &str, users: &[User], commands: &[(&str, &str)]) -> Option<Suggest> {
     let s = core::detect(before, users, commands)?;
-    // TUI だけの決まり: 名前を打ち終えて候補が 1 つだけなら出さない（Enter でそのまま実行する操作を保つため）。
+    // TUI だけの決まり: 名前を打ち終えて候補が 1 つだけなら出さない。Enter（改行の設定でも）で `app.rs` がそのまま実行する。
     // GUI は候補を出し、Enter で選んでから送る（core の規則と fixture は GUI のまま）
     if s.kind == CoreKind::Slash && s.items.len() == 1 && before == s.items[0].insert.trim_end() {
         return None;

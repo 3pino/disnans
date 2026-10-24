@@ -517,8 +517,8 @@ fn search_lines(app: &App, width: u16, height: u16) -> Vec<Line<'static>> {
     lines
 }
 
-/// 下部のナビゲーション。Chat だけが使え、未実装の Settings は選べない（無効表示）。
-fn navbar_line(width: u16) -> Line<'static> {
+/// 下部の画面切替バー。Settings は設定画面（モーダル）を開く。
+fn navbar_line(width: u16, focus: Option<usize>) -> Line<'static> {
     let cell = usize::from(width) / 2;
     let item = |label: &str, style: Style| {
         let pad = cell.saturating_sub(sanitize::display_width(label));
@@ -528,14 +528,18 @@ fn navbar_line(width: u16) -> Line<'static> {
             style,
         )
     };
-    let disabled = Style::new().fg(t().text_muted).add_modifier(Modifier::DIM);
-    Line::from(vec![
-        item(
-            "Chat",
-            Style::new().fg(t().accent).add_modifier(Modifier::BOLD),
-        ),
-        item("Settings", disabled),
-    ])
+    let normal = Style::new().fg(t().text_muted);
+    let current = Style::new().fg(t().accent).add_modifier(Modifier::BOLD);
+    let focused = Style::new()
+        .fg(t().on_accent)
+        .bg(t().accent_bg)
+        .add_modifier(Modifier::BOLD);
+    let style = |i: usize| match focus {
+        Some(f) if f == i => focused,
+        _ if i == 0 => current,
+        _ => normal,
+    };
+    Line::from(vec![item("Chat", style(0)), item("Settings", style(1))])
 }
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -623,6 +627,10 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         button_area.height,
     ));
     let focused = app.focus == Focus::SendButton && app.modals.is_empty();
+    let nav_focus = match app.focus {
+        Focus::Nav(i) if app.modals.is_empty() => Some(i),
+        _ => None,
+    };
     let can_send = matches!(app.conn, ConnState::Connected { .. })
         && !app.input.as_str().trim().is_empty()
         && !app.input_locked();
@@ -690,17 +698,23 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                     Phase::Detail => "↑↓/j k/PgUp/PgDn: スクロール | Esc/←: 結果へ戻る".to_owned(),
                     Phase::Browsing => "↑↓/j k: 選択 | Enter: そのメッセージへ（履歴に無ければ本文を表示） | d/→: 本文の詳細 | n: さらに古い結果 | /: 語を編集 | Esc: 入力へ戻る".to_owned(),
                 }
+            } else if nav_focus.is_some() {
+                "←→: 選択 | Enter: 切替 | ↑/Esc: 入力欄へ戻る".to_owned()
             } else if focused {
                 "送信ボタン: Enter / Space で送信 | Shift+Tab: 入力欄へ戻る".to_owned()
             } else {
-                app.keymap.hint()
+                format!("{} | 最下行で↓: Chat/Settings | /settings", app.keymap.hint())
             },
             usize::from(r.hint.width),
         ))
         .style(Style::new().fg(t().text_muted)),
         r.hint,
     );
-    frame.render_widget(Paragraph::new(navbar_line(r.navbar.width)), r.navbar);
+    app.navbar = Some((r.navbar.y, r.navbar.width));
+    frame.render_widget(
+        Paragraph::new(navbar_line(r.navbar.width, nav_focus)),
+        r.navbar,
+    );
     draw_suggest(frame, &r, app);
     draw_modal(frame, area, app);
 }
