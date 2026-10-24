@@ -36,6 +36,23 @@ impl TextBuf {
         self.goal_column = None;
     }
 
+    /// カーソルより前の文字列。
+    pub fn before_cursor(&self) -> &str {
+        &self.text[..self.cursor]
+    }
+
+    /// カーソル直前の `chars` 文字を `with` に置き換える。
+    pub fn replace_before_cursor(&mut self, chars: usize, with: &str) {
+        let start = self.text[..self.cursor]
+            .char_indices()
+            .rev()
+            .nth(chars.saturating_sub(1))
+            .map_or(0, |(i, _)| i);
+        self.text.replace_range(start..self.cursor, &clean(with));
+        self.cursor = start + clean(with).len();
+        self.goal_column = None;
+    }
+
     /// カーソルの（論理行, その行の先頭からの文字数）。
     pub fn cursor_position(&self) -> (usize, usize) {
         let before = &self.text[..self.cursor];

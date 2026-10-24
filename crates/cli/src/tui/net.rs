@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crossterm::event::{self, KeyEventKind};
+use disnans_client_core::view::settings::Scope;
 use disnans_client_core::{
     ChatSession, ClientEvent, ConnectOptions, DraftKey, DraftPlace, LocalStore, MessagesQuery,
     RestClient, SendOutcome, SendRequest, ServerUrl, StoredValue, WatchItem, new_client_id,
@@ -18,11 +19,13 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio::time::Instant;
 
 use super::app::{
-    App, Effect, Event, HistoryPurpose, NetEvent, PAGE_SIZE, REFETCH_SIZE, SendResult,
+    App, Effect, Event, HistoryPurpose, NetEvent, PAGE_SIZE, REFETCH_SIZE, SavedPrefs, SendResult,
 };
+use super::device;
 use super::graphics::{self, Graphics, Protocol};
 use super::input::{EnterKeys, Keymap};
 use super::picture;
+use super::settings::Save;
 use super::terminal::TerminalGuard;
 use super::ui::theme;
 use super::view;
@@ -83,6 +86,7 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
     let stop = Arc::new(AtomicBool::new(false));
     spawn_terminal_reader(term_tx, stop.clone());
     spawn_prefs(&rest, &tx);
+    let save_tx = spawn_settings(store.clone(), &rest, &tx);
     spawn_history(&rest, &tx, None, HistoryPurpose::Initial, PAGE_SIZE);
 
     let mut shutdown = std::pin::pin!(shutdown_signal());
@@ -201,6 +205,9 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
                 }
                 Effect::Search { seq, query, before } => {
                     spawn_search(&rest, &tx, seq, query, before);
+                }
+                Effect::SaveSetting { device_id, save } => {
+                    let _ = save_tx.send((device_id, save));
                 }
                 Effect::Bell => write_raw(b"\x07"),
                 Effect::Refetch => {
@@ -435,6 +442,44 @@ fn spawn_prefs(rest: &Arc<RestClient>, tx: &UnboundedSender<NetEvent>) {
             let _ = tx.send(NetEvent::Prefs(EnterKeys::from_prefs(&prefs)));
         }
     });
+}
+
+/// 設定の読み込み（デバイスの登録を含む）と、保存の窓口。保存は送った順に 1 つずつ処理する
+/// （「読む→変える→書く」が重ならないように）。失敗しても自動では再送しない。
+fn spawn_settings(
+    store: Option<Arc<LocalStore>>,
+    rest: &Arc<RestClient>,
+    tx: &UnboundedSender<NetEvent>,
+) -> UnboundedSender<(String, Save)> {
+    let (save_tx, mut save_rx) = unbounded_channel::<(String, Save)>();
+    let (rest, tx) = (rest.clone(), tx.clone());
+    tokio::spawn(async move {
+        let Some(store) = store else {
+            let _ = tx.send(NetEvent::Settings(Err(
+                "設定の保存先（ローカルの領域）を開けませんでした".into(),
+            )));
+            return;
+        };
+        let loaded = device::load(&store, &rest).await;
+        let _ = tx.send(NetEvent::Settings(loaded.map(Box::new)));
+        while let Some((device_id, save)) = save_rx.recv().await {
+            let result = match save {
+                Save::Pref { scope, key, value } => {
+                    device::save(&rest, &device_id, scope, &key, value)
+                        .await
+                        .map(|prefs| match scope {
+                            Scope::User => SavedPrefs::User(prefs),
+                            _ => SavedPrefs::Device(prefs),
+                        })
+                }
+                Save::Rename(name) => device::rename(&rest, &device_id, &name)
+                    .await
+                    .map(|()| SavedPrefs::Renamed(name)),
+            };
+            let _ = tx.send(NetEvent::PrefSaved(result));
+        }
+    });
+    save_tx
 }
 
 fn spawn_history(

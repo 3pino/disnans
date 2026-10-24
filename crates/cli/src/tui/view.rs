@@ -360,7 +360,7 @@ pub fn plan(area: Rect, app: &mut App) {
     }
     let (w, h) = history_size(area, app);
     app.set_viewport(w, h);
-    if app.mode == Mode::Search || !app.modals.is_empty() {
+    if app.mode == Mode::Search || !app.modals.is_empty() || app.suggest.is_some() {
         // 検索の結果やモーダルを出している間は、履歴の画像を出さない（モーダルに重ならない）。
         app.placements = Vec::new();
         return;
@@ -676,6 +676,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Paragraph::new(sanitize::truncate(
             &if let Some(modal) = app.modals.last() {
                 modal_hint(modal).to_owned()
+            } else if app.suggest.is_some() {
+                "↑↓: 候補 | Tab/Enter: 決定 | Esc: 閉じる".to_owned()
             } else if app.mode == Mode::Select {
                 format!(
                     "↑↓/j k: 選択 | ←→/h l: 画像を横へ | {}: メニュー | r: リアクション | 1-5: 👍🎉😂😮🙏 | p/Enter: 返信 | Esc: 戻る",
@@ -699,7 +701,49 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         r.hint,
     );
     frame.render_widget(Paragraph::new(navbar_line(r.navbar.width)), r.navbar);
+    draw_suggest(frame, &r, app);
     draw_modal(frame, area, app);
+}
+
+/// 入力欄の上に補完の候補を重ねる（フォーカスは入力欄のまま）。
+fn draw_suggest(frame: &mut Frame, r: &Regions, app: &App) {
+    let Some(s) = app.suggest.as_ref().filter(|_| app.modals.is_empty()) else {
+        return;
+    };
+    let text_w = |s: &str| unicode_width::UnicodeWidthStr::width(s);
+    let labels: Vec<String> = s.items.iter().map(|i| sanitize::inline(&i.label)).collect();
+    let width = (labels.iter().map(|l| text_w(l)).max().unwrap_or(0) as u16 + 4)
+        .clamp(8, r.input.width.max(8));
+    let height = (labels.len() as u16 + 2).min(r.input.y.max(3));
+    let rect = Rect {
+        x: r.input.x,
+        y: r.input.y.saturating_sub(height),
+        width: width.min(r.input.width.max(1)),
+        height,
+    };
+    let selected = Style::new()
+        .fg(t().on_accent)
+        .bg(t().accent_bg)
+        .add_modifier(Modifier::BOLD);
+    let lines: Vec<Line> = labels
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let style = if i == s.cursor {
+                selected
+            } else {
+                Style::new()
+            };
+            Line::from(Span::styled(format!(" {l} "), style))
+        })
+        .collect();
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(t().accent));
+    frame.render_widget(ratatui::widgets::Clear, rect);
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 /// コマンドに割り当てたキーの表示（選択モード）。割り当てが無ければ `-`。
@@ -728,6 +772,7 @@ fn key_labels(app: &App, command: &str) -> String {
 
 fn modal_hint(modal: &Modal) -> &'static str {
     match modal {
+        Modal::Settings(_) => "↑↓: 選択 | Enter: 変更 | Esc: 閉じる | クリック: 変更",
         Modal::Menu(_) | Modal::Choice(_) => {
             "↑↓/Tab: 選択 | Enter: 決定 | Esc: 閉じる | クリック: 決定"
         }
@@ -738,8 +783,22 @@ fn modal_hint(modal: &Modal) -> &'static str {
 
 /// 最上位のモーダルを画面の中央に重ねて描く。当たり判定のため、領域を `app.modal_area` に残す。
 fn draw_modal(frame: &mut Frame, area: Rect, app: &mut App) {
-    let Some(modal) = app.modals.last() else {
+    if app.modals.is_empty() {
         app.modal_area = None;
+        return;
+    }
+    // 設定画面の行は、現在の値から作る。見える行数は画面の高さで決まる。
+    let settings_rows = match (app.modals.last(), &app.settings) {
+        (Some(Modal::Settings(_)), Some(loaded)) => {
+            Some(crate::tui::settings::rows(loaded, &app.bindings))
+        }
+        _ => None,
+    };
+    if let Some(Modal::Settings(s)) = app.modals.last_mut() {
+        s.visible =
+            crate::tui::ui::modal::WINDOW.min(usize::from(area.height.saturating_sub(4)).max(1));
+    }
+    let Some(modal) = app.modals.last() else {
         return;
     };
     let max_w = area.width.saturating_sub(4).max(1);
@@ -753,6 +812,23 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &mut App) {
         .bg(t().accent_bg)
         .add_modifier(Modifier::BOLD);
     match modal {
+        Modal::Settings(s) => {
+            let rows = settings_rows.unwrap_or_default();
+            let first = s.window_first();
+            let label_w = rows.iter().map(|r| text_w(&r.label)).max().unwrap_or(0);
+            for (i, row) in rows.iter().enumerate().skip(first).take(s.visible) {
+                let label = sanitize::inline(&row.label);
+                let pad = " ".repeat(label_w.saturating_sub(text_w(&label)));
+                let line = format!(" {label}{pad}  {} ", sanitize::inline(&row.value));
+                want = want.max(text_w(&line) + 4);
+                let style = if i == s.cursor {
+                    selected
+                } else {
+                    Style::new()
+                };
+                body.push(Line::from(Span::styled(line, style)));
+            }
+        }
         Modal::Menu(m) => {
             for (i, item) in m.items.iter().enumerate() {
                 let label = sanitize::inline(&item.label);
@@ -1112,5 +1188,44 @@ mod tests {
         app.modals.clear();
         render(&mut app, 40, 14);
         assert!(app.modal_area.is_none());
+    }
+
+    #[test]
+    fn suggest_popup_is_drawn_above_the_input_and_hides_images() {
+        let mut app = app();
+        connect(&mut app);
+        app.users.push(user("u9", "Zed"));
+        app.enable_images((8, 16));
+        app.update(Event::Paste("@ze".into()));
+        assert!(app.suggest.is_some());
+        let lines = render(&mut app, 50, 14);
+        assert!(lines.iter().any(|l| l.contains("@Zed")), "{lines:?}");
+        plan(Rect::new(0, 0, 50, 14), &mut app);
+        assert!(app.placements.is_empty());
+    }
+
+    #[test]
+    fn settings_screen_lists_rows_from_the_loaded_values() {
+        use crate::tui::device::Loaded;
+        use crate::tui::ui::modal::SettingsList;
+        let mut app = app();
+        connect(&mut app);
+        app.settings = Some(Loaded {
+            device_id: "d".into(),
+            device_name: "Linux (TUI)".into(),
+            user: serde_json::json!({"theme": "dark"}),
+            device: serde_json::json!({}),
+        });
+        app.modals.push(Modal::Settings(SettingsList {
+            cursor: 0,
+            len: 20,
+            visible: 20,
+        }));
+        let lines = render(&mut app, 70, 30);
+        assert!(
+            lines.iter().any(|l| l.contains("[共通]テーマdark")),
+            "{lines:?}"
+        );
+        assert!(lines.iter().any(|l| l.contains("Linux(TUI)")));
     }
 }

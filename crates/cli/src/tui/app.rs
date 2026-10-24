@@ -11,13 +11,16 @@ use std::collections::HashMap;
 use jiff::tz::TimeZone;
 
 use super::commands::{self, Bindings, Mode};
+use super::device::Loaded;
 use super::graphics::Placement;
 use super::input::{Action, EnterKeys, Keymap};
 use super::picture::Prepared;
 use super::search::{Phase, Search};
+use super::settings::{self, Editor, Save};
+use super::suggest::{self, Suggest};
 use super::textbuf::TextBuf;
 use super::transcript::{self, Row};
-use super::ui::modal::{Dialog, Menu, MenuItem, Modal, Outcome, Prompt};
+use super::ui::modal::{Choice, Dialog, Menu, MenuItem, Modal, Outcome, Prompt, SettingsList};
 
 /// 起動時・再取得時に読む件数。
 pub const PAGE_SIZE: u32 = 50;
@@ -96,6 +99,10 @@ pub enum NetEvent {
         result: Result<Vec<Message>, String>,
     },
     Prefs(EnterKeys),
+    /// 設定（ユーザー共通・デバイス）の読み込み結果。
+    Settings(Result<Box<Loaded>, String>),
+    /// 1 つの設定を保存した結果（保存後のオブジェクト全体、または名前）。
+    PrefSaved(Result<SavedPrefs, String>),
     /// 検索の応答。`append` は続きの取得。
     Search {
         seq: u64,
@@ -116,6 +123,13 @@ pub enum NetEvent {
         body: String,
         message_id: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SavedPrefs {
+    User(serde_json::Value),
+    Device(serde_json::Value),
+    Renamed(String),
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +166,11 @@ pub enum Effect {
         before: Option<String>,
     },
     Refetch,
+    /// 設定を 1 つ保存する（送った順に処理する）。
+    SaveSetting {
+        device_id: String,
+        save: Save,
+    },
     /// ターミナルのベルを鳴らす（通知）。
     Bell,
     /// 入力の変化。呼び出し側がまとめて（遅らせて）保存してよい。
@@ -229,6 +248,12 @@ pub struct App {
     pub bindings: Bindings,
     /// モーダルのスタック。最上位だけが操作を受ける。
     pub modals: Vec<Modal>,
+    /// 設定（読み込めるまで `None`）。
+    pub settings: Option<Loaded>,
+    /// 入力欄の補完（`@` `:` `/`）。
+    pub suggest: Option<Suggest>,
+    /// 補完で入れた `@表示名` と利用者 ID（送るとき `<@id>` に直す）。
+    mentions: Vec<(String, String)>,
     /// 送信ボタンの領域（x, y, 幅, 高さ）。描画のたびに更新する。
     pub send_button: Option<(u16, u16, u16, u16)>,
     /// 最上位のモーダルを描いた領域（x, y, 幅, 高さ）と、Dialog のメッセージの行数。マウスの当たり判定に使う。
@@ -284,6 +309,9 @@ impl App {
             selected: None,
             bindings: Bindings::default(),
             modals: Vec::new(),
+            settings: None,
+            suggest: None,
+            mentions: Vec::new(),
             send_button: None,
             modal_area: None,
             search: Search::default(),
@@ -417,7 +445,19 @@ impl App {
         match event {
             Event::Key(key) => {
                 let mut action = self.keymap.map(key);
-                if !self.modals.is_empty() {
+                if !self.modals.is_empty()
+                    || (self.suggest.is_some()
+                        && self.mode == Mode::Input
+                        && matches!(
+                            action,
+                            Action::FocusButton
+                                | Action::Up
+                                | Action::Down
+                                | Action::Send
+                                | Action::Newline
+                                | Action::Cancel
+                        ))
+                {
                     self.on_action(action, &mut effects);
                     return effects;
                 }
@@ -484,6 +524,7 @@ impl App {
                 }
                 self.clear_transient();
                 self.input.insert_str(&text);
+                self.refresh_suggest();
                 self.draft_changed(&mut effects);
             }
             Event::Mouse(mouse) => self.on_mouse(mouse, &mut effects),
@@ -512,6 +553,10 @@ impl App {
     fn on_action(&mut self, action: Action, effects: &mut Vec<Effect>) {
         if !self.modals.is_empty() {
             self.on_modal_action(action, effects);
+            return;
+        }
+        if self.suggest.is_some() && self.mode == Mode::Input && self.on_suggest_action(&action) {
+            self.draft_changed(effects);
             return;
         }
         match self.mode {
@@ -787,8 +832,15 @@ impl App {
                 for (command, emoji) in commands::QUICK_REACTIONS {
                     items.push(MenuItem::new(&format!("{emoji} リアクション"), command));
                 }
+                items.push(MenuItem::new("設定を開く", commands::SETTINGS_OPEN));
                 self.modals
                     .push(Modal::Menu(Menu::new("メッセージの操作", items)));
+            }
+            commands::SETTINGS_OPEN => self.open_settings(),
+            edit if edit.starts_with("settings.edit.") => {
+                if let Ok(index) = edit["settings.edit.".len()..].parse() {
+                    self.edit_setting(index, effects);
+                }
             }
             commands::CHAT_RESEND_CONFIRMED => self.send_checked(false, true, effects),
             commands::CHAT_RESEND_CONFIRMED_SILENT => self.send_checked(true, true, effects),
@@ -801,6 +853,38 @@ impl App {
                 }
             }
         }
+    }
+
+    /// 補完の候補が出ているときのキー。扱ったら true（入力が変わったときは呼び出し側が下書きを保存する）。
+    fn on_suggest_action(&mut self, action: &Action) -> bool {
+        let Some(s) = self.suggest.as_mut() else {
+            return false;
+        };
+        match action {
+            Action::Up => s.step(-1),
+            Action::Down => s.step(1),
+            Action::Cancel => self.suggest = None,
+            Action::FocusButton | Action::Send | Action::Newline => {
+                let (chars, item) = (s.token_chars, s.current().clone());
+                self.input.replace_before_cursor(chars, &item.insert);
+                if let Some(id) = item.user_id {
+                    let name = item.insert.trim_end().trim_start_matches('@').to_owned();
+                    self.mentions.retain(|(n, _)| *n != name);
+                    self.mentions.push((name, id));
+                }
+                self.refresh_suggest();
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn refresh_suggest(&mut self) {
+        self.suggest = if self.mode == Mode::Input && !self.input_locked() {
+            suggest::detect(self.input.before_cursor(), &self.users)
+        } else {
+            None
+        };
     }
 
     /// 最上位のモーダルへ操作を渡し、結果に応じてスタックから外してコマンドを実行する。
@@ -827,10 +911,15 @@ impl App {
                 self.modals.pop();
                 self.run_command(&command, effects);
             }
+            Outcome::Stay(command) => self.run_command(&command, effects),
             Outcome::Submit(command, text) => {
                 self.modals.pop();
                 if command == commands::MESSAGE_REACT_APPLY {
                     self.apply_reaction(text.trim(), effects);
+                } else if let Some(Ok(index)) =
+                    command.strip_prefix("settings.set.").map(str::parse)
+                {
+                    self.save_setting(index, &text, effects);
                 }
             }
         }
@@ -884,6 +973,96 @@ impl App {
             top.on_action(&Action::Cancel)
         };
         self.finish_modal(outcome, effects);
+    }
+
+    /// 読み込んだ設定を画面の動作へ反映する（Enter キーの動作・キー割り当て）。
+    fn apply_settings(&mut self, loaded: &Loaded) {
+        self.keymap.enter_keys = EnterKeys::from_prefs(&loaded.user);
+        let (bindings, warnings) = settings::bindings_from(&loaded.device);
+        self.bindings = bindings;
+        if !warnings.is_empty() {
+            self.notice = Some(format!(
+                "キー設定の一部を使えません: {}",
+                warnings.join(" / ")
+            ));
+        }
+    }
+
+    fn open_settings(&mut self) {
+        match &self.settings {
+            Some(loaded) => {
+                let len = settings::rows(loaded, &self.bindings).len();
+                self.modals.push(Modal::Settings(SettingsList {
+                    cursor: 0,
+                    len,
+                    visible: len,
+                }));
+            }
+            None => self.notice = Some("設定をまだ読み込めていません".into()),
+        }
+    }
+
+    fn edit_setting(&mut self, index: usize, effects: &mut Vec<Effect>) {
+        let Some(loaded) = &self.settings else {
+            return;
+        };
+        let rows = settings::rows(loaded, &self.bindings);
+        let Some(row) = rows.get(index) else {
+            return;
+        };
+        let command = format!("settings.set.{index}");
+        match &row.editor {
+            Editor::Toggle => {
+                let next = if row.value == "オン" {
+                    "オフ"
+                } else {
+                    "オン"
+                };
+                self.save_setting(index, next, effects);
+            }
+            Editor::Choice(options) => {
+                let selected = options.iter().position(|o| *o == row.value).unwrap_or(0);
+                self.modals.push(Modal::Choice(Choice::new(
+                    &row.label,
+                    &command,
+                    options.clone(),
+                    selected,
+                )));
+            }
+            Editor::Text | Editor::Number { .. } | Editor::Keys | Editor::Name => {
+                self.modals.push(Modal::Prompt(Prompt {
+                    title: row.label.clone(),
+                    command,
+                    text: TextBuf::from_text(&settings::initial_text(row)),
+                }));
+            }
+        }
+    }
+
+    fn save_setting(&mut self, index: usize, input: &str, effects: &mut Vec<Effect>) {
+        let Some(loaded) = &self.settings else {
+            return;
+        };
+        let rows = settings::rows(loaded, &self.bindings);
+        let Some(row) = rows.get(index) else {
+            return;
+        };
+        match settings::to_save(row, input, loaded) {
+            Ok(save) => effects.push(Effect::SaveSetting {
+                device_id: loaded.device_id.clone(),
+                save,
+            }),
+            Err(reason) => self.notice = Some(reason),
+        }
+    }
+
+    fn run_slash(&mut self, name: &str, effects: &mut Vec<Effect>) {
+        match name {
+            "search" => self.open_search(),
+            "quit" => self.on_input_action(Action::Quit, effects),
+            "settings" => self.open_settings(),
+            _ => {}
+        }
     }
 
     fn move_selection(&mut self, delta: isize) {
@@ -996,6 +1175,7 @@ impl App {
                 if self.input.as_str() != before {
                     self.draft_changed(effects);
                 }
+                self.refresh_suggest();
             }
         }
     }
@@ -1044,6 +1224,17 @@ impl App {
             self.notice = Some("本文が空です".into());
             return;
         }
+        if let Some(command) = suggest::SLASH
+            .iter()
+            .find(|(name, _)| body.trim() == format!("/{name}"))
+        {
+            // 名前だけの `/settings` などは TUI のコマンド。本文としては送らない。
+            self.input.clear();
+            self.suggest = None;
+            effects.push(Effect::SaveDraftNow(None));
+            self.run_slash(command.0, effects);
+            return;
+        }
         let chars = body.chars().count();
         if chars > MAX_BODY_CHARS {
             self.notice = Some(format!("本文が長すぎます ({chars}/{MAX_BODY_CHARS} 文字)"));
@@ -1074,9 +1265,11 @@ impl App {
             client_id: client_id.clone(),
             body: body.clone(),
         };
+        self.suggest = None;
+        let wire = suggest::mentions_to_body(&body, &self.mentions);
         effects.push(Effect::Send {
             client_id,
-            body,
+            body: wire,
             reply_to: self.reply_to.clone(),
             silent,
         });
@@ -1173,6 +1366,33 @@ impl App {
                 }
             }
             NetEvent::Prefs(keys) => self.keymap.enter_keys = keys,
+            NetEvent::Settings(result) => match result {
+                Ok(loaded) => {
+                    self.apply_settings(&loaded);
+                    self.settings = Some(*loaded);
+                }
+                Err(reason) => {
+                    self.notice = Some(format!("設定を読み込めませんでした: {reason}"));
+                }
+            },
+            NetEvent::PrefSaved(result) => match (result, self.settings.as_mut()) {
+                (Ok(saved), Some(loaded)) => {
+                    match saved {
+                        SavedPrefs::User(v) => loaded.user = v,
+                        SavedPrefs::Device(v) => loaded.device = v,
+                        SavedPrefs::Renamed(name) => loaded.device_name = name,
+                    }
+                    let loaded = loaded.clone();
+                    self.apply_settings(&loaded);
+                    self.notice = Some("保存しました".into());
+                }
+                (Err(reason), _) => {
+                    self.notice = Some(format!(
+                        "保存できませんでした（変更は反映されていません）: {reason}"
+                    ));
+                }
+                _ => {}
+            },
             NetEvent::SendResult { client_id, result } => {
                 self.on_send_result(&client_id, result, effects);
             }
@@ -2185,5 +2405,98 @@ mod tests {
         // モーダルが無いとき、ホイールは履歴のスクロール
         assert!(app.modals.is_empty());
         app.update(mouse(MouseEventKind::ScrollUp, 0, 0));
+    }
+
+    #[test]
+    fn suggest_completes_mentions_and_emoji_and_sends_ids() {
+        let mut app = make();
+        connect(&mut app, 1);
+        app.users.push(User {
+            id: "u9".into(),
+            login_name: "zed@gh".into(),
+            display_name: "Zed".into(),
+            avatar_url: None,
+            created_at: 0,
+        });
+        type_text(&mut app, "hi @ze");
+        assert_eq!(app.suggest.as_ref().map(|s| s.items.len()), Some(1));
+        // Esc は補完だけを閉じる（選択モードへは行かない）
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(app.suggest.is_none() && app.mode == Mode::Input);
+        type_text(&mut app, "r");
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        assert!(app.suggest.is_some());
+        // Enter（設定に関わらず）で決定。Tab は送信ボタンへ行かない
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.input.as_str(), "hi @Zed ");
+        assert_eq!(app.focus, Focus::Input);
+        type_text(&mut app, ":tad");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.input.as_str(), "hi @Zed 🎉");
+        let effects = send_key(&mut app);
+        assert!(matches!(&effects[..], [Effect::Send { body, .. }] if body == "hi <@u9> 🎉"));
+    }
+
+    #[test]
+    fn slash_names_run_tui_commands_and_are_not_sent() {
+        let mut app = make();
+        connect(&mut app, 1);
+        type_text(&mut app, "/settings");
+        let effects = send_key(&mut app);
+        assert!(!effects.iter().any(|e| matches!(e, Effect::Send { .. })));
+        assert!(app.input.is_empty());
+        // 設定が未読込のあいだは案内だけ
+        assert!(app.modals.is_empty() && app.notice.is_some());
+        // 読み込めたら設定画面が開き、項目の変更が保存の指示になる
+        net(
+            &mut app,
+            NetEvent::Settings(Ok(Box::new(Loaded {
+                device_id: "dev".into(),
+                device_name: "Linux (TUI)".into(),
+                user: serde_json::json!({"theme": "system"}),
+                device: serde_json::json!({}),
+            }))),
+        );
+        type_text(&mut app, "/settings");
+        send_key(&mut app);
+        assert!(matches!(app.modals.last(), Some(Modal::Settings(_))));
+        // 先頭は theme の選択肢
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(app.modals.last(), Some(Modal::Choice(_))));
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        let effects = press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(
+            &effects[..],
+            [Effect::SaveSetting { device_id, save: Save::Pref { key, .. } }]
+                if device_id == "dev" && key == "theme"
+        ));
+        // 設定画面は残る。保存後の値で上書きされ、失敗時は反映されない
+        assert!(matches!(app.modals.last(), Some(Modal::Settings(_))));
+        net(&mut app, NetEvent::PrefSaved(Err("boom".into())));
+        assert_eq!(app.settings.as_ref().unwrap().user["theme"], "system");
+        net(
+            &mut app,
+            NetEvent::PrefSaved(Ok(SavedPrefs::User(serde_json::json!({"theme": "light"})))),
+        );
+        assert_eq!(app.settings.as_ref().unwrap().user["theme"], "light");
+    }
+
+    #[test]
+    fn saved_key_settings_rebind_the_screen_keys() {
+        let mut app = make();
+        net(
+            &mut app,
+            NetEvent::Settings(Ok(Box::new(Loaded {
+                device_id: "dev".into(),
+                device_name: "n".into(),
+                user: serde_json::json!({}),
+                device: serde_json::json!({"tuiKeys": {"select": {"message.select.next": ["n"]}}}),
+            }))),
+        );
+        assert_eq!(
+            app.bindings
+                .command(Mode::Select, &Action::Insert('n'), false),
+            Some(commands::MESSAGE_SELECT_NEXT)
+        );
     }
 }

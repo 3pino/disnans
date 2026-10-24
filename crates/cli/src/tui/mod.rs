@@ -2,6 +2,7 @@
 
 mod app;
 mod commands;
+mod device;
 mod graphics;
 mod input;
 mod markdown;
@@ -9,6 +10,8 @@ mod net;
 mod picture;
 mod sanitize;
 mod search;
+mod settings;
+mod suggest;
 mod terminal;
 mod textbuf;
 mod transcript;

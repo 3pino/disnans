@@ -36,6 +36,8 @@ pub const SEARCH_CLOSE: &str = "search.close";
 pub const MESSAGE_REACT: &str = "message.react";
 pub const MESSAGE_REACT_APPLY: &str = "message.react.apply";
 /// 選んだメッセージの操作メニューを開く。
+/// 設定画面を開く。
+pub const SETTINGS_OPEN: &str = "settings.open";
 pub const MESSAGE_MENU: &str = "message.menu";
 /// 結果が不明だった送信を、確認のうえで改めて送る。
 pub const CHAT_RESEND_CONFIRMED: &str = "chat.resend.confirmed";
@@ -48,6 +50,55 @@ pub const QUICK_REACTIONS: [(&str, &str); 5] = [
     ("message.react.quick.4", "😮"),
     ("message.react.quick.5", "🙏"),
 ];
+
+pub const MODE_NAMES: [(&str, Mode); 2] = [("input", Mode::Input), ("select", Mode::Select)];
+
+/// 設定のキー名（`j`・`Down`・`Enter`・`Esc`・`Ctrl+F`・`Alt+Enter` など）を操作にする。読めなければ `None`。
+/// Enter は、入力欄の設定に関わらず「送る」「改行」のどちらの操作にも当たる。
+pub fn parse_keys(name: &str) -> Option<Vec<Action>> {
+    let one = |a| Some(vec![a]);
+    match name.trim().to_lowercase().as_str() {
+        "up" => one(Action::Up),
+        "down" => one(Action::Down),
+        "left" => one(Action::Left),
+        "right" => one(Action::Right),
+        "home" => one(Action::Home),
+        "end" => one(Action::End),
+        "pageup" => one(Action::PageUp),
+        "pagedown" => one(Action::PageDown),
+        "esc" | "escape" => one(Action::Cancel),
+        "enter" => Some(vec![Action::Send, Action::Newline]),
+        "alt+enter" => one(Action::SendSilent),
+        "ctrl+f" => one(Action::Search),
+        _ => {
+            let mut chars = name.trim().chars();
+            match (chars.next(), chars.next()) {
+                (Some(c), None) if !c.is_control() && !c.is_whitespace() => one(Action::Insert(c)),
+                _ => None,
+            }
+        }
+    }
+}
+
+/// `parse_keys` の逆（設定への保存・表示用）。名前の無い操作は `None`。
+pub fn key_name(action: &Action) -> Option<String> {
+    Some(match action {
+        Action::Insert(c) => c.to_string(),
+        Action::Up => "Up".into(),
+        Action::Down => "Down".into(),
+        Action::Left => "Left".into(),
+        Action::Right => "Right".into(),
+        Action::Home => "Home".into(),
+        Action::End => "End".into(),
+        Action::PageUp => "PageUp".into(),
+        Action::PageDown => "PageDown".into(),
+        Action::Cancel => "Esc".into(),
+        Action::Send | Action::Newline => "Enter".into(),
+        Action::SendSilent => "Alt+Enter".into(),
+        Action::Search => "Ctrl+F".into(),
+        _ => return None,
+    })
+}
 
 /// モードごとの操作（キー）とコマンドの対応表。後から利用者の設定で差し替えられるよう、データとして持つ。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,10 +153,53 @@ impl Bindings {
     }
 
     /// キーの割り当てを足す（同じモード・キーの既存の割り当ては置き換える）。
-    #[allow(dead_code)] // 設定画面（キー設定）から使う
     pub fn rebind(&mut self, mode: Mode, action: Action, command: &'static str) {
         self.0.retain(|(m, a, _)| !(*m == mode && *a == action));
         self.0.push((mode, action, command));
+    }
+
+    /// コマンドのキーをまとめて置き換える（空なら、そのコマンドのキーは無くなる）。
+    pub fn set_keys(&mut self, mode: Mode, command: &'static str, keys: Vec<Action>) {
+        self.0.retain(|(m, _, c)| !(*m == mode && *c == command));
+        for key in keys {
+            self.rebind(mode, key, command);
+        }
+    }
+
+    /// 既定の表にあるコマンド ID（文字列を `'static` にそろえる）。
+    pub fn known(command: &str) -> Option<&'static str> {
+        Self::default()
+            .0
+            .iter()
+            .map(|(_, _, c)| *c)
+            .find(|c| *c == command)
+    }
+
+    /// 設定（`{"select": {"コマンド ID": ["j", "Down"]}}`）を重ねる。読めない項目は飛ばし、理由を返す。
+    pub fn apply_overrides(&mut self, value: &serde_json::Value) -> Vec<String> {
+        let mut warnings = Vec::new();
+        for (mode_name, mode) in MODE_NAMES {
+            let Some(map) = value.get(mode_name).and_then(|v| v.as_object()) else {
+                continue;
+            };
+            for (command, keys) in map {
+                let Some(id) = Self::known(command) else {
+                    warnings.push(format!("未知のコマンド: {command}"));
+                    continue;
+                };
+                let parsed: Option<Vec<Action>> = keys.as_array().and_then(|list| {
+                    list.iter()
+                        .map(|k| k.as_str().and_then(parse_keys))
+                        .collect::<Option<Vec<_>>>()
+                        .map(|v| v.into_iter().flatten().collect())
+                });
+                match parsed {
+                    Some(keys) => self.set_keys(mode, id, keys),
+                    None => warnings.push(format!("読めないキー: {command}")),
+                }
+            }
+        }
+        warnings
     }
 
     /// コマンドに割り当てたキー（ヒントの表示用）。
@@ -169,6 +263,32 @@ mod tests {
             b.command(Mode::Select, &Action::Insert('l'), false),
             Some(MESSAGE_IMAGES_NEXT)
         );
+    }
+
+    #[test]
+    fn overrides_replace_keys_and_skip_unreadable_entries() {
+        let mut b = Bindings::default();
+        let warnings = b.apply_overrides(&serde_json::json!({
+            "select": {
+                "message.select.next": ["n", "Down", "Enter"],
+                "message.react": ["???"],
+                "nope": ["x"]
+            }
+        }));
+        assert_eq!(warnings.len(), 2);
+        assert_eq!(
+            b.command(Mode::Select, &Action::Insert('n'), false),
+            Some(MESSAGE_SELECT_NEXT)
+        );
+        // 元の j は外れ、読めなかった react の割り当ては残る
+        assert_eq!(b.command(Mode::Select, &Action::Insert('j'), false), None);
+        assert_eq!(
+            b.command(Mode::Select, &Action::Insert('r'), false),
+            Some(MESSAGE_REACT)
+        );
+        assert_eq!(key_name(&Action::Send).as_deref(), Some("Enter"));
+        assert_eq!(parse_keys("Ctrl+F"), Some(vec![Action::Search]));
+        assert_eq!(parse_keys("ab"), None);
     }
 
     #[test]

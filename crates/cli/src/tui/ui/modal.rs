@@ -16,6 +16,8 @@ pub enum Outcome {
     Run(String),
     /// 入力された値つきでコマンドを実行する。
     Submit(String, String),
+    /// コマンドを実行する。モーダルは開いたまま（設定画面）。
+    Stay(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,8 +74,18 @@ pub struct Prompt {
     pub text: TextBuf,
 }
 
+/// 設定画面の枠。行の中身は `settings.rs` が作り、ここは位置だけを持つ。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsList {
+    pub cursor: usize,
+    pub len: usize,
+    /// 描画で決まる、一度に見える行数。
+    pub visible: usize,
+}
+
 #[derive(Debug, Clone)]
 pub enum Modal {
+    Settings(SettingsList),
     Menu(Menu),
     #[allow(dead_code)] // 設定画面で使う
     Choice(Choice),
@@ -160,6 +172,17 @@ fn is_enter(action: &Action) -> bool {
 impl Modal {
     pub fn on_action(&mut self, action: &Action) -> Outcome {
         match self {
+            Modal::Settings(s) => {
+                if matches!(action, Action::Cancel) {
+                    return Outcome::Close;
+                }
+                if let Some(c) = step(s.cursor, s.len, action) {
+                    s.cursor = c;
+                } else if is_enter(action) || matches!(action, Action::Insert(' ')) {
+                    return Outcome::Stay(format!("settings.edit.{}", s.cursor));
+                }
+                Outcome::Keep
+            }
             Modal::Menu(m) => {
                 if matches!(action, Action::Cancel) {
                     return Outcome::Close;
@@ -228,6 +251,16 @@ impl Modal {
     /// `row` は Menu / Choice では項目の行、Dialog ではメッセージ領域の左端基準の `col` でボタンを選ぶ。
     pub fn on_click(&mut self, row: u16, col: u16, message_rows: u16) -> Outcome {
         match self {
+            Modal::Settings(s) => {
+                // 表示は先頭の行を窓の先頭にそろえる（`first` は描画側が決める）ので、窓内の位置で選ぶ。
+                let index = s.window_first() + usize::from(row);
+                if index < s.len {
+                    s.cursor = index;
+                    Outcome::Stay(format!("settings.edit.{index}"))
+                } else {
+                    Outcome::Keep
+                }
+            }
             Modal::Menu(m) => match m.items.get(usize::from(row)) {
                 Some(item) => {
                     m.cursor = usize::from(row);
@@ -264,6 +297,7 @@ impl Modal {
 
     pub fn title(&self) -> &str {
         match self {
+            Modal::Settings(_) => "設定",
             Modal::Menu(m) => &m.title,
             Modal::Choice(c) => &c.title,
             Modal::Dialog(d) => &d.title,
@@ -271,6 +305,16 @@ impl Modal {
         }
     }
 }
+
+impl SettingsList {
+    /// 窓（一度に見える行数）の先頭。カーソルが窓の外へ出たら追う。
+    pub fn window_first(&self) -> usize {
+        (self.cursor + 1).saturating_sub(self.visible.max(1))
+    }
+}
+
+/// 設定画面で一度に出す行数の上限。
+pub const WINDOW: usize = 12;
 
 /// 空のコマンドは「何も実行しない」ボタン（やめる）。
 fn activate(command: Option<&str>) -> Outcome {
