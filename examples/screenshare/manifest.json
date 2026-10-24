@@ -1,7 +1,7 @@
 {
   "id": "screenshare",
   "name": "画面共有",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "通話中に画面やカメラの映像を共有する",
   "author": "sanpino",
   "minApiVersion": 12,

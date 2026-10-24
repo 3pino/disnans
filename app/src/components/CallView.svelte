@@ -93,9 +93,6 @@
   </PanelBar>
 
   <div class="call-view-body">
-    {#each panels as p (p.id)}
-      <section class="call-view-panel" aria-label={p.label || undefined} use:mountPanel={{ id: p.id, el: p.el }}></section>
-    {/each}
     {#if people.length === 0}
       <p class="muted call-view-empty">いま通話にいる人はいません</p>
     {:else}
@@ -135,6 +132,10 @@
         {/each}
       </ul>
     {/if}
+    <!-- プラグインの領域（画面共有など）は、参加者の下に置く -->
+    {#each panels as p (p.id)}
+      <section class="call-view-panel" aria-label={p.label || undefined} use:mountPanel={{ id: p.id, el: p.el }}></section>
+    {/each}
   </div>
 
   <div class="call-view-controls" role="group" aria-label="通話の操作">
@@ -199,7 +200,7 @@
     padding: var(--space-7);
   }
   .call-view-panel {
-    margin: 0 0 var(--space-7);
+    margin: var(--space-7) 0 0;
   }
   .call-view-empty {
     margin: 40px 0;
