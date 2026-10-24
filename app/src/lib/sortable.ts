@@ -4,20 +4,14 @@
  */
 import { swipeAxis } from './swipe';
 
-/** 行の中身（row）に渡す削除モードの状態。canRemove は、この行を削除できるか（必須の項目は false） */
+/** 行の中身（row）に渡す編集モードの状態。canRemove は、この行を削除できるか（必須の項目は false） */
 export type SortableRow = { deleting: boolean; canRemove: boolean; remove: () => void };
 
-/** 通常モードで、タッチで押したまま動かすと並べ替えを始める、押した時間（ms）。それより前の縦の動きはページのスクロール */
-export const TOUCH_DRAG_HOLD_MS = 400;
-/** 削除モードでは、並べ替えの押した時間（ms）を短くする（すぐ動かせる） */
-export const DELETE_MODE_DRAG_HOLD_MS = 150;
-/** 動かさずにこの時間（ms）押し続けると、削除モードに入る（タッチも、マウスも） */
-export const DELETE_MODE_HOLD_MS = 700;
-
-/** 並べ替えを始めるまでの押した時間（ms）。削除モードかどうかで決まる */
-export function dragHoldMs(deleting: boolean): number {
-  return deleting ? DELETE_MODE_DRAG_HOLD_MS : TOUCH_DRAG_HOLD_MS;
-}
+/**
+ * 長押しの時間（ms）。押したままこの時間が過ぎると「編集モード」に入る（並べ替えも削除もすぐできる）。
+ * タッチでは、これより前の縦の動きはページのスクロール。長押しは 1 種類だけ（二段階にしない）
+ */
+export const LONG_PRESS_MS = 400;
 
 /**
  * キーボードで動かす先。上下キー・Home・End のとき、動かす先の位置を返す。
@@ -44,8 +38,8 @@ export type RowGesture = 'drag' | 'scroll' | 'ignore';
 
 /**
  * 指の動き（開始点からの差）から、行で何を始めるか。まだ横か縦か決まらないなら null。
- * 縦: マウス・ペンは並べ替え。タッチは、押したまま時間が過ぎたあと（held）だけ並べ替え、それ以外はページのスクロール。
- * 横: 何もしない（行は動かさない。削除は削除モードで行う）。
+ * 縦: マウス・ペンは並べ替え。タッチは、長押しのあと（編集モード中を含む。held）だけ並べ替え、それ以外はページのスクロール。
+ * 横: 何もしない（行は動かさない。削除は編集モードで行う）。
  */
 export function rowGesture(pointerType: string, dx: number, dy: number, held: boolean): RowGesture | null {
   const axis = swipeAxis(dx, dy);

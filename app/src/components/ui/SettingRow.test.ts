@@ -45,8 +45,8 @@ describe('SettingRow の DOM の契約', () => {
   });
 });
 
-// 削除モード: 操作部品（control）は残して隠し、× をその上に重ねる（行の高さを変えないため）。ondelete が無い行は × を出さない
-describe('SettingRow の削除モード', () => {
+// 編集モード: 操作部品（control）は残して隠し、× をその上に重ねる（行の高さを変えないため）。ondelete が無い行は × を出さない
+describe('SettingRow の編集モード', () => {
   function renderDeleting(props: { deleting: boolean; ondelete?: () => void }) {
     target = document.createElement('div');
     document.body.appendChild(target);
@@ -63,14 +63,14 @@ describe('SettingRow の削除モード', () => {
     return target.querySelector<HTMLElement>('.setting-row')!;
   }
 
-  it('削除モードでないときは、操作部品をそのまま出す（隠さない・× は出さない）', () => {
+  it('編集モードでないときは、操作部品をそのまま出す（隠さない・× は出さない）', () => {
     const row = renderDeleting({ deleting: false, ondelete: () => {} });
     expect(row.querySelector('.ctl')).not.toBeNull();
     expect(row.querySelector('.setting-row-control-hidden')).toBeNull();
     expect(row.querySelector('.setting-row-delete')).toBeNull();
   });
 
-  it('削除モードでは、操作部品を隠したまま残し（高さを保つ）、その上に × を出して、押すと ondelete を呼ぶ', () => {
+  it('編集モードでは、操作部品を隠したまま残し（高さを保つ）、その上に × を出して、押すと ondelete を呼ぶ', () => {
     let called = 0;
     const row = renderDeleting({ deleting: true, ondelete: () => called++ });
     expect(row.querySelector('.ctl')).not.toBeNull();
@@ -81,7 +81,7 @@ describe('SettingRow の削除モード', () => {
     expect(called).toBe(1);
   });
 
-  it('削除モードでも、削除できない行（ondelete なし）は × を出さず、操作部品だけ隠す', () => {
+  it('編集モードでも、削除できない行（ondelete なし）は × を出さず、操作部品だけ隠す', () => {
     const row = renderDeleting({ deleting: true });
     expect(row.querySelector('.setting-row-control-hidden .ctl')).not.toBeNull();
     expect(row.querySelector('.setting-row-delete')).toBeNull();

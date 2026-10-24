@@ -122,15 +122,4 @@
     flex: none;
     width: 34px;
   }
-  /* 幅が狭いときは、操作を行の最下段に出して、入力欄の幅を確保する */
-  @container setting-row (max-width: 30em) {
-    :global(.device-list-settings-row .setting-row-control) {
-      grid-column: 1 / -1;
-      grid-row: 2;
-      margin: var(--space-3) 0 0;
-    }
-    :global(.device-list-settings-row .setting-row-description) {
-      grid-row: 3;
-    }
-  }
 </style>

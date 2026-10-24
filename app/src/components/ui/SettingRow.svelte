@@ -9,7 +9,7 @@
   // 見た目はグローバルの .setting-row（@3pino/design-system の components.css）。プラグイン向けの ui.setting も同じ DOM を作る
   // 配置は app.css の .setting-row（名前と操作は、幅があれば同じ段。足りないときだけ操作を下の段へ回す）。ui.setting と同じ DOM のまま
   // onclick を渡すと、行全体が1つの ghost ボタンになる（名前が読み上げの名前。control は飾りだけにする。中にボタンは置けない）
-  // deleting のとき（削除モード）は、操作部品（control）を隠したまま残し、その上に × を重ねる（行の高さを変えないため）。ondelete が無い行は × を出さない
+  // deleting のとき（編集モード）は、操作部品（control）を隠したまま残し、その上に × を重ねる（行の高さを変えないため）。ondelete が無い行は × を出さない
   let {
     name,
     description,
@@ -29,9 +29,9 @@
     control?: Snippet;
     /** 行全体を押せるボタンにする。押したときに呼ばれる */
     onclick?: () => void;
-    /** 削除モード（リストで長押しすると入る） */
+    /** 編集モード（リストで長押しすると入る） */
     deleting?: boolean;
-    /** 削除モードの × を押したとき。省くと × は出ない（削除できない項目） */
+    /** 編集モードの × を押したとき。省くと × は出ない（削除できない項目） */
     ondelete?: () => void;
     /** × の読み上げの名前 */
     deleteLabel?: string;

@@ -3,7 +3,7 @@
 @import '@3pino/design-system';
 
 /* 設定の行。アイコン・名前（と説明）・操作は、行の中で縦に中央にそろえる。
-   横に並ぶ幅があるときは、名前と操作を同じ段に置く。名前の欄（10em）が入らない幅のときだけ、操作を次の段へ回す。
+   横に並ぶ幅（名前の実幅 + 操作の実幅 + 間隔）があるときは、名前と操作を同じ段に置く。足りないときだけ操作を次の段へ回す。
    幅の閾値（コンテナクエリ）は使わず、流し込みの折り返しで決める。説明は名前の下（同じ欄の中）。
    DOM（.setting-row-info の中の name / description）はプラグインの ui.setting と共通 */
 .setting-row {
@@ -16,12 +16,15 @@
 .setting-row > .setting-row-icon {
   flex: none;
 }
+/* 名前の欄は、名前の実幅（max-content）で段を決める。説明は名前の幅に合わせて折り返す（説明の長さは段の決め方に入れない） */
 .setting-row-info {
-  flex: 1 1 min(10em, 100%);
+  flex: 1 1 auto;
   min-width: 0;
 }
 .setting-row-description {
   margin-top: var(--space-1);
+  width: 0;
+  min-width: 100%;
 }
 .setting-row-control {
   position: relative;

@@ -37,20 +37,9 @@
     margin: 0;
     font-size: var(--fs-sm);
   }
-  /* 「改行・送信・なし」の3つを、窮屈にならない幅で並べる（行が狭いときは、操作だけ下の段へ回る） */
+  /* 「改行・送信・なし」の3つを、窮屈にならない幅で並べる（行が狭いときは、行の折り返しで操作が下の段へ回る） */
   :global(.enter-key-settings-row .setting-row-control) {
     width: 264px;
-  }
-  @container setting-row (max-width: 30em) {
-    :global(.enter-key-settings-row .setting-row-control) {
-      grid-column: 1 / -1;
-      grid-row: 2;
-      width: 100%;
-      margin: var(--space-3) 0 0;
-    }
-    :global(.enter-key-settings-row .setting-row-description) {
-      grid-row: 3;
-    }
   }
   :global(.enter-key-settings-picker) {
     width: 100%;

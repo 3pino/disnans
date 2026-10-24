@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DELETE_MODE_DRAG_HOLD_MS,
-  DELETE_MODE_HOLD_MS,
-  TOUCH_DRAG_HOLD_MS,
-  dragHoldMs,
+  LONG_PRESS_MS,
   dropSlot,
   finalPositions,
   keyMoveTarget,
@@ -100,7 +97,7 @@ describe('rowGesture（行の指の動きで何を始めるか）', () => {
     expect(rowGesture('touch', 0, 12, true)).toBe('drag');
   });
 
-  it('横の動きは、行を動かさない（削除は削除モードで行う）', () => {
+  it('横の動きは、行を動かさない（削除は編集モードで行う）', () => {
     expect(rowGesture('touch', -30, 2, false)).toBe('ignore');
     expect(rowGesture('mouse', -30, 2, true)).toBe('ignore');
   });
@@ -115,21 +112,9 @@ describe('rowGesture（行の指の動きで何を始めるか）', () => {
   });
 });
 
-describe('長押しの時間（通常モードと削除モード）', () => {
-  it('既定の値（変えたら設計に理由を書く）', () => {
-    expect(TOUCH_DRAG_HOLD_MS).toBe(400);
-    expect(DELETE_MODE_DRAG_HOLD_MS).toBe(150);
-    expect(DELETE_MODE_HOLD_MS).toBe(700);
-  });
-
-  it('削除モードでは並べ替えを早く始められる。通常モードは従来どおり', () => {
-    expect(dragHoldMs(false)).toBe(TOUCH_DRAG_HOLD_MS);
-    expect(dragHoldMs(true)).toBe(DELETE_MODE_DRAG_HOLD_MS);
-    expect(DELETE_MODE_DRAG_HOLD_MS).toBeLessThan(TOUCH_DRAG_HOLD_MS);
-  });
-
-  it('削除モードに入る押し続けは、並べ替えの押し（400ms）より長い（先に並べ替えに入るため）', () => {
-    expect(DELETE_MODE_HOLD_MS).toBeGreaterThan(TOUCH_DRAG_HOLD_MS);
+describe('長押しの時間', () => {
+  it('1 種類（400ms）。二段階にしない', () => {
+    expect(LONG_PRESS_MS).toBe(400);
   });
 });
 

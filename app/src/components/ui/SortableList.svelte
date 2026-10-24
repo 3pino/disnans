@@ -2,8 +2,7 @@
   import type { Snippet } from 'svelte';
   import { onDestroy, tick } from 'svelte';
   import {
-    DELETE_MODE_HOLD_MS,
-    dragHoldMs,
+    LONG_PRESS_MS,
     dropSlot,
     finalPositions,
     keyMoveTarget,
@@ -18,12 +17,12 @@
   // 並べ替えのリスト（設定の「＋メニュー」「ナビゲーションバー」で使う）。
   // 行の大部分（ボタン・入力欄・トグルの上を除く）が当たり判定:
   // - マウス・ペン: 縦に動かすと並べ替え。
-  // - タッチ: 押したまま（約 0.4 秒）動かすと並べ替え。その前の縦の動きはページのスクロール。
-  // - 押したまま約 0.4 秒経つと（長押しの成立）、その行を持ち上げて選択する。以後の上下キー・Delete は、その行に対して働く。
-  // - 動かさずに押し続ける（約 0.7 秒）と削除モードに入る。削除モードでは、操作部品（トグル・入力欄）が × に替わる（削除できる項目だけ）。
-  //   削除モードでも並べ替えはできる（押す時間が短くなる）。リストの外をタップするか Escape で終わる。
-  // - キーボード: 行にフォーカスがあるとき、上下キー（Home・End も）で動かす。Delete で削除モードに入る。
-  // 並びは onmove で親が決めて保存する。行の中身は row（snippet）で渡す。row の第 2 引数で削除モードと削除を受け取る
+  // - タッチ: 押したまま動かすと並べ替え。長押し（LONG_PRESS_MS）の前の縦の動きはページのスクロール。
+  // - 長押しは 1 種類。押したまま LONG_PRESS_MS 経つと「編集モード」に入る（振動で知らせる）。
+  //   その行を持ち上げて選択し、離したあとも選択は残る。編集モードでは、並べ替えも削除もすぐできる（待ち時間なし）。
+  //   操作部品（トグル・入力欄）は × に替わる（削除できる項目だけ）。リストの外をタップするか Escape で終わる。
+  // - キーボード: 選択中（フォーカスのある）行を、上下キー（Home・End も）で動かす。Delete で編集モードに入る。
+  // 並びは onmove で親が決めて保存する。行の中身は row（snippet）で渡す。row の第 2 引数で編集モードと削除を受け取る
 
   let {
     items,
@@ -42,11 +41,11 @@
     getLabel: (item: T) => string;
     /** 項目を、並びの toIndex 番目（動かしたあとの位置）に動かす。親が並びを保存する */
     onmove: (id: string, toIndex: number) => void;
-    /** 削除（削除モードの × から）。removable が true の項目だけ出す */
+    /** 削除（編集モードの × から）。removable が true の項目だけ出す */
     onremove?: (id: string) => void;
-    /** この項目を削除できるか（省くと削除モードでも × は出ない） */
+    /** この項目を削除できるか（省くと編集モードでも × は出ない） */
     removable?: (item: T) => boolean;
-    /** 行の中身。削除モードの状態と、削除の操作を受け取る */
+    /** 行の中身。編集モードの状態と、削除の操作を受け取る */
     row: Snippet<[T, SortableRow]>;
     class?: string;
   } = $props();
@@ -58,11 +57,11 @@
   const LIFT_SCALE = 1.02;
   /** 長押しが成立して持ち上げている行（動かす前から。離したら外れる） */
   let lifted = $state<string | null>(null);
-  /** 選択中の行（長押しで選ばれ、ほかの行に移るか、リストの外にフォーカスが出るまで残る） */
+  /** 選択中の行（編集モードに入った長押しの行。編集モードの間、ほかの行に移るか、リストの外にフォーカスが出るまで残る） */
   let selected = $state<string | null>(null);
   /** 離したあと、並びを入れ替えるまでの間は、行の移動（CSS の transition）を止める */
   let settling = $state(false);
-  /** 削除モード（リストの中の全部の行の操作部品が × に替わる） */
+  /** 編集モード（長押しで入る。リストの中の全部の行の操作部品が × に替わり、並べ替えは待ち時間なし） */
   let deleting = $state(false);
   let listEl: HTMLElement | undefined = $state();
   /** ドラッグを始めたときの行の位置（画面の座標）。ドラッグの間は変えない */
@@ -78,12 +77,11 @@
     sy: number;
     dx: number;
     dy: number;
-    /** 押したまま並べ替えの時間が過ぎた（タッチ） */
+    /** 長押しが成立した（編集モード中を含む）。タッチは、これのあとだけ並べ替え */
     held: boolean;
     mode: RowGesture | null;
-    /** 並べ替えの時間（タッチ）と、削除モードに入る時間。どちらも動いたら取り消す */
+    /** 長押しの時間。動いたら取り消す */
     holdTimer: ReturnType<typeof setTimeout> | null;
-    deleteTimer: ReturnType<typeof setTimeout> | null;
     body: HTMLElement;
   };
   let gesture: Gesture | null = null;
@@ -111,19 +109,19 @@
   });
 
   /**
-   * 削除モードの間は、リストの外のタップ（と Escape）で終わる。
-   * Escape は、削除モードを閉じたときだけ止める（ほかの画面の Escape の動作を妨げないため）
+   * 編集モードの間は、リストの外のタップ（と Escape）で終わる。
+   * Escape は、編集モードを閉じたときだけ止める（ほかの画面の Escape の動作を妨げないため）
    */
   $effect(() => {
     if (!deleting) return;
     const onDown = (e: PointerEvent) => {
-      if (!(e.target instanceof Node) || !listEl?.contains(e.target)) deleting = false;
+      if (!(e.target instanceof Node) || !listEl?.contains(e.target)) exitEdit();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();
       e.stopPropagation();
-      deleting = false;
+      exitEdit();
     };
     document.addEventListener('pointerdown', onDown, true);
     document.addEventListener('keydown', onKey, true);
@@ -166,9 +164,7 @@
 
   function clearTimers(g: Gesture) {
     if (g.holdTimer !== null) clearTimeout(g.holdTimer);
-    if (g.deleteTimer !== null) clearTimeout(g.deleteTimer);
     g.holdTimer = null;
-    g.deleteTimer = null;
   }
 
   function capture(g: Gesture) {
@@ -190,23 +186,26 @@
     drag = { id: g.id, from: g.index, startY: y, y, slot: g.index };
   }
 
-  /** 長押しが成立したら、その行を持ち上げて選択する。行にフォーカスを移して、以後のキー操作の対象にする */
-  function holdRow(g: Gesture) {
+  /**
+   * 長押しが成立したら、編集モードに入る。その行を持ち上げて選択し、行にフォーカスを移す（以後のキー操作の対象）。
+   * 押したままなら、同じ押し方でそのまま並べ替えられる（待ち時間なし）
+   */
+  function enterEdit(g: Gesture) {
     if (gesture !== g || g.mode !== null) return;
+    g.holdTimer = null;
     g.held = true;
+    deleting = true;
     lifted = g.id;
     selected = g.id;
     g.body.focus({ preventScroll: true });
+    vibrate(12);
   }
 
-  /** 削除モードに入る。短い振動で知らせる（対応していない環境では何もしない） */
-  function enterDelete(g: Gesture) {
-    if (gesture !== g || g.mode !== null) return;
-    clearTimers(g);
-    gesture = null;
+  /** 編集モードを終わる（外のタップ・Escape）。選択も外す */
+  function exitEdit() {
+    deleting = false;
+    selected = null;
     lifted = null;
-    deleting = true;
-    vibrate(12);
   }
 
   function onRowDown(e: PointerEvent, i: number, item: T) {
@@ -222,25 +221,14 @@
       sy: e.clientY,
       dx: 0,
       dy: 0,
-      held: false,
+      // 編集モードの中では、長押しを待たずに並べ替えられる
+      held: deleting,
       mode: null,
       holdTimer: null,
-      deleteTimer: null,
       body,
     };
     gesture = g;
-    // 長押しの成立（マウス・タッチとも。タッチは、これより前の縦の動きをページのスクロールにする）
-    g.holdTimer = setTimeout(() => {
-      g.holdTimer = null;
-      holdRow(g);
-    }, dragHoldMs(deleting));
-    // 削除モードの中では、もう入らない（並べ替えの押し方は短い時間で始まる）
-    if (!deleting && onremove) {
-      g.deleteTimer = setTimeout(() => {
-        g.deleteTimer = null;
-        enterDelete(g);
-      }, DELETE_MODE_HOLD_MS);
-    }
+    if (!deleting) g.holdTimer = setTimeout(() => enterEdit(g), LONG_PRESS_MS);
   }
 
   function onRowMove(e: PointerEvent) {
@@ -316,7 +304,7 @@
   }
 
   /**
-   * 削除（削除モードの ×）。削除に使ったところにフォーカスがあったときは、近くの行へ移す
+   * 削除（編集モードの ×）。削除に使ったところにフォーカスがあったときは、近くの行へ移す
    * （消えた行の中では、フォーカスが body に落ちてキーボードの位置を失うため）
    */
   function remove(id: string) {
@@ -453,10 +441,11 @@
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow);
   }
-  /* 選択中の行（長押しで選んだ行。上下キー・Delete の対象）は、枠で示す */
-  .sortable-list-item-selected > .sortable-list-body {
-    outline: 2px solid var(--ring);
-    outline-offset: 2px;
+  /* 編集モードで選んだ行は、背景を少し明るくする（枠は付けない。影と拡大は持ち上げと同じ） */
+  .sortable-list-item-selected :global(.setting-row) {
+    background: var(--field-focus-bg);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
   }
   /* 行の大部分が当たり判定。縦はページのスクロールに任せ（タッチの並べ替えは長押しのあとだけ）、横の動きは何もしない */
   .sortable-list-body {

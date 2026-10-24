@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import Host from './SortableListTestHost.svelte';
+import { LONG_PRESS_MS } from '../../lib/sortable';
 
 type HostExports = { setItems: (items: { id: string; name: string }[]) => void };
 
@@ -189,7 +190,7 @@ describe('SortableList（タッチの一連の操作）', () => {
   });
 });
 
-describe('SortableList（削除モード）', () => {
+describe('SortableList（編集モード）', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -210,14 +211,14 @@ describe('SortableList（削除モード）', () => {
   const deleting = () => host!.querySelector('.sortable-list-deleting') !== null;
   const xOf = (id: string) => host!.querySelector<HTMLButtonElement>(`[data-sortable-id="${id}"] .row-x`);
 
-  /** 押し続ける（動かさない）。タッチ・マウスとも 700ms で削除モードに入る */
+  /** 押し続ける（動かさない）。タッチ・マウスとも LONG_PRESS_MS で編集モードに入る */
   function hold(pointerType: string, id = 'b') {
     pointerAt(bodyOf(id), 'pointerdown', pointerType, 10, 100);
-    vi.advanceTimersByTime(700);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
     flushSync();
   }
 
-  it('行を押し続けると（動かさずに 700ms）削除モードに入り、削除できる行だけに × が出る', () => {
+  it('行を押し続けると（動かさずに 400ms）編集モードに入り、削除できる行だけに × が出る', () => {
     render(vi.fn(), { onremove: vi.fn(), removable: (x) => x.id !== 'a' });
     hold('touch');
     expect(deleting()).toBe(true);
@@ -225,7 +226,7 @@ describe('SortableList（削除モード）', () => {
     expect(xOf('a')).toBeNull();
   });
 
-  it('削除モードに入るとき、短い振動を一度だけ出す（対応していない環境では何もしない）', () => {
+  it('編集モードに入るとき、短い振動を一度だけ出す（対応していない環境では何もしない）', () => {
     const vibrate = vi.fn((_ms: number) => true);
     Object.defineProperty(navigator, 'vibrate', { configurable: true, value: vibrate });
     render(vi.fn(), { onremove: vi.fn(), removable: () => true });
@@ -234,19 +235,19 @@ describe('SortableList（削除モード）', () => {
     expect(vibrate.mock.calls[0]![0]).toBeGreaterThan(0);
   });
 
-  it('振動がなくても、削除モードには入る', () => {
+  it('振動がなくても、編集モードには入る', () => {
     render(vi.fn(), { onremove: vi.fn(), removable: () => true });
     expect(() => hold('touch')).not.toThrow();
     expect(deleting()).toBe(true);
   });
 
-  it('マウスでも、押し続けると削除モードに入る', () => {
+  it('マウスでも、押し続けると編集モードに入る', () => {
     render(vi.fn(), { onremove: vi.fn(), removable: () => true });
     hold('mouse');
     expect(deleting()).toBe(true);
   });
 
-  it('動かしてから（並べ替え・スクロールになったら）削除モードには入らない', () => {
+  it('動かしてから（並べ替え・スクロールになったら）編集モードには入らない', () => {
     render(vi.fn(), { onremove: vi.fn(), removable: () => true });
     pointerAt(bodyOf('b'), 'pointerdown', 'mouse', 10, 100);
     pointerAt(bodyOf('b'), 'pointermove', 'mouse', 10, 130);
@@ -255,7 +256,7 @@ describe('SortableList（削除モード）', () => {
     expect(deleting()).toBe(false);
   });
 
-  it('× を押すと削除する（削除モードは続く）', () => {
+  it('× を押すと削除する（編集モードは続く）', () => {
     const onremove = vi.fn();
     render(vi.fn(), { onremove, removable: () => true });
     hold('touch');
@@ -265,20 +266,7 @@ describe('SortableList（削除モード）', () => {
     expect(deleting()).toBe(true);
   });
 
-  it('削除モードの中の並べ替えは、押す時間が短くても始まる（150ms）', () => {
-    const onmove = vi.fn();
-    render(onmove, { onremove: vi.fn(), removable: () => true });
-    hold('touch');
-    const b = bodyOf('b');
-    pointerAt(b, 'pointerdown', 'touch', 10, 100);
-    vi.advanceTimersByTime(150);
-    flushSync();
-    pointerAt(b, 'pointermove', 'touch', 10, 130);
-    pointerAt(b, 'pointerup', 'touch', 10, 130);
-    expect(onmove).toHaveBeenCalledWith('b', 2);
-  });
-
-  it('リストの外をタップすると、削除モードが終わる', () => {
+  it('リストの外をタップすると、編集モードが終わる', () => {
     render(vi.fn(), { onremove: vi.fn(), removable: () => true });
     hold('touch');
     pointerAt(document.body, 'pointerdown', 'mouse', 0, 0);
@@ -287,7 +275,7 @@ describe('SortableList（削除モード）', () => {
     expect(xOf('b')).toBeNull();
   });
 
-  it('リストの中（行の文字）をタップしても、削除モードは終わらない', () => {
+  it('リストの中（行の文字）をタップしても、編集モードは終わらない', () => {
     render(vi.fn(), { onremove: vi.fn(), removable: () => true });
     hold('touch');
     pointerAt(bodyOf('a').querySelector('.row-text')!, 'pointerdown', 'mouse', 0, 0);
@@ -295,7 +283,7 @@ describe('SortableList（削除モード）', () => {
     expect(deleting()).toBe(true);
   });
 
-  it('Escape で削除モードが終わり、その Escape は止める（ほかの画面の動作を妨げない）', () => {
+  it('Escape で編集モードが終わり、その Escape は止める（ほかの画面の動作を妨げない）', () => {
     render(vi.fn(), { onremove: vi.fn(), removable: () => true });
     hold('touch');
     const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
@@ -305,7 +293,7 @@ describe('SortableList（削除モード）', () => {
     expect(e.defaultPrevented).toBe(true);
   });
 
-  it('行にフォーカスがあるとき Delete で削除モードに入る（キーボードで削除できる）', () => {
+  it('行にフォーカスがあるとき Delete で編集モードに入る（キーボードで削除できる）', () => {
     render(vi.fn(), { onremove: vi.fn(), removable: () => true });
     bodyOf('b').dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
     flushSync();
@@ -313,7 +301,7 @@ describe('SortableList（削除モード）', () => {
     expect(xOf('b')).not.toBeNull();
   });
 
-  it('削除モードでも、上下キーで行を動かせる', () => {
+  it('編集モードでも、上下キーで行を動かせる', () => {
     const onmove = vi.fn();
     render(onmove, { onremove: vi.fn(), removable: () => true });
     bodyOf('b').dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
@@ -322,10 +310,53 @@ describe('SortableList（削除モード）', () => {
     expect(onmove).toHaveBeenCalledWith('b', 0);
   });
 
-  it('削除の項目がない一覧（onremove なし）では、押し続けても削除モードに入らない', () => {
+  it('削除の項目がない一覧（onremove なし）でも、長押しで編集モードに入る（並べ替えのため）', () => {
     render();
     hold('touch');
-    expect(deleting()).toBe(false);
+    expect(deleting()).toBe(true);
+    expect(xOf('b')).toBeNull();
+  });
+
+  it('編集モードに入った直後、長押しした行が選択のまま残る（ほかの行は選ばれない）', () => {
+    render(vi.fn(), { onremove: vi.fn(), removable: () => true });
+    hold('touch', 'b');
+    expect(host!.querySelector('[data-sortable-id="b"]')!.classList.contains('sortable-list-item-selected')).toBe(true);
+    expect(host!.querySelector('[data-sortable-id="a"]')!.classList.contains('sortable-list-item-selected')).toBe(false);
+    expect(document.activeElement).toBe(bodyOf('b'));
+  });
+
+  it('編集モードの中では、長押しを待たずに動かすと並べ替えが始まる（同じ押し方のまま）', () => {
+    const onmove = vi.fn();
+    render(onmove, { onremove: vi.fn(), removable: () => true });
+    const b = bodyOf('b');
+    pointerAt(b, 'pointerdown', 'touch', 10, 100);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    flushSync();
+    pointerAt(b, 'pointermove', 'touch', 10, 130);
+    expect(host!.querySelector('.sortable-list-dragging')).not.toBeNull();
+    pointerAt(b, 'pointerup', 'touch', 10, 130);
+    expect(onmove).toHaveBeenCalledWith('b', 2);
+  });
+
+  it('編集モードの中で、別の行を押してすぐ動かすと、その場で並べ替えが始まる（長押しを待たない）', () => {
+    const onmove = vi.fn();
+    render(onmove, { onremove: vi.fn(), removable: () => true });
+    hold('touch', 'b');
+    // jsdom は描画の位置を持たないため、下へ動かす（並びの判定は既存のテストと同じ）
+    const a = bodyOf('a');
+    pointerAt(a, 'pointerdown', 'touch', 10, 100);
+    pointerAt(a, 'pointermove', 'touch', 10, 130);
+    expect(host!.querySelector('.sortable-list-dragging')).not.toBeNull();
+    pointerAt(a, 'pointerup', 'touch', 10, 130);
+    expect(onmove).toHaveBeenCalledWith('a', 2);
+  });
+
+  it('編集モードを終えると、選択も外れる', () => {
+    render(vi.fn(), { onremove: vi.fn(), removable: () => true });
+    hold('touch', 'b');
+    pointerAt(document.body, 'pointerdown', 'mouse', 0, 0);
+    flushSync();
+    expect(host!.querySelector('.sortable-list-item-selected')).toBeNull();
   });
 });
 
@@ -415,12 +446,15 @@ describe('SortableList（長押しで選択と持ち上げ）', () => {
     outside.remove();
   });
 
-  it('700ms 押し続けて削除モードに入ると、持ち上げは外れる', () => {
+  it('長押しで編集モードに入ったあと、押している間は持ち上げ、離すと持ち上げは外れ選択は残る', () => {
     render(vi.fn(), { onremove: vi.fn(), removable: () => true });
     touchAt(bodyOf('b'), 'pointerdown', 100);
-    vi.advanceTimersByTime(700);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
     flushSync();
     expect(host!.querySelector('.sortable-list-deleting')).not.toBeNull();
+    expect(item('b').classList.contains('sortable-list-item-lifted')).toBe(true);
+    touchAt(bodyOf('b'), 'pointerup', 100);
     expect(item('b').classList.contains('sortable-list-item-lifted')).toBe(false);
+    expect(item('b').classList.contains('sortable-list-item-selected')).toBe(true);
   });
 });
