@@ -29,8 +29,9 @@
   import { type RecentImage } from '../lib/recentImages';
   import { prepareUpload, readImageInfo, canCropImage } from '../lib/imageCrop';
   import { uploadFile } from '../lib/api';
-  import { sharedApi } from '../lib/transport/shared';
+  import { discardUpload } from '../lib/transport/files';
   import { ComposerAttachments, type StagedItem } from '../lib/composerAttachments.svelte';
+  import { sharedIndex } from '../lib/stores/sharedIndex.svelte';
   import { shareInbox } from '../lib/stores/shareInbox.svelte';
   import { composerMenuAvailable, composerMenuItems, type ComposerMenuItem } from '../lib/composerMenu';
   import { parseSlashInput, runSlashCommand } from '../lib/slashCommands.svelte';
@@ -46,9 +47,10 @@
   const attach = new ComposerAttachments({
     prepare: prepareUpload,
     upload: (file, onProgress) => uploadFile(file, onProgress),
-    remove: (att) =>
-      sharedApi.remove(`attachments/${att.file_name}`).catch((e: unknown) => {
-        console.warn('投稿されなかった添付を消せませんでした', e);
+    // 投稿前の添付を取り消す（本人の、本文に無いものだけ。消せなくても、24 時間後には掃除で消える）
+    discard: (att) =>
+      discardUpload(att.id).catch((e: unknown) => {
+        console.warn('投稿前の添付を取り消せませんでした', e);
       }),
     insert: (embed) => {
       if (!input) return false;
@@ -59,6 +61,7 @@
     unembed: (embed) => {
       input?.replaceText(embed, '');
     },
+    mark: (att, on) => sharedIndex.setUnposted(`attachments/${att.file_name}`, on),
     readInfo: readImageInfo,
     preview: (file) => (file.type.startsWith('image/') ? URL.createObjectURL(file) : null),
     revoke: (url) => URL.revokeObjectURL(url),
@@ -192,6 +195,11 @@
 
   // 途中のアップロードは中止する（できたものは下書きの本文に埋め込みが残るので消さない）
   onDestroy(() => attach.dispose());
+  // 接続先・利用者が変わったら、入力欄の添付を捨てる（消しに行かない: 接続先が変わっているため）
+  $effect(() => {
+    void draftIdentity;
+    untrack(() => attach.forget());
+  });
 
   /** 切り抜きできる画像か（寸法が読めて、アニメーションでないもの） */
   function croppable(s: StagedItem): boolean {
@@ -503,6 +511,8 @@
           onfiles={addFiles}
           onarrowupempty={editLast}
           oninput={(t) => {
+            // 埋め込みを消された添付は、すぐ取り消す
+            attach.sync(t);
             hasText = t.trim().length > 0;
             const target = draftTarget;
             if (draftId && target && input) persistDraft(target, input.getRawBody());

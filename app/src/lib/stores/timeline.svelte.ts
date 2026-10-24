@@ -51,6 +51,33 @@ export class Timeline {
     }
   }
 
+  /**
+   * 読み込み済みの範囲を、サーバーから読み直す（古い履歴まで）。添付の改名・削除は本文の表示（名前）を変えるが、
+   * message.updated は出ないので、表示している分だけ読み直して反映する。範囲より古い履歴は、そのまま残す。
+   */
+  async reloadLoaded(): Promise<void> {
+    if (this.loading || this.loadingOlder) return;
+    const first = this.messages[0]?.id;
+    if (!this.loaded || !first) return this.load();
+    this.loading = true;
+    try {
+      let fetched: Message[] = [];
+      let before: string | null = null;
+      for (;;) {
+        const page = await api.messages({ before, limit: PAGE });
+        fetched = [...page, ...fetched];
+        // 読み込み済みの一番古いものまで届いたら、止める（ページは古い順に並ぶ）
+        if (page.length < PAGE || page[0].id <= first) break;
+        before = page[0].id;
+      }
+      this.messages = [...this.messages.filter((m) => m.id < first), ...fetched.filter((m) => m.id >= first)];
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+    } finally {
+      this.loading = false;
+    }
+  }
+
   private mergeLatest(page: Message[]): void {
     if (page.length === 0) {
       this.messages = [];

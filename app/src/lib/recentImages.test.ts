@@ -3,7 +3,6 @@ import {
   listRecentImages,
   permissionNotice,
   RECENT_IMAGE_COUNT,
-  RECENT_IMAGE_COUNT_WIDE,
   requestRecentImagesPermission,
   setRecentImageSource,
 } from './recentImages';
@@ -44,15 +43,15 @@ describe('最近の画像（出どころ）', () => {
     expect(await requestRecentImagesPermission()).toBe('limited');
   });
 
-  it('件数は呼び出し側が指定できる（広い画面は多めに出す）', async () => {
+  it('件数は 6 件（3 列の 2 行）', async () => {
     const seen: number[] = [];
     setRecentImageSource({
       list: async (limit) => (seen.push(limit), { permission: 'granted', images: [] }),
       requestPermission: async () => 'granted',
     });
-    await listRecentImages(RECENT_IMAGE_COUNT_WIDE);
-    expect(seen).toEqual([RECENT_IMAGE_COUNT_WIDE]);
-    expect(RECENT_IMAGE_COUNT_WIDE).toBeGreaterThan(RECENT_IMAGE_COUNT);
+    await listRecentImages();
+    expect(seen).toEqual([6]);
+    expect(RECENT_IMAGE_COUNT).toBe(6);
   });
 });
 

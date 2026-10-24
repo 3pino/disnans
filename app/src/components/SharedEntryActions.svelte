@@ -77,7 +77,7 @@
 
 <span class="shared-entry-actions" class:shared-entry-actions-inline={placement === 'inline'}>
   <IconButton
-    class="attachment-action-button"
+    class="shared-entry-menu-button"
     label="{name} の操作"
     icon={Ellipsis}
     iconSize={16}
@@ -85,9 +85,9 @@
     onclick={() => (open = !open)}
   />
   {#if open}
-    <Menu class="attachment-menu" label="項目の操作" onclose={() => (open = false)}>
-      <MenuItem class="attachment-menu-item" icon={Pencil} onclick={openRename}>名前を変更</MenuItem>
-      <MenuItem class="attachment-menu-item" icon={Trash} danger onclick={() => void remove()}>削除</MenuItem>
+    <Menu class="shared-entry-menu" label="項目の操作" onclose={() => (open = false)}>
+      <MenuItem class="shared-entry-menu-item" icon={Pencil} onclick={openRename}>名前を変更</MenuItem>
+      <MenuItem class="shared-entry-menu-item" icon={Trash} danger onclick={() => void remove()}>削除</MenuItem>
     </Menu>
   {/if}
 </span>
@@ -120,7 +120,7 @@
     flex: none;
     vertical-align: middle;
   }
-  .shared-entry-actions > :global(.attachment-menu) {
+  .shared-entry-actions > :global(.shared-entry-menu) {
     position: absolute;
     top: calc(100% + 6px);
     right: 0;

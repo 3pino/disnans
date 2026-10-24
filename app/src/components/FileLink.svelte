@@ -10,7 +10,6 @@
   import { deletedAttachmentNames, fileLinkView } from '../lib/fileLink';
   import { formatSize } from '../lib/format';
   import { parentOf } from '../lib/sharedPath';
-  import SharedEntryActions from './SharedEntryActions.svelte';
 
   // 本文のファイルリンク（`[別名](パス)`）と埋め込み（`![…](パス)`）。どちらも共有フォルダのパスを今の一覧と突き合わせて表す。
   // 見た目は仮（利用者の確認を取る）。判断の決まりは lib/fileLink.ts
@@ -61,22 +60,9 @@
 {/if}
 {/snippet}
 
-<!-- 添付（attachments/ の中）は、名前の変更・削除の「…」を付ける。埋め込みは右上に重ね、リンクは文字の後ろに続ける -->
-{#if path.startsWith('attachments/') && (view.kind === 'link' || view.kind === 'image' || view.kind === 'embedImage' || view.kind === 'embedFile')}
-  <span class="file-link-attachment">
-    {@render content()}
-    <SharedEntryActions {path} placement={view.kind === 'embedImage' || view.kind === 'embedFile' ? 'overlay' : 'inline'} />
-  </span>
-{:else}
-  {@render content()}
-{/if}
+{@render content()}
 
 <style>
-  .file-link-attachment {
-    position: relative;
-    display: inline-block;
-    max-width: 100%;
-  }
   .file-link-pending,
   .file-link-missing,
   .file-link-deleted,

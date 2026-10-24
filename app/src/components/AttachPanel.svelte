@@ -7,10 +7,7 @@
   import Button from './ui/Button.svelte';
   import RecentThumb from './RecentThumb.svelte';
   import IconButton from './ui/IconButton.svelte';
-  import { untrack } from 'svelte';
   import {
-    RECENT_IMAGE_COUNT,
-    RECENT_IMAGE_COUNT_WIDE,
     listRecentImages,
     permissionNotice,
     requestRecentImagesPermission,
@@ -19,7 +16,6 @@
   } from '../lib/recentImages';
   import { hasAskedRecentImages, markAskedRecentImages } from '../lib/recentImagesNative';
   import { readClipboardImage } from '../lib/clipboardImage';
-  import { ui } from '../lib/stores/ui.svelte';
 
   // 入力欄の上に出す「ファイルを追加」パネル。ボタンは入力欄（Composer）の隠しの入力を開く。見た目は仮
   let {
@@ -73,8 +69,6 @@
     let alive = true;
     loading = true;
     failed = false;
-    // 開いた時点の画面の幅で件数を決める（幅が変わっても読み直さない）
-    const count = untrack(() => (ui.isMobile ? RECENT_IMAGE_COUNT : RECENT_IMAGE_COUNT_WIDE));
     void (async () => {
       // 初回のパネルを開いたときだけ、写真の許可を求める（ダイアログが出うる）。失敗しても一覧は読む
       if (!hasAskedRecentImages()) {
@@ -82,7 +76,7 @@
         await requestRecentImagesPermission().catch((e: unknown) => console.warn('写真の許可を求められませんでした', e));
       }
       try {
-        const res = await listRecentImages(count);
+        const res = await listRecentImages();
         if (!alive) return;
         recent = res.images;
         permission = res.permission;
@@ -173,12 +167,6 @@
     gap: var(--space-2);
     max-height: 50vh;
     overflow-y: auto;
-  }
-  /* 広い画面: サムネイルは小さめにして多く見せる */
-  @media (min-width: 768px) {
-    .attach-panel-recent {
-      grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-    }
   }
   .attach-panel-recent-item {
     padding: 0;

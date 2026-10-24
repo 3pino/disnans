@@ -29,10 +29,8 @@ export type RecentImageSource = {
   requestPermission: () => Promise<RecentPermission>;
 };
 
-/** パネルに並べる件数（狭い画面: 3 列の 4 行） */
-export const RECENT_IMAGE_COUNT = 12;
-/** 広い画面は小さいサムネイルを並べるので、多めに出す */
-export const RECENT_IMAGE_COUNT_WIDE = 24;
+/** パネルに並べる件数（3 列の 2 行。どの幅でも同じ） */
+export const RECENT_IMAGE_COUNT = 6;
 
 const NONE: RecentImageSource = {
   list: async () => ({ permission: 'granted', images: [] }),

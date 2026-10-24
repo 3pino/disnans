@@ -140,3 +140,44 @@ describe('clear（接続先の切り替え）', () => {
     expect(idx.state('')?.kind).toBe('ok');
   });
 });
+
+describe('投稿前の自分の添付（送信の途中の本文のリンク）', () => {
+  it('一覧にまだ無い投稿前の添付は、見つからないではなく読み込み中', async () => {
+    list.mockResolvedValue([entry('attachments/old.png')]);
+    idx.ensure('attachments');
+    await settle();
+    expect(idx.file('attachments/new.png').kind).toBe('missing');
+    idx.setUnposted('attachments/new.png', true);
+    expect(idx.file('attachments/new.png').kind).toBe('loading');
+    // 大文字・小文字の違いは同じもの
+    expect(idx.file('attachments/NEW.png').kind).toBe('loading');
+  });
+
+  it('一覧に現れたら（投稿された）、印は自動で外れる', async () => {
+    list.mockResolvedValueOnce([entry('attachments/old.png')]);
+    idx.ensure('attachments');
+    await settle();
+    idx.setUnposted('attachments/new.png', true);
+    idx.invalidate('attachments/new.png');
+    list.mockResolvedValueOnce([entry('attachments/old.png'), entry('attachments/new.png')]);
+    idx.ensure('attachments');
+    await settle();
+    expect(idx.file('attachments/new.png').kind).toBe('found');
+    // 一度外れたあとで、同じ名前が消えても、読み込み中にはならない
+    list.mockResolvedValueOnce([entry('attachments/old.png')]);
+    idx.invalidate('attachments/new.png');
+    idx.ensure('attachments');
+    await settle();
+    expect(idx.file('attachments/new.png').kind).toBe('missing');
+  });
+
+  it('取り消したら印を外す（そのあとは見つからない）', async () => {
+    list.mockResolvedValue([]);
+    idx.ensure('attachments');
+    await settle();
+    idx.setUnposted('attachments/a.png', true);
+    expect(idx.file('attachments/a.png').kind).toBe('loading');
+    idx.setUnposted('attachments/a.png', false);
+    expect(idx.file('attachments/a.png').kind).toBe('missing');
+  });
+});

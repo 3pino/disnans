@@ -1,9 +1,12 @@
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { SharedEntry } from '../protocol/SharedEntry';
 import { sharedApi } from '../transport/shared';
 import { HttpError } from '../transport/http';
 import { baseName, parentOf } from '../sharedPath';
 import { onServerChange } from '../config';
+
+/** 添付のフォルダ（`attachments/`） */
+const ATTACHMENTS_DIR = 'attachments';
 
 /** フォルダの一覧の状態（本文のファイルリンクを今の名前・有無で見分けるため） */
 export type DirState =
@@ -34,6 +37,8 @@ export class SharedIndex {
   private dirs = new SvelteMap<string, DirState>();
   /** 読み直しの世代。読んでいる途中で変わったら、その結果は捨てる */
   private gen = new Map<string, number>();
+  /** 自分が上げて、まだ投稿されていない添付（小文字のパス）。一覧にはまだ無いので、見つからないとは出さず読み込み中にする */
+  private unposted = new SvelteSet<string>();
 
   /** フォルダの一覧の今の状態（なければ undefined。描画の中で読むと、捨てられたときに見ている側が気付く） */
   state(dir: string): DirState | undefined {
@@ -52,7 +57,10 @@ export class SharedIndex {
     sharedApi.list(dir).then(
       (list) => {
         if ((this.gen.get(dir) ?? 0) !== g) return;
-        this.dirs.set(dir, { kind: 'ok', entries: new Map(list.map((e) => [e.name, e])) });
+        const entries = new Map(list.map((e) => [e.name, e]));
+        this.dirs.set(dir, { kind: 'ok', entries });
+        // 一覧に現れた投稿は、もう投稿前ではない
+        if (dir === ATTACHMENTS_DIR) for (const p of [...this.unposted]) if (findCaseless(entries, baseName(p))) this.unposted.delete(p);
       },
       (e: unknown) => {
         if ((this.gen.get(dir) ?? 0) !== g) return;
@@ -77,6 +85,15 @@ export class SharedIndex {
     }
   }
 
+  /**
+   * 自分が上げた添付の、投稿前の印を付ける（on）か外す。投稿されて一覧に現れたら、自動で外れる。
+   * 送ったあとに取り消して外すときは on を false にする
+   */
+  setUnposted(path: string, on: boolean): void {
+    if (on) this.unposted.add(path.toLowerCase());
+    else this.unposted.delete(path.toLowerCase());
+  }
+
   /** 共有フォルダのパスの、今の状態。読んでいなければ loading（呼ぶ側で ensure する） */
   file(path: string): FileState {
     const st = this.dirs.get(parentOf(path));
@@ -85,7 +102,9 @@ export class SharedIndex {
     if (st.kind === 'error') return { kind: 'error', message: st.message };
     const name = baseName(path);
     const entry = st.entries.get(name) ?? findCaseless(st.entries, name);
-    return entry ? { kind: 'found', entry } : { kind: 'missing' };
+    if (entry) return { kind: 'found', entry };
+    // 投稿前の自分の添付は、一覧にまだ無いのが普通（投稿の反映を待つ）
+    return this.unposted.has(path.toLowerCase()) ? { kind: 'loading' } : { kind: 'missing' };
   }
 }
 

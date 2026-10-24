@@ -179,7 +179,12 @@ class Ui {
 
   /** 設定を開く（タブの切り替えと同じく履歴を捨てる）。設定を開いているときにもう一度押したら、サブページから一覧に戻る */
   openSettings(): void {
-    this.navigate({ tab: 'settings', pluginSettings: null, settingsSub: null, ...(!this.isMobile ? { panel: null } : {}) }, 'reset');
+    this.navigate({ tab: 'settings', pluginSettings: null, settingsSub: null, ...(this.closesPanelOnTab() ? { panel: null } : {}) }, 'reset');
+  }
+
+  /** タブを開くとき、いまのパネルを閉じるか。広い画面のほかのパネルは残す。エクスプローラーは通話・設定と場所を取り合うので閉じる */
+  private closesPanelOnTab(): boolean {
+    return !this.isMobile || this.panel?.kind === 'files';
   }
 
   /**
@@ -187,7 +192,7 @@ class Ui {
    * 通話のバーなどから開いたときは、戻ると元の画面へ（push）。ナビゲーションバーのタブから開いたときは reset
    */
   openCall(mode: NavMode = 'push'): void {
-    this.navigate({ tab: 'call', ...(this.isMobile ? { panel: null } : {}) }, mode);
+    this.navigate({ tab: 'call', ...(this.isMobile || this.panel?.kind === 'files' ? { panel: null } : {}) }, mode);
   }
 
   /** 設定の中で、プラグインの設定画面を開く */

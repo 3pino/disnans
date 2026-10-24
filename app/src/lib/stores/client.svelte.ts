@@ -569,8 +569,9 @@ class Client {
         this.scheduleAttachmentRefresh();
         return;
       }
+      // 表示している分（古い履歴も含む）に添付があれば、その範囲を読み直す（名前の変更・削除を反映する）
       const shown = this.main.messages.some((m) => m.attachments.length > 0 || m.body.includes('attachments/'));
-      if (shown && this.main.loaded) void this.main.load();
+      if (shown && this.main.loaded) void this.main.reloadLoaded();
     }, ATTACHMENT_REFRESH_MS);
   }
 
