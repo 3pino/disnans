@@ -2,7 +2,8 @@
    このファイルには、disnans 本体だけのグローバルなスタイルを置く */
 @import '@3pino/design-system';
 
-/* 設定の行。名前と操作は常に同じ段。説明は名前の下に置き、行が狭いときだけ幅いっぱいの下段へ回す。
+/* 設定の行。名前（と説明）・操作・アイコンは、すべて行の高さの中で縦に中央にそろえる。
+   名前と説明は 1 つの欄にまとめる（説明は名前の下）。行が狭いときだけ、説明を幅いっぱいの下段へ回す。
    DOM（.setting-row-info の中の name / description）はプラグインの ui.setting と共通なので、
    info を display: contents にして、中身を行の grid に直接置く */
 .setting-row {
@@ -18,7 +19,8 @@
 }
 .setting-row > .setting-row-icon {
   grid-column: 1;
-  grid-row: 1 / span 2;
+  grid-row: 1;
+  align-self: center;
   margin-right: var(--space-6);
 }
 .setting-row-name {
@@ -27,17 +29,29 @@
 }
 .setting-row-description {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 1;
   margin-top: var(--space-1);
 }
 .setting-row-control {
+  position: relative;
   grid-column: 3;
-  grid-row: 1 / span 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   margin-left: var(--space-6);
 }
-/* 削除モードの × （操作部品の代わりに出る。削除だと分かる色） */
+/* 削除モードの × は、操作部品の上に重ねる（行の高さを変えない）。削除だと分かる色 */
 .setting-row-delete {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
   color: var(--danger);
+}
+/* 削除モードでも操作部品は残して隠す（取り除くと行の高さが変わるため） */
+.setting-row-control-hidden {
+  visibility: hidden;
 }
 @container setting-row (max-width: 30em) {
   .setting-row > .setting-row-icon,

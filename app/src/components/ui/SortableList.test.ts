@@ -82,6 +82,17 @@ describe('SortableList（ポインターの取り消し）', () => {
     expect(bodyOf('b').closest('.sortable-list-item')!.classList.contains('sortable-list-item-dragging')).toBe(false);
   });
 
+  it('ドラッグ中、持ち上げた行だけ拡大の transform を持ち、ほかの行は動かさない', () => {
+    render();
+    const b = bodyOf('b');
+    pointer(b, 'pointerdown', 10, 100);
+    pointer(b, 'pointermove', 10, 130);
+    const item = (id: string) => host!.querySelector<HTMLElement>(`[data-sortable-id="${id}"]`)!;
+    expect(item('b').style.transform).toContain('scale(');
+    expect(item('a').style.transform).toBe('');
+    expect(item('c').style.transform).toBe('');
+  });
+
   it('ドラッグ中に並びの ID が外から変わったら、その操作を取り消す（別の項目を動かさない）', () => {
     const { onmove, exports } = render();
     const b = bodyOf('b');

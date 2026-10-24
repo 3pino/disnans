@@ -52,6 +52,8 @@
   /** ドラッグの状態。from は動かす前の位置、slot は差し込み位置（行の前）、y はポインターの縦位置 */
   type Drag = { id: string; from: number; startY: number; y: number; slot: number };
   let drag = $state<Drag | null>(null);
+  /** 持ち上げている行の拡大率（1 より少し大きく。行の高さは変えない） */
+  const LIFT_SCALE = 1.02;
   /** 離したあと、並びを入れ替えるまでの間は、行の移動（CSS の transition）を止める */
   let settling = $state(false);
   /** 削除モード（リストの中の全部の行の操作部品が × に替わる） */
@@ -134,7 +136,8 @@
   /** 行の移動（transform）。動かしている行はポインターに合わせ、ほかの行は空きの分だけずらす */
   function rowTransform(i: number): string | undefined {
     if (!drag) return undefined;
-    if (i === drag.from) return `translateY(${drag.y - drag.startY}px)`;
+    // 持ち上げている行は、指に合わせて動かし、わずかに大きくする（ほかの行の位置は変えない）
+    if (i === drag.from) return `translateY(${drag.y - drag.startY}px) scale(${LIFT_SCALE})`;
     if (!targets) return undefined;
     // 行の位置と並びの数がそろっていないときは動かさない（取り消しの直前の描画）
     const to = rowTops[targets[i]];
@@ -422,9 +425,13 @@
   .sortable-list-settling .sortable-list-item {
     transition: none;
   }
+  /* 持ち上げた行は、影を付ける（行の大きさは変えない。影と拡大は transform で、ほかの行は動かさない） */
   .sortable-list-item-dragging {
     z-index: 1;
+  }
+  .sortable-list-item-dragging :global(.setting-row) {
     background: var(--surface);
+    border-radius: var(--radius-sm);
     box-shadow: var(--shadow);
   }
   /* 行の大部分が当たり判定。縦はページのスクロールに任せ（タッチの並べ替えは長押しのあとだけ）、横の動きは何もしない */
