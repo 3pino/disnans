@@ -16,11 +16,11 @@ use super::graphics::Placement;
 use super::input::{Action, EnterKeys, Keymap};
 use super::picture::Prepared;
 use super::search::{Phase, Search};
-use super::settings::{self, Editor, Save};
+use super::settings::{self, Editor, Page, Save, Target};
 use super::suggest::{self, Suggest};
 use super::textbuf::TextBuf;
 use super::transcript::{self, Row};
-use super::ui::modal::{Choice, Dialog, Menu, MenuItem, Modal, Outcome, Prompt, SettingsList};
+use super::ui::modal::{Choice, Dialog, Menu, MenuItem, Modal, Outcome, Prompt};
 
 /// 起動時・再取得時に読む件数。
 pub const PAGE_SIZE: u32 = 50;
@@ -205,6 +205,20 @@ pub enum ImageState {
     Failed,
 }
 
+/// 画面（チャットの代わりに全体を使う）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    Chat,
+    Settings,
+}
+
+/// 設定画面の状態（ページ・選択行）。行の中身は `settings.rs` が現在の値から作る。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingsView {
+    pub page: Page,
+    pub cursor: usize,
+}
+
 /// キー入力の宛先。Tab で送信ボタン、Shift+Tab で入力欄に戻る。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -252,6 +266,12 @@ pub struct App {
     pub modals: Vec<Modal>,
     /// 画面切替バーの位置（行, 幅）。描画で決まる。
     pub navbar: Option<(u16, u16)>,
+    pub screen: Screen,
+    pub settings_view: SettingsView,
+    /// 設定の一覧の本体（左上 y・高さ・先頭の行の番号）。描画で決まる。
+    pub settings_area: Option<(u16, u16, usize)>,
+    /// 一覧の各画面行が指す設定の行番号（見出しは `None`）。
+    pub settings_rows_at: Vec<Option<usize>>,
     /// 設定（読み込めるまで `None`）。
     pub settings: Option<Loaded>,
     /// 入力欄の補完（`@` `:` `/`）。
@@ -314,6 +334,13 @@ impl App {
             bindings: Bindings::default(),
             modals: Vec::new(),
             navbar: None,
+            screen: Screen::Chat,
+            settings_view: SettingsView {
+                page: Page::Top,
+                cursor: 0,
+            },
+            settings_area: None,
+            settings_rows_at: Vec::new(),
             settings: None,
             suggest: None,
             mentions: Vec::new(),
@@ -469,6 +496,7 @@ impl App {
                 if let Focus::Nav(index) = self.focus {
                     match self.bindings.command(Mode::Nav, &action, false) {
                         Some(command) => self.run_nav(command, index, &mut effects),
+                        None if self.screen == Screen::Settings => {}
                         None if matches!(
                             action,
                             Action::Insert(_) | Action::Backspace | Action::Delete
@@ -479,6 +507,10 @@ impl App {
                         }
                         None => self.on_action(action, &mut effects),
                     }
+                    return effects;
+                }
+                if self.screen == Screen::Settings {
+                    self.on_settings_screen_action(action, &mut effects);
                     return effects;
                 }
                 if self.mode == Mode::Input
@@ -534,6 +566,7 @@ impl App {
                     self.focus = Focus::Input;
                 }
             }
+            Event::Paste(_) if self.screen == Screen::Settings => {}
             Event::Paste(text) => {
                 if let Some(Modal::Prompt(p)) = self.modals.last_mut() {
                     p.text.insert_str(&text.replace(['\r', '\n'], " "));
@@ -593,7 +626,7 @@ impl App {
             return;
         }
         match self.mode {
-            Mode::Input | Mode::Nav => {}
+            Mode::Input | Mode::Nav | Mode::Settings => {}
             Mode::Select => {
                 if commands::is_passthrough(&action) {
                     self.on_input_action(action, effects);
@@ -955,7 +988,6 @@ impl App {
                 self.modals.pop();
                 self.run_command(&command, effects);
             }
-            Outcome::Stay(command) => self.run_command(&command, effects),
             Outcome::Submit(command, text) => {
                 self.modals.pop();
                 if command == commands::MESSAGE_REACT_APPLY {
@@ -978,6 +1010,10 @@ impl App {
             _ => None,
         };
         if let Some((scroll, step)) = wheel {
+            if self.modals.is_empty() && self.screen == Screen::Settings {
+                self.on_settings_screen_action(step, effects);
+                return;
+            }
             let action = if self.modals.is_empty() { scroll } else { step };
             self.on_action(action, effects);
             return;
@@ -993,6 +1029,19 @@ impl App {
                 let index = usize::from(mouse.column >= width / 2);
                 self.focus = Focus::Nav(index);
                 self.activate_nav(index, effects);
+                return;
+            }
+            if self.screen == Screen::Settings {
+                if let Some((top, height, _)) = self.settings_area
+                    && (top..top + height).contains(&mouse.row)
+                    && let Some(Some(index)) = self
+                        .settings_rows_at
+                        .get(usize::from(mouse.row - top))
+                        .copied()
+                {
+                    self.settings_view.cursor = index;
+                    self.edit_setting(index, effects);
+                }
                 return;
             }
             self.focus = match self.send_button {
@@ -1039,16 +1088,63 @@ impl App {
     }
 
     fn open_settings(&mut self) {
-        match &self.settings {
-            Some(loaded) => {
-                let len = settings::rows(loaded, &self.bindings).len();
-                self.modals.push(Modal::Settings(SettingsList {
-                    cursor: 0,
-                    len,
-                    visible: len,
-                }));
+        if self.settings.is_none() {
+            self.notice = Some("設定をまだ読み込めていません".into());
+            return;
+        }
+        self.screen = Screen::Settings;
+        self.mode = Mode::Input;
+        self.selected = None;
+        self.settings_view = SettingsView {
+            page: Page::Top,
+            cursor: 0,
+        };
+        self.suggest = None;
+        self.focus = Focus::Input;
+    }
+
+    fn settings_len(&self) -> usize {
+        self.settings.as_ref().map_or(0, |l| {
+            settings::rows(l, &self.bindings, self.settings_view.page).len()
+        })
+    }
+
+    /// 設定の全画面でのキー。モーダル（選択肢・入力）が開いている間は呼ばれない。
+    fn on_settings_screen_action(&mut self, action: Action, effects: &mut Vec<Effect>) {
+        if matches!(action, Action::Quit) {
+            self.on_action(action, effects);
+            return;
+        }
+        let len = self.settings_len();
+        let view = &mut self.settings_view;
+        match self.bindings.command(Mode::Settings, &action, false) {
+            Some(commands::SETTINGS_PREV) => view.cursor = view.cursor.saturating_sub(1),
+            Some(commands::SETTINGS_NEXT) => {
+                if view.cursor + 1 < len {
+                    view.cursor += 1;
+                } else {
+                    self.focus = Focus::Nav(1);
+                }
             }
-            None => self.notice = Some("設定をまだ読み込めていません".into()),
+            Some(commands::SETTINGS_ACTIVATE) => {
+                let index = view.cursor;
+                self.edit_setting(index, effects);
+            }
+            Some(commands::SETTINGS_BACK) => self.settings_back(),
+            _ => {}
+        }
+    }
+
+    /// サブページなら一覧へ、一覧ならチャットへ戻る。
+    fn settings_back(&mut self) {
+        if self.settings_view.page == Page::Top {
+            self.screen = Screen::Chat;
+            self.focus = Focus::Input;
+        } else {
+            self.settings_view = SettingsView {
+                page: Page::Top,
+                cursor: 0,
+            };
         }
     }
 
@@ -1056,7 +1152,7 @@ impl App {
         let Some(loaded) = &self.settings else {
             return;
         };
-        let rows = settings::rows(loaded, &self.bindings);
+        let rows = settings::rows(loaded, &self.bindings, self.settings_view.page);
         let Some(row) = rows.get(index) else {
             return;
         };
@@ -1079,6 +1175,11 @@ impl App {
                     selected,
                 )));
             }
+            Editor::Open => {
+                if let Target::Page(page) = row.target {
+                    self.settings_view = SettingsView { page, cursor: 0 };
+                }
+            }
             Editor::Text | Editor::Number { .. } | Editor::Keys | Editor::Name => {
                 self.modals.push(Modal::Prompt(Prompt {
                     title: row.label.clone(),
@@ -1093,7 +1194,7 @@ impl App {
         let Some(loaded) = &self.settings else {
             return;
         };
-        let rows = settings::rows(loaded, &self.bindings);
+        let rows = settings::rows(loaded, &self.bindings, self.settings_view.page);
         let Some(row) = rows.get(index) else {
             return;
         };
@@ -1123,6 +1224,9 @@ impl App {
 
     fn activate_nav(&mut self, index: usize, _effects: &mut Vec<Effect>) {
         if index == 0 {
+            self.screen = Screen::Chat;
+            self.focus = Focus::Input;
+        } else if self.screen == Screen::Settings {
             self.focus = Focus::Input;
         } else {
             self.open_settings();
@@ -2540,7 +2644,7 @@ mod tests {
         );
         type_text(&mut app, "/settings");
         send_key(&mut app);
-        assert!(matches!(app.modals.last(), Some(Modal::Settings(_))));
+        assert_eq!(app.screen, Screen::Settings);
         // 先頭は theme の選択肢
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert!(matches!(app.modals.last(), Some(Modal::Choice(_))));
@@ -2552,7 +2656,7 @@ mod tests {
                 if device_id == "dev" && key == "theme"
         ));
         // 設定画面は残る。保存後の値で上書きされ、失敗時は反映されない
-        assert!(matches!(app.modals.last(), Some(Modal::Settings(_))));
+        assert_eq!(app.screen, Screen::Settings);
         net(&mut app, NetEvent::PrefSaved(Err("boom".into())));
         assert_eq!(app.settings.as_ref().unwrap().user["theme"], "system");
         net(
@@ -2609,14 +2713,46 @@ mod tests {
         press(&mut app, KeyCode::Right, KeyModifiers::NONE);
         assert_eq!(app.focus, Focus::Nav(1));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert!(matches!(app.modals.last(), Some(Modal::Settings(_))));
-        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-        assert_eq!(app.focus, Focus::Nav(1));
-        press(&mut app, KeyCode::Up, KeyModifiers::NONE);
-        assert_eq!((app.focus, app.input.as_str()), (Focus::Input, "a\nb"));
-        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
-        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(app.screen, Screen::Settings);
         assert_eq!(app.focus, Focus::Input);
+        // Esc でチャットへ戻る。入力欄はそのまま
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!((app.screen, app.input.as_str()), (Screen::Chat, "a\nb"));
+    }
+
+    #[test]
+    fn settings_screen_has_a_sub_page_for_keys_and_returns_with_esc() {
+        let mut app = make();
+        connect(&mut app, 1);
+        loaded_settings(&mut app);
+        type_text(&mut app, "/settings");
+        send_key(&mut app);
+        // 「キー割り当て ›」まで下げて開く
+        let len = app.settings_len();
+        for _ in 0..len {
+            press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+            if app.settings_view.page != Page::Top {
+                break;
+            }
+            let rows = settings::rows(app.settings.as_ref().unwrap(), &app.bindings, Page::Top);
+            if matches!(rows[app.settings_view.cursor].target, Target::Page(_)) {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+            }
+        }
+        assert_eq!(app.settings_view.page, Page::Keys);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(
+            (app.screen, app.settings_view.page),
+            (Screen::Settings, Page::Top)
+        );
+        // 最後の行で ↓ は画面切替バーへ。Chat を選ぶと戻る
+        for _ in 0..len {
+            press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        }
+        assert_eq!(app.focus, Focus::Nav(1));
+        press(&mut app, KeyCode::Left, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!((app.screen, app.focus), (Screen::Chat, Focus::Input));
     }
 
     #[test]
@@ -2626,7 +2762,7 @@ mod tests {
         loaded_settings(&mut app);
         type_text(&mut app, "/settings");
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert!(matches!(app.modals.last(), Some(Modal::Settings(_))));
+        assert_eq!(app.screen, Screen::Settings);
         assert!(app.input.is_empty());
     }
 }

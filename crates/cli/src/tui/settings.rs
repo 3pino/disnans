@@ -56,6 +56,24 @@ pub enum Target {
     /// キーの割り当て（デバイスの設定 `tuiKeys`）。
     Keys(Mode, &'static str),
     DeviceName,
+    /// 下の階層のページへ入る。
+    Page(Page),
+}
+
+/// 設定画面のページ（一覧 → サブページ。GUI の設定の構成に合わせる）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Page {
+    Top,
+    Keys,
+}
+
+impl Page {
+    pub fn title(self) -> &'static str {
+        match self {
+            Page::Top => "設定",
+            Page::Keys => "設定 › キー割り当て",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,10 +88,14 @@ pub enum Editor {
     /// `j, Down` のようなキー名の並び。空は既定に戻す。
     Keys,
     Name,
+    /// 選ぶとサブページへ入る。
+    Open,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
+    /// 見出し（GUI の Section に相当）。同じ見出しの行がまとまる。
+    pub section: &'static str,
     pub label: String,
     pub value: String,
     pub target: Target,
@@ -102,7 +124,7 @@ fn show(value: &Value) -> String {
     }
 }
 
-fn def_row(def: &'static Def, scope_label: &str, data: &Value) -> Option<Row> {
+fn def_row(def: &'static Def, section: &'static str, data: &Value) -> Option<Row> {
     let current = data
         .get(def.key)
         .cloned()
@@ -125,7 +147,8 @@ fn def_row(def: &'static Def, scope_label: &str, data: &Value) -> Option<Row> {
         _ => Target::Device(def.key),
     };
     Some(Row {
-        label: format!("{scope_label} {}", label_of(def.key)),
+        section,
+        label: label_of(def.key).to_owned(),
         value: show(&current),
         target,
         editor,
@@ -139,11 +162,37 @@ fn label_of(key: &str) -> &str {
     }
 }
 
-/// 表示する行。ユーザー共通 → デバイス → キー割り当ての順。
-pub fn rows(loaded: &Loaded, bindings: &Bindings) -> Vec<Row> {
+/// ページに出す行。見出しは GUI に合わせ、外観 → 操作 → デバイス の順。
+pub fn rows(loaded: &Loaded, bindings: &Bindings, page: Page) -> Vec<Row> {
     let mut out = Vec::new();
+    if page == Page::Keys {
+        for (mode, command, label) in REBINDABLE {
+            let keys: Vec<String> = bindings
+                .keys_for(*mode, command)
+                .iter()
+                .filter_map(|a| key_name(a))
+                .fold(Vec::new(), |mut acc, k| {
+                    if !acc.contains(&k) {
+                        acc.push(k);
+                    }
+                    acc
+                });
+            out.push(Row {
+                section: "キー割り当て",
+                label: (*label).to_owned(),
+                value: if keys.is_empty() {
+                    "（なし）".into()
+                } else {
+                    keys.join(", ")
+                },
+                target: Target::Keys(*mode, command),
+                editor: Editor::Keys,
+            });
+        }
+        return out;
+    }
     for key in USER_KEYS {
-        if let Some(row) = find_definition(key).and_then(|d| def_row(d, "[共通]", &loaded.user)) {
+        if let Some(row) = find_definition(key).and_then(|d| def_row(d, "外観", &loaded.user)) {
             out.push(row);
         }
     }
@@ -151,46 +200,32 @@ pub fn rows(loaded: &Loaded, bindings: &Bindings) -> Vec<Row> {
     for (combo, name) in ENTER_COMBOS {
         let value = enter.get(*combo).cloned().unwrap_or(Value::Null);
         out.push(Row {
-            label: format!("[共通] {name} の動作"),
+            section: "操作",
+            label: format!("{name} の動作"),
             value: show(&value),
             target: Target::EnterKey(combo),
             editor: Editor::Choice(ENTER_ACTIONS.iter().map(|s| (*s).to_owned()).collect()),
         });
     }
     out.push(Row {
-        label: "[デバイス] 名前".into(),
+        section: "操作",
+        label: "キー割り当て".into(),
+        value: "›".into(),
+        target: Target::Page(Page::Keys),
+        editor: Editor::Open,
+    });
+    out.push(Row {
+        section: "デバイス",
+        label: "名前".into(),
         value: show(&Value::String(loaded.device_name.clone())),
         target: Target::DeviceName,
         editor: Editor::Name,
     });
     for key in DEVICE_KEYS {
-        if let Some(row) =
-            find_definition(key).and_then(|d| def_row(d, "[デバイス]", &loaded.device))
+        if let Some(row) = find_definition(key).and_then(|d| def_row(d, "デバイス", &loaded.device))
         {
             out.push(row);
         }
-    }
-    for (mode, command, label) in REBINDABLE {
-        let keys: Vec<String> = bindings
-            .keys_for(*mode, command)
-            .iter()
-            .filter_map(|a| key_name(a))
-            .fold(Vec::new(), |mut acc, k| {
-                if !acc.contains(&k) {
-                    acc.push(k);
-                }
-                acc
-            });
-        out.push(Row {
-            label: format!("[デバイス] キー: {label}"),
-            value: if keys.is_empty() {
-                "（なし）".into()
-            } else {
-                keys.join(", ")
-            },
-            target: Target::Keys(*mode, command),
-            editor: Editor::Keys,
-        });
     }
     out
 }
@@ -211,6 +246,7 @@ pub fn initial_text(row: &Row) -> String {
 pub fn to_save(row: &Row, input: &str, loaded: &Loaded) -> Result<Save, String> {
     let input = input.trim();
     match (&row.target, &row.editor) {
+        (Target::Page(_), _) => Err("この項目は変えられません".into()),
         (Target::DeviceName, _) => {
             if input.is_empty() || input.chars().count() > 64 {
                 Err("名前は 1〜64 文字にしてください".into())
@@ -317,12 +353,13 @@ mod tests {
 
     #[test]
     fn rows_come_from_definitions_and_show_current_values() {
-        let rows = rows(&loaded(), &Bindings::default());
-        assert_eq!(rows[0].label, "[共通] テーマ");
+        let rows = rows(&loaded(), &Bindings::default(), Page::Top);
+        assert_eq!(rows[0].label, "テーマ");
         assert_eq!(rows[0].value, "dark");
         assert!(matches!(&rows[0].editor, Editor::Choice(o) if o.contains(&"system".to_owned())));
         assert!(rows.iter().any(|r| r.target == Target::DeviceName));
-        let next = rows
+        let keys_page = super::rows(&loaded(), &Bindings::default(), Page::Keys);
+        let next = keys_page
             .iter()
             .find(|r| r.target == Target::Keys(Mode::Select, commands::MESSAGE_SELECT_NEXT))
             .unwrap();
@@ -332,7 +369,8 @@ mod tests {
     #[test]
     fn saving_keeps_other_enter_keys_and_validates_input() {
         let l = loaded();
-        let r = rows(&l, &Bindings::default());
+        let mut r = rows(&l, &Bindings::default(), Page::Top);
+        r.extend(rows(&l, &Bindings::default(), Page::Keys));
         let enter_shift = r
             .iter()
             .find(|r| r.target == Target::EnterKey("shift"))

@@ -15,6 +15,8 @@ pub enum Mode {
     Search,
     /// 下の画面切替バー（Chat / Settings）にフォーカスがある。
     Nav,
+    /// 設定の全画面の一覧。
+    Settings,
 }
 
 pub const CHAT_SEND: &str = "chat.send";
@@ -45,6 +47,10 @@ pub const NAV_PREV: &str = "nav.prev";
 pub const NAV_NEXT: &str = "nav.next";
 pub const NAV_ACTIVATE: &str = "nav.activate";
 pub const NAV_BACK: &str = "nav.back";
+pub const SETTINGS_PREV: &str = "settings.prev";
+pub const SETTINGS_NEXT: &str = "settings.next";
+pub const SETTINGS_ACTIVATE: &str = "settings.activate";
+pub const SETTINGS_BACK: &str = "settings.back";
 pub const SETTINGS_OPEN: &str = "settings.open";
 pub const MESSAGE_MENU: &str = "message.menu";
 /// 結果が不明だった送信を、確認のうえで改めて送る。
@@ -125,6 +131,15 @@ impl Default for Bindings {
             (Mode::Input, Action::Search, SEARCH_OPEN),
             (Mode::Input, Cancel, MESSAGE_SELECT),
             (Mode::Input, Down, NAV_FOCUS),
+            (Mode::Settings, Up, SETTINGS_PREV),
+            (Mode::Settings, Insert('k'), SETTINGS_PREV),
+            (Mode::Settings, Down, SETTINGS_NEXT),
+            (Mode::Settings, Insert('j'), SETTINGS_NEXT),
+            (Mode::Settings, Send, SETTINGS_ACTIVATE),
+            (Mode::Settings, Newline, SETTINGS_ACTIVATE),
+            (Mode::Settings, Insert(' '), SETTINGS_ACTIVATE),
+            (Mode::Settings, Cancel, SETTINGS_BACK),
+            (Mode::Settings, Left, SETTINGS_BACK),
             (Mode::Nav, Left, NAV_PREV),
             (Mode::Nav, Right, NAV_NEXT),
             (Mode::Nav, Send, NAV_ACTIVATE),

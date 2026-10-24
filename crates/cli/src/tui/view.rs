@@ -6,7 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Padding, Paragraph};
 
-use super::app::{App, ConnState, Focus, SendState};
+use super::app::{App, ConnState, Focus, Screen, SendState};
 use super::commands::Mode;
 use super::graphics::Placement;
 use super::markdown::Deco;
@@ -360,7 +360,11 @@ pub fn plan(area: Rect, app: &mut App) {
     }
     let (w, h) = history_size(area, app);
     app.set_viewport(w, h);
-    if app.mode == Mode::Search || !app.modals.is_empty() || app.suggest.is_some() {
+    if app.mode == Mode::Search
+        || !app.modals.is_empty()
+        || app.suggest.is_some()
+        || app.screen == Screen::Settings
+    {
         // 検索の結果やモーダルを出している間は、履歴の画像を出さない（モーダルに重ならない）。
         app.placements = Vec::new();
         return;
@@ -518,7 +522,7 @@ fn search_lines(app: &App, width: u16, height: u16) -> Vec<Line<'static>> {
 }
 
 /// 下部の画面切替バー。Settings は設定画面（モーダル）を開く。
-fn navbar_line(width: u16, focus: Option<usize>) -> Line<'static> {
+fn navbar_line(width: u16, focus: Option<usize>, current_index: usize) -> Line<'static> {
     let cell = usize::from(width) / 2;
     let item = |label: &str, style: Style| {
         let pad = cell.saturating_sub(sanitize::display_width(label));
@@ -536,7 +540,7 @@ fn navbar_line(width: u16, focus: Option<usize>) -> Line<'static> {
         .add_modifier(Modifier::BOLD);
     let style = |i: usize| match focus {
         Some(f) if f == i => focused,
-        _ if i == 0 => current,
+        _ if i == current_index => current,
         _ => normal,
     };
     Line::from(vec![item("Chat", style(0)), item("Settings", style(1))])
@@ -550,6 +554,14 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
     let (w, h) = history_size(area, app);
     app.set_viewport(w, h);
+    if app.screen == Screen::Settings {
+        plan(area, app);
+        app.send_button = None;
+        draw_settings_screen(frame, area, app);
+        draw_modal(frame, area, app);
+        return;
+    }
+    app.settings_area = None;
     let r = regions(area, app);
 
     if r.status.height > 0 {
@@ -712,11 +724,123 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     );
     app.navbar = Some((r.navbar.y, r.navbar.width));
     frame.render_widget(
-        Paragraph::new(navbar_line(r.navbar.width, nav_focus)),
+        Paragraph::new(navbar_line(r.navbar.width, nav_focus, 0)),
         r.navbar,
     );
     draw_suggest(frame, &r, app);
     draw_modal(frame, area, app);
+}
+
+/// 設定の全画面。上に見出し、下にヒントと画面切替バーを残し、間に一覧を出す。
+fn draw_settings_screen(frame: &mut Frame, area: Rect, app: &mut App) {
+    let [head, body, hint, navbar] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+    let view = app.settings_view;
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            format!(" {}", view.page.title()),
+            Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED),
+        )))
+        .style(Style::new().add_modifier(Modifier::REVERSED)),
+        head,
+    );
+    let rows = app
+        .settings
+        .as_ref()
+        .map(|l| crate::tui::settings::rows(l, &app.bindings, view.page))
+        .unwrap_or_default();
+    // 見出しも 1 行使うので、行ごとに画面上の位置を数える。選択行が窓に入るよう先頭を決める。
+    let height = usize::from(body.height);
+    let mut lines: Vec<(Option<usize>, Line)> = Vec::new();
+    let label_w = rows
+        .iter()
+        .map(|r| sanitize::display_width(&r.label))
+        .max()
+        .unwrap_or(0);
+    let mut section = "";
+    let selected = Style::new()
+        .fg(t().on_accent)
+        .bg(t().accent_bg)
+        .add_modifier(Modifier::BOLD);
+    for (i, row) in rows.iter().enumerate() {
+        if row.section != section {
+            section = row.section;
+            lines.push((
+                None,
+                Line::from(Span::styled(
+                    format!(" {section}"),
+                    Style::new().fg(t().accent).add_modifier(Modifier::BOLD),
+                )),
+            ));
+        }
+        let label = sanitize::inline(&row.label);
+        let pad = " ".repeat(label_w.saturating_sub(sanitize::display_width(&label)));
+        let text = format!("   {label}{pad}  {}", sanitize::inline(&row.value));
+        let style =
+            if i == view.cursor && app.modals.is_empty() && !matches!(app.focus, Focus::Nav(_)) {
+                selected
+            } else {
+                Style::new()
+            };
+        lines.push((Some(i), Line::from(Span::styled(text, style))));
+    }
+    let cursor_line = lines
+        .iter()
+        .position(|(i, _)| *i == Some(view.cursor))
+        .unwrap_or(0);
+    let first_line = (cursor_line + 1).saturating_sub(height.max(1));
+    // 窓の先頭が見出しの下の行なら、その見出しも見せる。
+    let shown: Vec<Line> = lines
+        .iter()
+        .skip(first_line)
+        .take(height)
+        .map(|(_, l)| l.clone())
+        .collect();
+    let first_index = lines
+        .iter()
+        .skip(first_line)
+        .find_map(|(i, _)| *i)
+        .unwrap_or(0);
+    // クリックの当たり判定は行の番号で引くので、見出しを含まない窓にそろえるため、位置の表も持つ。
+    app.settings_area = Some((body.y, body.height, first_index));
+    app.settings_rows_at = lines
+        .iter()
+        .skip(first_line)
+        .take(height)
+        .map(|(i, _)| *i)
+        .collect();
+    frame.render_widget(Paragraph::new(shown), body);
+    if let Some((text, color)) = message_line(app) {
+        let line = sanitize::truncate(&text, usize::from(hint.width));
+        frame.render_widget(Paragraph::new(line).style(Style::new().fg(color)), hint);
+    } else {
+        let text = if matches!(app.focus, Focus::Nav(_)) {
+            "←→: 選択 | Enter: 切替 | ↑/Esc: 一覧へ戻る"
+        } else if view.page == crate::tui::settings::Page::Top {
+            "↑↓: 選択 | Enter: 変更 | Esc: チャットへ戻る | クリック: 変更"
+        } else {
+            "↑↓: 選択 | Enter: 変更 | Esc/←: 設定へ戻る | クリック: 変更"
+        };
+        frame.render_widget(
+            Paragraph::new(text).style(Style::new().fg(t().text_muted)),
+            hint,
+        );
+    }
+    let nav_focus = match app.focus {
+        Focus::Nav(i) if app.modals.is_empty() => Some(i),
+        _ => None,
+    };
+    app.navbar = Some((navbar.y, navbar.width));
+    // 設定の画面では Settings が「いま開いている」側。
+    frame.render_widget(
+        Paragraph::new(navbar_line(navbar.width, nav_focus, 1)),
+        navbar,
+    );
 }
 
 /// 入力欄の上に補完の候補を重ねる（フォーカスは入力欄のまま）。
@@ -786,7 +910,6 @@ fn key_labels(app: &App, command: &str) -> String {
 
 fn modal_hint(modal: &Modal) -> &'static str {
     match modal {
-        Modal::Settings(_) => "↑↓: 選択 | Enter: 変更 | Esc: 閉じる | クリック: 変更",
         Modal::Menu(_) | Modal::Choice(_) => {
             "↑↓/Tab: 選択 | Enter: 決定 | Esc: 閉じる | クリック: 決定"
         }
@@ -800,17 +923,6 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &mut App) {
     if app.modals.is_empty() {
         app.modal_area = None;
         return;
-    }
-    // 設定画面の行は、現在の値から作る。見える行数は画面の高さで決まる。
-    let settings_rows = match (app.modals.last(), &app.settings) {
-        (Some(Modal::Settings(_)), Some(loaded)) => {
-            Some(crate::tui::settings::rows(loaded, &app.bindings))
-        }
-        _ => None,
-    };
-    if let Some(Modal::Settings(s)) = app.modals.last_mut() {
-        s.visible =
-            crate::tui::ui::modal::WINDOW.min(usize::from(area.height.saturating_sub(4)).max(1));
     }
     let Some(modal) = app.modals.last() else {
         return;
@@ -826,23 +938,6 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &mut App) {
         .bg(t().accent_bg)
         .add_modifier(Modifier::BOLD);
     match modal {
-        Modal::Settings(s) => {
-            let rows = settings_rows.unwrap_or_default();
-            let first = s.window_first();
-            let label_w = rows.iter().map(|r| text_w(&r.label)).max().unwrap_or(0);
-            for (i, row) in rows.iter().enumerate().skip(first).take(s.visible) {
-                let label = sanitize::inline(&row.label);
-                let pad = " ".repeat(label_w.saturating_sub(text_w(&label)));
-                let line = format!(" {label}{pad}  {} ", sanitize::inline(&row.value));
-                want = want.max(text_w(&line) + 4);
-                let style = if i == s.cursor {
-                    selected
-                } else {
-                    Style::new()
-                };
-                body.push(Line::from(Span::styled(line, style)));
-            }
-        }
         Modal::Menu(m) => {
             for (i, item) in m.items.iter().enumerate() {
                 let label = sanitize::inline(&item.label);
@@ -1221,7 +1316,6 @@ mod tests {
     #[test]
     fn settings_screen_lists_rows_from_the_loaded_values() {
         use crate::tui::device::Loaded;
-        use crate::tui::ui::modal::SettingsList;
         let mut app = app();
         connect(&mut app);
         app.settings = Some(Loaded {
@@ -1230,16 +1324,14 @@ mod tests {
             user: serde_json::json!({"theme": "dark"}),
             device: serde_json::json!({}),
         });
-        app.modals.push(Modal::Settings(SettingsList {
-            cursor: 0,
-            len: 20,
-            visible: 20,
-        }));
+        app.screen = Screen::Settings;
         let lines = render(&mut app, 70, 30);
-        assert!(
-            lines.iter().any(|l| l.contains("[共通]テーマdark")),
-            "{lines:?}"
-        );
+        // 全画面: 見出し・節の見出し・下のナビ。履歴の入力欄は出ない
+        assert!(lines[0].contains("設定"), "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("外観")));
+        assert!(lines.iter().any(|l| l.contains("テーマdark")), "{lines:?}");
         assert!(lines.iter().any(|l| l.contains("Linux(TUI)")));
+        assert!(lines.last().unwrap().contains("Chat"));
+        assert!(!lines.iter().any(|l| l.contains("送信")));
     }
 }
