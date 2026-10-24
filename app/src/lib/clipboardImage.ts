@@ -16,15 +16,22 @@ export async function readNativeClipboardImage(): Promise<File | null> {
 
 /**
  * 「ファイルを追加」パネルの「クリップボードの画像」。画像が無ければ null。
- * - Android: notifier の clipboard_image（Kotlin の ClipboardManager）。だめなら下の Web の経路
- * - デスクトップ（Windows・Linux）: Rust のクリップボード（プラグイン）。WebView の許可に頼らない。
- *   プラグインが使えない（許可が無い）ときは、下の Web の経路を試す
- * - ブラウザ: navigator.clipboard.read()（WebView が許さなければ null）
+ * 開くたびに 1 回読む。Tauri（Android・デスクトップ）では、画像が無い（null）ことが答えで、Web の経路には落とさない
+ * （WebView の navigator.clipboard.read は許可の表示を出しうるため、開くたびに出ないように）。
+ * - Android: notifier の clipboard_image。コマンドが無い・失敗したときだけ Web の経路
+ * - デスクトップ（Windows・Linux）: Rust のクリップボード（プラグイン）。失敗は null
+ * - ブラウザ: navigator.clipboard.read()（許されなければ null）
  */
 export async function readClipboardImage(): Promise<File | null> {
   if (isTauri()) {
-    const native = await (isAndroid() ? readAndroidClipboardImage() : readRustClipboardImage()).catch(() => null);
-    if (native) return native;
+    if (isAndroid()) {
+      try {
+        return await readAndroidClipboardImage();
+      } catch {
+        return readWebClipboardImage();
+      }
+    }
+    return readRustClipboardImage().catch(() => null);
   }
   return readWebClipboardImage();
 }

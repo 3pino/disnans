@@ -5,13 +5,18 @@ import AttachPanel from './AttachPanel.svelte';
 import { setRecentImageSource, type RecentImageSource } from '../lib/recentImages';
 
 // 添付パネルの一覧: 読めなかったときは「空」とは別の文言を出し、再試行で読み直す
-vi.mock('../lib/clipboardImage', () => ({ readClipboardImage: async () => null }));
+const clip = vi.hoisted(() => ({ read: vi.fn(async (): Promise<File | null> => null) }));
+vi.mock('../lib/clipboardImage', () => ({ readClipboardImage: () => clip.read() }));
 
 let instance: ReturnType<typeof mount> | undefined;
 let target: HTMLElement | undefined;
 
 beforeEach(() => {
   localStorage.setItem('disnans.recentImages.asked', '1');
+  clip.read.mockReset();
+  clip.read.mockImplementation(async () => null);
+  URL.createObjectURL = vi.fn(() => 'blob:clip');
+  URL.revokeObjectURL = vi.fn();
 });
 afterEach(async () => {
   if (instance) await unmount(instance);
@@ -22,6 +27,14 @@ afterEach(async () => {
   localStorage.clear();
   vi.restoreAllMocks();
 });
+
+/** 描画を閉じる（同じテストの中で開き直すとき） */
+async function closeNow(): Promise<void> {
+  if (instance) await unmount(instance);
+  target?.remove();
+  instance = undefined;
+  target = undefined;
+}
 
 const noop = () => {};
 async function render(source: RecentImageSource): Promise<HTMLElement> {
@@ -85,5 +98,39 @@ describe('添付パネルの最近の画像', () => {
     const recent = el.querySelector('.attach-panel-recent')!;
     const buttons = el.querySelector('.attach-panel-buttons')!;
     expect(recent.compareDocumentPosition(buttons) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('クリップボードに画像があれば、先頭に 1 件出し、残りの最近の画像で合計 6 件にする（クリップボードが無ければ 6 件）', async () => {
+    const images = Array.from({ length: 8 }, (_, i) => ({
+      id: `r${i}`,
+      name: `r${i}.png`,
+      thumbUrl: null,
+      preview: async () => 'blob:x',
+      load: async () => new File(['x'], `r${i}.png`),
+    }));
+    const source = { list: async () => ({ permission: 'granted' as const, images }), requestPermission: async () => 'granted' as const };
+
+    // クリップボードなし: 最近の画像 6 件
+    let el = await render(source);
+    await vi.waitFor(() => expect(el.querySelectorAll('.attach-panel-recent-item').length).toBe(6));
+    expect(el.querySelector('.attach-panel-clipboard')).toBeNull();
+    await closeNow();
+
+    // クリップボードあり: 先頭がクリップボード、合計 6 件（最近の画像は 5 件）
+    clip.read.mockImplementation(async () => new File(['c'], 'clipboard-1.png', { type: 'image/png' }));
+    el = await render(source);
+    await vi.waitFor(() => expect(el.querySelectorAll('.attach-panel-recent-item').length).toBe(6));
+    const first = el.querySelector('.attach-panel-recent-item')!;
+    expect(first.classList.contains('attach-panel-clipboard')).toBe(true);
+    expect(first.getAttribute('aria-label')).toBe('クリップボードの画像を添付');
+    expect(first.querySelector('.attach-panel-clipboard-mark')).not.toBeNull();
+    expect(el.querySelectorAll('.attach-panel-recent-item')[1].getAttribute('aria-label')).toBe('r0.png を添付');
+    expect(clip.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('クリップボードの画像は、パネルを開いたときに 1 回読む', async () => {
+    const el = await render({ list: async () => ({ permission: 'granted', images: [] }), requestPermission: async () => 'granted' });
+    await vi.waitFor(() => expect(el.textContent).toContain('最近の画像はありません'));
+    expect(clip.read).toHaveBeenCalledTimes(1);
   });
 });

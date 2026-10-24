@@ -3,6 +3,13 @@ import { readClipboardImage, readNativeClipboardImage } from './clipboardImage';
 
 const invoke = vi.fn<(cmd: string, args?: unknown) => Promise<unknown>>();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (cmd: string, args?: unknown) => invoke(cmd, args) }));
+const plugin = vi.hoisted(() => ({ readImage: vi.fn() }));
+vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({ readImage: () => plugin.readImage() }));
+
+/** Tauri のデスクトップ（Windows・Linux）のふりをする */
+function asDesktop(): void {
+  vi.stubGlobal('window', { __TAURI_INTERNALS__: {}, __DISNANS_PLATFORM__: { os: 'linux', desktop: true, android: false, capabilities: null } });
+}
 
 /** Tauri の中（Android）のふりをする。false なら素のブラウザ */
 function asAndroid(on: boolean): void {
@@ -18,6 +25,7 @@ afterEach(() => {
   Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
   vi.unstubAllGlobals();
   invoke.mockReset();
+  plugin.readImage.mockReset();
 });
 
 /** types と getType だけを持つ ClipboardItem の代わり */
@@ -88,18 +96,38 @@ describe('readClipboardImage（Android の経路）', () => {
     expect(await f!.text()).toBe('PNG');
   });
 
-  it('画像が無い（null）なら Web の経路に落ちる', async () => {
+  it('画像が無い（null）なら null。Web の経路（許可の表示が出うる）は使わない', async () => {
     asAndroid(true);
     invoke.mockResolvedValue(null);
-    setClipboard({ read: async () => [item({ 'image/png': 'WEB' })] });
-    const f = await readClipboardImage();
-    expect(await f!.text()).toBe('WEB');
+    const read = vi.fn(async () => [item({ 'image/png': 'WEB' })]);
+    setClipboard({ read });
+    expect(await readClipboardImage()).toBeNull();
+    expect(read).not.toHaveBeenCalled();
   });
 
-  it('コマンドが無い・失敗したら Web の経路、どちらも無ければ null', async () => {
+  it('コマンドが無い・失敗したときだけ Web の経路、どちらも無ければ null', async () => {
     asAndroid(true);
     invoke.mockRejectedValue(new Error('not found'));
     setClipboard(undefined);
     expect(await readClipboardImage()).toBeNull();
+  });
+
+  it('コマンドが失敗したら、Web の経路で読める', async () => {
+    asAndroid(true);
+    invoke.mockRejectedValue(new Error('not found'));
+    setClipboard({ read: async () => [item({ 'image/png': 'WEB' })] });
+    const f = await readClipboardImage();
+    expect(await f!.text()).toBe('WEB');
+  });
+});
+
+describe('readClipboardImage（デスクトップの Tauri の経路）', () => {
+  it('画像が無い（readImage が失敗）なら null。Web の経路は使わない（許可の表示を出さない）', async () => {
+    asDesktop();
+    plugin.readImage.mockRejectedValue(new Error('no image'));
+    const read = vi.fn(async () => [item({ 'image/png': 'WEB' })]);
+    setClipboard({ read });
+    expect(await readClipboardImage()).toBeNull();
+    expect(read).not.toHaveBeenCalled();
   });
 });

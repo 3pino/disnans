@@ -1,5 +1,6 @@
 <script lang="ts">
   import Camera from '@lucide/svelte/icons/camera';
+  import Clipboard from '@lucide/svelte/icons/clipboard';
   import ImageIcon from '@lucide/svelte/icons/image';
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
@@ -9,6 +10,7 @@
   import IconButton from './ui/IconButton.svelte';
   import {
     listRecentImages,
+    RECENT_IMAGE_COUNT,
     permissionNotice,
     requestRecentImagesPermission,
     type RecentImage,
@@ -56,6 +58,8 @@
   });
 
   let recent = $state<RecentImage[]>([]);
+  /** 枠（RECENT_IMAGE_COUNT 件）に出す最近の画像。クリップボードの画像があれば、その 1 件を先頭に足して、残りを埋める（合計は同じ） */
+  const shown = $derived(recent.slice(0, RECENT_IMAGE_COUNT - (clip ? 1 : 0)));
   let permission = $state<RecentPermission>('granted');
   /** 読み込み中（初期は読み込み中。読めて 0 件のときだけ空の文言を出す） */
   let loading = $state(true);
@@ -107,9 +111,10 @@
         onclick={() => clip && onclipboard(clip.file)}
       >
         <img class="attach-panel-recent-img" src={clip.url} alt="" decoding="async" />
+        <span class="attach-panel-clipboard-mark" aria-hidden="true"><Clipboard size={12} /></span>
       </button>
     {/if}
-    {#each recent as image (image.id)}
+    {#each shown as image (image.id)}
       <button type="button" class="attach-panel-recent-item" aria-label="{image.name} を添付" onclick={() => onrecent(image)}>
         <RecentThumb {image} />
       </button>
@@ -181,6 +186,23 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+  /* クリップボード由来の印（右下の小さい丸。画像の上に重ねる） */
+  .attach-panel-clipboard {
+    position: relative;
+  }
+  .attach-panel-clipboard-mark {
+    position: absolute;
+    right: var(--space-1);
+    bottom: var(--space-1);
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--text-muted);
+    box-shadow: 0 0 0 1px var(--border);
   }
   .attach-panel-empty,
   .attach-panel-notice {
