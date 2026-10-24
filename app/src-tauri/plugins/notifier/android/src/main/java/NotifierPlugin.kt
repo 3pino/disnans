@@ -9,6 +9,9 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.OpenableColumns
 import android.os.PowerManager
 import android.provider.Settings
@@ -77,6 +80,11 @@ class SetKeepWebViewArgs {
 @InvokeArg
 class LogCallArgs {
   lateinit var message: String
+}
+
+@InvokeArg
+class VibrateArgs {
+  var ms: Long = 12
 }
 
 @TauriPlugin(
@@ -468,6 +476,30 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     activity.runOnUiThread {
       view.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
       Log.i(LOG_TAG, "[call] レンダラーの優先度を下げないようにしました")
+    }
+  }
+
+  /**
+   * 短い振動（ms）。WebView の navigator.vibrate は長押し中（user activation が無い）に拒否されるため、ネイティブで鳴らす。
+   * 振動器が無い端末・許可が無い端末は何もしない（resolve）。
+   */
+  @Command
+  fun vibrate(invoke: Invoke) {
+    val args = invoke.parseArgs(VibrateArgs::class.java)
+    try {
+      val ms = args.ms.coerceIn(1L, 1000L)
+      val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        (activity.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+      } else {
+        @Suppress("DEPRECATION")
+        activity.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+      }
+      if (vibrator != null && vibrator.hasVibrator()) {
+        vibrator.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
+      }
+      invoke.resolve()
+    } catch (ex: Exception) {
+      invoke.reject(ex.message)
     }
   }
 

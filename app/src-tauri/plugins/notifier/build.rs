@@ -21,6 +21,7 @@ const COMMANDS: &[&str] = &[
     "set_orientation",
     "set_keep_web_view",
     "log_call",
+    "vibrate",
 ];
 
 fn main() {

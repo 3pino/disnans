@@ -17,6 +17,7 @@ permissions = [
   "allow-set-orientation",
   "allow-set-keep-web-view",
   "allow-log-call",
+  "allow-vibrate",
   "allow-take-launch-target",
   "allow-register-listener",
   "allow-remove-listener",
