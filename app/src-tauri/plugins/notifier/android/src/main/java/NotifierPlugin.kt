@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -495,7 +496,13 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
         activity.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
       }
       if (vibrator != null && vibrator.hasVibrator()) {
-        vibrator.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
+        val effect = VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+          // タッチ操作の振動として鳴らす。端末の「タッチ操作の振動」がオフなら、システムが鳴らさない（設定に従う）
+          vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH))
+        } else {
+          vibrator.vibrate(effect)
+        }
       }
       invoke.resolve()
     } catch (ex: Exception) {
