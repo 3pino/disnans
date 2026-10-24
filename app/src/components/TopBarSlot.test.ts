@@ -15,6 +15,8 @@ vi.mock('../lib/call/instance.svelte', () => ({
 }));
 // 通話のバーは、印の要素だけにする（描画は CallBar の仕事）
 vi.mock('./CallBar.svelte', async () => ({ default: (await import('./testing/CallBarStub.svelte')).default }));
+// プラグインのステータス欄も、印の要素だけにする（描画は PluginStatusBar の仕事）
+vi.mock('./PluginStatusBar.svelte', async () => ({ default: (await import('./testing/PluginStatusBarStub.svelte')).default }));
 
 let instance: ReturnType<typeof mount> | undefined;
 let target: HTMLElement | undefined;
@@ -36,6 +38,7 @@ afterEach(async () => {
 });
 
 const callBarShown = () => document.querySelector('.top-slot .call-bar') !== null;
+const pluginBarShown = () => document.querySelector('.top-slot .plugin-status-stub') !== null;
 
 /** 画面の状態（タブとパネル）。エクスプローラーは、開いたときのタブを残す（ui.openFiles と同じ） */
 type Screen = 'chat' | 'settings' | 'call' | 'files-over-chat' | 'files-over-call';
@@ -77,5 +80,33 @@ describe('上部の枠（通話のバー）は、画面が変わっても一貫�
     flushSync();
     expect(ui.tab).toBe('call');
     expect(callBarShown()).toBe(true);
+  });
+});
+
+describe('プラグインのステータス欄も、通話の画面が見えているときは出さない（通話のバーと同じ規則）', () => {
+  it('通話の画面（通話のタブで、エクスプローラーに隠れていない）では出さない。ほかの画面では出す', () => {
+    for (const s of SCREENS) {
+      show(s);
+      expect(pluginBarShown(), s).toBe(s !== 'call');
+    }
+  });
+
+  it('通話のタブからエクスプローラーを開くと、通話の画面は隠れるので出す', () => {
+    show('call');
+    expect(pluginBarShown()).toBe(false);
+    ui.openFiles();
+    flushSync();
+    expect(pluginBarShown()).toBe(true);
+  });
+
+  it('通話に参加していなくても、通話の画面では出さない（規則は画面だけで決まる）', async () => {
+    await unmount(instance!);
+    h.visible = false;
+    instance = mount(TopBarSlot, { target: target! });
+    flushSync();
+    show('call');
+    expect(pluginBarShown()).toBe(false);
+    show('chat');
+    expect(pluginBarShown()).toBe(true);
   });
 });

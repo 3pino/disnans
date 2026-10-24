@@ -170,3 +170,56 @@ describe('添付パネルの最近の画像', () => {
     expect(clip.read).toHaveBeenCalledTimes(1);
   });
 });
+
+// Esc でパネルを閉じる（入力欄にフォーカスがあっても効く。上に開いているものが先）
+describe('Esc でパネルを閉じる', () => {
+  async function renderWith(onclose: () => void): Promise<HTMLElement> {
+    target = document.createElement('div');
+    document.body.appendChild(target);
+    instance = mount(AttachPanel, {
+      target,
+      props: { oncamera: noop, onimage: noop, onfile: noop, onrecent: noop, onclipboard: noop, onclose },
+    });
+    flushSync();
+    return target;
+  }
+  // 実際の Esc と同じく、取り消せる・バブリングする（入力欄が preventDefault できるように）
+  const esc = (el: EventTarget = window) => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+  it('パネルを開いたままの Esc で閉じる（フォーカスが入力欄にあっても）', async () => {
+    setRecentImageSource({ list: async () => ({ permission: 'granted', images: [] }), requestPermission: async () => 'granted' });
+    const input = document.createElement('textarea');
+    document.body.appendChild(input);
+    const onclose = vi.fn();
+    await renderWith(onclose);
+    input.focus();
+    esc(input);
+    expect(onclose).toHaveBeenCalledTimes(1);
+    input.remove();
+  });
+
+  it('上に開いているダイアログ・メニューがあれば、閉じない（それが先に閉じる）', async () => {
+    setRecentImageSource({ list: async () => ({ permission: 'granted', images: [] }), requestPermission: async () => 'granted' });
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    document.body.appendChild(menu);
+    const onclose = vi.fn();
+    await renderWith(onclose);
+    esc();
+    expect(onclose).not.toHaveBeenCalled();
+    menu.remove();
+  });
+
+  it('ほかの処理（入力欄の候補）が Esc を使ったら、閉じない', async () => {
+    setRecentImageSource({ list: async () => ({ permission: 'granted', images: [] }), requestPermission: async () => 'granted' });
+    const onclose = vi.fn();
+    // 入力欄（候補など）が Esc を先に使う: 入力欄の処理は窓の処理より先に動く（バブリング）
+    const input = document.createElement('textarea');
+    document.body.appendChild(input);
+    input.addEventListener('keydown', (e) => e.preventDefault());
+    await renderWith(onclose);
+    esc(input);
+    expect(onclose).not.toHaveBeenCalled();
+    input.remove();
+  });
+});

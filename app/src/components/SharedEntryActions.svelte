@@ -1,14 +1,13 @@
 <script lang="ts">
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
   import Copy from '@lucide/svelte/icons/copy';
-  import FolderInput from '@lucide/svelte/icons/folder-input';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Scissors from '@lucide/svelte/icons/scissors';
   import Trash from '@lucide/svelte/icons/trash';
   import Info from '@lucide/svelte/icons/info';
   import { attachmentActionText } from '../lib/fileLink';
-  import { deleteConfirm, nameError, renameNote, renameTarget } from '../lib/sharedOps';
-  import { runTransfer, transferFailure, type TransferItem } from '../lib/sharedTransfer';
+  import { deleteConfirm, nameError, renameAllowed, renameNote, renameTarget } from '../lib/sharedOps';
+  import { checkTransfer, type TransferItem } from '../lib/sharedTransfer';
   import { sharedApi } from '../lib/transport/shared';
   import { sharedIndex } from '../lib/stores/sharedIndex.svelte';
   import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
@@ -21,7 +20,6 @@
   import Modal from './ui/Modal.svelte';
   import TextInput from './ui/TextInput.svelte';
   import Button from './ui/Button.svelte';
-  import FolderPicker from './FolderPicker.svelte';
   import FileProperties from './FileProperties.svelte';
 
   // 共有フォルダの項目の操作（「…」）: 名前の変更・コピー・切り取り・移動・削除。どの人も変えられる（サーバーの決まり）。
@@ -35,15 +33,18 @@
   const name = $derived(baseName(path));
   const dir = $derived(entry.kind === 'dir');
   const item = $derived<TransferItem>({ path, kind: entry.kind === 'dir' ? 'dir' : 'file' });
+  /** 名前の変更・削除・切り取りが今できるか（できないものはグレーにして理由を出す） */
+  const renameRule = $derived(renameAllowed(path));
+  const cutRule = $derived(checkTransfer('move', item, parentOf(path)));
   let open = $state(false);
   let renaming = $state(false);
   let renameTo = $state('');
   let renameError = $state<string | null>(null);
   let renameBusy = $state(false);
-  let moving = $state(false);
   let showProperties = $state(false);
 
   function openRename() {
+    if (!renameRule.ok) return;
     open = false;
     renaming = true;
     renameTo = name;
@@ -75,11 +76,10 @@
     }
   }
 
-  /** コピー・切り取り: バッファに入れる（貼り付けは一覧の「貼り付け」） */
+  /** コピー・切り取り: バッファに入れる（貼り付けは一覧の「貼り付け」。できたことは、貼り付けが押せるようになることで分かるので通知は出さない） */
   function toBuffer(mode: 'copy' | 'move') {
     open = false;
     explorerBuffer.set(mode, [item]);
-    ui.toast(mode === 'copy' ? `「${name}」をコピーしました。移動先で「貼り付け」を押してください` : `「${name}」を切り取りました。移動先で「貼り付け」を押してください`);
   }
 
   function openProperties() {
@@ -87,28 +87,8 @@
     showProperties = true;
   }
 
-  function openMove() {
-    open = false;
-    moving = true;
-  }
-
-  /** 移動先を選んだあと（同名の確認・決まりは runTransfer） */
-  async function moveTo(dest: string, entries: Map<string, SharedEntry>) {
-    moving = false;
-    const result = await runTransfer({
-      op: 'move',
-      items: [item],
-      destDir: dest,
-      destEntries: entries,
-      confirm: (c) => ui.confirm(c),
-      api: sharedApi,
-      invalidate: (p) => sharedIndex.invalidate(p),
-    });
-    const msg = transferFailure(result);
-    if (msg) ui.toast(msg, 'error');
-  }
-
   async function remove() {
+    if (!renameRule.ok) return;
     open = false;
     const ok = await ui.confirm(deleteConfirm(path, dir));
     if (!ok) return;
@@ -132,14 +112,13 @@
   />
   {#if open}
     <Menu class="shared-entry-menu" label="項目の操作" onclose={() => (open = false)}>
-      <MenuItem class="shared-entry-menu-item" icon={Pencil} onclick={openRename}>名前を変更</MenuItem>
+      <MenuItem class="shared-entry-menu-item" icon={Pencil} disabled={!renameRule.ok} reason={renameRule.ok ? undefined : renameRule.message} onclick={openRename}>名前を変更</MenuItem>
       {#if !dir}
         <MenuItem class="shared-entry-menu-item" icon={Copy} onclick={() => toBuffer('copy')}>コピー</MenuItem>
       {/if}
-      <MenuItem class="shared-entry-menu-item" icon={Scissors} onclick={() => toBuffer('move')}>切り取り</MenuItem>
-      <MenuItem class="shared-entry-menu-item" icon={FolderInput} onclick={openMove}>移動…</MenuItem>
+      <MenuItem class="shared-entry-menu-item" icon={Scissors} disabled={!cutRule.ok} reason={cutRule.ok ? undefined : cutRule.message} onclick={() => toBuffer('move')}>切り取り</MenuItem>
       <MenuItem class="shared-entry-menu-item" icon={Info} onclick={openProperties}>プロパティ</MenuItem>
-      <MenuItem class="shared-entry-menu-item" icon={Trash} danger onclick={() => void remove()}>削除</MenuItem>
+      <MenuItem class="shared-entry-menu-item" icon={Trash} danger disabled={!renameRule.ok} reason={renameRule.ok ? undefined : renameRule.message} onclick={() => void remove()}>削除</MenuItem>
     </Menu>
   {/if}
 </span>
@@ -160,10 +139,6 @@
 
 {#if showProperties}
   <FileProperties {entry} onclose={() => (showProperties = false)} />
-{/if}
-
-{#if moving}
-  <FolderPicker items={[item]} onpick={moveTo} onclose={() => (moving = false)} />
 {/if}
 
 <style>

@@ -8,7 +8,7 @@ import type { SharedEntry } from './protocol/SharedEntry';
 import type { SharedApi } from './transport/shared';
 import { attachmentActionText } from './fileLink';
 import { baseName } from './sharedPath';
-import { ATTACHMENTS_DIR, childPath, inAttachments, nameError, overwriteConfirm, sameNameEntry } from './sharedOps';
+import { ATTACHMENTS_DIR, childPath, inAttachments, nameError, overwriteConfirm, RESERVED_REASON, sameNameEntry } from './sharedOps';
 
 export type TransferOp = 'move' | 'copy';
 
@@ -22,7 +22,7 @@ const fail = (message: string): Check => ({ ok: false, message });
 
 /** 項目を、移動先のフォルダへ move / copy できるか（サーバーの決まりと同じ） */
 export function checkTransfer(op: TransferOp, item: TransferItem, destDir: string): Check {
-  if (item.path === ATTACHMENTS_DIR) return fail('添付のフォルダは動かせません');
+  if (item.path === ATTACHMENTS_DIR) return fail(RESERVED_REASON);
   if (op === 'move') {
     if (inAttachments(item.path) !== inAttachments(destDir)) return fail('共有フォルダと添付の間は移動できません（コピーしてください）');
     if (item.kind === 'dir' && (destDir === item.path || destDir.startsWith(item.path + '/'))) {

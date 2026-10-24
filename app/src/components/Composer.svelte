@@ -474,7 +474,11 @@
       }}
       onrecent={onpanelrecent}
       onclipboard={onpanelclipboard}
-      onclose={() => attachPanel.hide()}
+      onclose={() => {
+        attachPanel.hide();
+        // 閉じたら、続けて書けるように入力欄へ戻す
+        void tick().then(() => input?.focus());
+      }}
     />
   {/if}
 

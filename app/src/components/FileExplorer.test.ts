@@ -25,6 +25,8 @@ const entry = (name: string, kind: 'file' | 'dir' = 'file'): SharedEntry => ({
 const listing: SharedEntry[] = [entry('a.txt'), entry('docs', 'dir'), { ...entry('pic.png'), mime: 'image/png', size: 9 }];
 
 const h = vi.hoisted(() => ({
+  /** 一覧（既定は上の listing。添付のフォルダの場面では差し替える） */
+  current: null as SharedEntry[] | null,
   upload: vi.fn(),
   mkdir: vi.fn(async () => ({})),
   copy: vi.fn(async () => ({})),
@@ -32,7 +34,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock('../lib/transport/shared', () => ({
   sharedApi: {
-    list: async () => listing,
+    list: async () => h.current ?? listing,
     mkdir: h.mkdir,
     copy: h.copy,
     move: async () => ({}),
@@ -140,7 +142,69 @@ describe('共有フォルダの書き込み', () => {
     const bar = el.querySelector('.panel-bar');
     expect(bar?.classList.contains('top-bar')).toBe(true);
     expect(bar?.querySelector('button[aria-label="メニュー"]')).not.toBeNull();
-    expect(bar?.querySelector('.file-explorer-crumbs')).not.toBeNull();
+    expect(bar?.querySelector('.file-explorer-selection')).not.toBeNull();
+    expect(bar?.querySelector('.file-explorer-crumbs')).toBeNull();
+    // パンくずは、上端の直後の行（バーの下）
+    expect(bar?.nextElementSibling?.classList.contains('file-explorer-crumbs')).toBe(true);
+  });
+});
+
+describe('上端のバーの件数・操作（選んでいなくても同じバーを出す）', () => {
+  it('選んでいないときは、件数（フォルダの項目数）を出し、コピー・切り取り・削除は押せない', async () => {
+    const el = await render();
+    expect(el.querySelector('.file-explorer-selection-count')?.textContent).toBe('3 件');
+    for (const label of ['コピー', '切り取り', '削除']) {
+      expect(el.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)?.disabled, label).toBe(true);
+    }
+  });
+
+  it('選ぶと「N 件選択中」になり、操作が押せる。空きスペースで解除すると件数に戻る', async () => {
+    const el = await render();
+    explorerSelection.enter();
+    flushSync();
+    expect(el.querySelector('.file-explorer-selection-count')?.textContent).toBe('0 件選択中');
+    expect(el.querySelector<HTMLButtonElement>('button[aria-label="コピー"]')?.disabled).toBe(true);
+    const row = [...el.querySelectorAll<HTMLElement>('.file-explorer-item')].find((li) => li.textContent?.includes('a.txt'))!;
+    row.querySelector<HTMLButtonElement>('.file-explorer-row')!.click();
+    flushSync();
+    expect(el.querySelector('.file-explorer-selection-count')?.textContent).toBe('1 件選択中');
+    expect(el.querySelector<HTMLButtonElement>('button[aria-label="コピー"]')?.disabled).toBe(false);
+  });
+
+  it('「選択をやめる」と「移動」は無い（切り取り＋貼り付けで足りる）', async () => {
+    const el = await render();
+    explorerSelection.enter();
+    flushSync();
+    expect(el.textContent).not.toContain('選択をやめる');
+    expect(el.querySelector('button[aria-label="移動"]')).toBeNull();
+    expect(el.querySelector('button[aria-label="閉じる"]')).toBeNull();
+  });
+
+  it('空きスペースを押すと選択を解除する。項目・パンくず・バーは解除しない', async () => {
+    const el = await render();
+    explorerSelection.enter();
+    explorerSelection.toggle('a.txt');
+    flushSync();
+    el.querySelector<HTMLElement>('.file-explorer-selection-count')!.click();
+    el.querySelector<HTMLElement>('.file-explorer-crumbs')!.click();
+    el.querySelector<HTMLElement>('.file-explorer-item')!.click();
+    flushSync();
+    expect(explorerSelection.active).toBe(true);
+    el.querySelector<HTMLElement>('.file-explorer-body')!.click();
+    flushSync();
+    expect(explorerSelection.active).toBe(false);
+    expect(explorerSelection.count).toBe(0);
+  });
+
+  it('切り取りでは、できたことの通知を出さない（貼り付けが押せるようになる）', async () => {
+    const el = await render();
+    explorerSelection.enter();
+    explorerSelection.toggle('a.txt');
+    flushSync();
+    el.querySelector<HTMLButtonElement>('button[aria-label="切り取り"]')!.click();
+    flushSync();
+    expect(explorerBuffer.mode).toBe('move');
+    expect(ui.toasts.some((t) => t.text.includes('切り取りました'))).toBe(false);
   });
 });
 
@@ -153,11 +217,11 @@ describe('項目の操作と貼り付け（コピー・切り取り・移動）'
 
   it('フォルダの「…」にはコピーを出さない（フォルダはコピーできない）。ファイルには出す', async () => {
     const el = await render();
-    expect(itemMenuLabels(el, 'docs')).toEqual(['名前を変更', '切り取り', '移動…', 'プロパティ', '削除']);
+    expect(itemMenuLabels(el, 'docs')).toEqual(['名前を変更', '切り取り', 'プロパティ', '削除']);
     // 開いたメニューを閉じる（外側を押す）
     document.querySelector<HTMLButtonElement>('.menu-backdrop')?.click();
     flushSync();
-    expect(itemMenuLabels(el, 'a.txt')).toEqual(['名前を変更', 'コピー', '切り取り', '移動…', 'プロパティ', '削除']);
+    expect(itemMenuLabels(el, 'a.txt')).toEqual(['名前を変更', 'コピー', '切り取り', 'プロパティ', '削除']);
   });
 
   it('コピーしたものを貼り付けると、同名は確認してから上書きで送る', async () => {
@@ -310,6 +374,30 @@ describe('操作メニューは外側の幕より前にある（押せない不�
       const menuRules = css.match(/[^{}]*(file-explorer-popup-menu|shared-entry-menu)[^{}]*\{[^}]*\}/g) ?? [];
       expect(menuRules.length, file).toBeGreaterThan(0);
       for (const rule of menuRules) expect(rule, file).not.toMatch(/z-index/);
+    }
+  });
+});
+
+describe('添付のフォルダ（attachments/ そのもの）は動かせない・消せない（グレー、理由つき）', () => {
+  it('attachments の「…」は、名前の変更・切り取り・削除がグレーで理由を出す。ほかの項目は押せる', async () => {
+    h.current = [entry('attachments', 'dir'), entry('a.txt')];
+    try {
+      const el = await render();
+      el.querySelector<HTMLButtonElement>('button[aria-label="attachments の操作"]')!.click();
+      flushSync();
+      const item = (t: string) => [...document.querySelectorAll<HTMLButtonElement>('.shared-entry-menu-item')].find((b) => b.textContent?.includes(t))!;
+      for (const t of ['名前を変更', '切り取り', '削除']) {
+        expect(item(t).disabled, t).toBe(true);
+        expect(item(t).title, t).toContain('添付のフォルダは動かせません');
+      }
+      expect(item('プロパティ').disabled).toBe(false);
+      document.querySelector<HTMLButtonElement>('.menu-backdrop')?.click();
+      flushSync();
+      el.querySelector<HTMLButtonElement>('button[aria-label="a.txt の操作"]')!.click();
+      flushSync();
+      expect([...document.querySelectorAll<HTMLButtonElement>('.shared-entry-menu-item')].every((b) => !b.disabled)).toBe(true);
+    } finally {
+      h.current = null;
     }
   });
 });

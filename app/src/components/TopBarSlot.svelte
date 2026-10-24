@@ -12,7 +12,8 @@
 <div class="top-slot" role="region" aria-label="上部のバー">
   <!-- 通話の画面が見えているときは、同じ内容がそこに出ているので上のバーは出さない（エクスプローラーに隠れているときは出す） -->
   {#if call.visible && !ui.callScreenShown}<CallBar />{/if}
-  <PluginStatusBar />
+  <!-- 通話の画面が見えているときは、プラグインのステータス欄も出さない（通話バーと同じ規則） -->
+  {#if !ui.callScreenShown}<PluginStatusBar />{/if}
 </div>
 
 <style>

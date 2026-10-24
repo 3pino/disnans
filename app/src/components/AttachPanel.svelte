@@ -19,6 +19,7 @@
   } from '../lib/recentImages';
   import { hasAskedRecentImages, markAskedRecentImages } from '../lib/recentImagesNative';
   import { readClipboardImage } from '../lib/clipboardImage';
+  import { escapeClosesPanel, OVERLAY_SELECTOR } from '../lib/escape';
 
   // 入力欄の上に出す「ファイルを追加」パネル。ボタンは入力欄（Composer）の隠しの入力を開く。見た目は仮
   let {
@@ -113,7 +114,18 @@
   });
 </script>
 
-<svelte:window bind:innerHeight={viewH} />
+<!-- Esc は、このパネルの中・入力欄にフォーカスがあるときも効く（入力欄の候補などが先に使ったら何もしない）。
+     上に開いているメニュー・ダイアログなどが先に閉じる -->
+<svelte:window
+  bind:innerHeight={viewH}
+  onkeydown={(e) => {
+    if (e.key !== 'Escape' || e.isComposing) return;
+    if (escapeClosesPanel({ defaultPrevented: e.defaultPrevented, overlayOpen: document.querySelector(OVERLAY_SELECTOR) !== null })) {
+      e.preventDefault();
+      onclose();
+    }
+  }}
+/>
 
 <div class="attach-panel" role="group" aria-label="ファイルを追加">
   <!-- 最近の画像の一覧だけがスクロールし、ボタンの行はパネルの下に残す -->

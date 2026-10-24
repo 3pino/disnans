@@ -43,6 +43,17 @@ export function canOperate(path: string): boolean {
   return path !== ATTACHMENTS_DIR;
 }
 
+/** 添付のフォルダ（attachments/ そのもの）の理由。動かせない・消せない（サーバーの決まり: 403） */
+export const RESERVED_REASON = '添付のフォルダは動かせません';
+
+/** 項目の操作（名前の変更・切り取り・削除）が、今できるか。できないときは理由 */
+export type Allowed = { ok: true } | { ok: false; message: string };
+
+/** 項目の名前の変更・削除の可否（attachments/ そのものだけ不可。サーバーの決まり） */
+export function renameAllowed(path: string): Allowed {
+  return path === ATTACHMENTS_DIR ? { ok: false, message: RESERVED_REASON } : { ok: true };
+}
+
 /** 名前の変更の確認の文（attachments/ の中だけ、本文のリンクの表示の旨を出す） */
 export function renameNote(path: string): string {
   return inAttachments(path)
