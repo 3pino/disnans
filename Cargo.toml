@@ -6,4 +6,4 @@ exclude = ["app/src-tauri"]
 
 [workspace.package]
 edition = "2024"
-version = "0.2.36"
+version = "0.2.37"
