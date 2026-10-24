@@ -182,6 +182,14 @@ class Ui {
     this.navigate({ tab: 'settings', pluginSettings: null, settingsSub: null, ...(this.closesPanelOnTab() ? { panel: null } : {}) }, 'reset');
   }
 
+  /**
+   * 通話の画面が、いま見えているか（通話のタブで、エクスプローラーに覆われていない）。
+   * タブが通話のままでも、エクスプローラーを開いていれば通話の画面は隠れる（Shell の shell-away）
+   */
+  get callScreenShown(): boolean {
+    return this.tab === 'call' && this.panel?.kind !== 'files';
+  }
+
   /** タブを開くとき、いまのパネルを閉じるか。広い画面のほかのパネルは残す。エクスプローラーは通話・設定と場所を取り合うので閉じる */
   private closesPanelOnTab(): boolean {
     return !this.isMobile || this.panel?.kind === 'files';

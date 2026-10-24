@@ -4,7 +4,6 @@
   import PluginSettingTab from './PluginSettingTab.svelte';
   import PluginManageSection from './PluginManageSection.svelte';
   import { pluginHost } from '../lib/plugins/host.svelte';
-  import { ui } from '../lib/stores/ui.svelte';
 
   // 設定 > プラグイン の歯車から開く、1つのプラグインの設定画面。設定の一覧の代わりに出す（デスクトップは右側、モバイルは全体）。
   // 上は戻るボタン・プラグインのアイコン・名前、下はプラグインが描く設定タブ（addSettingTab）
@@ -18,7 +17,7 @@
 </script>
 
 <div id="plugin-settings-page" class="plugin-settings-page" data-plugin={id}>
-  <PanelBar onback={() => ui.back()}>
+  <PanelBar>
     <div class="plugin-settings-page-title">
       <Icon icon={entry?.icon ?? pluginHost.pluginIcon(id)} size={18} />
       <span class="plugin-settings-page-title-text">{name}</span>

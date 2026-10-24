@@ -240,7 +240,7 @@
   <!-- 「操作」のサブページ。一覧の上に重ねる（一覧はそのままにして、戻ったときに元の位置へ戻す） -->
   {#if ui.settingsSub}
     <div id="settings-sub-page" class="settings-sub-page" data-sub={ui.settingsSub}>
-      <PanelBar onback={() => ui.back()} />
+      <PanelBar />
       <div class="scroll settings-sub-page-body">
         <div class="settings-sub-page-content">
           {#if ui.settingsSub === 'enterKeys'}

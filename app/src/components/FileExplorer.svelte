@@ -35,6 +35,7 @@
   import { checkTransfer, runTransfer, transferFailure, type TransferItem } from '../lib/sharedTransfer';
   import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
   import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
+  import { LONG_PRESS_MS } from '../lib/sortable';
   import FolderPicker from './FolderPicker.svelte';
   import { sharedApi, uploadShared } from '../lib/transport/shared';
   import { sharedFileUrl, fileUrl } from '../lib/config';
@@ -59,10 +60,6 @@
     void fileExplorer.dir;
     untrack(() => explorerSelection.clear());
   });
-
-  function back(): void {
-    if (!fileExplorer.up()) ui.back();
-  }
 
   function href(e: SharedEntry): string {
     return sharedFileUrl(e.path);
@@ -246,7 +243,6 @@
 
   // ---- 行の操作: 長押しで選択モードに入る。選択モードの中では、行を押すと開かずに選び直す ----
 
-  const LONG_PRESS_MS = 500;
   let pressTimer: ReturnType<typeof setTimeout> | undefined;
   let pressFrom: { x: number; y: number } | null = null;
   /** 長押しで選択に入ったところ（直後のクリックは無視する） */
@@ -327,7 +323,7 @@
 </script>
 
 <div class="file-explorer">
-  <PanelBar onback={fileExplorer.dir !== '' || ui.isMobile ? back : undefined}>
+  <PanelBar>
     <nav class="file-explorer-crumbs" aria-label="場所">
       <button type="button" class="file-explorer-crumb" onclick={() => fileExplorer.open('')}>共有フォルダ</button>
       {#each crumbs as c (c.path)}
@@ -640,11 +636,11 @@
     position: relative;
     display: inline-flex;
   }
+  /* z-index は指定しない（design-system の .menu は --z-menu。ここで下げると外側の幕（-1）に覆われて項目が押せない） */
   .file-explorer-popup > :global(.file-explorer-popup-menu) {
     position: absolute;
     top: calc(100% + 6px);
     right: 0;
-    z-index: 5;
     min-width: 12em;
   }
   .file-explorer-menu-head {

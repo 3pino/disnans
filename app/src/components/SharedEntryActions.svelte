@@ -180,11 +180,11 @@
     flex: none;
     vertical-align: middle;
   }
+  /* z-index は指定しない（.menu の --z-menu。下げると外側の幕に覆われて項目が押せない） */
   .shared-entry-actions > :global(.shared-entry-menu) {
     position: absolute;
     top: calc(100% + 6px);
     right: 0;
-    z-index: 5;
   }
   .attachment-rename {
     display: flex;

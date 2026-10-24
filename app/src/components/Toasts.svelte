@@ -53,8 +53,12 @@
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     font-size: var(--fs-base);
-    pointer-events: auto;
+    /* 通知の本体は押せない（上の ≡ などを覆わない）。押せるのは中のボタン（操作・閉じる）だけ */
+    pointer-events: none;
     animation: drop 0.18s ease-out;
+  }
+  .toast :global(button) {
+    pointer-events: auto;
   }
   /* 種類の見分けは error だけ（info には帯を付けない） */
   .toast.toast-error {

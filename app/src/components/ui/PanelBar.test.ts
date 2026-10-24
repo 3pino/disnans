@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
 import PanelBar from './PanelBar.svelte';
 
@@ -26,17 +26,10 @@ describe('PanelBar', () => {
     const bar = render();
     expect(bar.classList.contains('top-bar')).toBe(true);
     expect(bar.querySelector('.panel-bar-main .t')?.textContent).toBe('題名');
-    expect(bar.querySelector('button')).toBeNull();
   });
 
-  it('onback があれば戻るボタンが先頭に出て、押すと呼ばれる', () => {
-    const onback = vi.fn();
-    const bar = render({ onback });
-    const btn = bar.firstElementChild as HTMLButtonElement;
-    expect(btn.getAttribute('aria-label')).toBe('戻る');
-    expect(bar.classList.contains('panel-bar-has-back')).toBe(true);
-    btn.click();
-    expect(onback).toHaveBeenCalledOnce();
+  it('戻るボタンは持たない', () => {
+    expect(render().querySelector('button')).toBeNull();
   });
 
   it('右の操作は main のあとに並ぶ', () => {

@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   listRecentImages,
   permissionNotice,
-  RECENT_IMAGE_COUNT,
+  RECENT_IMAGE_MAX,
+  recentGridFit,
+  RECENT_TILE_MAX,
+  RECENT_TILE_MIN,
   requestRecentImagesPermission,
   setRecentImageSource,
 } from './recentImages';
@@ -39,19 +42,47 @@ describe('最近の画像（出どころ）', () => {
     const res = await listRecentImages();
     expect(res.permission).toBe('limited');
     expect(res.images.map((i) => i.id)).toEqual(['a']);
-    expect(seen).toEqual([RECENT_IMAGE_COUNT]);
+    expect(seen).toEqual([RECENT_IMAGE_MAX]);
     expect(await requestRecentImagesPermission()).toBe('limited');
   });
 
-  it('件数は 6 件（3 列の 2 行）', async () => {
+  it('取る件数の上限は 24（実際に並べるのは、画面に入るだけ）', async () => {
     const seen: number[] = [];
     setRecentImageSource({
       list: async (limit) => (seen.push(limit), { permission: 'granted', images: [] }),
       requestPermission: async () => 'granted',
     });
     await listRecentImages();
-    expect(seen).toEqual([6]);
-    expect(RECENT_IMAGE_COUNT).toBe(6);
+    expect(seen).toEqual([24]);
+    expect(RECENT_IMAGE_MAX).toBe(24);
+  });
+});
+
+describe('recentGridFit（枠の列数・タイルの幅・入る件数）', () => {
+  const gap = 8;
+  it('狭い画面（幅 358・高さの上限 422）: 3 列、タイル 114、3 行の 9 件', () => {
+    expect(recentGridFit({ width: 358, maxHeight: 422, gap })).toEqual({ cols: 3, tile: 114, rows: 3, capacity: 9 });
+  });
+  it('広い画面: 列は幅から決まり、タイルは最大の幅を超えない', () => {
+    const f = recentGridFit({ width: 1200, maxHeight: 2000, gap });
+    expect(f.tile).toBeLessThanOrEqual(RECENT_TILE_MAX);
+    expect(f.tile).toBeGreaterThanOrEqual(RECENT_TILE_MIN);
+    expect(f.cols).toBe(Math.floor((1200 + gap) / (RECENT_TILE_MIN + gap)));
+  });
+  it('高さの上限を超えない（行数 × タイル + 隙間 ≦ 上限）', () => {
+    for (const maxHeight of [120, 300, 422, 700]) {
+      const f = recentGridFit({ width: 358, maxHeight, gap });
+      expect(f.rows * f.tile + (f.rows - 1) * gap).toBeLessThanOrEqual(Math.max(maxHeight, f.tile));
+    }
+  });
+  it('上限（24 件）で止める。画面が大きくても増えない', () => {
+    expect(recentGridFit({ width: 2400, maxHeight: 5000, gap }).capacity).toBe(24);
+  });
+  it('高さが足りないときも、1 行は取る（空の枠にしない）', () => {
+    expect(recentGridFit({ width: 358, maxHeight: 10, gap }).capacity).toBeGreaterThanOrEqual(3);
+  });
+  it('幅が分からないとき（0）は上限の件数（列は 1）', () => {
+    expect(recentGridFit({ width: 0, maxHeight: 400, gap })).toMatchObject({ cols: 1, capacity: 24 });
   });
 });
 

@@ -9,6 +9,7 @@ import { ui } from '../lib/stores/ui.svelte';
 import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
 import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
 import { explorerView } from '../lib/stores/explorerView.svelte';
+import { LONG_PRESS_MS } from '../lib/sortable';
 
 // 共有フォルダの一覧の書き込み（アップロード・同名の確認・フォルダ作成）の流れ。HTTP は差し替える
 const entry = (name: string, kind: 'file' | 'dir' = 'file'): SharedEntry => ({
@@ -219,7 +220,7 @@ describe('複数選択（選択モード）', () => {
       const el = await render();
       const row = rowOf(el, 'docs');
       row.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5 }));
-      vi.advanceTimersByTime(520);
+      vi.advanceTimersByTime(LONG_PRESS_MS + 20);
       flushSync();
       expect(explorerSelection.active).toBe(true);
       expect(explorerSelection.has('docs')).toBe(true);
@@ -295,5 +296,20 @@ describe('表示方法と並び順', () => {
     menuClick(el, 'アイコン');
     expect(explorerView.view).toBe('grid');
     expect(el.querySelector('.file-explorer-view-grid')).not.toBeNull();
+  });
+});
+
+describe('操作メニューは外側の幕より前にある（押せない不具合の再発防止）', () => {
+  // jsdom は、コンポーネントの（スコープの）CSS を当てないので、ここでは書き方を見る。
+  // 実際の押し方（タッチ）の検査は app/scripts/touch-check.mjs（ブラウザが要る・vitest の外）
+  it('メニューの見た目に z-index を書かない（design-system の .menu が幕（-1）より前に出る）', async () => {
+    const { readFileSync } = await import('node:fs');
+    // テストは app/ で動く（npm test）
+    for (const file of ['FileExplorer.svelte', 'SharedEntryActions.svelte']) {
+      const css = (readFileSync(`src/components/${file}`, 'utf8').split('<style>')[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
+      const menuRules = css.match(/[^{}]*(file-explorer-popup-menu|shared-entry-menu)[^{}]*\{[^}]*\}/g) ?? [];
+      expect(menuRules.length, file).toBeGreaterThan(0);
+      for (const rule of menuRules) expect(rule, file).not.toMatch(/z-index/);
+    }
   });
 });

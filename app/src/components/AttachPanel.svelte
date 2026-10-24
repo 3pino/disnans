@@ -10,7 +10,8 @@
   import IconButton from './ui/IconButton.svelte';
   import {
     listRecentImages,
-    RECENT_IMAGE_COUNT,
+    RECENT_IMAGE_MAX,
+    recentGridFit,
     permissionNotice,
     requestRecentImagesPermission,
     type RecentImage,
@@ -58,8 +59,20 @@
   });
 
   let recent = $state<RecentImage[]>([]);
-  /** 枠（RECENT_IMAGE_COUNT 件）に出す最近の画像。クリップボードの画像があれば、その 1 件を先頭に足して、残りを埋める（合計は同じ） */
-  const shown = $derived(recent.slice(0, RECENT_IMAGE_COUNT - (clip ? 1 : 0)));
+  // 枠の大きさ: 幅（測る）と、高さの上限（画面の半分）に入るだけ並べる。上限は RECENT_IMAGE_MAX
+  let gridEl = $state<HTMLDivElement | undefined>();
+  let gridWidth = $state(0);
+  let viewH = $state(0);
+  let gap = $state(8);
+  const maxH = $derived(Math.floor(viewH * 0.5));
+  const fit = $derived(recentGridFit({ width: gridWidth, maxHeight: maxH, gap }));
+  /** 枠に入る件数（クリップボードの 1 件を含む）。幅が分からないうちは上限まで */
+  const slots = $derived(gridWidth > 0 ? fit.capacity : RECENT_IMAGE_MAX);
+  /** 枠に出す最近の画像。クリップボードの画像があれば、その 1 件を先頭に足して、残りを埋める（合計は同じ） */
+  const shown = $derived(recent.slice(0, slots - (clip ? 1 : 0)));
+  $effect(() => {
+    if (gridEl) gap = parseFloat(getComputedStyle(gridEl).columnGap) || 8;
+  });
   let permission = $state<RecentPermission>('granted');
   /** 読み込み中（初期は読み込み中。読めて 0 件のときだけ空の文言を出す） */
   let loading = $state(true);
@@ -80,7 +93,7 @@
         await requestRecentImagesPermission().catch((e: unknown) => console.warn('写真の許可を求められませんでした', e));
       }
       try {
-        const res = await listRecentImages();
+        const res = await listRecentImages(RECENT_IMAGE_MAX);
         if (!alive) return;
         recent = res.images;
         permission = res.permission;
@@ -100,9 +113,17 @@
   });
 </script>
 
+<svelte:window bind:innerHeight={viewH} />
+
 <div class="attach-panel" role="group" aria-label="ファイルを追加">
   <!-- 最近の画像の一覧だけがスクロールし、ボタンの行はパネルの下に残す -->
-  <div class="attach-panel-recent">
+  <div
+    class="attach-panel-recent"
+    bind:this={gridEl}
+    bind:clientWidth={gridWidth}
+    style:grid-template-columns="repeat({fit.cols}, {fit.tile}px)"
+    style:max-height="{maxH}px"
+  >
     {#if clip}
       <button
         type="button"
@@ -165,12 +186,11 @@
     flex-wrap: wrap;
     gap: var(--space-3);
   }
-  /* 一覧の高さは画面の半分まで（中で送る）。ボタンの行は下に残る */
+  /* 列数・タイルの幅・高さの上限は、スクリプトで決めて入れる（recentGridFit）。はみ出すときだけ中で送る */
   .attach-panel-recent {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-content: start;
     gap: var(--space-2);
-    max-height: 50vh;
     overflow-y: auto;
   }
   .attach-panel-recent-item {

@@ -29,8 +29,36 @@ export type RecentImageSource = {
   requestPermission: () => Promise<RecentPermission>;
 };
 
-/** パネルに並べる件数（3 列の 2 行。どの幅でも同じ） */
-export const RECENT_IMAGE_COUNT = 6;
+/** タイル（正方形）の幅の最小・最大（px）。列数は幅から決め、タイルの幅はこの間に収める */
+export const RECENT_TILE_MIN = 96;
+export const RECENT_TILE_MAX = 140;
+/** 並べる件数の上限。実際の件数は、画面の半分の高さに入るだけ（小さい画面では少なくなる） */
+export const RECENT_IMAGE_MAX = 24;
+
+/** 枠の決まり（列数・タイルの幅・行数・入る件数） */
+export type RecentGridFit = { cols: number; tile: number; rows: number; capacity: number };
+
+/**
+ * 幅・最大の高さ・隙間から、タイルの列数と大きさを決め、高さに入る行数（1 行は必ず取る）と件数（上限まで）を返す。
+ * 幅が分からないとき（0）は、上限の件数を返す（列数は 1）
+ */
+export function recentGridFit(o: {
+  width: number;
+  maxHeight: number;
+  gap: number;
+  min?: number;
+  max?: number;
+  limit?: number;
+}): RecentGridFit {
+  const min = o.min ?? RECENT_TILE_MIN;
+  const max = o.max ?? RECENT_TILE_MAX;
+  const limit = o.limit ?? RECENT_IMAGE_MAX;
+  if (o.width <= 0) return { cols: 1, tile: min, rows: 1, capacity: limit };
+  const cols = Math.max(1, Math.floor((o.width + o.gap) / (min + o.gap)));
+  const tile = Math.floor(Math.min(max, (o.width - (cols - 1) * o.gap) / cols));
+  const rows = Math.max(1, Math.floor((o.maxHeight + o.gap) / (tile + o.gap)));
+  return { cols, tile, rows, capacity: Math.min(limit, cols * rows) };
+}
 
 const NONE: RecentImageSource = {
   list: async () => ({ permission: 'granted', images: [] }),
@@ -52,7 +80,7 @@ function current(): RecentImageSource {
 }
 
 /** 添付パネルに出す最近の画像と、写真の許可 */
-export function listRecentImages(count: number = RECENT_IMAGE_COUNT): Promise<RecentImages> {
+export function listRecentImages(count: number = RECENT_IMAGE_MAX): Promise<RecentImages> {
   return current().list(count);
 }
 

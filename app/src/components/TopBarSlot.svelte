@@ -10,8 +10,8 @@
 </script>
 
 <div class="top-slot" role="region" aria-label="上部のバー">
-  <!-- 通話の画面にいるときは、同じ内容がそこに出ているので上のバーは出さない -->
-  {#if call.visible && ui.tab !== 'call'}<CallBar />{/if}
+  <!-- 通話の画面が見えているときは、同じ内容がそこに出ているので上のバーは出さない（エクスプローラーに隠れているときは出す） -->
+  {#if call.visible && !ui.callScreenShown}<CallBar />{/if}
   <PluginStatusBar />
 </div>
 
