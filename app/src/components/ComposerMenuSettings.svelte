@@ -1,6 +1,7 @@
 <script lang="ts">
   import Plus from '@lucide/svelte/icons/plus';
   import Puzzle from '@lucide/svelte/icons/puzzle';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import Button from './ui/Button.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
@@ -22,6 +23,7 @@
   // 設定の「＋メニュー」: 入力欄の「＋」を押したときに出す項目を、並べ替え・表示の切り替え・コマンドの追加で決める。
   // 並べ替え・削除は共通の SortableList（行をドラッグ。長押しで削除モード。行にフォーカスして上下キーで動かし、Delete で削除モード）。
   // 保存はサーバー（prefs）で、同じユーザーのデバイスで共有する。削除したプラグインの項目は、出ないだけで設定には残る
+  // 行の構造と下の操作の並びは、ナビゲーションバーの設定（NavBarSettings）と同じ。行の操作は「＋メニューに出す」の切り替え
 
   let pickerOpen = $state(false);
   /** 本体・プラグインの操作・コマンド（設定では「出す・出さないにかかわらず全部見せる」） */
@@ -47,6 +49,11 @@
     pickerOpen = false;
     prefs.setComposerMenu(addComposerMenuCommand(prefs.composerMenu, available, id));
   }
+
+  /** 並びと表示を既定に戻す（コマンドは外れ、本体の項目が既定の順で出る） */
+  function resetMenu() {
+    prefs.setComposerMenu({ order: [], hidden: [] });
+  }
 </script>
 
 <Section title="＋メニュー" class="composer-menu-settings">
@@ -69,52 +76,27 @@
         deleteLabel="{x.entry.label} をメニューから外す"
       >
         {#snippet control()}
-          {#if x.entry.kind !== 'command'}
-            <Toggle checked={!x.hidden} label="{x.entry.label} を「＋」メニューに出す" onchange={(on) => setShown(x.entry.id, on)} />
-          {/if}
+          <Toggle checked={!x.hidden} label="{x.entry.label} を「＋」メニューに出す" onchange={(on) => setShown(x.entry.id, on)} />
         {/snippet}
       </SettingRow>
     {/snippet}
   </SortableList>
 
-  <span class="composer-menu-settings-add">
-    <Button icon={Plus} aria-haspopup="menu" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>コマンドを追加</Button>
-    {#if pickerOpen}
-      <Menu class="composer-menu-settings-picker" label="追加するコマンド" onclose={() => (pickerOpen = false)}>
-        {#each addable as c (c.id)}
-          <MenuItem class="composer-menu-settings-pick" icon={c.icon ?? Puzzle} onclick={() => add(c.id)}>
-            {c.label}{#if c.source}<span class="muted composer-menu-settings-source"> · {c.source}</span>{/if}
-          </MenuItem>
-        {:else}
-          <p class="muted composer-menu-settings-none">追加できるコマンドはありません</p>
-        {/each}
-      </Menu>
-    {/if}
-  </span>
+  <div class="setting-list-actions">
+    <span class="setting-list-add">
+      <Button icon={Plus} aria-haspopup="menu" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>コマンドを追加</Button>
+      {#if pickerOpen}
+        <Menu class="setting-list-picker" label="追加するコマンド" onclose={() => (pickerOpen = false)}>
+          {#each addable as c (c.id)}
+            <MenuItem class="composer-menu-settings-pick" icon={c.icon ?? Puzzle} onclick={() => add(c.id)}>
+              {c.label}{#if c.source}<span class="muted setting-list-source"> · {c.source}</span>{/if}
+            </MenuItem>
+          {:else}
+            <p class="muted setting-list-none">追加できるコマンドはありません</p>
+          {/each}
+        </Menu>
+      {/if}
+    </span>
+    <Button icon={RotateCcw} onclick={resetMenu}>項目を既定に戻す</Button>
+  </div>
 </Section>
-
-<style>
-  .composer-menu-settings-add {
-    position: relative;
-    display: inline-flex;
-    align-self: flex-start;
-  }
-  .composer-menu-settings-add > :global(.composer-menu-settings-picker) {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    /* 外側を閉じる幕（.menu-backdrop, z-index 29）より前に出す。小さい値にすると幕がメニューを覆い、項目が押せなくなる */
-    z-index: 30;
-    min-width: 240px;
-    max-height: 320px;
-    overflow-y: auto;
-  }
-  .composer-menu-settings-source {
-    font-size: var(--fs-sm);
-  }
-  .composer-menu-settings-none {
-    margin: 0;
-    padding: var(--space-4) var(--space-5);
-    font-size: var(--fs-sm);
-  }
-</style>

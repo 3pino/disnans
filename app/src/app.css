@@ -2,44 +2,34 @@
    このファイルには、disnans 本体だけのグローバルなスタイルを置く */
 @import '@3pino/design-system';
 
-/* 設定の行。名前（と説明）・操作・アイコンは、すべて行の高さの中で縦に中央にそろえる。
-   名前と説明は 1 つの欄にまとめる（説明は名前の下）。行が狭いときだけ、説明を幅いっぱいの下段へ回す。
-   DOM（.setting-row-info の中の name / description）はプラグインの ui.setting と共通なので、
-   info を display: contents にして、中身を行の grid に直接置く */
+/* 設定の行。アイコン・名前（と説明）・操作は、行の中で縦に中央にそろえる。
+   横に並ぶ幅があるときは、名前と操作を同じ段に置く。名前の欄（10em）が入らない幅のときだけ、操作を次の段へ回す。
+   幅の閾値（コンテナクエリ）は使わず、流し込みの折り返しで決める。説明は名前の下（同じ欄の中）。
+   DOM（.setting-row-info の中の name / description）はプラグインの ui.setting と共通 */
 .setting-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  column-gap: 0;
-  row-gap: 0;
-  container: setting-row / inline-size;
-}
-.setting-row-info {
-  display: contents;
+  column-gap: var(--space-6);
+  row-gap: var(--space-3);
 }
 .setting-row > .setting-row-icon {
-  grid-column: 1;
-  grid-row: 1;
-  align-self: center;
-  margin-right: var(--space-6);
+  flex: none;
 }
-.setting-row-name {
-  grid-column: 2;
-  grid-row: 1;
+.setting-row-info {
+  flex: 1 1 min(10em, 100%);
+  min-width: 0;
 }
 .setting-row-description {
-  grid-column: 2;
-  grid-row: 1;
   margin-top: var(--space-1);
 }
 .setting-row-control {
   position: relative;
-  grid-column: 3;
-  grid-row: 1;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  margin-left: var(--space-6);
+  margin-left: auto;
 }
 /* 削除モードの × は、操作部品の上に重ねる（行の高さを変えない）。削除だと分かる色 */
 .setting-row-delete {
@@ -53,14 +43,35 @@
 .setting-row-control-hidden {
   visibility: hidden;
 }
-@container setting-row (max-width: 30em) {
-  .setting-row > .setting-row-icon,
-  .setting-row-control {
-    grid-row: 1;
-  }
-  .setting-row-description {
-    grid-column: 1 / -1;
-  }
+
+/* 設定の一覧（＋メニュー・ナビゲーションバー）の下の操作。同じ並びと余白を、両方で使う */
+.setting-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+.setting-list-add {
+  position: relative;
+  display: inline-flex;
+}
+.setting-list-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  /* 外側を閉じる幕（.menu-backdrop, z-index 29）より前に出す。小さい値にすると幕がメニューを覆い、項目が押せなくなる */
+  z-index: 30;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.setting-list-source {
+  font-size: var(--fs-sm);
+}
+.setting-list-none {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--fs-sm);
 }
 
 /* メッセージ検索で、本文の中のヒット箇所を強調する（SearchResults が CSS.highlights に登録する） */

@@ -31,6 +31,7 @@
   import { registerCoreMessageActions, removeMessage } from '../lib/messageActionsCore';
   import { timelinePanels } from '../lib/stores/timelinePanel.svelte';
   import { swipeAxis, swipeOffset, swipeProgress, swipeTriggered, type SwipeAxis } from '../lib/swipe';
+  import { vibrate } from '../lib/haptics';
 
   let {
     message,
@@ -139,7 +140,7 @@
     pressTimer = setTimeout(() => {
       pressTimer = null;
       pressFired = true;
-      navigator.vibrate?.(10);
+      vibrate(10);
       sheet = true;
     }, 450);
   }
@@ -191,7 +192,7 @@
   function onTouchEnd(e: TouchEvent) {
     endPress(e);
     if (swipeAxisNow === 'x' && swipeTriggered(dragDx)) {
-      navigator.vibrate?.(10);
+      vibrate(10);
       startReply();
     }
     resetSwipe();

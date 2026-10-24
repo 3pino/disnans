@@ -13,11 +13,13 @@
     type RowGesture,
     type SortableRow,
   } from '../../lib/sortable';
+  import { vibrate } from '../../lib/haptics';
 
   // 並べ替えのリスト（設定の「＋メニュー」「ナビゲーションバー」で使う）。
   // 行の大部分（ボタン・入力欄・トグルの上を除く）が当たり判定:
   // - マウス・ペン: 縦に動かすと並べ替え。
   // - タッチ: 押したまま（約 0.4 秒）動かすと並べ替え。その前の縦の動きはページのスクロール。
+  // - 押したまま約 0.4 秒経つと（長押しの成立）、その行を持ち上げて選択する。以後の上下キー・Delete は、その行に対して働く。
   // - 動かさずに押し続ける（約 0.7 秒）と削除モードに入る。削除モードでは、操作部品（トグル・入力欄）が × に替わる（削除できる項目だけ）。
   //   削除モードでも並べ替えはできる（押す時間が短くなる）。リストの外をタップするか Escape で終わる。
   // - キーボード: 行にフォーカスがあるとき、上下キー（Home・End も）で動かす。Delete で削除モードに入る。
@@ -54,6 +56,10 @@
   let drag = $state<Drag | null>(null);
   /** 持ち上げている行の拡大率（1 より少し大きく。行の高さは変えない） */
   const LIFT_SCALE = 1.02;
+  /** 長押しが成立して持ち上げている行（動かす前から。離したら外れる） */
+  let lifted = $state<string | null>(null);
+  /** 選択中の行（長押しで選ばれ、ほかの行に移るか、リストの外にフォーカスが出るまで残る） */
+  let selected = $state<string | null>(null);
   /** 離したあと、並びを入れ替えるまでの間は、行の移動（CSS の transition）を止める */
   let settling = $state(false);
   /** 削除モード（リストの中の全部の行の操作部品が × に替わる） */
@@ -91,6 +97,7 @@
     if (g) clearTimers(g);
     gesture = null;
     drag = null;
+    lifted = null;
   }
 
   onDestroy(() => cancelGesture());
@@ -135,10 +142,10 @@
 
   /** 行の移動（transform）。動かしている行はポインターに合わせ、ほかの行は空きの分だけずらす */
   function rowTransform(i: number): string | undefined {
-    if (!drag) return undefined;
-    // 持ち上げている行は、指に合わせて動かし、わずかに大きくする（ほかの行の位置は変えない）
-    if (i === drag.from) return `translateY(${drag.y - drag.startY}px) scale(${LIFT_SCALE})`;
-    if (!targets) return undefined;
+    // 長押しで持ち上げた行は、動かす前から少し大きくする（動かしているときは指に合わせて動かす。ほかの行の位置は変えない）
+    if (drag && i === drag.from) return `translateY(${drag.y - drag.startY}px) scale(${LIFT_SCALE})`;
+    if (lifted !== null && lifted === getId(items[i])) return `scale(${LIFT_SCALE})`;
+    if (!drag || !targets) return undefined;
     // 行の位置と並びの数がそろっていないときは動かさない（取り消しの直前の描画）
     const to = rowTops[targets[i]];
     const from = rowTops[i];
@@ -183,17 +190,23 @@
     drag = { id: g.id, from: g.index, startY: y, y, slot: g.index };
   }
 
+  /** 長押しが成立したら、その行を持ち上げて選択する。行にフォーカスを移して、以後のキー操作の対象にする */
+  function holdRow(g: Gesture) {
+    if (gesture !== g || g.mode !== null) return;
+    g.held = true;
+    lifted = g.id;
+    selected = g.id;
+    g.body.focus({ preventScroll: true });
+  }
+
   /** 削除モードに入る。短い振動で知らせる（対応していない環境では何もしない） */
   function enterDelete(g: Gesture) {
     if (gesture !== g || g.mode !== null) return;
     clearTimers(g);
     gesture = null;
+    lifted = null;
     deleting = true;
-    try {
-      navigator.vibrate?.(12);
-    } catch {
-      // 振動に対応しない環境（デスクトップなど）
-    }
+    vibrate(12);
   }
 
   function onRowDown(e: PointerEvent, i: number, item: T) {
@@ -216,13 +229,11 @@
       body,
     };
     gesture = g;
-    if (e.pointerType === 'touch') {
-      g.holdTimer = setTimeout(() => {
-        g.holdTimer = null;
-        if (gesture !== g || g.mode !== null) return;
-        g.held = true;
-      }, dragHoldMs(deleting));
-    }
+    // 長押しの成立（マウス・タッチとも。タッチは、これより前の縦の動きをページのスクロールにする）
+    g.holdTimer = setTimeout(() => {
+      g.holdTimer = null;
+      holdRow(g);
+    }, dragHoldMs(deleting));
     // 削除モードの中では、もう入らない（並べ替えの押し方は短い時間で始まる）
     if (!deleting && onremove) {
       g.deleteTimer = setTimeout(() => {
@@ -260,6 +271,7 @@
     if (!g || e.pointerId !== g.pointerId) return;
     clearTimers(g);
     gesture = null;
+    lifted = null;
     if (g.mode !== 'drag') return;
     if (cancelled || !drag) {
       drag = null;
@@ -285,6 +297,7 @@
     });
     settling = true;
     drag = null;
+    lifted = null;
     onmove(id, to);
     await tick();
     slide(before);
@@ -360,12 +373,18 @@
   class:sortable-list-settling={settling}
   class:sortable-list-deleting={deleting}
   bind:this={listEl}
+  onfocusout={(e) => {
+    // 選択は、フォーカスがリストの外へ出たら外す（キーボードの対象が残らないように）
+    if (!(e.relatedTarget instanceof Node) || !listEl?.contains(e.relatedTarget)) selected = null;
+  }}
 >
   {#each items as item, i (getId(item))}
     {@const id = getId(item)}
     <div
       class="sortable-list-item"
       class:sortable-list-item-dragging={drag?.id === id}
+      class:sortable-list-item-lifted={lifted === id}
+      class:sortable-list-item-selected={selected === id}
       data-sortable-id={id}
       style:transform={rowTransform(i)}
     >
@@ -425,14 +444,19 @@
   .sortable-list-settling .sortable-list-item {
     transition: none;
   }
-  /* 持ち上げた行は、影を付ける（行の大きさは変えない。影と拡大は transform で、ほかの行は動かさない） */
-  .sortable-list-item-dragging {
+  /* 持ち上げた行（長押しの成立から、離すまで）は、影を付ける（行の大きさは変えない。影と拡大は transform で、ほかの行は動かさない） */
+  .sortable-list-item-lifted {
     z-index: 1;
   }
-  .sortable-list-item-dragging :global(.setting-row) {
+  .sortable-list-item-lifted :global(.setting-row) {
     background: var(--surface);
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow);
+  }
+  /* 選択中の行（長押しで選んだ行。上下キー・Delete の対象）は、枠で示す */
+  .sortable-list-item-selected > .sortable-list-body {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
   /* 行の大部分が当たり判定。縦はページのスクロールに任せ（タッチの並べ替えは長押しのあとだけ）、横の動きは何もしない */
   .sortable-list-body {

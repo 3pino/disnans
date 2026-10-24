@@ -82,17 +82,17 @@
     {/snippet}
   </SortableList>
 
-  <div class="nav-bar-settings-actions">
-    <span class="nav-bar-settings-add">
+  <div class="setting-list-actions">
+    <span class="setting-list-add">
       <Button icon={Plus} aria-haspopup="menu" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>項目を追加</Button>
       {#if pickerOpen}
-        <Menu class="nav-bar-settings-picker" label="追加する項目" onclose={() => (pickerOpen = false)}>
+        <Menu class="setting-list-picker" label="追加する項目" onclose={() => (pickerOpen = false)}>
           {#each addable as c (c.id)}
             <MenuItem class="nav-bar-settings-pick" icon={c.icon ?? Puzzle} onclick={() => add(c.id)}>
-              {c.name}{#if c.source}<span class="muted nav-bar-settings-source"> · {c.source}</span>{/if}
+              {c.name}{#if c.source}<span class="muted setting-list-source"> · {c.source}</span>{/if}
             </MenuItem>
           {:else}
-            <p class="muted nav-bar-settings-none">追加できる項目はありません</p>
+            <p class="muted setting-list-none">追加できる項目はありません</p>
           {/each}
         </Menu>
       {/if}
@@ -103,37 +103,9 @@
 </Section>
 
 <style>
-  .nav-bar-settings-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-4);
-  }
-  .nav-bar-settings-add {
-    position: relative;
-    display: inline-flex;
-  }
-  .nav-bar-settings-add > :global(.nav-bar-settings-picker) {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    /* 外側を閉じる幕（.menu-backdrop, z-index 29）より前に出す。ComposerMenuSettings と同じ */
-    z-index: 30;
-    min-width: 240px;
-    max-height: 320px;
-    overflow-y: auto;
-  }
   :global(.nav-bar-settings-list .nav-bar-settings-label) {
     width: 9em;
     max-width: 40vw;
     min-width: 0;
-  }
-  .nav-bar-settings-source {
-    font-size: var(--fs-sm);
-  }
-  .nav-bar-settings-none {
-    margin: 0;
-    padding: var(--space-4) var(--space-5);
-    font-size: var(--fs-sm);
   }
 </style>

@@ -346,3 +346,81 @@ describe('SortableList（文脈メニュー）', () => {
     expect(e.defaultPrevented).toBe(false);
   });
 });
+
+/** 長押しで選択と持ち上げ（動かす前から）。キーボードの対象は、長押しで選んだ行 */
+describe('SortableList（長押しで選択と持ち上げ）', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function touchAt(el: Element, type: string, clientY: number) {
+    const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY, button: 0 });
+    Object.defineProperty(e, 'pointerId', { value: 9 });
+    Object.defineProperty(e, 'pointerType', { value: 'touch' });
+    el.dispatchEvent(e);
+    flushSync();
+  }
+  const item = (id: string) => host!.querySelector<HTMLElement>(`[data-sortable-id="${id}"]`)!;
+
+  it('長押し（400ms）が成立した時点で、動かす前から持ち上げて選択し、その行にフォーカスを移す', () => {
+    render();
+    touchAt(bodyOf('b'), 'pointerdown', 100);
+    vi.advanceTimersByTime(400);
+    flushSync();
+    expect(item('b').classList.contains('sortable-list-item-lifted')).toBe(true);
+    expect(item('b').classList.contains('sortable-list-item-selected')).toBe(true);
+    expect(item('b').style.transform).toContain('scale(');
+    expect(item('a').style.transform).toBe('');
+    expect(host!.querySelector('.sortable-list-dragging')).toBeNull();
+    expect(document.activeElement).toBe(bodyOf('b'));
+  });
+
+  it('長押しの前に離したら、持ち上げも選択もしない', () => {
+    render();
+    touchAt(bodyOf('b'), 'pointerdown', 100);
+    vi.advanceTimersByTime(200);
+    touchAt(bodyOf('b'), 'pointerup', 100);
+    vi.advanceTimersByTime(400);
+    flushSync();
+    expect(item('b').classList.contains('sortable-list-item-lifted')).toBe(false);
+    expect(item('b').classList.contains('sortable-list-item-selected')).toBe(false);
+  });
+
+  it('離したあとも選択は残り、上下キーはその行を動かす（持ち上げは外れる）', () => {
+    const { onmove } = render();
+    touchAt(bodyOf('b'), 'pointerdown', 100);
+    vi.advanceTimersByTime(400);
+    flushSync();
+    touchAt(bodyOf('b'), 'pointerup', 100);
+    expect(item('b').classList.contains('sortable-list-item-lifted')).toBe(false);
+    expect(item('b').classList.contains('sortable-list-item-selected')).toBe(true);
+    bodyOf('b').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));
+    expect(onmove).toHaveBeenCalledWith('b', 0);
+  });
+
+  it('リストの外にフォーカスが出たら、選択を外す', () => {
+    render();
+    touchAt(bodyOf('b'), 'pointerdown', 100);
+    vi.advanceTimersByTime(400);
+    flushSync();
+    touchAt(bodyOf('b'), 'pointerup', 100);
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    bodyOf('b').dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }));
+    flushSync();
+    expect(item('b').classList.contains('sortable-list-item-selected')).toBe(false);
+    outside.remove();
+  });
+
+  it('700ms 押し続けて削除モードに入ると、持ち上げは外れる', () => {
+    render(vi.fn(), { onremove: vi.fn(), removable: () => true });
+    touchAt(bodyOf('b'), 'pointerdown', 100);
+    vi.advanceTimersByTime(700);
+    flushSync();
+    expect(host!.querySelector('.sortable-list-deleting')).not.toBeNull();
+    expect(item('b').classList.contains('sortable-list-item-lifted')).toBe(false);
+  });
+});

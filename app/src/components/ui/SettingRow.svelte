@@ -7,7 +7,7 @@
 
   // 設定の1行。左にアイコン（任意）・名前と説明、右に操作（control）を置く。
   // 見た目はグローバルの .setting-row（@3pino/design-system の components.css）。プラグイン向けの ui.setting も同じ DOM を作る
-  // 配置は app.css の .setting-row（名前と操作は同じ段、説明は狭いときだけ下段）。ui.setting と同じ DOM のまま
+  // 配置は app.css の .setting-row（名前と操作は、幅があれば同じ段。足りないときだけ操作を下の段へ回す）。ui.setting と同じ DOM のまま
   // onclick を渡すと、行全体が1つの ghost ボタンになる（名前が読み上げの名前。control は飾りだけにする。中にボタンは置けない）
   // deleting のとき（削除モード）は、操作部品（control）を隠したまま残し、その上に × を重ねる（行の高さを変えないため）。ondelete が無い行は × を出さない
   let {
