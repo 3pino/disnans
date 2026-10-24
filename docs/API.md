@@ -41,6 +41,7 @@
 | POST | `/api/files` | ファイルのアップロード（multipart、フィールド名 `file`） | `Attachment` |
 | GET | `/api/files/{id}` | ファイル本体（削除された添付は `410`、code `deleted`） | バイナリ |
 | GET | `/api/files/{id}/thumb` | サムネイル（WebP） | バイナリ |
+| DELETE | `/api/files/{id}` | 投稿前のアップロードを取り消す。本人の、どの本文にも投稿されていない添付だけ（ほかの人のもの・投稿済み・`attachments/` のライブラリは `403`、無ければ `404`） | `204` |
 | GET | `/api/shared` | 共有フォルダの直下の一覧 | `SharedListing` |
 | GET | `/api/shared/{パス}` | フォルダなら一覧、ファイルなら中身（`Range` 可、ファイルの種類は拡張子で決まる） | `SharedListing` / バイナリ |
 | PUT | `/api/shared/{パス}` | 本文をそのパスのファイルにする（作成・上書き。本文は任意の大きさ）。親のフォルダがなければ `409 parent_missing` | `SharedEntry` |

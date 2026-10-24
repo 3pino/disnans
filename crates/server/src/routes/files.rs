@@ -88,6 +88,16 @@ pub async fn get(
     serve(path, &row.mime, disposition, req).await
 }
 
+/// 投稿前のアップロードを取り消す（本人のもので、まだどの本文にも投稿されていないもの。それ以外は 403）。
+pub async fn discard(
+    State(state): State<SharedState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<String>,
+) -> AppResult<StatusCode> {
+    attachments::discard(&state, &user.id, &id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// サムネイル（WebP）。
 pub async fn thumb(
     State(state): State<SharedState>,

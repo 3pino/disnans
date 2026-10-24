@@ -120,6 +120,10 @@ pub async fn search(
 }
 
 /// 検索に一致するメッセージの ID（新しい順）。
+///
+/// 語ごとに「本文に一致する」か「本文が指す添付の、今の名前に一致する」かで見る（AND でつなぐ）。
+/// 本文は添付を ID で持つので、名前は `files` を引いて決める（改名したら、次の検索から新しい名前で引ける）。
+/// 名前に一致する添付が無い語は、本文だけを見る（余分な走査はしない）。
 async fn search_ids(
     pool: &SqlitePool,
     query: &str,
@@ -131,40 +135,49 @@ async fn search_ids(
         return Ok(Vec::new());
     }
 
-    // trigram の索引は 3 文字以上の語でしか引けない。短い語を含むときは LIKE で探す（遅いが、件数は多くない）
-    if terms.iter().all(|t| t.chars().count() >= 3) {
-        // 語ごとにフレーズにして、AND でつなぐ（フレーズ内の二重引用符は二つに直す）
-        let expr = terms
-            .iter()
-            .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
-            .collect::<Vec<_>>()
-            .join(" AND ");
-        let ids: Vec<String> = sqlx::query_scalar(
-            "SELECT id FROM messages
-             WHERE id IN (SELECT id FROM messages_fts WHERE messages_fts MATCH ?)
-               AND (? IS NULL OR id < ?)
-             ORDER BY id DESC
-             LIMIT ?",
+    let mut conds: Vec<String> = Vec::with_capacity(terms.len());
+    let mut binds: Vec<String> = Vec::new();
+    for term in &terms {
+        // trigram の索引は 3 文字以上の語でしか引けない。短い語は LIKE で探す（遅いが、件数は多くない）
+        let (body_cond, body_bind) = if term.chars().count() >= 3 {
+            // 語をフレーズにする（フレーズ内の二重引用符は二つに直す）
+            (
+                "m.id IN (SELECT id FROM messages_fts WHERE messages_fts MATCH ?)",
+                format!("\"{}\"", term.replace('"', "\"\"")),
+            )
+        } else {
+            ("m.body LIKE ? ESCAPE '\\'", format!("%{}%", escape_like(term)))
+        };
+        let names: Vec<String> = sqlx::query_scalar(
+            "SELECT id FROM files WHERE deleted_at IS NULL AND file_name LIKE ? ESCAPE '\\'",
         )
-        .bind(expr)
-        .bind(before)
-        .bind(before)
-        .bind(limit)
+        .bind(format!("%{}%", escape_like(term)))
         .fetch_all(pool)
         .await?;
-        return Ok(ids);
+        if names.is_empty() {
+            conds.push(body_cond.to_owned());
+            binds.push(body_bind);
+        } else {
+            conds.push(format!(
+                "({body_cond} OR EXISTS (SELECT 1 FROM json_each(?) AS j
+                                        WHERE instr(m.body, '{}' || j.value) > 0))",
+                crate::links::ID_PREFIX
+            ));
+            binds.push(body_bind);
+            binds.push(serde_json::to_string(&names).unwrap_or_else(|_| "[]".into()));
+        }
     }
 
-    let conds = vec!["body LIKE ? ESCAPE '\\'"; terms.len()].join(" AND ");
     let sql = format!(
-        "SELECT id FROM messages
-         WHERE {conds} AND (? IS NULL OR id < ?)
-         ORDER BY id DESC
-         LIMIT ?"
+        "SELECT m.id FROM messages m
+         WHERE {} AND (? IS NULL OR m.id < ?)
+         ORDER BY m.id DESC
+         LIMIT ?",
+        conds.join(" AND ")
     );
     let mut q = sqlx::query_scalar::<_, String>(&sql);
-    for term in &terms {
-        q = q.bind(format!("%{}%", escape_like(term)));
+    for bind in binds {
+        q = q.bind(bind);
     }
     q.bind(before)
         .bind(before)

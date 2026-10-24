@@ -200,3 +200,69 @@ async fn other_members_can_search_too() {
         .unwrap();
     assert_eq!(bodies(&hits), ["共有の資料"]);
 }
+
+/// 投稿前にアップロードして、本文の `![[disnans:file/<ID>]]` で添付する。
+async fn upload_and_post(server: &TestServer, name: &str, text: &str) -> Message {
+    let part = reqwest::multipart::Part::bytes(b"data".to_vec())
+        .file_name(name.to_owned())
+        .mime_str("text/plain")
+        .unwrap();
+    let form = reqwest::multipart::Form::new().part("file", part);
+    let att: disnans_shared::Attachment = server
+        .http
+        .post(server.url("/api/files"))
+        .header("X-Dev-User", ALICE)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let mut alice = server.ws(ALICE).await;
+    alice
+        .post(&format!("{text} ![[disnans:file/{}]]", att.id))
+        .await
+}
+
+#[tokio::test]
+async fn a_linked_files_current_name_is_searchable_and_follows_renames() {
+    let server = TestServer::start().await;
+    let msg = upload_and_post(&server, "quarterly-report.pdf", "見て").await;
+
+    // 本文は ID だけ。添付の名前で引ける（3 文字以上・短い語のどちらも）
+    assert_eq!(search(&server, "quarterly").await.first().map(|m| m.id.as_str()), Some(msg.id.as_str()));
+    assert_eq!(search(&server, "quarterly-report").await.len(), 1);
+    assert_eq!(search(&server, "見て quarterly").await.len(), 1, "本文と名前の語が両方一致");
+    assert!(search(&server, "quarterly nothere").await.is_empty(), "AND なので、どちらかに無ければ出ない");
+
+    // 改名したら、新しい名前で引ける（古い名前では引けない）
+    let res = server
+        .http
+        .post(server.url("/api/shared"))
+        .header("X-Dev-User", ALICE)
+        .json(&serde_json::json!({ "op": "move", "from": "attachments/quarterly-report.pdf", "to": "attachments/annual.pdf" }))
+        .send()
+        .await
+        .unwrap();
+    assert!(res.status().is_success(), "{}", res.status());
+    assert_eq!(search(&server, "annual").await.len(), 1);
+    assert!(search(&server, "quarterly").await.is_empty());
+}
+
+#[tokio::test]
+async fn a_deleted_file_is_not_found_by_its_name() {
+    let server = TestServer::start().await;
+    let msg = upload_and_post(&server, "gone-soon.txt", "x").await;
+    assert_eq!(search(&server, "gone-soon").await.len(), 1);
+    // 投稿済みの添付は「消された」印になる（行は残る）。名前では引かない
+    let res = server
+        .http
+        .delete(server.url(&format!("/api/files/{}", msg.attachments[0].id)))
+        .header("X-Dev-User", ALICE)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403);
+    assert_eq!(search(&server, "gone-soon").await.len(), 1);
+}

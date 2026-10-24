@@ -643,6 +643,12 @@ impl RestClient {
         send_write(self.write_request(reqwest::Method::DELETE, &path), true).await
     }
 
+    /// 投稿前のアップロードを取り消す（`DELETE /api/files/{id}`）。本人の未投稿だけ。ほかは 403
+    pub async fn discard_upload(&self, id: &str) -> Result<Value, ReadFailure> {
+        let path = with_id("/api/files/", id, "");
+        send_write(self.write_request(reqwest::Method::DELETE, &path), true).await
+    }
+
     /// このデバイスの設定（`GET /api/me/devices/{id}/prefs`）。設定が無ければ 404
     pub async fn get_device_prefs(&self, id: &str) -> Result<Value, ReadFailure> {
         self.get_value(&with_id("/api/me/devices/", id, "/prefs"))

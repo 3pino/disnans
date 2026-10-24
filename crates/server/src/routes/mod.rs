@@ -62,7 +62,7 @@ pub fn router(state: SharedState) -> Router {
             "/files",
             post(files::upload).layer(DefaultBodyLimit::disable()),
         )
-        .route("/files/{id}", get(files::get))
+        .route("/files/{id}", get(files::get).delete(files::discard))
         .route("/files/{id}/thumb", get(files::thumb))
         // 共有フォルダ（WebDAV と同じ中身。パスは末尾の `{*path}`）
         .route("/shared", get(shared::list_root).post(shared::ops))

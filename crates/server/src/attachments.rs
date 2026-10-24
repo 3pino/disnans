@@ -316,6 +316,36 @@ pub async fn remove(state: &SharedState, id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// 本人が投稿前に取り消す（送信の取り消し・添付の外し）。本人のアップロードで、まだどの本文にも投稿されていないものだけ。
+/// 行と本体を消す（投稿されていないので「削除された」の印は付けない）。
+pub async fn discard(state: &SharedState, user_id: &str, id: &str) -> AppResult<()> {
+    let name = {
+        let _guard = state.write_lock().await;
+        let current = store::get(&state.pool, id)
+            .await?
+            .filter(|r| r.deleted_at.is_none())
+            .ok_or_else(not_found)?;
+        if current.uploader_id != user_id {
+            return Err(AppError::forbidden("ほかの人のファイルは消せません"));
+        }
+        if current.message_id.is_some() || current.library {
+            return Err(AppError::forbidden(
+                "投稿済み・ライブラリの添付は、ここからは消せません",
+            ));
+        }
+        let mut tx = state.pool.begin().await?;
+        if store::referencing_message(&mut tx, id, None).await?.is_some() {
+            return Err(AppError::forbidden("本文から参照されているため消せません"));
+        }
+        store::purge(&mut tx, id).await?;
+        tx.commit().await?;
+        current.file_name
+    };
+    files::remove_stored(&state.config, &[id.to_owned()]).await;
+    announce(state, &name);
+    Ok(())
+}
+
 /// 行を消す（どこかの本文が参照していれば印を付けるだけ）。本体は呼び出し側で消す。
 async fn remove_row(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, row: &FileRow) -> AppResult<()> {
     if store::referencing_message(tx, &row.id, None).await?.is_some() {
