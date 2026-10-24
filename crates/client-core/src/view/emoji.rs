@@ -1,0 +1,43 @@
+//! 絵文字の表（`:名前` の補完と、GUI の絵文字ピッカーで使う）。正の表はここ（core）。
+//! GUI には `app/src/lib/emojiNames.generated.ts` として書き出す（`cargo test -p disnans-client-core` で更新。
+//! scripts/check-rust.sh が差分を見る）。
+
+/// 絵文字と、その英語名（ショートコード）。先頭の名前が代表の名前。並びは GUI の表示の順でもある。
+pub const EMOJI_NAMES: &[(&str, &[&str])] = &[
+    ("👍", &["thumbsup", "+1", "like"]),
+    ("❤️", &["heart", "love"]),
+    ("😂", &["joy", "lol"]),
+    ("🎉", &["tada", "party"]),
+    ("👀", &["eyes"]),
+    ("🙏", &["pray", "thanks"]),
+    ("😊", &["blush", "smile"]),
+    ("😆", &["laughing", "satisfied"]),
+    ("🥹", &["holding_back_tears"]),
+    ("😭", &["sob", "cry"]),
+    ("😮", &["open_mouth", "wow"]),
+    ("🤔", &["thinking"]),
+    ("😇", &["innocent"]),
+    ("😎", &["sunglasses", "cool"]),
+    ("🥳", &["partying_face"]),
+    ("😴", &["sleeping"]),
+    ("😱", &["scream"]),
+    ("🤯", &["exploding_head", "mind_blown"]),
+    ("🔥", &["fire"]),
+    ("✨", &["sparkles"]),
+    ("💯", &["100"]),
+    ("✅", &["white_check_mark", "check"]),
+    ("❌", &["x", "cross"]),
+    ("⭐", &["star"]),
+    ("👏", &["clap"]),
+    ("🙌", &["raised_hands"]),
+    ("💪", &["muscle"]),
+    ("👌", &["ok_hand", "ok"]),
+    ("🤝", &["handshake"]),
+    ("🫡", &["saluting_face", "salute"]),
+    ("🍣", &["sushi"]),
+    ("🍺", &["beer"]),
+    ("☕", &["coffee"]),
+    ("🍰", &["cake"]),
+    ("🐱", &["cat"]),
+    ("🌸", &["cherry_blossom", "sakura"]),
+];

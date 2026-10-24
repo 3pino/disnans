@@ -1,0 +1,337 @@
+{
+  "schema": 1,
+  "note": "@ メンバーの補完（GUI の mentionProvider と tokenBefore の規則）。expected は GUI の出力を記録したもの。",
+  "members": [
+    {
+      "id": "u1",
+      "display_name": "Bob",
+      "login_name": "bob"
+    },
+    {
+      "id": "u2",
+      "display_name": "Alice",
+      "login_name": "alice@gh"
+    },
+    {
+      "id": "u3",
+      "display_name": "Malia",
+      "login_name": "m1"
+    },
+    {
+      "id": "u4",
+      "display_name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "login_name": "long"
+    },
+    {
+      "id": "x01",
+      "display_name": "x01",
+      "login_name": "x01"
+    },
+    {
+      "id": "x02",
+      "display_name": "x02",
+      "login_name": "x02"
+    },
+    {
+      "id": "x03",
+      "display_name": "x03",
+      "login_name": "x03"
+    },
+    {
+      "id": "x04",
+      "display_name": "x04",
+      "login_name": "x04"
+    },
+    {
+      "id": "x05",
+      "display_name": "x05",
+      "login_name": "x05"
+    },
+    {
+      "id": "x06",
+      "display_name": "x06",
+      "login_name": "x06"
+    },
+    {
+      "id": "x07",
+      "display_name": "x07",
+      "login_name": "x07"
+    },
+    {
+      "id": "x08",
+      "display_name": "x08",
+      "login_name": "x08"
+    },
+    {
+      "id": "x09",
+      "display_name": "x09",
+      "login_name": "x09"
+    },
+    {
+      "id": "x10",
+      "display_name": "x10",
+      "login_name": "x10"
+    }
+  ],
+  "cases": [
+    {
+      "name": "start_of_text",
+      "before": "@",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@",
+        "query": "",
+        "items": [
+          {
+            "key": "u1",
+            "title": "Bob",
+            "insert": "@Bob "
+          },
+          {
+            "key": "u2",
+            "title": "Alice",
+            "insert": "@Alice "
+          },
+          {
+            "key": "u3",
+            "title": "Malia",
+            "insert": "@Malia "
+          },
+          {
+            "key": "u4",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "insert": "@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "
+          },
+          {
+            "key": "x01",
+            "title": "x01",
+            "insert": "@x01 "
+          },
+          {
+            "key": "x02",
+            "title": "x02",
+            "insert": "@x02 "
+          },
+          {
+            "key": "x03",
+            "title": "x03",
+            "insert": "@x03 "
+          },
+          {
+            "key": "x04",
+            "title": "x04",
+            "insert": "@x04 "
+          }
+        ]
+      }
+    },
+    {
+      "name": "word_start",
+      "before": "hi @al",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@al",
+        "query": "al",
+        "items": [
+          {
+            "key": "u2",
+            "title": "Alice",
+            "insert": "@Alice "
+          },
+          {
+            "key": "u3",
+            "title": "Malia",
+            "insert": "@Malia "
+          }
+        ]
+      }
+    },
+    {
+      "name": "after_paren",
+      "before": "(@bo",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@bo",
+        "query": "bo",
+        "items": [
+          {
+            "key": "u1",
+            "title": "Bob",
+            "insert": "@Bob "
+          }
+        ]
+      }
+    },
+    {
+      "name": "after_fullwidth_paren",
+      "before": "（@bo",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@bo",
+        "query": "bo",
+        "items": [
+          {
+            "key": "u1",
+            "title": "Bob",
+            "insert": "@Bob "
+          }
+        ]
+      }
+    },
+    {
+      "name": "login_match",
+      "before": "@m1",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@m1",
+        "query": "m1",
+        "items": [
+          {
+            "key": "u3",
+            "title": "Malia",
+            "insert": "@Malia "
+          }
+        ]
+      }
+    },
+    {
+      "name": "case_insensitive",
+      "before": "@ALI",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@ALI",
+        "query": "ALI",
+        "items": [
+          {
+            "key": "u2",
+            "title": "Alice",
+            "insert": "@Alice "
+          },
+          {
+            "key": "u3",
+            "title": "Malia",
+            "insert": "@Malia "
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix_before_substring",
+      "before": "@al",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@al",
+        "query": "al",
+        "items": [
+          {
+            "key": "u2",
+            "title": "Alice",
+            "insert": "@Alice "
+          },
+          {
+            "key": "u3",
+            "title": "Malia",
+            "insert": "@Malia "
+          }
+        ]
+      }
+    },
+    {
+      "name": "no_word_start",
+      "before": "mail@al",
+      "expected": null
+    },
+    {
+      "name": "after_angle",
+      "before": "<@al",
+      "expected": null
+    },
+    {
+      "name": "space_ends_token",
+      "before": "@al ",
+      "expected": null
+    },
+    {
+      "name": "second_at",
+      "before": "x @bob@",
+      "expected": null
+    },
+    {
+      "name": "no_match",
+      "before": "@zz",
+      "expected": null
+    },
+    {
+      "name": "query_at_max_32",
+      "before": "@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "items": [
+          {
+            "key": "u4",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "insert": "@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "
+          }
+        ]
+      }
+    },
+    {
+      "name": "query_over_max_33",
+      "before": "@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": null
+    },
+    {
+      "name": "limit_8",
+      "before": "@x",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@x",
+        "query": "x",
+        "items": [
+          {
+            "key": "x01",
+            "title": "x01",
+            "insert": "@x01 "
+          },
+          {
+            "key": "x02",
+            "title": "x02",
+            "insert": "@x02 "
+          },
+          {
+            "key": "x03",
+            "title": "x03",
+            "insert": "@x03 "
+          },
+          {
+            "key": "x04",
+            "title": "x04",
+            "insert": "@x04 "
+          },
+          {
+            "key": "x05",
+            "title": "x05",
+            "insert": "@x05 "
+          },
+          {
+            "key": "x06",
+            "title": "x06",
+            "insert": "@x06 "
+          },
+          {
+            "key": "x07",
+            "title": "x07",
+            "insert": "@x07 "
+          },
+          {
+            "key": "x08",
+            "title": "x08",
+            "insert": "@x08 "
+          }
+        ]
+      }
+    }
+  ]
+}

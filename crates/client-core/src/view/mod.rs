@@ -11,8 +11,10 @@
 //! 日付の区切り → （同じ人の続きでなければ）先頭行に投稿者の頭（`head`）→ 本文の行 → メタ（bot・返信・カード・添付・リアクション・編集）。
 
 mod calendar;
+pub mod emoji;
 pub mod markdown;
 pub mod settings;
+pub mod suggest;
 
 use std::collections::HashMap;
 

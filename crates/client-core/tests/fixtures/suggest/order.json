@@ -1,0 +1,134 @@
+{
+  "schema": 1,
+  "note": "providers の順と、候補が無いときの次の出どころへの落ち方（GUI の findSuggestion）。",
+  "members": [
+    {
+      "id": "u2",
+      "display_name": "Alice",
+      "login_name": "alice@gh"
+    }
+  ],
+  "commands": [
+    {
+      "name": "memo",
+      "description": "メモを残す"
+    },
+    {
+      "name": "quit",
+      "description": "終了する"
+    }
+  ],
+  "cases": [
+    {
+      "name": "mention_no_match_falls_to_emoji",
+      "before": "@(:fi",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":fi",
+        "query": "fi",
+        "items": [
+          {
+            "key": "🔥",
+            "title": ":fire:",
+            "insert": "🔥"
+          },
+          {
+            "key": "😆",
+            "title": ":satisfied:",
+            "insert": "😆"
+          }
+        ]
+      }
+    },
+    {
+      "name": "mention_after_text",
+      "before": "x :fi @al",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@al",
+        "query": "al",
+        "items": [
+          {
+            "key": "u2",
+            "title": "Alice",
+            "insert": "@Alice "
+          }
+        ]
+      }
+    },
+    {
+      "name": "slash_args_fall_to_mention",
+      "before": "/memo @al",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@al",
+        "query": "al",
+        "items": [
+          {
+            "key": "u2",
+            "title": "Alice",
+            "insert": "@Alice "
+          }
+        ]
+      }
+    },
+    {
+      "name": "slash_name",
+      "before": "/me",
+      "expected": {
+        "kind": "slash",
+        "replaced": "/me",
+        "query": "me",
+        "items": [
+          {
+            "key": "memo",
+            "title": "/memo",
+            "insert": "/memo "
+          }
+        ]
+      }
+    },
+    {
+      "name": "no_match_falls_to_emoji",
+      "before": "@zz :fi",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":fi",
+        "query": "fi",
+        "items": [
+          {
+            "key": "🔥",
+            "title": ":fire:",
+            "insert": "🔥"
+          },
+          {
+            "key": "😆",
+            "title": ":satisfied:",
+            "insert": "😆"
+          }
+        ]
+      }
+    },
+    {
+      "name": "emoji_then_no_match_mention",
+      "before": ":fi @zz",
+      "expected": null
+    },
+    {
+      "name": "slash_name_with_text_is_not_slash",
+      "before": "/quit @al",
+      "expected": {
+        "kind": "mention",
+        "replaced": "@al",
+        "query": "al",
+        "items": [
+          {
+            "key": "u2",
+            "title": "Alice",
+            "insert": "@Alice "
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,333 @@
+{
+  "schema": 1,
+  "note": "`:` の絵文字の補完（GUI の emojiProvider と EMOJI_NAMES の規則）。表そのものは core の view/emoji.rs（生成物で GUI に出す）。expected は GUI の出力を記録したもの。",
+  "cases": [
+    {
+      "name": "one_letter",
+      "before": ":s",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":s",
+        "query": "s",
+        "items": [
+          {
+            "key": "😊",
+            "title": ":smile:",
+            "insert": "😊"
+          },
+          {
+            "key": "😆",
+            "title": ":satisfied:",
+            "insert": "😆"
+          },
+          {
+            "key": "😭",
+            "title": ":sob:",
+            "insert": "😭"
+          },
+          {
+            "key": "😎",
+            "title": ":sunglasses:",
+            "insert": "😎"
+          },
+          {
+            "key": "😴",
+            "title": ":sleeping:",
+            "insert": "😴"
+          },
+          {
+            "key": "😱",
+            "title": ":scream:",
+            "insert": "😱"
+          },
+          {
+            "key": "✨",
+            "title": ":sparkles:",
+            "insert": "✨"
+          },
+          {
+            "key": "⭐",
+            "title": ":star:",
+            "insert": "⭐"
+          }
+        ]
+      }
+    },
+    {
+      "name": "colon_only",
+      "before": ":",
+      "expected": null
+    },
+    {
+      "name": "prefix_first",
+      "before": ":sa",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":sa",
+        "query": "sa",
+        "items": [
+          {
+            "key": "😆",
+            "title": ":satisfied:",
+            "insert": "😆"
+          },
+          {
+            "key": "🫡",
+            "title": ":saluting_face:",
+            "insert": "🫡"
+          },
+          {
+            "key": "🌸",
+            "title": ":sakura:",
+            "insert": "🌸"
+          }
+        ]
+      }
+    },
+    {
+      "name": "limit_8",
+      "before": ":e",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":e",
+        "query": "e",
+        "items": [
+          {
+            "key": "👀",
+            "title": ":eyes:",
+            "insert": "👀"
+          },
+          {
+            "key": "🤯",
+            "title": ":exploding_head:",
+            "insert": "🤯"
+          },
+          {
+            "key": "👍",
+            "title": ":like:",
+            "insert": "👍"
+          },
+          {
+            "key": "❤️",
+            "title": ":heart:",
+            "insert": "❤️"
+          },
+          {
+            "key": "😊",
+            "title": ":smile:",
+            "insert": "😊"
+          },
+          {
+            "key": "😆",
+            "title": ":satisfied:",
+            "insert": "😆"
+          },
+          {
+            "key": "🥹",
+            "title": ":holding_back_tears:",
+            "insert": "🥹"
+          },
+          {
+            "key": "😮",
+            "title": ":open_mouth:",
+            "insert": "😮"
+          }
+        ]
+      }
+    },
+    {
+      "name": "shown_alias_prefix",
+      "before": ":sak",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":sak",
+        "query": "sak",
+        "items": [
+          {
+            "key": "🌸",
+            "title": ":sakura:",
+            "insert": "🌸"
+          }
+        ]
+      }
+    },
+    {
+      "name": "shown_alias_substring",
+      "before": ":blossom",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":blossom",
+        "query": "blossom",
+        "items": [
+          {
+            "key": "🌸",
+            "title": ":cherry_blossom:",
+            "insert": "🌸"
+          }
+        ]
+      }
+    },
+    {
+      "name": "shown_first_matching_alias",
+      "before": ":ok",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":ok",
+        "query": "ok",
+        "items": [
+          {
+            "key": "👌",
+            "title": ":ok_hand:",
+            "insert": "👌"
+          }
+        ]
+      }
+    },
+    {
+      "name": "plus_alias",
+      "before": ":+1",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":+1",
+        "query": "+1",
+        "items": [
+          {
+            "key": "👍",
+            "title": ":+1:",
+            "insert": "👍"
+          }
+        ]
+      }
+    },
+    {
+      "name": "case_insensitive",
+      "before": ":THU",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":THU",
+        "query": "THU",
+        "items": [
+          {
+            "key": "👍",
+            "title": ":thumbsup:",
+            "insert": "👍"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no_match",
+      "before": ":qqqq",
+      "expected": null
+    },
+    {
+      "name": "char_not_allowed",
+      "before": ":fire!",
+      "expected": null
+    },
+    {
+      "name": "dot_not_allowed",
+      "before": ":a.b",
+      "expected": null
+    },
+    {
+      "name": "after_paren",
+      "before": "(:fi",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":fi",
+        "query": "fi",
+        "items": [
+          {
+            "key": "🔥",
+            "title": ":fire:",
+            "insert": "🔥"
+          },
+          {
+            "key": "😆",
+            "title": ":satisfied:",
+            "insert": "😆"
+          }
+        ]
+      }
+    },
+    {
+      "name": "after_fullwidth_paren",
+      "before": "（:fi",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":fi",
+        "query": "fi",
+        "items": [
+          {
+            "key": "🔥",
+            "title": ":fire:",
+            "insert": "🔥"
+          },
+          {
+            "key": "😆",
+            "title": ":satisfied:",
+            "insert": "😆"
+          }
+        ]
+      }
+    },
+    {
+      "name": "after_newline",
+      "before": "a\n:fi",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":fi",
+        "query": "fi",
+        "items": [
+          {
+            "key": "🔥",
+            "title": ":fire:",
+            "insert": "🔥"
+          },
+          {
+            "key": "😆",
+            "title": ":satisfied:",
+            "insert": "😆"
+          }
+        ]
+      }
+    },
+    {
+      "name": "inside_word",
+      "before": "mail:s",
+      "expected": null
+    },
+    {
+      "name": "time_10_30",
+      "before": "at 10:30",
+      "expected": null
+    },
+    {
+      "name": "time_10_3",
+      "before": "at 10:3",
+      "expected": null
+    },
+    {
+      "name": "word_then_emoji",
+      "before": "ok :fir",
+      "expected": {
+        "kind": "emoji",
+        "replaced": ":fir",
+        "query": "fir",
+        "items": [
+          {
+            "key": "🔥",
+            "title": ":fire:",
+            "insert": "🔥"
+          }
+        ]
+      }
+    },
+    {
+      "name": "query_over_max_33",
+      "before": ":aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": null
+    }
+  ]
+}

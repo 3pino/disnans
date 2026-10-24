@@ -1,0 +1,173 @@
+{
+  "schema": 1,
+  "note": "行頭の `/` のコマンド名の補完（GUI の slashProvider のコマンド名の部分）。引数の補完は GUI だけの機能（suggestArgs）なので、ここには入れない。",
+  "commands": [
+    {
+      "name": "memo",
+      "description": "メモを残す"
+    },
+    {
+      "name": "dice",
+      "description": "サイコロを振る"
+    },
+    {
+      "name": "settings",
+      "description": "設定を開く"
+    },
+    {
+      "name": "search",
+      "description": "検索を開く"
+    },
+    {
+      "name": "quit",
+      "description": "終了する"
+    }
+  ],
+  "cases": [
+    {
+      "name": "all_commands",
+      "before": "/",
+      "expected": {
+        "kind": "slash",
+        "replaced": "/",
+        "query": "",
+        "items": [
+          {
+            "key": "dice",
+            "title": "/dice",
+            "insert": "/dice "
+          },
+          {
+            "key": "memo",
+            "title": "/memo",
+            "insert": "/memo "
+          },
+          {
+            "key": "quit",
+            "title": "/quit",
+            "insert": "/quit "
+          },
+          {
+            "key": "search",
+            "title": "/search",
+            "insert": "/search "
+          },
+          {
+            "key": "settings",
+            "title": "/settings",
+            "insert": "/settings "
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix",
+      "before": "/se",
+      "expected": {
+        "kind": "slash",
+        "replaced": "/se",
+        "query": "se",
+        "items": [
+          {
+            "key": "search",
+            "title": "/search",
+            "insert": "/search "
+          },
+          {
+            "key": "settings",
+            "title": "/settings",
+            "insert": "/settings "
+          }
+        ]
+      }
+    },
+    {
+      "name": "substring",
+      "before": "/it",
+      "expected": {
+        "kind": "slash",
+        "replaced": "/it",
+        "query": "it",
+        "items": [
+          {
+            "key": "quit",
+            "title": "/quit",
+            "insert": "/quit "
+          }
+        ]
+      }
+    },
+    {
+      "name": "uppercase_is_not_a_name",
+      "before": "/Se",
+      "expected": null
+    },
+    {
+      "name": "exact_name_is_still_shown",
+      "before": "/quit",
+      "expected": {
+        "kind": "slash",
+        "replaced": "/quit",
+        "query": "quit",
+        "items": [
+          {
+            "key": "quit",
+            "title": "/quit",
+            "insert": "/quit "
+          }
+        ]
+      }
+    },
+    {
+      "name": "insert_has_trailing_space",
+      "before": "/me",
+      "expected": {
+        "kind": "slash",
+        "replaced": "/me",
+        "query": "me",
+        "items": [
+          {
+            "key": "memo",
+            "title": "/memo",
+            "insert": "/memo "
+          }
+        ]
+      }
+    },
+    {
+      "name": "not_at_head",
+      "before": "a /se",
+      "expected": null
+    },
+    {
+      "name": "double_slash",
+      "before": "//",
+      "expected": null
+    },
+    {
+      "name": "after_name_and_space",
+      "before": "/memo ",
+      "expected": null
+    },
+    {
+      "name": "unknown",
+      "before": "/zzz",
+      "expected": null
+    },
+    {
+      "name": "after_newline",
+      "before": "l1\n/se",
+      "expected": null
+    },
+    {
+      "name": "hyphen_no_match",
+      "before": "/a-b",
+      "expected": null
+    },
+    {
+      "name": "name_then_text",
+      "before": "/memo x",
+      "expected": null
+    }
+  ]
+}

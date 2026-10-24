@@ -1,19 +1,18 @@
-//! 入力欄の補完（`@` メンバー・`:` 絵文字・行頭の `/` コマンド）。GUI の `suggest/` と同じ規則で、
-//! 状態と候補の計算だけを持つ（描画は view.rs、キー操作は app.rs）。
+//! 入力欄の補完の TUI 側（候補を一覧の文字列に直し、カーソルを持つ）。
+//! 規則（何を出すか・順・件数）は core の `view::suggest`（GUI と同じ規則。fixture で確かめる）。
+//! 描画は view.rs、キー操作は app.rs。
 
+use disnans_client_core::view::suggest::{self as core, Kind as CoreKind};
 use disnans_shared::User;
 
-/// 候補の最大数。
-pub const MAX_ITEMS: usize = 6;
-/// `:` の補完を始める最小の文字数（`:)` など顔文字を邪魔しない）。
-const EMOJI_MIN: usize = 2;
+pub use disnans_client_core::view::suggest::Kind;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
-    Mention,
-    Emoji,
-    Slash,
-}
+/// TUI 自身のスラッシュコマンド（引数なし。名前だけを送ると実行し、本文としては送らない）。
+pub const SLASH: &[(&str, &str)] = &[
+    ("settings", "設定を開く"),
+    ("search", "検索を開く"),
+    ("quit", "終了する"),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
@@ -34,146 +33,37 @@ pub struct Suggest {
     pub cursor: usize,
 }
 
-/// TUI 自身のスラッシュコマンド（引数なし。名前だけを送ると実行し、本文としては送らない）。
-pub const SLASH: &[(&str, &str)] = &[
-    ("settings", "設定を開く"),
-    ("search", "検索を開く"),
-    ("quit", "終了する"),
-];
-
-/// GUI の `EMOJI_NAMES` と同じ表（先頭が代表の名前）。
-const EMOJI: &[(&str, &[&str])] = &[
-    ("👍", &["thumbsup", "+1", "like"]),
-    ("❤️", &["heart", "love"]),
-    ("😂", &["joy", "lol"]),
-    ("🎉", &["tada", "party"]),
-    ("👀", &["eyes"]),
-    ("🙏", &["pray", "thanks"]),
-    ("😊", &["blush", "smile"]),
-    ("😆", &["laughing", "satisfied"]),
-    ("🥹", &["holding_back_tears"]),
-    ("😭", &["sob", "cry"]),
-    ("😮", &["open_mouth", "wow"]),
-    ("🤔", &["thinking"]),
-    ("😇", &["innocent"]),
-    ("😎", &["sunglasses", "cool"]),
-    ("🥳", &["partying_face"]),
-    ("😴", &["sleeping"]),
-    ("😱", &["scream"]),
-    ("🤯", &["exploding_head", "mind_blown"]),
-    ("🔥", &["fire"]),
-    ("✨", &["sparkles"]),
-    ("💯", &["100"]),
-    ("✅", &["white_check_mark", "check"]),
-    ("❌", &["x", "cross"]),
-    ("⭐", &["star"]),
-    ("👏", &["clap"]),
-    ("🙌", &["raised_hands"]),
-    ("💪", &["muscle"]),
-    ("👌", &["ok_hand", "ok"]),
-    ("🤝", &["handshake"]),
-    ("🫡", &["saluting_face", "salute"]),
-    ("🍣", &["sushi"]),
-    ("🍺", &["beer"]),
-    ("☕", &["coffee"]),
-    ("🍰", &["cake"]),
-    ("🐱", &["cat"]),
-    ("🌸", &["cherry_blossom", "sakura"]),
-];
-
-/// カーソル直前の `sigil` から始まる語（空白などで区切られる）。`(語の文字数, 記号の後ろの検索語)`。
-fn token(before: &str, sigil: char, allowed: impl Fn(char) -> bool) -> Option<(usize, String)> {
-    let mut chars = 0;
-    let mut query: Vec<char> = Vec::new();
-    for c in before.chars().rev() {
-        chars += 1;
-        if c == sigil {
-            // 記号の直前は、行頭か空白でなければ補完しない（`a@b` やURLの途中）。
-            let prev = before.chars().rev().nth(chars);
-            if prev.is_some_and(|p| !p.is_whitespace()) {
-                return None;
-            }
-            query.reverse();
-            return Some((chars, query.into_iter().collect()));
-        }
-        if !allowed(c) {
-            return None;
-        }
-        query.push(c);
-    }
-    None
-}
-
-/// 入力欄のカーソル前の文字列から、出すべき補完を決める。
+/// 入力欄のカーソル前の文字列から、出すべき補完を決める（コマンドは TUI の `SLASH`）。
 pub fn detect(before: &str, users: &[User]) -> Option<Suggest> {
-    let line_start = before.rfind('\n').map_or(0, |i| i + 1);
-    let line = &before[line_start..];
-    if let Some((chars, q)) = token(line, '@', |c| {
-        !c.is_whitespace() && !matches!(c, '@' | '<' | '>')
-    }) {
-        let q = q.to_lowercase();
-        let mut found: Vec<&User> = users
-            .iter()
-            .filter(|u| {
-                q.is_empty()
-                    || u.display_name.to_lowercase().contains(&q)
-                    || u.login_name.to_lowercase().contains(&q)
-            })
-            .collect();
-        found.sort_by_key(|u| !u.display_name.to_lowercase().starts_with(&q));
-        let items: Vec<Item> = found
-            .into_iter()
-            .take(MAX_ITEMS)
-            .map(|u| Item {
-                label: format!("@{}  {}", u.display_name, u.login_name),
-                insert: format!("@{} ", u.display_name),
-                user_id: Some(u.id.clone()),
-            })
-            .collect();
-        return build(Kind::Mention, chars, items);
-    }
-    if let Some((chars, q)) = token(line, ':', |c| {
-        c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '-')
-    }) && q.chars().count() >= EMOJI_MIN
-    {
-        let q = q.to_lowercase();
-        let items: Vec<Item> = EMOJI
-            .iter()
-            .filter(|(_, names)| names.iter().any(|n| n.contains(&q)))
-            .take(MAX_ITEMS)
-            .map(|(e, names)| Item {
-                label: format!("{e}  :{}:", names[0]),
-                insert: (*e).to_owned(),
-                user_id: None,
-            })
-            .collect();
-        return build(Kind::Emoji, chars, items);
-    }
-    // 行頭（入力全体の先頭）の `/名前` だけ。
-    if line_start == 0
-        && let Some(name) = line.strip_prefix('/')
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
-        let items: Vec<Item> = SLASH
-            .iter()
-            .filter(|(n, _)| n.starts_with(&name.to_lowercase()))
-            .map(|(n, d)| Item {
-                label: format!("/{n}  {d}"),
-                insert: format!("/{n}"),
-                user_id: None,
-            })
-            .collect();
-        // 名前が出そろっているなら、そのまま送れるので候補は出さない。
-        if items.len() == 1 && items[0].insert == line {
-            return None;
-        }
-        return build(Kind::Slash, line.chars().count(), items);
-    }
-    None
+    detect_in(before, users, SLASH)
 }
 
-fn build(kind: Kind, token_chars: usize, items: Vec<Item>) -> Option<Suggest> {
-    (!items.is_empty()).then_some(Suggest {
+/// `commands` は名前と説明の組。
+pub fn detect_in(before: &str, users: &[User], commands: &[(&str, &str)]) -> Option<Suggest> {
+    let s = core::detect(before, users, commands)?;
+    // TUI だけの決まり: 名前を打ち終えて候補が 1 つだけなら出さない（Enter でそのまま実行する操作を保つため）。
+    // GUI は候補を出し、Enter で選んでから送る（core の規則と fixture は GUI のまま）
+    if s.kind == CoreKind::Slash && s.items.len() == 1 && before == s.items[0].insert.trim_end() {
+        return None;
+    }
+    let (kind, token_chars) = (s.kind, s.chars);
+    let items = s
+        .items
+        .into_iter()
+        .map(|c| {
+            let label = match kind {
+                CoreKind::Mention => format!("@{}  {}", c.title, c.detail),
+                CoreKind::Emoji => format!("{}  {}", c.insert, c.title),
+                CoreKind::Slash => format!("{}  {}", c.title, c.detail),
+            };
+            Item {
+                label,
+                insert: c.insert,
+                user_id: (kind == CoreKind::Mention).then_some(c.key),
+            }
+        })
+        .collect();
+    Some(Suggest {
         kind,
         token_chars,
         items,
@@ -235,24 +125,199 @@ mod tests {
         let s = detect("hi @al", &users).unwrap();
         assert_eq!((s.kind, s.token_chars), (Kind::Mention, 3));
         assert_eq!(s.items[0].insert, "@Alice ");
+        assert_eq!(s.items[0].user_id.as_deref(), Some("u1"));
         assert_eq!(detect("@", &users).unwrap().items.len(), 2);
         assert!(detect("mail@al", &users).is_none());
         assert!(detect("@zz", &users).is_none());
         assert_eq!(detect("x @bob@", &users), None);
+        // GUI と同じく、`(` と全角の `（` の後ろからも始まる
+        assert_eq!(detect("(@bo", &users).unwrap().token_chars, 3);
+        assert_eq!(detect("（@bo", &users).unwrap().token_chars, 3);
+    }
+
+    /// core と GUI が通す fixture（`client-core/tests/fixtures/suggest/*.json`）を、TUI の変換層にも通す。
+    /// 見るのは種類・置き換える部分・挿入する文字列・利用者 ID・一覧の文字（見せる名前）。
+    /// TUI だけの決まり（名前を打ち終えたコマンドは出さない）は、fixture の期待値より優先する。
+    #[test]
+    fn tui_matches_the_shared_suggest_fixtures() {
+        use serde_json::Value;
+        let files = [
+            (
+                "mention.json",
+                include_str!("../../../client-core/tests/fixtures/suggest/mention.json"),
+            ),
+            (
+                "emoji.json",
+                include_str!("../../../client-core/tests/fixtures/suggest/emoji.json"),
+            ),
+            (
+                "slash.json",
+                include_str!("../../../client-core/tests/fixtures/suggest/slash.json"),
+            ),
+            (
+                "order.json",
+                include_str!("../../../client-core/tests/fixtures/suggest/order.json"),
+            ),
+        ];
+        let mut failures = Vec::new();
+        for (file, text) in files {
+            let f: Value = serde_json::from_str(text).unwrap();
+            let users: Vec<User> = f["members"].as_array().map_or(Vec::new(), |a| {
+                a.iter()
+                    .map(|m| User {
+                        id: m["id"].as_str().unwrap().into(),
+                        login_name: m["login_name"].as_str().unwrap().into(),
+                        display_name: m["display_name"].as_str().unwrap().into(),
+                        avatar_url: None,
+                        created_at: 0,
+                    })
+                    .collect()
+            });
+            let commands: Vec<(String, String)> =
+                f["commands"].as_array().map_or(Vec::new(), |a| {
+                    a.iter()
+                        .map(|c| {
+                            (
+                                c["name"].as_str().unwrap().into(),
+                                c["description"].as_str().unwrap().into(),
+                            )
+                        })
+                        .collect()
+                });
+            let commands: Vec<(&str, &str)> = commands
+                .iter()
+                .map(|(n, d)| (n.as_str(), d.as_str()))
+                .collect();
+            for case in f["cases"].as_array().unwrap() {
+                let name = case["name"].as_str().unwrap();
+                let before = case["before"].as_str().unwrap();
+                let got = detect_in(before, &users, &commands);
+                let want = &case["expected"];
+                // 名前を打ち終えたコマンド（候補が 1 つで、挿入が入力と同じ）は、TUI では出さない
+                let tui_only_none = want["kind"] == "slash"
+                    && want["items"].as_array().is_some_and(|i| i.len() == 1)
+                    && want["replaced"].as_str()
+                        == want["items"][0]["insert"].as_str().map(str::trim_end);
+                if tui_only_none {
+                    if got.is_some() {
+                        failures.push(format!(
+                            "{file} {name}: TUI should show nothing for an exact name"
+                        ));
+                    }
+                    continue;
+                }
+                match (&got, want.is_null()) {
+                    (None, true) => continue,
+                    (Some(s), false) => {
+                        let kind = match s.kind {
+                            Kind::Mention => "mention",
+                            Kind::Emoji => "emoji",
+                            Kind::Slash => "slash",
+                        };
+                        let n = before.chars().count();
+                        let replaced: String = before.chars().skip(n - s.token_chars).collect();
+                        let inserts: Vec<&str> =
+                            s.items.iter().map(|i| i.insert.as_str()).collect();
+                        let want_inserts: Vec<&str> = want["items"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|i| i["insert"].as_str().unwrap())
+                            .collect();
+                        let titles_ok = s.items.iter().zip(want["items"].as_array().unwrap()).all(
+                            |(got, want)| {
+                                let title = want["title"].as_str().unwrap();
+                                match s.kind {
+                                    Kind::Mention => got.label.starts_with(&format!("@{title}  ")),
+                                    Kind::Emoji => {
+                                        got.label
+                                            == format!(
+                                                "{}  {title}",
+                                                want["insert"].as_str().unwrap()
+                                            )
+                                    }
+                                    Kind::Slash => got.label.starts_with(&format!("{title}  ")),
+                                }
+                            },
+                        );
+                        let ids_ok = s.items.iter().zip(want["items"].as_array().unwrap()).all(
+                            |(got, want)| match s.kind {
+                                Kind::Mention => got.user_id.as_deref() == want["key"].as_str(),
+                                _ => got.user_id.is_none(),
+                            },
+                        );
+                        if kind != want["kind"]
+                            || replaced != want["replaced"]
+                            || inserts != want_inserts
+                            || !titles_ok
+                            || !ids_ok
+                        {
+                            failures.push(format!(
+                                "{file} {name}: got {kind} {replaced:?} {inserts:?}, expected {}",
+                                want
+                            ));
+                        }
+                    }
+                    (got, _) => {
+                        failures.push(format!("{file} {name}: got {got:?}, expected {want}"))
+                    }
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} case(s) differ:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
     }
 
     #[test]
-    fn emoji_needs_two_chars_and_slash_only_at_the_start() {
-        let s = detect("ok :fir", &[]).unwrap();
+    fn mention_query_is_at_most_32_chars() {
+        let long = "a".repeat(33);
+        let users = [user("u1", &long, "x")];
+        assert!(detect(&format!("@{}", "a".repeat(32)), &users).is_some());
+        assert!(detect(&format!("@{long}"), &users).is_none());
+    }
+
+    #[test]
+    fn emoji_starts_at_one_char_and_slash_only_at_the_start() {
+        let s = detect(":f", &[]).unwrap();
         assert_eq!((s.kind, s.items[0].insert.as_str()), (Kind::Emoji, "🔥"));
-        assert!(detect(":f", &[]).is_none());
         assert!(detect("12:30", &[]).is_none());
         let s = detect("/se", &[]).unwrap();
         assert_eq!((s.kind, s.items.len()), (Kind::Slash, 2));
         assert!(detect("a /se", &[]).is_none());
         assert!(detect("/zzz", &[]).is_none());
-        assert!(detect("/quit", &[]).is_none());
         assert!(detect("l1\n/se", &[]).is_none());
+    }
+
+    #[test]
+    fn emoji_label_shows_the_matched_alias_and_the_list_is_ranked() {
+        // 打った文字に合う名前を見せる（GUI と同じ）
+        let s = detect(":sak", &[]).unwrap();
+        assert_eq!(s.items[0].label, "🌸  :sakura:");
+        // 前方一致が先（`:e` は eyes・exploding_head が先頭）
+        let s = detect(":e", &[]).unwrap();
+        assert_eq!(s.items.len(), 8);
+        assert_eq!(s.items[0].insert, "👀");
+        assert_eq!(s.items[1].insert, "🤯");
+    }
+
+    #[test]
+    fn slash_names_are_lowercase_and_insert_a_space() {
+        assert!(detect("/Se", &[]).is_none());
+        let s = detect_in("/me", &[], &[("memo", "メモ")]).unwrap();
+        assert_eq!(s.items[0].insert, "/memo ");
+        // 名前を打ち終えていれば出さない（TUI だけ。Enter でそのまま実行する）
+        assert!(detect("/quit", &[]).is_none());
+        assert!(detect("/qui", &[]).is_some());
+    }
+
+    #[test]
+    fn a_mention_without_matches_falls_through_to_emoji() {
+        let s = detect("@(:fi", &[]).unwrap();
+        assert_eq!((s.kind, s.items[0].insert.as_str()), (Kind::Emoji, "🔥"));
     }
 
     #[test]
