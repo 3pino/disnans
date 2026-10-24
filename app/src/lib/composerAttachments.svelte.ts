@@ -1,9 +1,15 @@
 // 入力欄の添付（アップロード中・できた・失敗）。選んだらすぐ上げ、できたら本文に `![[attachments/名前]]` を入れる。
 // 送信は本文だけ（添付は本文のリンクで決まる）。
-// - 本文から埋め込みを消した添付は、すぐ取り消す（DELETE /api/files/{id}。投稿前のものだけ消せる）。
-// - 送ったもの（埋め込みが本文に残っていたもの）は、一覧から外すだけ（投稿されたので消さない）。
-// - 接続先・利用者が変わったら、一覧を捨てる（消さない: 消す先の接続が変わっているため）。
+// 未投稿の添付を消す（DELETE /api/files/{id}。投稿前のものだけ消せる）のは、次のとき:
+// - 取り消した（×）: すぐ。
+// - 本文から埋め込みを消した: すぐには消さない。ORPHAN_GRACE_MS のあいだに本文へ戻ったら（Ctrl+Z など）残す。
+//   戻らなければ、その時刻に消す。送信・入力欄を空にする・画面を閉じる/切り替えるときは、待たずに消す。
+// 送ったもの（埋め込みが本文に残っていたもの）は一覧から外すだけ（投稿されたので消さない）。
+// 接続先・利用者が変わったら、一覧を捨てる（消さない: 消す先の接続が変わっているため）。
 // 入力欄・通信・画像の読み込みは依存として渡す（テストで差し替える）。
+
+/** 本文から消された埋め込みを、未投稿の添付として消すまでの猶予（ミリ秒）。Ctrl+Z などで戻せる時間 */
+export const ORPHAN_GRACE_MS = 60_000;
 
 import type { Attachment } from './protocol/Attachment';
 import type { CropRect, ImageInfo } from './imageCrop';
@@ -51,6 +57,8 @@ export type AttachDeps = {
   preview: (file: File) => string | null;
   revoke: (url: string) => void;
   toast: (text: string) => void;
+  /** 猶予の計時（省略時は setTimeout）。テストで進める */
+  timers?: { set: (fn: () => void, ms: number) => unknown; clear: (handle: unknown) => void };
 };
 
 export class ComposerAttachments {
@@ -59,8 +67,18 @@ export class ComposerAttachments {
   /** 接続先・利用者の世代。変わったあとに終わった通信は、結果を入れない */
   private gen = 0;
   private aborts = new Map<number, () => void>();
+  /** 本文から消された埋め込みの、消す時刻までのタイマー（キーは項目） */
+  private orphans = new Map<number, unknown>();
+  private timers: NonNullable<AttachDeps['timers']>;
+  /** いまの本文（最後に知らせてもらったもの） */
+  private body = '';
 
-  constructor(private deps: AttachDeps) {}
+  constructor(private deps: AttachDeps) {
+    this.timers = deps.timers ?? {
+      set: (fn, ms) => setTimeout(fn, ms),
+      clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    };
+  }
 
   /** アップロードの途中がある（終わるまで送らない） */
   get uploading(): boolean {
@@ -100,7 +118,7 @@ export class ComposerAttachments {
     if (this.find(key)?.status === 'failed') this.start(key);
   }
 
-  /** 取り消す。アップロード中なら中止し、本文の埋め込みを外し、できた添付は取り消す（投稿前だけ消せる） */
+  /** 取り消す（×）。アップロード中なら中止し、本文の埋め込みを外し、できた添付はすぐ消す（投稿前だけ消せる） */
   cancel(key: number): void {
     const s = this.find(key);
     if (!s) return;
@@ -109,21 +127,40 @@ export class ComposerAttachments {
     // 先に外す（入力欄の更新で sync が呼ばれても、この項目は対象外になる）
     s.embed = null;
     if (embed) this.deps.unembed(embed);
-    if (s.attachment) {
-      this.deps.mark(s.attachment, false);
-      void this.deps.discard(s.attachment);
-    }
-    if (s.preview) this.deps.revoke(s.preview);
-    this.items = this.items.filter((x) => x.key !== key);
+    this.purge(s);
   }
 
   /**
-   * 入力欄の本文が変わったとき: 埋め込みを消された添付は、すぐ取り消す（消されたのに残すと、送っても使われない）。
+   * 入力欄の本文が変わったとき。埋め込みが本文に無くなった添付は、猶予のあとで消す（戻ればそのまま残す）。
    * 入れ替え中・アップロード中のものは対象外
    */
   sync(body: string): void {
+    this.body = body;
+    for (const s of this.items) {
+      if (s.status !== 'ready' || !s.embed) continue;
+      if (body.includes(s.embed)) {
+        this.clearOrphan(s.key);
+      } else if (!this.orphans.has(s.key)) {
+        this.orphans.set(
+          s.key,
+          this.timers.set(() => {
+            this.orphans.delete(s.key);
+            const c = this.find(s.key);
+            if (c && c.status === 'ready' && c.embed && !this.body.includes(c.embed)) this.purge(c);
+          }, ORPHAN_GRACE_MS),
+        );
+      }
+    }
+  }
+
+  /**
+   * 本文を空にした（送らずに消した: 下書きの破棄）。本文に無い添付は、待たずに消す。
+   * 送信・画面を閉じるときも、同じく本文に無いものを消す
+   */
+  dropUnsent(body: string): void {
+    this.body = body;
     for (const s of [...this.items]) {
-      if (s.status === 'ready' && s.embed && !body.includes(s.embed)) this.cancel(s.key);
+      if (s.status === 'ready' && s.embed && !body.includes(s.embed)) this.purge(s);
     }
   }
 
@@ -142,9 +179,19 @@ export class ComposerAttachments {
    * 残っていないもの（失敗・途中）は、そのまま残す
    */
   settle(body: string): void {
-    const sent = (s: StagedItem) => s.status === 'ready' && !!s.embed && body.includes(s.embed);
-    for (const s of this.items) if (sent(s) && s.preview) this.deps.revoke(s.preview);
-    this.items = this.items.filter((s) => !sent(s));
+    this.body = body;
+    for (const s of [...this.items]) {
+      if (s.status !== 'ready' || !s.embed) continue;
+      if (body.includes(s.embed)) {
+        // 送られた（投稿されたので消さない）: 一覧から外すだけ
+        this.clearOrphan(s.key);
+        if (s.preview) this.deps.revoke(s.preview);
+        this.items = this.items.filter((x) => x.key !== s.key);
+      } else {
+        // 本文から消されていた（送らない）: 待たずに消す
+        this.purge(s);
+      }
+    }
   }
 
   /**
@@ -155,14 +202,39 @@ export class ComposerAttachments {
     this.gen++;
     for (const s of this.items) {
       this.abort(s);
+      this.clearOrphan(s.key);
       if (s.preview) this.deps.revoke(s.preview);
     }
     this.items = [];
+    this.body = '';
   }
 
-  /** 画面を閉じる: 途中のアップロードは中止する（できたものは、本文の埋め込みに残るので消さない） */
+  /**
+   * 画面を閉じる: 途中のアップロードは中止する。本文に無い添付は消す（残っている埋め込みは下書きに残るので消さない）。
+   * 猶予のタイマーも止める
+   */
   dispose(): void {
     for (const s of this.items) this.abort(s);
+    this.dropUnsent(this.body);
+    for (const key of [...this.orphans.keys()]) this.clearOrphan(key);
+  }
+
+  /** 項目を一覧から外し、未投稿の添付なら消す（DELETE）。消せなくても、24 時間後には掃除で消える */
+  private purge(s: StagedItem): void {
+    this.clearOrphan(s.key);
+    this.abort(s);
+    if (s.attachment) {
+      this.deps.mark(s.attachment, false);
+      void this.deps.discard(s.attachment);
+    }
+    if (s.preview) this.deps.revoke(s.preview);
+    this.items = this.items.filter((x) => x.key !== s.key);
+  }
+
+  private clearOrphan(key: number): void {
+    const t = this.orphans.get(key);
+    if (t !== undefined) this.timers.clear(t);
+    this.orphans.delete(key);
   }
 
   private abort(s: StagedItem): void {

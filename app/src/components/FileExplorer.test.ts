@@ -102,7 +102,7 @@ describe('共有フォルダの書き込み', () => {
 
   it('新しいフォルダは、名前を確かめてから作る', async () => {
     const el = await render();
-    const btn = [...el.querySelectorAll('button')].find((b) => b.textContent?.includes('新しいフォルダ'))!;
+    const btn = el.querySelector<HTMLButtonElement>('button[aria-label="新しいフォルダ"]')!;
     btn.click();
     flushSync();
     const input = document.querySelector<HTMLInputElement>('.file-explorer-mkdir input')!;
@@ -111,5 +111,14 @@ describe('共有フォルダの書き込み', () => {
     document.querySelector<HTMLFormElement>('.file-explorer-mkdir')!.requestSubmit();
     await vi.waitFor(() => expect(document.querySelector('.file-explorer-mkdir-error')?.textContent).toContain('使えません'));
     expect(h.mkdir).not.toHaveBeenCalled();
+  });
+
+  it('上端は通話・設定と同じ .top-bar の行（別のヘッダーは作らない）。操作は同じ行にある', async () => {
+    const el = await render();
+    expect(el.querySelector('header')).toBeNull();
+    const bar = el.querySelector('.file-explorer-bar');
+    expect(bar?.classList.contains('top-bar')).toBe(true);
+    expect(bar?.querySelector('button[aria-label="アップロード"]')).not.toBeNull();
+    expect(bar?.querySelector('.file-explorer-crumbs')).not.toBeNull();
   });
 });

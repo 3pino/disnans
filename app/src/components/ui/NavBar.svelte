@@ -58,3 +58,16 @@
     </button>
   {/each}
 </nav>
+
+<style>
+  /* タッチの画面では、押したあとも :hover が残って文字の色が変わったままになる（選んでいない項目が白く残る）。
+     ホバーの色は、ホバーできる画面だけにする。選んでいる項目の色は、ホバーのあとも変えない（どの項目も同じ規則） */
+  @media (hover: none) {
+    .nav-bar .nav-bar-item:hover {
+      color: var(--text-muted);
+    }
+  }
+  .nav-bar .nav-bar-item.nav-bar-item-selected {
+    color: var(--accent);
+  }
+</style>

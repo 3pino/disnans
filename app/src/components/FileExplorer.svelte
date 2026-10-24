@@ -140,7 +140,8 @@
 </script>
 
 <div class="file-explorer">
-  <header class="file-explorer-header">
+  <!-- 上端の行は通話・設定の見出しと同じ（.top-bar が上の余白を取る）。戻る・場所・操作・閉じるを 1 行に並べる -->
+  <div class="top-bar file-explorer-bar">
     {#if fileExplorer.dir !== '' || ui.isMobile}
       <IconButton label="戻る" onclick={back}><ArrowLeft size={20} /></IconButton>
     {/if}
@@ -151,17 +152,14 @@
         <button type="button" class="file-explorer-crumb" onclick={() => fileExplorer.open(c.path)}>{c.name}</button>
       {/each}
     </nav>
+    <IconButton label="アップロード" title="アップロード" onclick={() => fileInput?.click()}><Upload size={18} /></IconButton>
+    {#if canCreateFolder}
+      <IconButton label="新しいフォルダ" title="新しいフォルダ" onclick={openMkdir}><FolderPlus size={18} /></IconButton>
+    {/if}
+    <input bind:this={fileInput} type="file" multiple hidden onchange={onPicked} />
     {#if !ui.isMobile}
       <IconButton label="閉じる" onclick={() => ui.closePanel()}><X size={18} /></IconButton>
     {/if}
-  </header>
-
-  <div class="file-explorer-tools">
-    <Button icon={Upload} onclick={() => fileInput?.click()}>アップロード</Button>
-    {#if canCreateFolder}
-      <Button icon={FolderPlus} onclick={openMkdir}>新しいフォルダ</Button>
-    {/if}
-    <input bind:this={fileInput} type="file" multiple hidden onchange={onPicked} />
   </div>
 
   {#if uploads.length > 0}
@@ -243,14 +241,16 @@
     min-height: 0;
     background: var(--bg);
   }
-  .file-explorer-header {
+  /* 上端の行（通話・設定の見出しと同じ余白。上の安全域は .top-bar が取る）。右の操作は左の場所に続けて並べる */
+  .file-explorer-bar {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    height: 52px;
-    padding: 0 var(--space-4) 0 var(--space-7);
+    gap: var(--space-2);
+    /* 上の余白は .top-bar のものを使う（ここで padding を省略形で書くと、上まで消してしまう） */
+    padding-right: var(--space-4);
+    padding-bottom: var(--space-3);
+    padding-left: var(--space-7);
     border-bottom: 1px solid var(--border);
-    flex: none;
   }
   .file-explorer-crumbs {
     flex: 1;
@@ -294,14 +294,6 @@
     margin: 0;
     padding: 0;
     list-style: none;
-  }
-  .file-explorer-tools {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    border-bottom: 1px solid var(--border);
-    flex: none;
   }
   .file-explorer-uploads {
     display: flex;

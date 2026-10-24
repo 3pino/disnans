@@ -379,6 +379,8 @@
       const stillSameEditor = !!editor && input === editor && draftIdentity === identity;
       if (stillSameEditor && editor.getRawBody() === submittedBody) {
         editor.clear();
+        // 送らずに入力欄を空にした（下書きの破棄）。本文に無い添付は消す
+        attach.dropUnsent('');
         hasText = false;
         if (target) persistDraft(target, '');
       }

@@ -178,7 +178,8 @@
   .shell:not(.shell-mobile) .shell-away {
     display: none;
   }
-  /* エクスプローラーは、残りの場所（ナビバーの上、または広い画面の右側ぜんぶ）を使う */
+  /* エクスプローラーは、残りの場所（ナビバーの上、または広い画面の右側ぜんぶ）を使う。
+     チャットの上の枠（通話のバーなど）の下に出るので、上の安全域は中の上端の行（.top-bar）だけが取る（二重に取らない） */
   .shell .shell-panel.shell-panel-files {
     position: relative;
     inset: auto;
@@ -186,6 +187,9 @@
     flex: 1;
     min-height: 0;
     animation: none;
+  }
+  .shell-mobile .shell-panel.shell-panel-files {
+    padding-top: 0;
   }
   .shell-mobile .shell-panel {
     position: fixed;

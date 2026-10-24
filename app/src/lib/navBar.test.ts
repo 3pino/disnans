@@ -5,6 +5,8 @@ import {
   DEFAULT_NAV_LABELS,
   NAV_CALL_ID,
   NAV_CHAT_ID,
+  NAV_FILES_ID,
+  navActiveId,
   NAV_REQUIRED_IDS,
   NAV_SEARCH_ID,
   navItemRemovable,
@@ -102,5 +104,25 @@ describe('navItemRemovable（削除モードの × で外せるか）', () => {
   it('必須（チャット・設定）は外せず、ほかは外せる（removeNavItem と同じ条件）', () => {
     for (const id of NAV_REQUIRED_IDS) expect(navItemRemovable(id)).toBe(false);
     expect(navItemRemovable(NAV_SEARCH_ID)).toBe(true);
+  });
+});
+
+describe('navActiveId（ナビバーで選ぶ項目）', () => {
+  it('共有フォルダのパネルが開いているときは、その項目（タブに関係なく）', () => {
+    for (const tab of ['chat', 'settings', 'call']) {
+      expect(navActiveId({ tab, panel: 'files' })).toBe(NAV_FILES_ID);
+    }
+  });
+  it('パネルが無いときは、タブの項目（チャット・設定・通話）', () => {
+    expect(navActiveId({ tab: 'chat', panel: null })).toBe(NAV_CHAT_ID);
+    expect(navActiveId({ tab: 'settings', panel: null })).toBe(NAV_SETTINGS_ID);
+    expect(navActiveId({ tab: 'call', panel: null })).toBe(NAV_CALL_ID);
+  });
+  it('ほかのパネル（タイムライン・プラグインの view）は選びは変えない（タブのまま）', () => {
+    expect(navActiveId({ tab: 'chat', panel: 'timeline' })).toBe(NAV_CHAT_ID);
+    expect(navActiveId({ tab: 'settings', panel: 'plugin' })).toBe(NAV_SETTINGS_ID);
+  });
+  it('共有フォルダのコマンドの ID は、ナビバーの項目の ID と同じ', () => {
+    expect(NAV_FILES_ID).toBe('app:open-files');
   });
 });
