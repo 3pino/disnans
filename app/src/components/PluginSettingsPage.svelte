@@ -1,6 +1,5 @@
 <script lang="ts">
-  import ArrowLeft from '@lucide/svelte/icons/arrow-left';
-  import IconButton from './ui/IconButton.svelte';
+  import PanelBar from './ui/PanelBar.svelte';
   import Icon from './ui/Icon.svelte';
   import PluginSettingTab from './PluginSettingTab.svelte';
   import PluginManageSection from './PluginManageSection.svelte';
@@ -19,14 +18,12 @@
 </script>
 
 <div id="plugin-settings-page" class="plugin-settings-page" data-plugin={id}>
-  <header class="top-bar"></header>
-  <div class="plugin-settings-page-header">
-    <IconButton class="plugin-settings-page-back" label="戻る" onclick={() => ui.back()}><ArrowLeft size={20} /></IconButton>
+  <PanelBar onback={() => ui.back()}>
     <div class="plugin-settings-page-title">
       <Icon icon={entry?.icon ?? pluginHost.pluginIcon(id)} size={18} />
       <span class="plugin-settings-page-title-text">{name}</span>
     </div>
-  </div>
+  </PanelBar>
 
   <div class="scroll plugin-settings-page-body">
     <div class="plugin-settings-page-content">
@@ -53,15 +50,6 @@
     height: 100%;
     min-width: 0;
     min-height: 0;
-  }
-  .plugin-settings-page-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    height: 52px;
-    padding: 0 var(--space-7) 0 var(--space-4);
-    border-bottom: 1px solid var(--border);
-    flex: none;
   }
   .plugin-settings-page-title {
     flex: 1;

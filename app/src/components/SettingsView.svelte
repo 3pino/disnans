@@ -18,7 +18,6 @@
   import ImageUp from '@lucide/svelte/icons/image-up';
   import Undo2 from '@lucide/svelte/icons/undo-2';
   import Settings from '@lucide/svelte/icons/settings';
-  import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import Avatar from './Avatar.svelte';
   import Markdown from './Markdown.svelte';
   import Button from './ui/Button.svelte';
@@ -38,6 +37,7 @@
   import NavBarSettings from './NavBarSettings.svelte';
   import ComposerMenuSettings from './ComposerMenuSettings.svelte';
   import CallSettings from './CallSettings.svelte';
+  import PanelBar from './ui/PanelBar.svelte';
   import DeviceKindSettings from './DeviceKindSettings.svelte';
   import DeviceListSettings from './DeviceListSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
@@ -240,10 +240,7 @@
   <!-- 「操作」のサブページ。一覧の上に重ねる（一覧はそのままにして、戻ったときに元の位置へ戻す） -->
   {#if ui.settingsSub}
     <div id="settings-sub-page" class="settings-sub-page" data-sub={ui.settingsSub}>
-      <header class="top-bar"></header>
-      <div class="settings-sub-page-header">
-        <IconButton class="settings-sub-page-back" label="戻る" onclick={() => ui.back()}><ArrowLeft size={20} /></IconButton>
-      </div>
+      <PanelBar onback={() => ui.back()} />
       <div class="scroll settings-sub-page-body">
         <div class="settings-sub-page-content">
           {#if ui.settingsSub === 'enterKeys'}
@@ -509,14 +506,6 @@
     flex-direction: column;
     min-height: 0;
     background: var(--bg);
-  }
-  .settings-sub-page-header {
-    display: flex;
-    align-items: center;
-    height: 52px;
-    padding: 0 var(--space-7) 0 var(--space-4);
-    border-bottom: 1px solid var(--border);
-    flex: none;
   }
   .settings-sub-page-body {
     flex: 1;

@@ -16,6 +16,7 @@
   import Phone from '@lucide/svelte/icons/phone';
   import PhoneOff from '@lucide/svelte/icons/phone-off';
   import Avatar from './Avatar.svelte';
+  import PanelBar from './ui/PanelBar.svelte';
   import Button from './ui/Button.svelte';
   import IconButton from './ui/IconButton.svelte';
   import { call } from '../lib/call/instance.svelte';
@@ -85,11 +86,11 @@
 </script>
 
 <section class="call-view" aria-label="通話">
-  <header class="top-bar call-view-head">
+  <PanelBar>
     <h1 class="call-view-title" class:call-view-title-live={call.joined}>
       <AudioLines size={18} />{call.pending ? '参加中…' : call.joined ? '通話中' : '通話'}
     </h1>
-  </header>
+  </PanelBar>
 
   <div class="call-view-body">
     {#each panels as p (p.id)}
@@ -178,14 +179,6 @@
     min-width: 0;
     min-height: 0;
     background: var(--bg);
-  }
-  .call-view-head {
-    display: flex;
-    align-items: center;
-    flex: none;
-    /* 見出しの左端を、下の本文（.call-view-body）の余白にそろえる */
-    padding-left: var(--space-7);
-    padding-right: var(--space-7);
   }
   .call-view-title {
     display: inline-flex;
