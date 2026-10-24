@@ -11,6 +11,10 @@ import { toCaptureError, toSnapshotError } from './nativeScreen';
 type Mod = typeof import('../../../../examples/screenshare/main.js');
 const load = () => import('../../../../examples/screenshare/main.js') as Promise<Mod & { default: PluginClass }>;
 
+/** 通話の画面の領域に出ている、自分の映像（舞台の箱の中）と、その右上のカメラ切り替え */
+const selfVideo = (s: { panel: { el: HTMLElement } }) => s.panel.el.querySelector<HTMLVideoElement>('.screenshare-img video');
+const switchEl = (s: { panel: { el: HTMLElement } }) => s.panel.el.querySelector<HTMLButtonElement>('.screenshare-switch');
+
 // main.js は読み込み時に disnans.Plugin と ui を覚える。call はプラグインの onload で読むので、テストごとに差し替える
 (globalThis as unknown as { disnans: Partial<Disnans.Host> }).disnans = {
   apiVersion: API_VERSION,
@@ -420,7 +424,6 @@ function makeCall() {
   let change: () => void = () => {};
   let buttonOpts: Disnans.CallButtonOptions | null = null;
   let cameraOpts: Disnans.CallButtonOptions | null = null;
-  let switchOpts: Disnans.CallButtonOptions | null = null;
   const panelEl = document.createElement('div');
   const panel = {
     el: panelEl,
@@ -453,7 +456,6 @@ function makeCall() {
       // 画面の共有ボタンとカメラのボタンを、作ったときのアイコンで分ける
       const opts = { ...o };
       if (o.icon === 'video') cameraOpts = opts;
-      else if (o.icon === 'switch-camera') switchOpts = opts;
       else buttonOpts = opts;
       return {
         update: (p: Partial<Disnans.CallButtonOptions>) => Object.assign(opts, p),
@@ -468,7 +470,6 @@ function makeCall() {
     panel,
     button: () => buttonOpts,
     cameraButton: () => cameraOpts,
-    switchButton: () => switchOpts,
     fire: (name: string, peer: string, userKey: 'a' | 'b', payload: unknown) => handlers.get(name)!({ peer, user: users[userKey], payload }),
     files: { api: {} as never, onChanged: () => () => {} },
     changed: () => change(),
@@ -1225,10 +1226,14 @@ describe('examples/screenshare', () => {
 
   it('カメラが 2 つ以上ある端末では、カメラの共有中だけ切り替えのボタンを出す', async () => {
     const s = await setup({ display: true, camera: true, cameras: 2 });
-    expect(s.switchButton()).toBeNull();
+    expect(switchEl(s)).toBeNull();
     s.cameraButton()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
-    expect(s.switchButton()).toMatchObject({ icon: 'switch-camera', label: 'カメラを切り替え', location: 'view' });
+    const btn = switchEl(s)!;
+    expect(btn.getAttribute('aria-label')).toBe('カメラを切り替え');
+    // 自分の映像の箱の中（右上）に置く。通話の全画面のバーには出さない
+    expect(btn.parentElement!.classList.contains('screenshare-img')).toBe(true);
+    expect(s.call.addButton).not.toHaveBeenCalledWith(expect.objectContaining({ icon: 'switch-camera' }));
     s.cameraButton()!.onClick();
     s.r.stop();
   });
@@ -1237,7 +1242,7 @@ describe('examples/screenshare', () => {
     const s = await setup({ display: true, camera: true, cameras: 1 });
     s.cameraButton()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
-    expect(s.switchButton()).toBeNull();
+    expect(switchEl(s)).toBeNull();
     s.r.stop();
   });
 
@@ -1247,15 +1252,15 @@ describe('examples/screenshare', () => {
     await vi.advanceTimersByTimeAsync(1);
     const second = fakeStream();
     s.getUserMedia.mockResolvedValueOnce(second.stream as never);
-    s.switchButton()!.onClick!();
+    switchEl(s)!.click();
     await vi.advanceTimersByTimeAsync(1);
     expect(s.getUserMedia).toHaveBeenCalledTimes(2);
     expect(s.getUserMedia.mock.calls[1]![0]).toMatchObject({ video: { facingMode: { exact: 'environment' } }, audio: false });
     expect(s.fs.track.stop).toHaveBeenCalled();
     expect(second.track.stop).not.toHaveBeenCalled();
-    const video = s.panel.el.querySelector<HTMLVideoElement>('.screenshare-self-video')!;
+    const video = selfVideo(s)!;
     expect(video.srcObject).toBe(second.stream);
-    expect(s.switchButton()).toMatchObject({ disabled: false });
+    expect(switchEl(s)!.disabled).toBe(false);
     s.r.stop();
   });
 
@@ -1265,8 +1270,8 @@ describe('examples/screenshare', () => {
     await vi.advanceTimersByTimeAsync(1);
     let resolve: (st: never) => void = () => {};
     s.getUserMedia.mockImplementationOnce(() => new Promise<never>((r) => (resolve = r)));
-    s.switchButton()!.onClick!();
-    s.switchButton()!.onClick!();
+    switchEl(s)!.click();
+    switchEl(s)!.click();
     await vi.advanceTimersByTimeAsync(1);
     expect(s.getUserMedia).toHaveBeenCalledTimes(2);
     resolve(fakeStream().stream as never);
@@ -1279,7 +1284,7 @@ describe('examples/screenshare', () => {
     s.cameraButton()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
     s.getUserMedia.mockRejectedValueOnce(new DOMException('no', 'OverconstrainedError'));
-    s.switchButton()!.onClick!();
+    switchEl(s)!.click();
     await vi.advanceTimersByTimeAsync(1);
     expect(s.fs.track.stop).not.toHaveBeenCalled();
     expect(s.cameraButton()).toMatchObject({ active: true });
@@ -1294,7 +1299,7 @@ describe('examples/screenshare', () => {
     const late = fakeStream();
     let resolve: (st: never) => void = () => {};
     s.getUserMedia.mockImplementationOnce(() => new Promise<never>((r) => (resolve = r)));
-    s.switchButton()!.onClick!();
+    switchEl(s)!.click();
     s.cameraButton()!.onClick();
     resolve(late.stream as never);
     await vi.advanceTimersByTimeAsync(1);
@@ -1320,57 +1325,73 @@ describe('examples/screenshare', () => {
     ).toBe(true);
   });
 
-  it('カメラを送っているあいだは、自分のカメラを確認の枠に出し、止めたら外す（新しい取得はしない）', async () => {
+  it('カメラを送っているあいだは、自分のカメラを舞台（.screenshare-img）に出し、止めたら外す（新しい取得はしない）', async () => {
     const s = await setup({ display: true, camera: true });
-    const wrap = s.panel.el.querySelector<HTMLElement>('.screenshare-self')!;
-    const video = s.panel.el.querySelector<HTMLVideoElement>('.screenshare-self-video')!;
-    expect(wrap.hidden).toBe(true);
+    expect(selfVideo(s)).toBeNull();
     expect(s.panel.visible).toBe(false);
     s.cameraButton()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
+    const video = selfVideo(s)!;
     expect(video.srcObject).toBe(s.fs.stream);
     expect(video.muted).toBe(true);
-    expect(wrap.hidden).toBe(false);
+    expect(video.getAttribute('aria-label')).toBe('自分のカメラ（送信中）');
     expect(s.panel.visible).toBe(true);
-    // 取得は 1 回だけ（確認の枠は同じ MediaStream を渡すだけ）
+    // 取得は 1 回だけ（舞台は同じ MediaStream を渡すだけ）
     expect(s.getUserMedia).toHaveBeenCalledOnce();
     s.cameraButton()!.onClick();
-    expect(video.srcObject).toBeNull();
-    expect(wrap.hidden).toBe(true);
+    expect(selfVideo(s)).toBeNull();
     expect(s.panel.visible).toBe(false);
     s.r.stop();
   });
 
-  it('自分の送信中の枠は、画面でもカメラでも出す。通話を抜けたら外す', async () => {
+  it('自分の送信中の映像は、画面でもカメラでも出す（ラベルは送っている種類で変える）。通話を抜けたら外す', async () => {
     const s = await setup({ display: true, camera: true });
-    const wrap = s.panel.el.querySelector<HTMLElement>('.screenshare-self')!;
-    const video = s.panel.el.querySelector<HTMLVideoElement>('.screenshare-self-video')!;
-    const label = s.panel.el.querySelector<HTMLElement>('.screenshare-self-label')!;
     s.button()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
-    expect(wrap.hidden).toBe(false);
-    expect(label.textContent).toBe('自分の画面（送信中）');
-    expect(video.srcObject).toBeTruthy();
+    expect(selfVideo(s)!.getAttribute('aria-label')).toBe('自分の画面（送信中）');
+    expect(selfVideo(s)!.srcObject).toBeTruthy();
     s.button()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
-    expect(wrap.hidden).toBe(true);
-    expect(video.srcObject).toBeFalsy();
+    expect(selfVideo(s)).toBeNull();
     s.cameraButton()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
-    expect(label.textContent).toBe('自分のカメラ（送信中）');
-    expect(wrap.hidden).toBe(false);
+    expect(selfVideo(s)!.getAttribute('aria-label')).toBe('自分のカメラ（送信中）');
     s.call.joined = false;
     s.changed();
-    expect(video.srcObject).toBeNull();
-    expect(wrap.hidden).toBe(true);
+    expect(selfVideo(s)).toBeNull();
     s.r.stop();
   });
 
-  it('プラグインを外したら、カメラの枠の映像も手放す', async () => {
-    const s = await setup({ display: false, camera: true });
-    const video = s.panel.el.querySelector<HTMLVideoElement>('.screenshare-self-video')!;
+  it('自分が送っているあいだも、見ている相手の共有はタブで選べる。自分の映像が既定で、切り替えのボタンは自分の映像のときだけ', async () => {
+    const s = await setup({ display: false, camera: true, cameras: 2 });
+    s.panel.mounted = true;
+    s.fire('screen.state', 'pa', 'a', { on: true });
+    s.fire('screen.frame', 'pa', 'a', { f: 0, i: 0, n: 1, d: '/9j/QUJDRA==' });
     s.cameraButton()!.onClick();
     await vi.advanceTimersByTimeAsync(1);
+    // 既定は自分の映像（舞台の箱の中に映像。切り替えのボタンもその右上）
+    expect(selfVideo(s)).not.toBeNull();
+    expect(switchEl(s)).not.toBeNull();
+    const tabs = [...s.panel.el.querySelectorAll<HTMLButtonElement>('.screenshare-tab')];
+    expect(tabs).toHaveLength(2);
+    // 相手の共有に切り替えると、映像は外れ、相手のフレームを出す（切り替えのボタンも消す）
+    tabs[1]!.click();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(selfVideo(s)).toBeNull();
+    expect(switchEl(s)).toBeNull();
+    expect(s.panel.el.querySelector('.screenshare-stage img')!.getAttribute('src')).toBe('data:image/jpeg;base64,/9j/QUJDRA==');
+    // 自分の映像に戻す
+    s.panel.el.querySelectorAll<HTMLButtonElement>('.screenshare-tab')[0]!.click();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(selfVideo(s)).not.toBeNull();
+    s.r.stop();
+  });
+
+  it('プラグインを外したら、自分の映像も手放す', async () => {
+    const s = await setup({ display: false, camera: true });
+    s.cameraButton()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    const video = selfVideo(s)!;
     expect(video.srcObject).toBe(s.fs.stream);
     s.r.stop();
     expect(video.srcObject).toBeNull();

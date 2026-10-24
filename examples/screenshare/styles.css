@@ -76,6 +76,33 @@
   will-change: transform;
   -webkit-user-drag: none;
 }
+/* 箱の中の画像・映像は、箱いっぱいに置く（大きさは箱が決める） */
+.screenshare-img > img,
+.screenshare-img > video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* 自分の映像の右上のカメラ切り替え。箱の中（拡大しないので、映像の上の位置は変わらない）。押しやすい大きさの半透明の丸 */
+.screenshare-switch {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid oklch(1 0 0 / 0.3);
+  background: oklch(0.1 0.01 248 / 0.6);
+  color: #fff;
+  backdrop-filter: blur(4px);
+}
+.screenshare-switch:disabled {
+  opacity: 0.5;
+}
 
 .screenshare-wait {
   color: var(--text-muted);
@@ -101,28 +128,6 @@
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface);
-}
-/* 送信中の自分のカメラ（確認用）。音は無く、枠の中に収める */
-.screenshare-self {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-}
-.screenshare-self[hidden] {
-  display: none;
-}
-.screenshare-self-label {
-  font-size: var(--fs-xs, 12px);
-  color: var(--text-muted);
-}
-.screenshare-self-video {
-  width: 100%;
-  max-height: min(30vh, 240px);
-  object-fit: contain;
-  border-radius: var(--radius-sm);
-  background: #000;
 }
 .screenshare-panel-bar {
   display: flex;

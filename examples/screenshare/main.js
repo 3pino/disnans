@@ -761,15 +761,37 @@ function urlToCanvas(src) {
 
 // ---- 表示の舞台（拡大縮小・パン） ----
 
+/** 通話の画面の領域で、自分の映像を選んでいるときのタブの印（ユーザー ID と衝突しない文字） */
+const SELF_TAB = '\u0000self';
+
 /**
- * 共有された画面を 1 枚出す舞台。全画面の閲覧表示と、通話の画面の領域の両方で使う。
- * 既定は画面全体が収まる表示（contain）。ピンチ・Ctrl+ホイールで拡大縮小、拡大中はドラッグ・ホイールで移動、ダブルタップで拡大／元に戻す。
+ * 画像・映像の元の大きさ（映像は読み込まれるまで 0）
+ * @param {HTMLImageElement | HTMLVideoElement} media
+ */
+function naturalSize(media) {
+  return media instanceof HTMLVideoElement
+    ? { w: media.videoWidth, h: media.videoHeight }
+    : { w: media.naturalWidth, h: media.naturalHeight };
+}
+
+/**
+ * 共有された画面（または自分の映像）を 1 枚出す舞台。全画面の閲覧表示と、通話の画面の領域の両方で使う。
+ * 画像・映像は .screenshare-img の箱に入り、箱の大きさを JS が決める（contain）。
+ * 閲覧の画像は拡大縮小・移動できる（zoomable）。自分の映像は拡大せず、箱の右上に置く要素（カメラの切り替え）を持てる。
  */
 class ScreenStage {
   /** @type {ViewState} */
   view = { scale: 1, x: 0, y: 0 };
-  /** @type {HTMLImageElement | null} */
-  img = null;
+  /** 画像・映像を入れる箱（.screenshare-img） */
+  /** @type {HTMLDivElement | null} */
+  box = null;
+  /** @type {HTMLImageElement | HTMLVideoElement | null} */
+  media = null;
+  /** 箱の右上に置く要素（箱を作り直しても付け直す） */
+  /** @type {HTMLElement | null} */
+  overlayEl = null;
+  /** 拡大・移動できるか（自分の映像は false） */
+  zoomable = true;
   /** @type {ResizeObserver | null} */
   ro = null;
 
@@ -790,7 +812,7 @@ class ScreenStage {
 
   /** @param {string} text */
   showWaiting(text) {
-    this.img = null;
+    this.clearMedia();
     const p = document.createElement('p');
     p.className = 'screenshare-wait';
     p.textContent = text;
@@ -802,19 +824,81 @@ class ScreenStage {
    * @param {string} alt
    */
   showImage(src, alt) {
-    let img = this.img;
-    if (!img || !img.isConnected || img.parentElement !== this.el) {
+    this.zoomable = true;
+    let img = this.media;
+    if (!(img instanceof HTMLImageElement) || !this.box || this.box.parentElement !== this.el) {
+      this.clearMedia();
       img = document.createElement('img');
-      img.className = 'screenshare-img';
       img.draggable = false;
       // 大きさが決まったら（最初のフレーム・縦横が変わったとき）、収まる大きさを合わせる
       img.addEventListener('load', () => this.applyView());
-      this.el.replaceChildren(img);
-      this.img = img;
+      this.mount(img);
     }
     img.alt = alt;
     if (img.getAttribute('src') !== src) img.src = src;
     this.applyView();
+  }
+
+  /**
+   * 自分の映像（音は無く、muted）。同じ MediaStream を渡すだけで、取得はしない。拡大はしない。
+   * @param {MediaStream} stream
+   * @param {string} label
+   */
+  showVideo(stream, label) {
+    this.zoomable = false;
+    let video = this.media;
+    if (!(video instanceof HTMLVideoElement) || !this.box || this.box.parentElement !== this.el) {
+      this.clearMedia();
+      video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.addEventListener('loadedmetadata', () => this.applyView());
+      video.addEventListener('resize', () => this.applyView());
+      this.mount(video);
+    }
+    video.setAttribute('aria-label', label);
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
+      void Promise.resolve(video.play()).catch((e) => console.warn('[screenshare] 自分の映像を再生できません', e));
+    }
+    this.applyView();
+  }
+
+  /**
+   * 箱の右上に置く要素を決める（なければ null）。箱を作り直しても、付け直す。
+   * @param {HTMLElement | null} el
+   */
+  setOverlay(el) {
+    this.overlayEl?.remove();
+    this.overlayEl = el;
+    if (el && this.box) this.box.append(el);
+  }
+
+  /** 画像・映像を外して、舞台を空にする（映像は手放す） */
+  clear() {
+    this.clearMedia();
+    this.el.replaceChildren();
+  }
+
+  /** @param {HTMLImageElement | HTMLVideoElement} media */
+  mount(media) {
+    const box = document.createElement('div');
+    box.className = 'screenshare-img';
+    box.append(media);
+    if (this.overlayEl) box.append(this.overlayEl);
+    this.box = box;
+    this.media = media;
+    this.el.replaceChildren(box);
+  }
+
+  clearMedia() {
+    if (this.media instanceof HTMLVideoElement) {
+      this.media.pause();
+      this.media.srcObject = null;
+    }
+    this.overlayEl?.remove();
+    this.box = null;
+    this.media = null;
   }
 
   reset() {
@@ -822,26 +906,27 @@ class ScreenStage {
     this.applyView();
   }
 
-  /** 舞台と、倍率 1 のときの画像の表示の大きさ */
+  /** 舞台と、倍率 1 のときの画像・映像の表示の大きさ */
   measure() {
-    const img = this.img;
-    if (!img) return null;
+    const media = this.media;
+    if (!this.box || !media) return null;
     const stage = { w: this.el.clientWidth, h: this.el.clientHeight };
-    const shown = containSize({ w: img.naturalWidth, h: img.naturalHeight }, stage);
+    const shown = containSize(naturalSize(media), stage);
     if (shown.w <= 0) return null;
     return { stage, img: shown };
   }
 
-  /** 拡大の状態を画像に反映する（はみ出さないように収める） */
+  /** 拡大の状態を箱に反映する（はみ出さないように収める） */
   applyView() {
-    const img = this.img;
-    if (!img) return;
+    const box = this.box;
+    if (!box) return;
+    if (!this.zoomable) this.view = { scale: 1, x: 0, y: 0 };
     const m = this.measure();
     if (!m) return;
     this.view = clampView(this.view, m.stage, m.img);
-    img.style.width = `${m.img.w}px`;
-    img.style.height = `${m.img.h}px`;
-    img.style.transform = `translate(-50%, -50%) translate(${this.view.x}px, ${this.view.y}px) scale(${this.view.scale})`;
+    box.style.width = `${m.img.w}px`;
+    box.style.height = `${m.img.h}px`;
+    box.style.transform = `translate(-50%, -50%) translate(${this.view.x}px, ${this.view.y}px) scale(${this.view.scale})`;
     this.el.classList.toggle('screenshare-zoomed', this.view.scale > MIN_ZOOM + 1e-6);
   }
 
@@ -891,6 +976,8 @@ class ScreenStage {
     };
 
     stage.addEventListener('pointerdown', (e) => {
+      // 自分の映像は拡大しない（右上のボタンを押せるように、ジェスチャーを取らない）
+      if (!this.zoomable) return;
       // マウスは左ボタンだけ
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       pointers.set(e.pointerId, local(e));
@@ -935,7 +1022,7 @@ class ScreenStage {
     stage.addEventListener(
       'wheel',
       (e) => {
-        if (!this.img) return;
+        if (!this.media || !this.zoomable) return;
         const a = wheelAction(e, { scale: this.view.scale, embedded: this.embedded, pageHeight: stage.clientHeight });
         if (!a) return;
         e.preventDefault();
@@ -1011,12 +1098,6 @@ export default class ScreenSharePlugin extends Plugin {
   ticking = false;
   /** ticking の処理を始めたセッション（shareSeq） */
   tickSeq = -1;
-  /** 自分のカメラの表示（送信中のカメラだけ。同じ MediaStream を渡すだけで、取得はしない） */
-  selfWrap = /** @type {HTMLElement | null} */ (null);
-  /** @type {HTMLVideoElement | null} */
-  selfVideo = null;
-  /** @type {HTMLElement | null} */
-  selfLabel = null;
   frameId = 0;
   lastHeartbeat = 0;
   lastSentAt = 0;
@@ -1079,9 +1160,11 @@ export default class ScreenSharePlugin extends Plugin {
   button = null;
   /** @type {Disnans.CallButton | null} */
   cameraButton = null;
-  /** カメラの前後の切り替え（カメラが 2 つ以上あるとき、共有中だけ出す） */
-  /** @type {Disnans.CallButton | null} */
-  switchButton = null;
+  /** カメラの前後の切り替え（カメラが 2 つ以上あるとき、カメラを送っているあいだだけ、自分の映像の右上に出す） */
+  /** @type {HTMLButtonElement | null} */
+  switchEl = null;
+  /** 切り替えられる端末か（判定が済んでから true） */
+  switchable = false;
   /** 切り替えの途中（二重の押下は無視する） */
   switching = false;
   /** 切り替えの印。止めた・始め直したあとに届いた応答は捨てる（tickSeq と同じ考え） */
@@ -1097,6 +1180,8 @@ export default class ScreenSharePlugin extends Plugin {
   panelBar = null;
   /** 領域で見ている共有者 */
   panelPeer = /** @type {string | null} */ (null);
+  /** 前の描き直しで、自分の映像を送っていたか（送り始めを見つけるため） */
+  selfWasOn = false;
 
   // 設定のプレビュー
   /** プレビューの元（自分の画面を取り込んだもの） */
@@ -1131,7 +1216,6 @@ export default class ScreenSharePlugin extends Plugin {
         onClick: () => void this.toggleCamera(),
       });
       this.register(() => this.cameraButton?.remove());
-      this.register(() => this.switchButton?.remove());
     }
 
     this.statusEl = this.addStatusBarItem();
@@ -1159,11 +1243,9 @@ export default class ScreenSharePlugin extends Plugin {
       this.stopShare(true);
       this.closeViewer();
       this.stopWebPip();
+      this.panelStage?.clear();
       this.panelStage?.destroy();
-      if (this.selfVideo) this.selfVideo.srcObject = null;
-      this.selfWrap = null;
-      this.selfLabel = null;
-      this.selfVideo = null;
+      this.switchable = false;
       this.panel?.remove();
       this.panel = null;
     });
@@ -1344,13 +1426,14 @@ export default class ScreenSharePlugin extends Plugin {
    */
   async offerSwitch(seq) {
     const ok = await canSwitchCamera(navigator);
-    if (!ok || !this.sharing || this.source !== 'camera' || seq !== this.shareSeq || this.switchButton) return;
-    this.switchButton = this.call.addButton({
-      icon: 'switch-camera',
-      label: 'カメラを切り替え',
-      location: 'view',
-      onClick: () => void this.switchCamera(),
-    });
+    if (!ok || !this.sharing || this.source !== 'camera' || seq !== this.shareSeq || this.switchable) return;
+    this.switchable = true;
+    this.syncSelfPreview();
+  }
+
+  /** @param {boolean} busy 切り替えの途中は押せないようにする */
+  setSwitchBusy(busy) {
+    if (this.switchEl) this.switchEl.disabled = busy;
   }
 
   /**
@@ -1364,7 +1447,7 @@ export default class ScreenSharePlugin extends Plugin {
     const token = {};
     this.switchToken = token;
     this.switching = true;
-    this.switchButton?.update({ disabled: true });
+    this.setSwitchBusy(true);
     /** @type {MediaStream | null} */
     let fresh = null;
     try {
@@ -1382,7 +1465,7 @@ export default class ScreenSharePlugin extends Plugin {
     }
     this.switching = false;
     this.switchToken = null;
-    this.switchButton?.update({ disabled: false });
+    this.setSwitchBusy(false);
     if (!fresh) {
       ui.toast('カメラを切り替えられませんでした。いまのカメラのまま続けます', 'error');
       return;
@@ -1492,8 +1575,8 @@ export default class ScreenSharePlugin extends Plugin {
     this.backend = null;
     this.switchToken = null;
     this.switching = false;
-    this.switchButton?.remove();
-    this.switchButton = null;
+    this.switchable = false;
+    this.setSwitchBusy(false);
     if (backend === 'native' || (this.starting && disnans.screenCapture?.supported)) {
       // 許可を待っている間に退出・プラグインを無効化したときも、ネイティブの開始を取り消す
       void disnans.screenCapture.stop().catch(() => {});
@@ -2053,26 +2136,13 @@ export default class ScreenSharePlugin extends Plugin {
     const panel = this.call.addPanel({ label: '画面共有' });
     this.panel = panel;
     panel.el.classList.add('screenshare-panel');
-    // 送信中の自分のカメラ（確認用。音は無く、muted のまま。取得は本体の取り込みと同じ MediaStream）
-    const selfWrap = document.createElement('div');
-    selfWrap.className = 'screenshare-self';
-    selfWrap.hidden = true;
-    const selfLabel = document.createElement('div');
-    selfLabel.className = 'screenshare-self-label';
-    selfLabel.textContent = '自分の映像（送信中）';
-    const selfVideo = document.createElement('video');
-    selfVideo.className = 'screenshare-self-video';
-    selfVideo.muted = true;
-    selfVideo.playsInline = true;
-    selfVideo.setAttribute('aria-label', '自分の映像（送信中）');
-    selfWrap.append(selfLabel, selfVideo);
-    this.selfWrap = selfWrap;
-    this.selfLabel = selfLabel;
-    this.selfVideo = selfVideo;
     const bar = document.createElement('div');
     bar.className = 'screenshare-panel-bar';
+    // 見る人も送る人も、同じ舞台（.screenshare-stage）に出す。自分の映像は右上のカメラ切り替えを持てる
     const stage = new ScreenStage({ embedded: true });
-    panel.el.append(selfWrap, bar, stage.el);
+    this.switchEl = ui.button({ icon: 'switch-camera', label: 'カメラを切り替え', variant: 'ghost', onClick: () => void this.switchCamera() });
+    this.switchEl.classList.add('screenshare-switch');
+    panel.el.append(bar, stage.el);
     this.panelBar = bar;
     this.panelStage = stage;
     // 通話の画面が開いたら、最新のフレームを出して大きさを測り直す
@@ -2083,81 +2153,100 @@ export default class ScreenSharePlugin extends Plugin {
     );
   }
 
-  /** 領域を出すのは、見ている共有者がいるか、自分がカメラを送っているとき */
+  /** 領域を出すのは、見ている共有者がいるか、自分がカメラか画面を送っているとき */
   updatePanelVisible() {
     this.panel?.setVisible(this.panelPeer !== null || this.selfShowing());
   }
 
-  /** 自分のカメラを確認の枠に出すのは、カメラを送信中のとき（取得できた MediaStream があるときだけ） */
+  /** 自分の映像を出すのは、送信中のとき（取得できた MediaStream があるときだけ） */
   selfShowing() {
     return this.sharing && this.stream !== null && this.call.joined;
   }
 
-  /**
-   * 自分のカメラの確認の枠を、送信の状態に合わせる。
-   * 同じ MediaStream を別の <video> に渡すだけ（新しい取得はしない）。止まったら外して、映像を手放す
-   */
+  /** 送信の状態が変わったら、領域（自分の映像を含む）を合わせる。映像の取得はしない */
   syncSelfPreview() {
-    const wrap = this.selfWrap;
-    const video = this.selfVideo;
-    if (!wrap || !video) return;
-    const show = this.selfShowing();
-    if (show) {
-      const label = this.source === 'camera' ? '自分のカメラ（送信中）' : '自分の画面（送信中）';
-      if (this.selfLabel) this.selfLabel.textContent = label;
-      video.setAttribute('aria-label', label);
-      if (video.srcObject !== this.stream) {
-        video.srcObject = this.stream;
-        void Promise.resolve(video.play()).catch((e) => console.warn('[screenshare] 自分のカメラを再生できません', e));
-      }
-    } else if (video.srcObject) {
-      video.pause();
-      video.srcObject = null;
-    }
-    wrap.hidden = !show;
-    this.updatePanelVisible();
+    if (!this.selfShowing()) this.switchable = false;
+    this.renderPanel();
   }
 
-  /** 通話の画面の領域を、共有者に合わせて作り直す */
+  /** 通話の画面の領域を、いま出せるものに合わせて作り直す（自分の映像・見ている共有者） */
   renderPanel() {
     const panel = this.panel;
     const bar = this.panelBar;
+    const stage = this.panelStage;
     if (!panel || !bar) return;
-    if (this.panelPeer === null || !this.sharers.has(this.panelPeer)) {
+    const selfOn = this.selfShowing();
+    const valid = (/** @type {string} */ key) => (key === SELF_TAB ? selfOn : this.sharers.has(key));
+    // 送り始めたときは、自分の映像を出す（見ている相手の共有を選んでいても）
+    const started = selfOn && !this.selfWasOn;
+    this.selfWasOn = selfOn;
+    if (started || this.panelPeer === null || !valid(this.panelPeer)) {
+      // 自分が送っているときは、まず自分の映像を出す。そうでなければ最初の共有者
       const first = this.sharers.keys().next();
-      this.panelPeer = first.done ? null : first.value;
-      this.panelStage?.reset();
+      this.panelPeer = selfOn ? SELF_TAB : first.done ? null : first.value;
+      stage?.reset();
     }
     this.updatePanelVisible();
     bar.replaceChildren();
-    if (this.panelPeer === null) return;
+    if (this.panelPeer === null) {
+      stage?.clear();
+      return;
+    }
+    /** @param {string} key */
+    const select = (key) => {
+      this.panelPeer = key;
+      stage?.reset();
+      this.renderPanel();
+    };
     const tabs = document.createElement('div');
     tabs.className = 'screenshare-tabs';
+    if (selfOn) {
+      const camera = this.source === 'camera';
+      const b = ui.button({
+        text: `自分の${camera ? 'カメラ' : '画面'}（送信中）`,
+        icon: camera ? 'video' : 'monitor-play',
+        variant: 'ghost',
+        onClick: () => select(SELF_TAB),
+      });
+      b.classList.add('screenshare-tab');
+      if (this.panelPeer === SELF_TAB) b.classList.add('screenshare-tab-selected');
+      tabs.append(b);
+    }
     for (const s of this.sharers.values()) {
       const b = ui.button({
         text: `${s.user.display_name} の${sourceLabel(s.source)}`,
         icon: s.source === 'camera' ? 'video' : 'monitor-play',
         variant: 'ghost',
-        onClick: () => {
-          this.panelPeer = s.peer;
-          this.panelStage?.reset();
-          this.renderPanel();
-        },
+        onClick: () => select(s.peer),
       });
       b.classList.add('screenshare-tab');
       if (s.peer === this.panelPeer) b.classList.add('screenshare-tab-selected');
       tabs.append(b);
     }
-    const peer = this.panelPeer;
-    bar.append(tabs, ui.button({ icon: 'maximize-2', label: '大きく見る', variant: 'ghost', onClick: () => this.openViewer(peer) }));
+    bar.append(tabs);
+    if (this.panelPeer !== SELF_TAB) {
+      const peer = this.panelPeer;
+      bar.append(ui.button({ icon: 'maximize-2', label: '大きく見る', variant: 'ghost', onClick: () => this.openViewer(peer) }));
+    }
     this.showPanelFrame();
   }
 
-  /** 通話の画面の領域に、選んでいる共有者の最新のフレームを出す（画面に出ていない・閲覧表示が上にあるあいだは省く） */
+  /** 通話の画面の領域に、選んでいるもの（自分の映像、または共有者の最新のフレーム）を出す（画面に出ていない・閲覧表示が上にあるあいだは省く） */
   showPanelFrame() {
     const stage = this.panelStage;
+    if (!stage || this.overlay) return;
+    // 自分の映像は、通話の画面が閉じていても用意しておく（同じ MediaStream を渡すだけ。開いたときに出せる）
+    if (this.panelPeer === SELF_TAB) {
+      if (!this.selfShowing() || !this.stream) return;
+      stage.setOverlay(this.switchable ? this.switchEl : null);
+      stage.showVideo(this.stream, `自分の${this.source === 'camera' ? 'カメラ' : '画面'}（送信中）`);
+      return;
+    }
+    // 共有者のフレームは、画面に出ているときだけ描く（データを無駄に描かない）
+    if (!this.panel?.mounted) return;
     const s = this.panelPeer === null ? undefined : this.sharers.get(this.panelPeer);
-    if (!stage || !s || !this.panel?.mounted || this.overlay) return;
+    if (!s) return;
+    stage.setOverlay(null);
     if (!s.frame) stage.showWaiting(`${s.user.display_name} の${sourceLabel(s.source)}を待っています…`);
     else stage.showImage(`data:${s.mime ?? 'image/jpeg'};base64,${s.frame}`, `${s.user.display_name} の共有${sourceLabel(s.source)}`);
   }
