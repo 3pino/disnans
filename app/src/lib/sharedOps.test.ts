@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SharedEntry } from './protocol/SharedEntry';
-import { canOperate, deleteConfirm, inAttachments, nameError, overwriteConfirm, planUpload, renameNote, renameTarget } from './sharedOps';
+import { canOperate, deleteConfirm, deleteManyConfirm, inAttachments, nameError, overwriteConfirm, planUpload, renameNote, renameTarget } from './sharedOps';
 
 const file = (name: string, path = name): SharedEntry => ({
   name,
@@ -102,5 +102,17 @@ describe('アップロードの同名の扱い', () => {
 
   it('名前が使えなければ止める（送る前に）', () => {
     expect(planUpload('', 'a:b.txt', ok())).toMatchObject({ kind: 'blocked' });
+  });
+
+  it('複数の削除の確認は、件数を出し、フォルダ・添付の旨を入れて、まとめて 1 回', () => {
+    const c = deleteManyConfirm([
+      { path: 'docs', kind: 'dir' },
+      { path: 'attachments/x.png', kind: 'file' },
+    ]);
+    expect(c.title).toBe('2 件を削除しますか');
+    expect(c.body).toContain('フォルダは中身もすべて消えます');
+    expect(c.body).toContain('削除されたファイル');
+    expect(c.body).toContain('元に戻せません');
+    expect(deleteManyConfirm([{ path: 'a.txt', kind: 'file' }]).body).toBe('元に戻せません');
   });
 });

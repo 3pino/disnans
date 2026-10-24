@@ -1,6 +1,5 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import FileIcon from '@lucide/svelte/icons/file';
   import Folder from '@lucide/svelte/icons/folder';
@@ -8,7 +7,16 @@
   import Upload from '@lucide/svelte/icons/upload';
   import FolderPlus from '@lucide/svelte/icons/folder-plus';
   import X from '@lucide/svelte/icons/x';
+  import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
+  import ListChecks from '@lucide/svelte/icons/list-checks';
+  import Square from '@lucide/svelte/icons/square';
+  import SquareCheck from '@lucide/svelte/icons/square-check-big';
+  import Copy from '@lucide/svelte/icons/copy';
+  import FolderInput from '@lucide/svelte/icons/folder-input';
+  import Scissors from '@lucide/svelte/icons/scissors';
+  import Trash from '@lucide/svelte/icons/trash';
   import IconButton from './ui/IconButton.svelte';
+  import PanelBar from './ui/PanelBar.svelte';
   import Button from './ui/Button.svelte';
   import Modal from './ui/Modal.svelte';
   import TextInput from './ui/TextInput.svelte';
@@ -16,11 +24,21 @@
   import { ui } from '../lib/stores/ui.svelte';
   import { fileExplorer } from '../lib/stores/fileExplorer.svelte';
   import { sharedIndex } from '../lib/stores/sharedIndex.svelte';
-  import { breadcrumbs, entryAction, sortEntries } from '../lib/fileExplorer';
+  import { breadcrumbs, entryAction, kindLabel, sortEntries } from '../lib/fileExplorer';
+  import { explorerView } from '../lib/stores/explorerView.svelte';
+  import Check from '@lucide/svelte/icons/check';
+  import MenuIcon from '@lucide/svelte/icons/menu';
+  import Menu from './ui/Menu.svelte';
+  import MenuItem from './ui/MenuItem.svelte';
   import { attachmentActionText } from '../lib/fileLink';
-  import { canOperate, childPath, inAttachments, nameError, overwriteConfirm, planUpload } from '../lib/sharedOps';
+  import { canOperate, childPath, deleteManyConfirm, inAttachments, nameError, overwriteConfirm, planUpload } from '../lib/sharedOps';
+  import { checkTransfer, runTransfer, transferFailure, type TransferItem } from '../lib/sharedTransfer';
+  import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
+  import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
+  import FolderPicker from './FolderPicker.svelte';
   import { sharedApi, uploadShared } from '../lib/transport/shared';
   import { sharedFileUrl, fileUrl } from '../lib/config';
+  import { isImage } from '../lib/fileLink';
   import { formatSize, formatStamp } from '../lib/format';
   import type { SharedEntry } from '../lib/protocol/SharedEntry';
 
@@ -36,6 +54,12 @@
     if (sharedIndex.state(dir) === undefined) untrack(() => sharedIndex.ensure(dir));
   });
 
+  // 選択モードは、フォルダを変えたら外す（別のフォルダの項目を選んだままにしない）
+  $effect(() => {
+    void fileExplorer.dir;
+    untrack(() => explorerSelection.clear());
+  });
+
   function back(): void {
     if (!fileExplorer.up()) ui.back();
   }
@@ -43,6 +67,21 @@
   function href(e: SharedEntry): string {
     return sharedFileUrl(e.path);
   }
+
+  /** 並べ目（グリッド）の小さい画像。添付は縮小版（WebP）、共有フォルダの画像は原本。画像でなければ無し */
+  function thumbUrl(e: SharedEntry): string | null {
+    if (e.kind === 'dir' || !isImage(e.name, e.mime)) return null;
+    return e.file_id ? fileUrl(e.file_id, true) : sharedFileUrl(e.path);
+  }
+
+  // 操作のメニュー（≡）。項目を選んだら閉じてから動く
+  let menuOpen = $state(false);
+  function run(fn: () => void): void {
+    menuOpen = false;
+    fn();
+  }
+  const VIEW_LABEL = { list: '一覧', details: '詳細', grid: 'アイコン' } as const;
+  const KEY_LABEL = { name: '名前', modified: '更新日時', size: 'サイズ' } as const;
 
   function openImage(e: SharedEntry): void {
     const src = e.file_id ? fileUrl(e.file_id) : href(e);
@@ -104,6 +143,154 @@
     }
   }
 
+  // ---- 貼り付け（アプリ内のバッファの項目を、開いているフォルダへ。切り取りは移動、コピーはコピー） ----
+
+  let pasting = $state(false);
+
+  async function paste(): Promise<void> {
+    const mode = explorerBuffer.mode;
+    if (pasting || !mode || explorerBuffer.empty) return;
+    const dest = fileExplorer.dir;
+    const st = sharedIndex.state(dest);
+    if (st?.kind !== 'ok') {
+      sharedIndex.ensure(dest);
+      ui.toast('フォルダの中身を読み終えてから、もう一度貼り付けてください', 'error');
+      return;
+    }
+    pasting = true;
+    try {
+      const result = await runTransfer({
+        op: mode,
+        items: [...explorerBuffer.items],
+        destDir: dest,
+        destEntries: st.entries,
+        confirm: (c) => ui.confirm(c),
+        api: sharedApi,
+        invalidate: (p) => sharedIndex.invalidate(p),
+      });
+      // 切り取りは、移動したもの（と同じ場所で何もしなかったもの）をバッファから外す。
+      // 上書きを取り消したもの・失敗したものは残す。コピーは残す
+      if (mode === 'move') explorerBuffer.remove([...result.done, ...result.skipped].map((i) => i.path));
+      const msg = transferFailure(result);
+      if (msg) ui.toast(msg, 'error');
+    } finally {
+      pasting = false;
+    }
+  }
+
+  // ---- 複数選択の操作（コピー・切り取り・削除・移動）。まとめて 1 回の確認（削除・上書き） ----
+
+  /** 選んでいる項目（一覧に今ある分。消えたものは外す） */
+  const selectedItems = $derived.by((): TransferItem[] => {
+    if (listing?.kind !== 'ok') return [];
+    const want = new Set(explorerSelection.paths());
+    return [...listing.entries.values()].filter((e) => want.has(e.path)).map((e) => ({ path: e.path, kind: e.kind === 'dir' ? 'dir' : 'file' }));
+  });
+
+  /** 移動の先を選ぶ（選んだ項目の一覧を渡す） */
+  let moveItems = $state<TransferItem[] | null>(null);
+
+  function copySelected(): void {
+    const items = selectedItems;
+    // フォルダはコピーできない（除いて、理由を出す）
+    const allowed = items.filter((i) => checkTransfer('copy', i, fileExplorer.dir).ok);
+    if (allowed.length < items.length) ui.toast(`フォルダはコピーできないので、${items.length - allowed.length} 件を除きました`);
+    if (allowed.length === 0) return;
+    explorerBuffer.set('copy', allowed);
+    explorerSelection.clear();
+    ui.toast(`${allowed.length} 件をコピーしました。移動先で「貼り付け」を押してください`);
+  }
+
+  function cutSelected(): void {
+    const items = selectedItems;
+    if (items.length === 0) return;
+    explorerBuffer.set('move', items);
+    explorerSelection.clear();
+    ui.toast(`${items.length} 件を切り取りました。移動先で「貼り付け」を押してください`);
+  }
+
+  async function deleteSelected(): Promise<void> {
+    const items = selectedItems;
+    if (items.length === 0) return;
+    if (!(await ui.confirm(deleteManyConfirm(items)))) return;
+    const failed: string[] = [];
+    for (const i of items) {
+      try {
+        await sharedApi.remove(i.path);
+        sharedIndex.invalidate(i.path);
+      } catch (err) {
+        failed.push(`${i.path}: ${attachmentActionText(err)}`);
+      }
+    }
+    explorerSelection.clear();
+    if (failed.length > 0) ui.toast(`${failed.length} 件を削除できませんでした（${failed[0]}）`, 'error');
+  }
+
+  async function moveTo(dest: string, entries: Map<string, SharedEntry>): Promise<void> {
+    const items = moveItems ?? [];
+    moveItems = null;
+    const result = await runTransfer({
+      op: 'move',
+      items,
+      destDir: dest,
+      destEntries: entries,
+      confirm: (c) => ui.confirm(c),
+      api: sharedApi,
+      invalidate: (p) => sharedIndex.invalidate(p),
+    });
+    // 移したものは選びから外す（残ったものは選んだまま）
+    explorerSelection.clear();
+    const msg = transferFailure(result);
+    if (msg) ui.toast(msg, 'error');
+  }
+
+  // ---- 行の操作: 長押しで選択モードに入る。選択モードの中では、行を押すと開かずに選び直す ----
+
+  const LONG_PRESS_MS = 500;
+  let pressTimer: ReturnType<typeof setTimeout> | undefined;
+  let pressFrom: { x: number; y: number } | null = null;
+  /** 長押しで選択に入ったところ（直後のクリックは無視する） */
+  let longPressed = false;
+
+  function pressStart(ev: PointerEvent, path: string): void {
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    // 項目の「…」の上の長押しは、選択に入れない
+    if (ev.target instanceof Element && ev.target.closest('.shared-entry-actions')) return;
+    longPressed = false;
+    pressFrom = { x: ev.clientX, y: ev.clientY };
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      pressFrom = null;
+      explorerSelection.start(path);
+    }, LONG_PRESS_MS);
+  }
+
+  function pressMove(ev: PointerEvent): void {
+    if (!pressFrom) return;
+    if (Math.abs(ev.clientX - pressFrom.x) > 8 || Math.abs(ev.clientY - pressFrom.y) > 8) pressEnd();
+  }
+
+  function pressEnd(): void {
+    clearTimeout(pressTimer);
+    pressFrom = null;
+  }
+
+  /** 行を押したとき（選択モードの中では選び直す。長押しの直後は何もしない） */
+  function rowClick(ev: MouseEvent, path: string, open: () => void): void {
+    if (longPressed) {
+      longPressed = false;
+      ev.preventDefault();
+      return;
+    }
+    if (explorerSelection.active) {
+      ev.preventDefault();
+      explorerSelection.toggle(path);
+      return;
+    }
+    open();
+  }
+
   let mkdirOpen = $state(false);
   let mkdirName = $state('');
   let mkdirError = $state<string | null>(null);
@@ -140,11 +327,7 @@
 </script>
 
 <div class="file-explorer">
-  <!-- 上端の行は通話・設定の見出しと同じ（.top-bar が上の余白を取る）。戻る・場所・操作・閉じるを 1 行に並べる -->
-  <div class="top-bar file-explorer-bar">
-    {#if fileExplorer.dir !== '' || ui.isMobile}
-      <IconButton label="戻る" onclick={back}><ArrowLeft size={20} /></IconButton>
-    {/if}
+  <PanelBar onback={fileExplorer.dir !== '' || ui.isMobile ? back : undefined}>
     <nav class="file-explorer-crumbs" aria-label="場所">
       <button type="button" class="file-explorer-crumb" onclick={() => fileExplorer.open('')}>共有フォルダ</button>
       {#each crumbs as c (c.path)}
@@ -152,15 +335,41 @@
         <button type="button" class="file-explorer-crumb" onclick={() => fileExplorer.open(c.path)}>{c.name}</button>
       {/each}
     </nav>
-    <IconButton label="アップロード" title="アップロード" onclick={() => fileInput?.click()}><Upload size={18} /></IconButton>
-    {#if canCreateFolder}
-      <IconButton label="新しいフォルダ" title="新しいフォルダ" onclick={openMkdir}><FolderPlus size={18} /></IconButton>
-    {/if}
-    <input bind:this={fileInput} type="file" multiple hidden onchange={onPicked} />
+    {#snippet actions()}
+    <!-- 操作はメニュー（≡）に集める。閉じるだけは広い画面で外に出す -->
+    <span class="file-explorer-popup">
+      <IconButton label="メニュー" title="メニュー" active={menuOpen} onclick={() => (menuOpen = !menuOpen)}><MenuIcon size={18} /></IconButton>
+      {#if menuOpen}
+        <Menu class="file-explorer-popup-menu file-explorer-menu" label="共有フォルダの操作" onclose={() => (menuOpen = false)}>
+          <MenuItem icon={Upload} onclick={() => run(() => fileInput?.click())}>アップロード</MenuItem>
+          {#if canCreateFolder}
+            <MenuItem icon={FolderPlus} onclick={() => run(openMkdir)}>新しいフォルダ</MenuItem>
+          {/if}
+          {#if !explorerBuffer.empty}
+            <MenuItem icon={ClipboardPaste} onclick={() => run(() => void paste())}>貼り付け（{explorerBuffer.items.length} 件）</MenuItem>
+          {/if}
+          <MenuItem icon={ListChecks} onclick={() => run(() => (explorerSelection.active ? explorerSelection.clear() : explorerSelection.enter()))}>
+            {explorerSelection.active ? '選択モードをやめる' : '選択モード'}
+          </MenuItem>
+          <p class="file-explorer-menu-head muted">表示</p>
+          {#each ['list', 'details', 'grid'] as const as v (v)}
+            <MenuItem onclick={() => run(() => explorerView.setView(v))}>{VIEW_LABEL[v]}{#if explorerView.view === v}<Check size={14} />{/if}</MenuItem>
+          {/each}
+          <p class="file-explorer-menu-head muted">並び替え</p>
+          {#each ['name', 'modified', 'size'] as const as k (k)}
+            <MenuItem onclick={() => run(() => explorerView.setSort(k, explorerView.sortOrder))}>{KEY_LABEL[k]}{#if explorerView.sortKey === k}<Check size={14} />{/if}</MenuItem>
+          {/each}
+          <MenuItem onclick={() => run(() => explorerView.setSort(explorerView.sortKey, 'asc'))}>昇順{#if explorerView.sortOrder === 'asc'}<Check size={14} />{/if}</MenuItem>
+          <MenuItem onclick={() => run(() => explorerView.setSort(explorerView.sortKey, 'desc'))}>降順{#if explorerView.sortOrder === 'desc'}<Check size={14} />{/if}</MenuItem>
+        </Menu>
+      {/if}
+    </span>
     {#if !ui.isMobile}
       <IconButton label="閉じる" onclick={() => ui.closePanel()}><X size={18} /></IconButton>
     {/if}
-  </div>
+    <input bind:this={fileInput} type="file" multiple hidden onchange={onPicked} />
+    {/snippet}
+  </PanelBar>
 
   {#if uploads.length > 0}
     <ul class="file-explorer-uploads" aria-label="送信中のファイル">
@@ -178,6 +387,22 @@
     </ul>
   {/if}
 
+  {#if explorerSelection.active}
+    <div class="file-explorer-selection" role="toolbar" aria-label="選んだ項目の操作">
+      <span class="file-explorer-selection-count" aria-live="polite">{explorerSelection.count} 件選択中</span>
+      <div class="file-explorer-selection-actions">
+        {#if listing?.kind === 'ok'}
+          <IconButton label="すべて選ぶ" title="すべて選ぶ" onclick={() => explorerSelection.selectAll([...listing.entries.values()].map((e) => e.path))}><SquareCheck size={18} /></IconButton>
+        {/if}
+        <IconButton label="コピー" title="コピー" disabled={explorerSelection.count === 0} onclick={copySelected}><Copy size={18} /></IconButton>
+        <IconButton label="切り取り" title="切り取り" disabled={explorerSelection.count === 0} onclick={cutSelected}><Scissors size={18} /></IconButton>
+        <IconButton label="移動" title="移動" disabled={explorerSelection.count === 0} onclick={() => (moveItems = selectedItems)}><FolderInput size={18} /></IconButton>
+        <IconButton label="削除" title="削除" disabled={explorerSelection.count === 0} onclick={() => void deleteSelected()}><Trash size={18} /></IconButton>
+        <Button onclick={() => explorerSelection.clear()}>選択をやめる</Button>
+      </div>
+    </div>
+  {/if}
+
   <div class="scroll file-explorer-body">
     {#if listing === undefined || listing.kind === 'loading'}
       <p class="file-explorer-status muted">読み込み中…</p>
@@ -190,28 +415,70 @@
     {:else if listing.entries.size === 0}
       <p class="file-explorer-status muted">このフォルダには、まだ何もありません。</p>
     {:else}
-      <ul class="file-explorer-list">
-        {#each sortEntries(listing.entries.values()) as e (e.path)}
+      {@const sorted = sortEntries(listing.entries.values(), explorerView.sortKey, explorerView.sortOrder)}
+      {#if explorerView.view === 'details'}
+        <div class="file-explorer-columns" aria-hidden="true">
+          <span class="file-explorer-col-name">名前</span>
+          <span class="file-explorer-col-kind">種類</span>
+          <span class="file-explorer-col-size">サイズ</span>
+          <span class="file-explorer-col-date">更新日時</span>
+        </div>
+      {/if}
+      <ul class="file-explorer-list file-explorer-view-{explorerView.view}">
+        {#each sorted as e (e.path)}
           {@const action = entryAction(e)}
-          <li class="file-explorer-item">
+          {@const thumb = explorerView.view === 'grid' ? thumbUrl(e) : null}
+          <li
+            class="file-explorer-item"
+            class:file-explorer-item-cut={explorerBuffer.isCut(e.path)}
+            class:file-explorer-item-selected={explorerSelection.has(e.path)}
+            onpointerdown={(ev) => pressStart(ev, e.path)}
+            onpointermove={pressMove}
+            onpointerup={pressEnd}
+            onpointerleave={pressEnd}
+            onpointercancel={pressEnd}
+            oncontextmenu={(ev) => {
+              if (explorerSelection.active || longPressed) ev.preventDefault();
+            }}
+          >
             {#snippet row()}
-              <span class="file-explorer-icon">
-                {#if action === 'enter'}<Folder size={18} />{:else if action === 'image'}<ImageIcon size={18} />{:else}<FileIcon size={18} />{/if}
-              </span>
-              <span class="file-explorer-name">{e.name}</span>
-              <span class="file-explorer-meta">
-                {#if e.kind === 'file'}{formatSize(e.size)} · {/if}{formatStamp(e.modified, now)}
-              </span>
+              {#if explorerSelection.active}
+                <span class="file-explorer-check">{#if explorerSelection.has(e.path)}<SquareCheck size={18} />{:else}<Square size={18} />{/if}</span>
+              {/if}
+              {#if explorerView.view === 'grid'}
+                <span class="file-explorer-thumb">
+                  {#if thumb}
+                    <img src={thumb} alt="" loading="lazy" decoding="async" />
+                  {:else if action === 'enter'}<Folder size={32} />{:else if action === 'image'}<ImageIcon size={32} />{:else}<FileIcon size={32} />{/if}
+                </span>
+                <span class="file-explorer-name">{e.name}</span>
+              {:else}
+                <span class="file-explorer-icon">
+                  {#if action === 'enter'}<Folder size={18} />{:else if action === 'image'}<ImageIcon size={18} />{:else}<FileIcon size={18} />{/if}
+                </span>
+                <span class="file-explorer-name">{e.name}</span>
+                {#if explorerView.view === 'details'}
+                  <span class="file-explorer-col-kind">{kindLabel(e)}</span>
+                  <span class="file-explorer-col-size">{e.kind === 'file' ? formatSize(e.size) : ''}</span>
+                  <span class="file-explorer-col-date">{formatStamp(e.modified, now)}</span>
+                {:else}
+                  <span class="file-explorer-meta">
+                    {#if e.kind === 'file'}{formatSize(e.size)} · {/if}{formatStamp(e.modified, now)}
+                  </span>
+                {/if}
+              {/if}
             {/snippet}
-            {#if action === 'enter'}
-              <button type="button" class="file-explorer-row" onclick={() => fileExplorer.open(e.path)}>{@render row()}</button>
+            {#if explorerSelection.active}
+              <button type="button" class="file-explorer-row" aria-pressed={explorerSelection.has(e.path)} onclick={(ev) => rowClick(ev, e.path, () => {})}>{@render row()}</button>
+            {:else if action === 'enter'}
+              <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e.path, () => fileExplorer.open(e.path))}>{@render row()}</button>
             {:else if action === 'image'}
-              <button type="button" class="file-explorer-row" onclick={() => openImage(e)}>{@render row()}</button>
+              <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e.path, () => openImage(e))}>{@render row()}</button>
             {:else}
-              <a class="file-explorer-row" href={href(e)} download={e.name} target="_blank" rel="noopener">{@render row()}</a>
+              <a class="file-explorer-row" href={href(e)} download={e.name} target="_blank" rel="noopener" onclick={(ev) => rowClick(ev, e.path, () => {})}>{@render row()}</a>
             {/if}
-            {#if canOperate(e.path)}
-              <SharedEntryActions path={e.path} dir={e.kind === 'dir'} placement="inline" />
+            {#if canOperate(e.path) && !explorerSelection.active}
+              <SharedEntryActions entry={e} placement={explorerView.view === 'grid' ? 'overlay' : 'inline'} />
             {/if}
           </li>
         {/each}
@@ -219,6 +486,10 @@
     {/if}
   </div>
 </div>
+
+{#if moveItems}
+  <FolderPicker items={moveItems} onpick={moveTo} onclose={() => (moveItems = null)} />
+{/if}
 
 {#if mkdirOpen}
   <Modal title="新しいフォルダ" onclose={() => (mkdirOpen = false)} width={380}>
@@ -240,17 +511,6 @@
     height: 100%;
     min-height: 0;
     background: var(--bg);
-  }
-  /* 上端の行（通話・設定の見出しと同じ余白。上の安全域は .top-bar が取る）。右の操作は左の場所に続けて並べる */
-  .file-explorer-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    /* 上の余白は .top-bar のものを使う（ここで padding を省略形で書くと、上まで消してしまう） */
-    padding-right: var(--space-4);
-    padding-bottom: var(--space-3);
-    padding-left: var(--space-7);
-    border-bottom: 1px solid var(--border);
   }
   .file-explorer-crumbs {
     flex: 1;
@@ -343,6 +603,150 @@
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
+  }
+  /* 切り取りの途中（貼り付けるまで残る）。消えたわけではないので薄くする */
+  .file-explorer-item-cut {
+    opacity: 0.5;
+  }
+  .file-explorer-selection {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border);
+    flex: none;
+  }
+  .file-explorer-selection-count {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+  }
+  .file-explorer-selection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .file-explorer-check {
+    flex: none;
+    display: flex;
+    color: var(--accent);
+  }
+  .file-explorer-item-selected .file-explorer-row {
+    background: var(--hover);
+  }
+  .file-explorer-popup {
+    position: relative;
+    display: inline-flex;
+  }
+  .file-explorer-popup > :global(.file-explorer-popup-menu) {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 5;
+    min-width: 12em;
+  }
+  .file-explorer-menu-head {
+    margin: var(--space-3) 0 0;
+    padding: 0 var(--space-4);
+    font-size: var(--fs-xs);
+  }
+  /* 詳細: 名前の列は残りの幅、ほかは決まった幅 */
+  .file-explorer-columns,
+  .file-explorer-view-details .file-explorer-item .file-explorer-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .file-explorer-columns {
+    padding: var(--space-2) var(--space-5);
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    border-bottom: 1px solid var(--border);
+  }
+  .file-explorer-col-name {
+    flex: 1;
+    min-width: 0;
+  }
+  .file-explorer-view-details .file-explorer-col-kind {
+    flex: none;
+    width: 4.5em;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .file-explorer-view-details .file-explorer-col-size {
+    flex: none;
+    width: 5.5em;
+    text-align: right;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .file-explorer-view-details .file-explorer-col-date {
+    flex: none;
+    width: 8em;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .file-explorer-columns .file-explorer-col-kind,
+  .file-explorer-columns .file-explorer-col-size,
+  .file-explorer-columns .file-explorer-col-date {
+    flex: none;
+  }
+  .file-explorer-columns .file-explorer-col-kind {
+    width: 4.5em;
+  }
+  .file-explorer-columns .file-explorer-col-size {
+    width: 5.5em;
+    text-align: right;
+  }
+  .file-explorer-columns .file-explorer-col-date {
+    width: 8em;
+  }
+  /* アイコン（グリッド）: 並べ目。画像は正方形の縮小 */
+  .file-explorer-view-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: var(--space-3);
+  }
+  .file-explorer-view-grid .file-explorer-item {
+    position: relative;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  .file-explorer-view-grid .file-explorer-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+  .file-explorer-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    border-radius: var(--radius-xs);
+    background: var(--surface-2);
+    color: var(--text-muted);
+    overflow: hidden;
+  }
+  .file-explorer-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .file-explorer-view-grid .file-explorer-name {
+    text-align: center;
+    font-size: var(--fs-sm);
+  }
+  .file-explorer-view-grid .file-explorer-check {
+    position: absolute;
+    top: var(--space-2);
+    left: var(--space-2);
+    z-index: 1;
+    background: var(--surface);
+    border-radius: var(--radius-xs);
   }
   .file-explorer-row {
     display: flex;

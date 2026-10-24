@@ -67,6 +67,16 @@ export function deleteConfirm(path: string, dir: boolean): { title: string; body
   return { title: `「${name}」を削除しますか`, body: '元に戻せません', okLabel: '削除', danger: true };
 }
 
+/** 複数の項目の削除の確認の文（まとめて 1 回。attachments/ の中・フォルダが混じるときは、その旨を入れる） */
+export function deleteManyConfirm(items: readonly { path: string; kind: 'file' | 'dir' }[]): { title: string; body: string; okLabel: string; danger: true } {
+  const n = items.length;
+  const notes: string[] = [];
+  if (items.some((i) => inAttachments(i.path))) notes.push('添付のものは、本文のリンクが「削除されたファイル」になります');
+  if (items.some((i) => i.kind === 'dir')) notes.push('フォルダは中身もすべて消えます');
+  notes.push('元に戻せません');
+  return { title: `${n} 件を削除しますか`, body: notes.join('。'), okLabel: '削除', danger: true };
+}
+
 /** 同名のファイルを上書きする確認の文（必ず確認する）。attachments/ の中は、本文の表示も新しい中身になる */
 export function overwriteConfirm(path: string): { title: string; body: string; okLabel: string; danger: true } {
   const name = baseName(path);
