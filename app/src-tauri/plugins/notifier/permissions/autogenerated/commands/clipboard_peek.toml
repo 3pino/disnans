@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-clipboard-peek"
+description = "Enables the clipboard_peek command without any pre-configured scope."
+commands.allow = ["clipboard_peek"]
+
+[[permission]]
+identifier = "deny-clipboard-peek"
+description = "Denies the clipboard_peek command without any pre-configured scope."
+commands.deny = ["clipboard_peek"]

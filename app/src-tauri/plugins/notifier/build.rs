@@ -18,6 +18,8 @@ const COMMANDS: &[&str] = &[
     "request_recent_images_permission",
     "read_image",
     "clipboard_image",
+    "clipboard_peek",
+    "clipboard_text",
     "set_orientation",
     "set_keep_web_view",
     "log_call",

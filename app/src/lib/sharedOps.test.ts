@@ -54,8 +54,8 @@ describe('添付と項目の決まり', () => {
     expect(renameTarget('a.txt', 'b.txt')).toBe('b.txt');
   });
 
-  it('名前の変更の案内: attachments/ は本文の表示、ほかは本文のリンクが切れる旨', () => {
-    expect(renameNote('attachments/a.png')).toContain('新しい名前で表示');
+  it('名前の変更の案内: attachments/ は出さない、ほかは本文のリンクが切れる旨', () => {
+    expect(renameNote('attachments/a.png')).toBeNull();
     expect(renameNote('docs/a.txt')).toContain('リンクは切れます');
   });
 
