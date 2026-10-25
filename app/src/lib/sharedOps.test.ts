@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SharedEntry } from './protocol/SharedEntry';
-import { canOperate, deleteConfirm, deleteManyConfirm, inAttachments, nameError, overwriteConfirm, planUpload, renameNote, renameTarget } from './sharedOps';
+import { canOperate, deleteConfirm, deleteManyConfirm, inAttachments, nameError, overwriteConfirm, planUpload, renameTarget } from './sharedOps';
 
 const file = (name: string, path = name): SharedEntry => ({
   name,
@@ -52,11 +52,6 @@ describe('添付と項目の決まり', () => {
     expect(renameTarget('attachments/a.png', 'b.png')).toBe('attachments/b.png');
     expect(renameTarget('docs/sub/a.txt', 'b.txt')).toBe('docs/sub/b.txt');
     expect(renameTarget('a.txt', 'b.txt')).toBe('b.txt');
-  });
-
-  it('名前の変更の案内: attachments/ は出さない、ほかは本文のリンクが切れる旨', () => {
-    expect(renameNote('attachments/a.png')).toBeNull();
-    expect(renameNote('docs/a.txt')).toContain('リンクは切れます');
   });
 
   it('削除の確認: 添付は本文のリンクが「削除されたファイル」になる、フォルダは中身も消える、ほかは元に戻せない', () => {

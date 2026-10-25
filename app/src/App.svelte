@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { externalLinkHref } from './lib/externalLink';
   import Setup from './components/Setup.svelte';
   import Shell from './components/Shell.svelte';
   import ConfirmDialog from './components/ConfirmDialog.svelte';
@@ -175,11 +176,12 @@
   onMount(() => {
     // Tauri では外部リンクを既定のブラウザーで開く
     if (!isTauri()) return;
+    // 押した場所の処理が既定の動作を止めた（preventDefault）リンクは開かない（lib/externalLink.ts）
     const onClick = (e: MouseEvent) => {
-      const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
-      if (!a || !/^https?:/i.test(a.href) || a.origin === location.origin) return;
+      const href = externalLinkHref(e, location.origin);
+      if (!href) return;
       e.preventDefault();
-      void import('@tauri-apps/plugin-opener').then((m) => m.openUrl(a.href));
+      void import('@tauri-apps/plugin-opener').then((m) => m.openUrl(href));
     };
     document.addEventListener('click', onClick);
     return () => document.removeEventListener('click', onClick);

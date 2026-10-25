@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentActionText, attachmentNameError, deletedAttachmentNames, fileLinkView, isImage } from './fileLink';
+import { attachmentActionText, attachmentNameError, deletedAttachmentNames, fileLinkView, isImage, isPdf } from './fileLink';
 import { HttpError } from './transport/http';
 import type { SharedEntry } from './protocol/SharedEntry';
 import type { Message } from './protocol/Message';
@@ -122,5 +122,15 @@ describe('添付の名前の変更', () => {
   it('送信の invalid_link は、リンクを直すよう伝える文', async () => {
     const { errorText } = await import('./errors');
     expect(errorText('invalid_link', 'x')).toContain('リンク先のファイル');
+  });
+});
+
+describe('PDF の見分け', () => {
+  it('mime があればそれ、無い・汎用なら拡張子で見る', () => {
+    expect(isPdf('a.bin', 'application/pdf')).toBe(true);
+    expect(isPdf('a.pdf', 'text/plain')).toBe(false);
+    expect(isPdf('A.PDF', null)).toBe(true);
+    expect(isPdf('a.pdf', 'application/octet-stream')).toBe(true);
+    expect(isPdf('a.txt')).toBe(false);
   });
 });

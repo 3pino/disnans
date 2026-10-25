@@ -411,6 +411,33 @@ describe('表示方法と並び順', () => {
     expect(el.querySelector('.file-explorer-thumb svg')).not.toBeNull();
   });
 
+  it('アイコン表示では、PDF はサムネイルの部品（1 ページ目）を出す。大きすぎる PDF とほかのファイルは絵のアイコン', async () => {
+    h.current = [
+      { ...entry('doc.pdf'), mime: 'application/pdf' },
+      { ...entry('huge.pdf'), mime: 'application/pdf', size: 200 * 1024 * 1024 },
+      entry('a.txt'),
+    ];
+    explorerView.setView('', 'grid');
+    try {
+      const el = await render();
+      const item = (n: string) => [...el.querySelectorAll('.file-explorer-item')].find((li) => li.textContent?.includes(n))!;
+      expect(item('doc.pdf').querySelector('.pdf-thumb')).not.toBeNull();
+      expect(item('huge.pdf').querySelector('.pdf-thumb')).toBeNull();
+      expect(item('a.txt').querySelector('.pdf-thumb')).toBeNull();
+    } finally {
+      h.current = null;
+    }
+  });
+
+  it('サムネイルは欠けないよう、全体を枠に収める（object-fit: contain）', async () => {
+    const { readFileSync } = await import('node:fs');
+    for (const file of ['FileExplorer.svelte', 'PdfThumb.svelte']) {
+      const css = readFileSync(`src/components/${file}`, 'utf8').split('<style>')[1] ?? '';
+      expect(css, file).toMatch(/object-fit:\s*contain/);
+      expect(css, file).not.toMatch(/object-fit:\s*cover/);
+    }
+  });
+
   it('詳細は列の見出しを出し、種類・サイズ・更新日時を各項目に出す', async () => {
     const el = await render();
     const heads = [...el.querySelectorAll('.file-explorer-columns span:not(.file-explorer-col-actions)')].map((x) => x.textContent);
@@ -511,7 +538,7 @@ describe('名前の変更（名前を押すと、その場で入力欄になる�
     await vi.waitFor(() => expect(el.querySelector('.file-explorer-rename')).toBeNull());
   });
 
-  it('共有フォルダの項目では、本文のリンクが切れる旨を出す。attachments の中では何も出さない', async () => {
+  it('名前の書き換えでは、注意の文を出さない（共有フォルダでも attachments の中でも）', async () => {
     h.current = [{ ...entry('a.png'), path: 'attachments/a.png' }, entry('b.txt')];
     try {
       const el = await render();
@@ -523,7 +550,9 @@ describe('名前の変更（名前を押すと、その場で入力欄になる�
       flushSync();
       nameOf(el, 'b.txt').click();
       flushSync();
-      expect(el.querySelector('.file-explorer-rename-note')?.textContent).toContain('リンクは切れます');
+      expect(el.querySelector('.file-explorer-rename')).not.toBeNull();
+      expect(el.textContent).not.toContain('リンクは切れます');
+      expect(el.querySelector('.file-explorer-rename-note')).toBeNull();
     } finally {
       h.current = null;
     }
