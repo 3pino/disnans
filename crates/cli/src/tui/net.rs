@@ -61,6 +61,7 @@ pub async fn run(server: ServerUrl, dev_user: Option<String>) -> Result<(), CliE
         Box::new(new_client_id),
     );
     app.notice = draft_warning;
+    app.server = server.as_str().to_owned();
     // 通知の方針は共通の表（client-core の platform）から読む。
     app.bell = disnans_client_core::terminal_info(disnans_client_core::Surface::Tui)
         .capabilities

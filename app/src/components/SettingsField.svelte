@@ -65,6 +65,11 @@
   :global(.settings-field-segmented .setting-row-control) {
     width: 264px;
   }
+  /* SettingRow は操作を div で包むので、その div も幅いっぱいにする */
+  :global(.settings-field-segmented .setting-row-control > div) {
+    flex: 1;
+    min-width: 0;
+  }
   :global(.settings-field-picker) {
     width: 100%;
   }
