@@ -31,13 +31,14 @@ const h = vi.hoisted(() => ({
   mkdir: vi.fn(async () => ({})),
   copy: vi.fn(async () => ({})),
   remove: vi.fn(async (_path: string) => {}),
+  move: vi.fn(async (_from: string, _to: string) => ({})),
 }));
 vi.mock('../lib/transport/shared', () => ({
   sharedApi: {
     list: async () => h.current ?? listing,
     mkdir: h.mkdir,
     copy: h.copy,
-    move: async () => ({}),
+    move: h.move,
     remove: h.remove,
   },
   uploadShared: h.upload,
@@ -61,9 +62,9 @@ afterEach(async () => {
   explorerBuffer.clear();
   h.copy.mockClear();
   h.remove.mockClear();
+  h.move.mockClear();
   explorerSelection.clear();
-  explorerView.setView('list');
-  explorerView.setSort('name', 'asc');
+  explorerView.reset();
 });
 
 async function render(): Promise<HTMLElement> {
@@ -82,6 +83,22 @@ function menuClick(el: HTMLElement, text: string): void {
   const item = [...document.querySelectorAll<HTMLButtonElement>('.file-explorer-menu .menu-item')].find((b) => b.textContent?.includes(text));
   if (!item) throw new Error(`メニューに「${text}」がありません`);
   item.click();
+  flushSync();
+}
+
+/** 操作のメニュー（≡）の項目の文字（開いて読み、閉じる） */
+function menuLabels(el: HTMLElement): string[] {
+  el.querySelector<HTMLButtonElement>('button[aria-label="メニュー"]')!.click();
+  flushSync();
+  const labels = [...document.querySelectorAll('.file-explorer-menu .menu-item')].map((b) => b.textContent?.trim() ?? '');
+  document.querySelector<HTMLButtonElement>('.menu-backdrop')?.click();
+  flushSync();
+  return labels;
+}
+
+/** 上端の貼り付けを押す */
+function pasteClick(el: HTMLElement): void {
+  el.querySelector<HTMLButtonElement>('.panel-bar button[aria-label="貼り付け"]')!.click();
   flushSync();
 }
 
@@ -215,20 +232,30 @@ describe('項目の操作と貼り付け（コピー・切り取り・移動）'
     return [...document.querySelectorAll('.shared-entry-menu-item')].map((b) => b.textContent?.trim() ?? '');
   }
 
-  it('フォルダの「…」にはコピーを出さない（フォルダはコピーできない）。ファイルには出す', async () => {
+  it('「…」はプロパティだけ（フォルダもファイルも）', async () => {
     const el = await render();
-    expect(itemMenuLabels(el, 'docs')).toEqual(['名前を変更', '切り取り', 'プロパティ', '削除']);
+    expect(itemMenuLabels(el, 'docs')).toEqual(['プロパティ']);
     // 開いたメニューを閉じる（外側を押す）
     document.querySelector<HTMLButtonElement>('.menu-backdrop')?.click();
     flushSync();
-    expect(itemMenuLabels(el, 'a.txt')).toEqual(['名前を変更', 'コピー', '切り取り', 'プロパティ', '削除']);
+    expect(itemMenuLabels(el, 'a.txt')).toEqual(['プロパティ']);
+  });
+
+  it('上端に貼り付けのボタンがある。バッファが空なら押せない（≡ には出さない）', async () => {
+    const el = await render();
+    const btn = el.querySelector<HTMLButtonElement>('.panel-bar button[aria-label="貼り付け"]')!;
+    expect(btn.disabled).toBe(true);
+    explorerBuffer.set('copy', [{ path: 'x/b.txt', kind: 'file' }]);
+    flushSync();
+    expect(btn.disabled).toBe(false);
+    expect(menuLabels(el)).not.toContain('貼り付け');
   });
 
   it('コピーしたものを貼り付けると、同名は確認してから上書きで送る', async () => {
     const el = await render();
     explorerBuffer.set('copy', [{ path: 'x/a.txt', kind: 'file' }]);
     flushSync();
-    menuClick(el, '貼り付け');
+    pasteClick(el);
     await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
     expect(ui.confirmReq!.body).toContain('消えて');
     expect(h.copy).not.toHaveBeenCalled();
@@ -242,7 +269,7 @@ describe('項目の操作と貼り付け（コピー・切り取り・移動）'
     const el = await render();
     explorerBuffer.set('move', [{ path: 'x/a.txt', kind: 'file' }]);
     flushSync();
-    menuClick(el, '貼り付け');
+    pasteClick(el);
     await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
     ui.confirmReq!.resolve(false);
     await vi.waitFor(() => expect(ui.confirmReq).toBeNull());
@@ -267,10 +294,18 @@ describe('複数選択（選択モード）', () => {
     flushSync();
   }
 
-  it('選択モードのツールバーで入り、行を押すと選び直す（開かない）。件数を出す', async () => {
+  it('≡ に「選択モード」と「一覧」は無い', async () => {
     const el = await render();
-    menuClick(el, '選択モード');
-    expect(explorerSelection.active).toBe(true);
+    const labels = menuLabels(el);
+    expect(labels.some((l) => l.includes('選択モード'))).toBe(false);
+    expect(labels.some((l) => l.startsWith('一覧'))).toBe(false);
+    expect(labels.some((l) => l.startsWith('詳細'))).toBe(true);
+  });
+
+  it('選択モードでは、行を押すと選び直す（開かない）。件数を出す', async () => {
+    const el = await render();
+    explorerSelection.enter();
+    flushSync();
     pressRow(el, 'a.txt');
     pressRow(el, 'docs');
     expect(el.querySelector('.file-explorer-selection-count')?.textContent).toContain('2 件選択中');
@@ -311,6 +346,21 @@ describe('複数選択（選択モード）', () => {
     expect(explorerSelection.active).toBe(false);
   });
 
+  it('選択中の「戻る」（Alt+← など）は、選択モードを終える。フォルダは戻らない', async () => {
+    fileExplorer.dir = 'docs';
+    await render();
+    const before = ui.pluginBack.length;
+    explorerSelection.start('docs/x');
+    flushSync();
+    expect(ui.pluginBack).toHaveLength(before + 1);
+    expect(ui.back()).toBe(true);
+    flushSync();
+    expect(explorerSelection.active).toBe(false);
+    expect(fileExplorer.dir).toBe('docs');
+    // 選択していなければ、戻る操作には何も足さない
+    expect(ui.pluginBack).toHaveLength(before);
+  });
+
   it('削除は、件数をまとめて 1 回だけ確認してから、順に消す', async () => {
     const el = await render();
     explorerSelection.enter();
@@ -329,7 +379,7 @@ describe('複数選択（選択モード）', () => {
 
 describe('表示方法と並び順', () => {
   it('アイコン（グリッド）は、画像だけ小さい画像を出す（フォルダ・ほかは絵のアイコン）', async () => {
-    explorerView.setView('grid');
+    explorerView.setView('', 'grid');
     const el = await render();
     expect(el.querySelector('.file-explorer-view-grid')).not.toBeNull();
     const imgs = [...el.querySelectorAll<HTMLImageElement>('.file-explorer-thumb img')];
@@ -339,9 +389,8 @@ describe('表示方法と並び順', () => {
   });
 
   it('詳細は列の見出しを出し、種類・サイズ・更新日時を各項目に出す', async () => {
-    explorerView.setView('details');
     const el = await render();
-    const heads = [...el.querySelectorAll('.file-explorer-columns span')].map((x) => x.textContent);
+    const heads = [...el.querySelectorAll('.file-explorer-columns span:not(.file-explorer-col-actions)')].map((x) => x.textContent);
     expect(heads).toEqual(['名前', '種類', 'サイズ', '更新日時']);
     const pic = [...el.querySelectorAll('.file-explorer-item')].find((li) => li.textContent?.includes('pic.png'))!;
     expect(pic.querySelector('.file-explorer-col-kind')?.textContent).toBe('画像');
@@ -349,17 +398,25 @@ describe('表示方法と並び順', () => {
   });
 
   it('並び順を変えると、フォルダを先に、名前の降順で並ぶ', async () => {
-    explorerView.setSort('name', 'desc');
+    explorerView.setSort('', 'name', 'desc');
     const el = await render();
     const names = [...el.querySelectorAll('.file-explorer-item .file-explorer-name')].map((x) => x.textContent);
     expect(names).toEqual(['docs', 'pic.png', 'a.txt']);
   });
 
-  it('操作のメニューの「表示」で選ぶと、その表示になり、この端末に残る', async () => {
+  it('操作のメニューの「表示」で選ぶと、開いているフォルダだけその表示になる', async () => {
+    fileExplorer.dir = 'docs';
     const el = await render();
     menuClick(el, 'アイコン');
-    expect(explorerView.view).toBe('grid');
+    expect(explorerView.of('docs').view).toBe('grid');
+    expect(explorerView.of('').view).toBe('details');
     expect(el.querySelector('.file-explorer-view-grid')).not.toBeNull();
+  });
+
+  it('既定は詳細。「…」は詳細でも各行に出す', async () => {
+    const el = await render();
+    expect(el.querySelector('.file-explorer-view-details')).not.toBeNull();
+    expect(el.querySelectorAll('.file-explorer-view-details .shared-entry-actions')).toHaveLength(3);
   });
 });
 
@@ -379,25 +436,88 @@ describe('操作メニューは外側の幕より前にある（押せない不�
 });
 
 describe('添付のフォルダ（attachments/ そのもの）は動かせない・消せない（グレー、理由つき）', () => {
-  it('attachments の「…」は、名前の変更・切り取り・削除がグレーで理由を出す。ほかの項目は押せる', async () => {
+  it('attachments を選ぶと、切り取り・削除がグレーで理由を出す。名前を押しても書き換えにならない', async () => {
     h.current = [entry('attachments', 'dir'), entry('a.txt')];
     try {
       const el = await render();
-      el.querySelector<HTMLButtonElement>('button[aria-label="attachments の操作"]')!.click();
+      explorerSelection.start('attachments');
       flushSync();
-      const item = (t: string) => [...document.querySelectorAll<HTMLButtonElement>('.shared-entry-menu-item')].find((b) => b.textContent?.includes(t))!;
-      for (const t of ['名前を変更', '切り取り', '削除']) {
-        expect(item(t).disabled, t).toBe(true);
-        expect(item(t).title, t).toContain('添付のフォルダは動かせません');
+      for (const t of ['切り取り', '削除']) {
+        const b = el.querySelector<HTMLButtonElement>(`button[aria-label="${t}"]`)!;
+        expect(b.disabled, t).toBe(true);
+        expect(b.title, t).toContain('添付のフォルダは動かせません');
       }
-      expect(item('プロパティ').disabled).toBe(false);
-      document.querySelector<HTMLButtonElement>('.menu-backdrop')?.click();
+      expect(el.querySelector<HTMLButtonElement>('button[aria-label="コピー"]')!.disabled).toBe(false);
+      explorerSelection.clear();
+      explorerSelection.start('a.txt');
       flushSync();
-      el.querySelector<HTMLButtonElement>('button[aria-label="a.txt の操作"]')!.click();
+      expect(el.querySelector<HTMLButtonElement>('button[aria-label="切り取り"]')!.disabled).toBe(false);
+      explorerSelection.clear();
       flushSync();
-      expect([...document.querySelectorAll<HTMLButtonElement>('.shared-entry-menu-item')].every((b) => !b.disabled)).toBe(true);
+      const name = [...el.querySelectorAll<HTMLElement>('.file-explorer-name-text')].find((n) => n.textContent === 'attachments')!;
+      name.click();
+      flushSync();
+      expect(el.querySelector('.file-explorer-rename')).toBeNull();
+      expect(fileExplorer.dir).toBe('attachments');
     } finally {
       h.current = null;
     }
+  });
+});
+
+describe('名前の変更（名前を押すと、その場で入力欄になる）', () => {
+  function nameOf(el: HTMLElement, name: string): HTMLElement {
+    return [...el.querySelectorAll<HTMLElement>('.file-explorer-name-text')].find((n) => n.textContent === name)!;
+  }
+  function type(input: HTMLInputElement, value: string): void {
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  it('名前を押すと入力欄に置き換わり（全画面のダイアログは出さない）、Enter で変える', async () => {
+    const el = await render();
+    nameOf(el, 'docs').click();
+    flushSync();
+    expect(fileExplorer.dir).toBe('');
+    expect(document.querySelector('.modal')).toBeNull();
+    const input = el.querySelector<HTMLInputElement>('.file-explorer-item .file-explorer-rename')!;
+    expect(input.value).toBe('docs');
+    type(input, 'papers');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(h.move).toHaveBeenCalledWith('docs', 'papers'));
+    await vi.waitFor(() => expect(el.querySelector('.file-explorer-rename')).toBeNull());
+  });
+
+  it('Esc で取り消す（変えない）。使えない名前は理由を出して入力欄のまま', async () => {
+    const el = await render();
+    nameOf(el, 'a.txt').click();
+    flushSync();
+    let input = el.querySelector<HTMLInputElement>('.file-explorer-rename')!;
+    type(input, 'b:c.txt');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    flushSync();
+    expect(el.querySelector('.file-explorer-rename-error')?.textContent).toContain('使えません');
+    expect(h.move).not.toHaveBeenCalled();
+    input = el.querySelector<HTMLInputElement>('.file-explorer-rename')!;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    flushSync();
+    expect(el.querySelector('.file-explorer-rename')).toBeNull();
+    expect(h.move).not.toHaveBeenCalled();
+  });
+
+  it('名前の外（行のほか）を押すと、普通に開く。選択モードでは名前を押しても選び直すだけ', async () => {
+    const el = await render();
+    const row = [...el.querySelectorAll<HTMLElement>('.file-explorer-item')].find((li) => li.textContent?.includes('docs'))!;
+    explorerSelection.enter();
+    flushSync();
+    nameOf(el, 'docs').click();
+    flushSync();
+    expect(explorerSelection.has('docs')).toBe(true);
+    expect(el.querySelector('.file-explorer-rename')).toBeNull();
+    explorerSelection.clear();
+    flushSync();
+    row.querySelector<HTMLElement>('.file-explorer-icon')!.click();
+    flushSync();
+    expect(fileExplorer.dir).toBe('docs');
   });
 });

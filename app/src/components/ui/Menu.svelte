@@ -19,11 +19,19 @@
   let el: HTMLDivElement | undefined = $state();
   /** 上側に出しているか */
   let up = $state(false);
+  /** 左右にはみ出す分だけ横にずらす量（px。画面の端から 8px 空ける） */
+  let shift = $state(0);
+  const EDGE = 8;
 
-  // 開いたとき（マウントしたとき）に一度だけ測る。既定の位置で画面の下端を超えるなら上に出す
+  // 開いたとき（マウントしたとき）に一度だけ測る。既定の位置で画面の下端を超えるなら上に出す。
+  // 左右の端を超えるなら（左端のボタンから右揃えで開いたときなど）、画面に収まるよう横にずらす
   $effect(() => {
     if (!el) return;
-    up = el.getBoundingClientRect().bottom > window.innerHeight;
+    const r = el.getBoundingClientRect();
+    up = r.bottom > window.innerHeight;
+    const vw = document.documentElement.clientWidth || window.innerWidth;
+    if (r.left < EDGE) shift = EDGE - r.left;
+    else if (r.right > vw - EDGE) shift = Math.max(EDGE - r.left, vw - EDGE - r.right);
   });
 </script>
 
@@ -39,6 +47,7 @@
   style:top={up ? 'auto' : null}
   style:bottom={up ? '100%' : null}
   style:margin-bottom={up ? '6px' : null}
+  style:translate={shift ? `${shift}px 0` : null}
 >
   {@render children?.()}
 </div>

@@ -267,7 +267,8 @@ class Ui {
    * プラグインが登録した「戻る」で閉じるもの（`disnans.ui.onBack`。API v9）。古い順。
    * 戻る操作では、遷移の履歴よりも上（先）に閉じる（back）。返り値の関数で外す
    */
-  pluginBack = $state<{ run: () => void }[]>([]);
+  // raw: 中身を包む（proxy にする）と、外すときの e !== entry が常に真になり外れない。いつも配列ごと入れ替える
+  pluginBack = $state.raw<{ run: () => void }[]>([]);
 
   addPluginBack(run: () => void): () => void {
     const entry = { run };

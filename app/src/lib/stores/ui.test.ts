@@ -38,6 +38,18 @@ describe('ui.back', () => {
     expect(ui.panel).toBeNull();
   });
 
+  it('登録の返り値で外すと、戻る操作から外れる（順は保つ）', () => {
+    const a = vi.fn();
+    const b = vi.fn();
+    const offA = ui.addPluginBack(a);
+    ui.addPluginBack(b);
+    offA();
+    expect(ui.pluginBack).toHaveLength(1);
+    expect(ui.back()).toBe(true);
+    expect(b).toHaveBeenCalledTimes(1);
+    expect(a).not.toHaveBeenCalled();
+  });
+
   it('何も開いていなければ戻る先はない（Android ではアプリが裏に回る）', () => {
     expect(ui.backDepth()).toBe(0);
     expect(ui.back()).toBe(false);

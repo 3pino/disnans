@@ -105,7 +105,7 @@ await S('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5
 // 仮のサーバーへ向け、本人の名前を入れて、設定の画面を飛ばす
 await S('Page.navigate', { url: APP + '/robots.txt' });
 await sleep(800);
-await evalJs(`localStorage.setItem('disnans.server', ${JSON.stringify(FAKE)}); localStorage.removeItem('disnans.explorer.view'); localStorage.removeItem('disnans.explorer.sort'); sessionStorage.setItem('disnans.devUser', 'touch-check'); 1`);
+await evalJs(`localStorage.setItem('disnans.server', ${JSON.stringify(FAKE)}); localStorage.removeItem('disnans.explorer.view'); localStorage.removeItem('disnans.explorer.sort'); localStorage.removeItem('disnans.explorer.dirs'); sessionStorage.setItem('disnans.devUser', 'touch-check'); 1`);
 await S('Page.navigate', { url: APP + '/' });
 await sleep(2500);
 
@@ -118,6 +118,11 @@ await sleep(300);
 await S('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
 await S('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
 await sleep(900);
+// コマンドパレットが開けない環境（ヘッドレスなど）では、開発サーバーのモジュールから直接開く
+if (!(await evalJs(`!!document.querySelector('.shell-panel-files')`))) {
+  await evalJs(`import('/src/lib/stores/ui.svelte.ts').then((m) => (m.ui.openFiles(), 1))`);
+  await sleep(900);
+}
 if (!(await evalJs(`!!document.querySelector('.shell-panel-files')`))) {
   console.error('共有フォルダの画面が開けませんでした');
   process.exit(1);
@@ -156,14 +161,20 @@ const namesAre = (want) => evalJs(`[...document.querySelectorAll('.file-explorer
 const MAIN_ITEMS = [
   ['アップロード', 'アップロード', () => evalJs(`!document.querySelector('.file-explorer-menu')`)],
   ['新しいフォルダ', '新しいフォルダ', () => evalJs(`!!document.querySelector('.file-explorer-mkdir')`)],
-  ['選択モード', '選択モード', () => evalJs(`!!document.querySelector('.file-explorer-check')`)],
-  ['表示: 詳細', '詳細', () => evalJs(`!!document.querySelector('.file-explorer-columns')`)],
   ['表示: アイコン', 'アイコン', () => evalJs(`!!document.querySelector('.file-explorer-view-grid')`)],
-  ['表示: 一覧', '一覧', () => evalJs(`!document.querySelector('.file-explorer-view-grid') && !document.querySelector('.file-explorer-columns')`)],
+  ['表示: 詳細', '詳細', () => evalJs(`!!document.querySelector('.file-explorer-columns')`)],
   ['並び替え: 更新日時', '更新日時', () => namesAre('docs,pic.png,a.txt')],
   ['並び替え: 降順', '降順', () => namesAre('docs,a.txt,pic.png')],
   ['並び替え: 昇順', '昇順', () => namesAre('docs,pic.png,a.txt')],
 ];
+expect('≡ に「選択モード」「一覧」「貼り付け」は無い', await (async () => {
+  await openMainMenu();
+  const ok = await evalJs(`[...document.querySelectorAll('.file-explorer-menu .menu-item')].every(b=>!/選択モード|^一覧|貼り付け/.test(b.textContent.trim()))`);
+  await evalJs(`document.querySelector('.menu-backdrop')?.click(), 1`);
+  await sleep(120);
+  return ok;
+})());
+expect('上端に貼り付けのボタンがある（空なら押せない）', (await evalJs(`document.querySelector('.file-explorer-bar button[aria-label="貼り付け"]')?.disabled === true`)) === true);
 for (const [label, text, after] of MAIN_ITEMS) {
   await openMainMenu();
   if (!(await evalJs(`!!document.querySelector('.file-explorer-menu')`))) {
@@ -176,11 +187,6 @@ for (const [label, text, after] of MAIN_ITEMS) {
     expect(`${label}: 効果が出る`, Boolean(await after()));
     // 戻す（ダイアログ・選択モード）。選択モードは空きスペースを押して解除する
     if (text === '新しいフォルダ') await evalJs(`[...document.querySelectorAll('.modal button')].find(b=>b.textContent.includes('キャンセル'))?.click(), 1`).then(() => sleep(200));
-    if (text === '選択モード') {
-      const empty = await centerOf('.file-explorer-body', '');
-      if (empty) await tap(empty[0], empty[1] + 0);
-      await sleep(150);
-    }
   }
 }
 
@@ -192,24 +198,55 @@ if (!rowBtn) {
 } else {
   await tap(rowBtn[0], rowBtn[1]);
   await sleep(120);
-  for (const text of ['名前を変更', 'コピー', '切り取り', 'プロパティ', '削除']) {
-    const hit = await hitIsInside('.shared-entry-menu-item', text);
-    expect(`行の「…」→「${text}」が押せる`, hit === 'ok');
-  }
-  expect('「移動…」は無い（切り取り＋貼り付け）', (await evalJs(`[...document.querySelectorAll('.shared-entry-menu-item')].every(b=>!b.textContent.includes('移動'))`)) === true);
+  expect('行の「…」→「プロパティ」が押せる', (await hitIsInside('.shared-entry-menu-item', 'プロパティ')) === 'ok');
+  expect('行の「…」はプロパティだけ', (await evalJs(`[...document.querySelectorAll('.shared-entry-menu-item')].map(b=>b.textContent.trim()).join(',')`)) === 'プロパティ');
   await evalJs(`document.querySelector('.menu-backdrop')?.click(), 1`);
   await sleep(120);
 }
+
+// 詳細: 狭い画面では横にはみ出し（スワイプで見る）、「…」はどの行も画面の中に見える
+expect('詳細は横にはみ出してスクロールできる（390px）', (await evalJs(`(()=>{const b=document.querySelector('.file-explorer-body'); return b.scrollWidth > b.clientWidth})()`)) === true);
+expect('詳細の「…」は、どの行も画面の中（右端に固定）', (await evalJs(`[...document.querySelectorAll('.shared-entry-menu-button')].every(x=>{const r=x.getBoundingClientRect(); return r.right <= innerWidth && document.elementFromPoint(r.x+r.width/2, r.y+r.height/2)?.closest('.shared-entry-menu-button')===x})`)) === true);
+await evalJs(`(()=>{const b=document.querySelector('.file-explorer-body'); b.scrollLeft = b.scrollWidth; return 1})()`);
+await sleep(100);
+expect('横にスクロールしても「…」は画面の中', (await evalJs(`[...document.querySelectorAll('.shared-entry-menu-button')].every(x=>{const r=x.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth})`)) === true);
+await evalJs(`document.querySelector('.file-explorer-body').scrollLeft = 0, 1`);
+
+// アイコン表示: 左の列の「…」のメニューが、画面の左にはみ出さない
+await openMainMenu();
+await pressItem('表示: アイコン', 'アイコン');
+const leftBtn = await evalJs(`(()=>{const xs=[...document.querySelectorAll('.shared-entry-menu-button')].map(b=>b.getBoundingClientRect()).sort((a,b)=>a.left-b.left); const r=xs[0]; return [r.x+r.width/2, r.y+r.height/2]})()`);
+await tap(leftBtn[0], leftBtn[1]);
+await sleep(150);
+expect('アイコン表示の左端の「…」のメニューが画面に収まる', (await evalJs(`(()=>{const m=document.querySelector('.shared-entry-menu'); if(!m) return false; const r=m.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth})()`)) === true);
+await evalJs(`document.querySelector('.menu-backdrop')?.click(), 1`);
+await sleep(120);
+expect('アイコン表示の下に、項目 1 つ分くらいの空きがある', (await evalJs(`(()=>{const l=document.querySelector('.file-explorer-list'); const li=l.querySelector('.file-explorer-item'); return parseFloat(getComputedStyle(l).paddingBottom) >= li.getBoundingClientRect().height * 0.8})()`)) === true);
+await openMainMenu();
+await pressItem('表示: 詳細', '詳細');
+
+// 名前の文字を押すと、その場で入力欄になる（全画面のダイアログではない）。Esc で取り消す
+const nameSpot = await evalJs(`(()=>{const n=[...document.querySelectorAll('.file-explorer-name-text')].find(x=>x.textContent==='a.txt'); const r=n.getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
+await tap(nameSpot[0], nameSpot[1]);
+await sleep(200);
+expect('名前を押すと、その行の名前が入力欄になる', (await evalJs(`!!document.querySelector('.file-explorer-item .file-explorer-rename') && !document.querySelector('.modal') && document.activeElement?.classList.contains('file-explorer-rename')`)) === true);
+await S('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+await S('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+await sleep(150);
+expect('Esc で入力欄が元の名前に戻る', (await evalJs(`!document.querySelector('.file-explorer-rename') && !!document.querySelector('.shell-panel-files')`)) === true);
 
 // トーストが出ている間も、≡ が押せる（トーストは上端に出る。本体は押せず、中のボタンだけ押せる）
 // 本物の通知を出す: 選択にフォルダを混ぜてコピーすると「フォルダはコピーできないので…」が出る
 await closeToasts();
 await evalJs(`document.querySelector('.file-explorer-menu')?.remove(), 1`);
 const selectBtns = async () => {
-  // 選択モードに入り、フォルダ（docs）と a.txt を選ぶ（一覧の行を押す）
-  await openMainMenu();
-  await pressItem('選択モード', '選択モード');
-  for (const name of ['docs', 'a.txt']) {
+  // 長押しで選択モードに入り（docs）、a.txt も選ぶ（一覧の行を押す）
+  const lp = await evalJs(`(()=>{const li=[...document.querySelectorAll('.file-explorer-item')].find(x=>x.textContent.includes('docs')); const r=li.querySelector('.file-explorer-icon').getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
+  await S('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: lp[0], y: lp[1], id: 1 }] });
+  await sleep(600);
+  await S('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await sleep(150);
+  for (const name of ['a.txt']) {
     const p = await evalJs(`(()=>{const li=[...document.querySelectorAll('.file-explorer-item')].find(x=>x.textContent.includes('${name}')); const r=li.querySelector('.file-explorer-row').getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
     await tap(p[0], p[1]);
     await sleep(120);
@@ -237,6 +274,13 @@ expect('トーストの「閉じる」は押せる', xp !== null && (await evalJ
 if (xp) await tap(xp[0], xp[1]);
 await sleep(200);
 expect('トーストの「閉じる」で通知が消える', !(await evalJs(`!!document.querySelector('.toast')`)));
+// 選択中の Alt+← は、選択モードを終える（パネルは閉じない）
+await selectBtns();
+await S('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37, modifiers: 1 });
+await S('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37, modifiers: 1 });
+await sleep(150);
+expect('選択中の Alt+← で選択が解除され、画面はそのまま', (await evalJs(`document.querySelector('.file-explorer-selection-count')?.textContent === '3 件' && !!document.querySelector('.shell-panel-files')`)) === true);
+await selectBtns();
 // 選択を空きスペースで解除する（件数に戻り、操作は押せない）
 // 空きスペース: 一覧の項目の外（一覧の下の余白。項目が余白まで届かないときは、本文の下端）
 const emptySpot = await evalJs(`(()=>{const b=document.querySelector('.file-explorer-body'); const list=document.querySelector('.file-explorer-list'); const r=b.getBoundingClientRect(); const lr=list.getBoundingClientRect(); const y=Math.min(r.bottom-8, lr.bottom+ (r.bottom-lr.bottom)/2); const x=r.x+r.width/2; const hit=document.elementFromPoint(x,y); return {x, y, onEmpty: !hit?.closest('.file-explorer-item, .file-explorer-bar, .file-explorer-crumbs, .file-explorer-menu')}})()`);
