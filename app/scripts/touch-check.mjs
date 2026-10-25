@@ -217,6 +217,16 @@ if (!rowBtn) {
   await sleep(120);
 }
 
+// 詳細の「…」は右端に固定（sticky）していて行ごとに層を作るので、先頭の行のメニューが下の行の「…」に覆われないか（右端まで）
+{
+  const first = await evalJs(`(()=>{const r=document.querySelector('.shared-entry-menu-button').getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
+  await tap(first[0], first[1]);
+  await sleep(150);
+  expect('先頭の行の「…」のメニューが、下の行の「…」に覆われない', (await evalJs(`(()=>{const m=document.querySelector('.shared-entry-menu-item'); if(!m) return false; const r=m.getBoundingClientRect(); return [r.x+6, r.x+r.width/2, r.right-6].every(x=>m.contains(document.elementFromPoint(x, r.y+r.height/2)))})()`)) === true);
+  await evalJs(`document.querySelector('.menu-backdrop')?.click(), 1`);
+  await sleep(120);
+}
+
 // 詳細: 狭い画面では横にはみ出し（スワイプで見る）、「…」はどの行も画面の中に見える
 expect('詳細は横にはみ出してスクロールできる（390px）', (await evalJs(`(()=>{const b=document.querySelector('.file-explorer-body'); return b.scrollWidth > b.clientWidth})()`)) === true);
 expect('詳細の「…」は、どの行も画面の中（右端に固定）', (await evalJs(`[...document.querySelectorAll('.shared-entry-menu-button')].every(x=>{const r=x.getBoundingClientRect(); return r.right <= innerWidth && document.elementFromPoint(r.x+r.width/2, r.y+r.height/2)?.closest('.shared-entry-menu-button')===x})`)) === true);

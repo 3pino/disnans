@@ -25,7 +25,7 @@
   }
 </script>
 
-<span class="shared-entry-actions" class:shared-entry-actions-inline={placement === 'inline'}>
+<span class="shared-entry-actions" class:shared-entry-actions-inline={placement === 'inline'} class:shared-entry-actions-open={open}>
   <IconButton
     class="shared-entry-menu-button"
     label="{name} の操作"
@@ -58,6 +58,11 @@
     display: inline-flex;
     flex: none;
     vertical-align: middle;
+  }
+  /* 開いている間は、この箱ごとメニューの高さに上げる。箱が重なりの層を作るとき（詳細の右端に固定する sticky）、
+     メニューはその層から出られず、後ろの行の「…」に覆われるため */
+  .shared-entry-actions-open {
+    z-index: var(--z-menu);
   }
   /* z-index は指定しない（.menu の --z-menu。下げると外側の幕に覆われて項目が押せない） */
   .shared-entry-actions > :global(.shared-entry-menu) {
