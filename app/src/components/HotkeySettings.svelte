@@ -7,7 +7,6 @@
   import X from '@lucide/svelte/icons/x';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import IconButton from './ui/IconButton.svelte';
-  import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import StatusLine from './ui/StatusLine.svelte';
   import TextInput from './ui/TextInput.svelte';
@@ -121,95 +120,93 @@
 
 <svelte:window onkeydowncapture={onRecordKey} />
 
-<Section title="ホットキー" class="hotkey-settings">
-  {#each commands as c (c.id)}
-    {@const hotkeys = effectiveHotkeys(c, prefs.hotkeys)}
-    {@const same = conflicts.get(c.id)}
-    <div class="hotkey-settings-command" class:hotkey-settings-command-conflict={!!same}>
-      <SettingRow name={c.name} description={c.source} icon={c.icon} class="hotkey-settings-row">
-        {#snippet control()}
-          {#each hotkeys as hk (hk)}
-            <kbd class="kbd hotkey-settings-chip">
-              {formatHotkey(hk)}
-              <button type="button" class="hotkey-settings-chip-remove" aria-label={`${formatHotkey(hk)} を外す`} onclick={() => removeKey(c, hk)}>
-                <X size={12} />
-              </button>
-            </kbd>
-          {:else}
-            <span class="muted hotkey-settings-none">なし</span>
-          {/each}
-          {#if recording === c.id}
-            <span class="hotkey-settings-recording">キーを押してください…</span>
-          {/if}
-          <IconButton
-            class="hotkey-settings-reset"
-            label="既定に戻す"
-            title="既定に戻す"
-            icon={RotateCcw}
-            iconSize={16}
-            disabled={!isHotkeyCustomized(c, prefs.hotkeys)}
-            onclick={() => prefs.setHotkeys(c.id, null)}
-          />
-          <IconButton
-            class="hotkey-settings-add"
-            label={`${c.name} のホットキーを追加`}
-            title="ホットキーを追加"
-            icon={Plus}
-            iconSize={16}
-            active={recording === c.id}
-            onclick={() => (recording === c.id ? stopRecording() : startRecording(c))}
-            onblur={() => recording === c.id && stopRecording()}
-          />
-        {/snippet}
-      </SettingRow>
-      {#if c.slash}
-        {@const slash = effectiveSlash(c, prefs.slashNames)}
-        {#if slashEditing === c.id}
-          <form
-            class="hotkey-settings-slash-form"
-            onsubmit={(e) => {
-              e.preventDefault();
-              saveSlash(c);
-            }}
-          >
-            <span class="muted">/</span>
-            <TextInput
-              class="hotkey-settings-slash-input"
-              bind:value={slashDraft}
-              maxlength={32}
-              autocomplete="off"
-              spellcheck={false}
-              aria-label={`${c.name} のスラッシュコマンド名`}
-              onkeydown={(e) => {
-                if (e.key === 'Escape') stopSlashEdit();
-              }}
-            />
-            <IconButton type="submit" label="保存" class="hotkey-settings-slash-save"><Check size={16} /></IconButton>
-            <IconButton label="キャンセル" class="hotkey-settings-slash-cancel" onclick={stopSlashEdit}><X size={16} /></IconButton>
-          </form>
-          {#if slashError}<p class="hotkey-settings-slash-error">{slashError}</p>{/if}
+{#each commands as c (c.id)}
+  {@const hotkeys = effectiveHotkeys(c, prefs.hotkeys)}
+  {@const same = conflicts.get(c.id)}
+  <div class="hotkey-settings-command" class:hotkey-settings-command-conflict={!!same}>
+    <SettingRow name={c.name} description={c.source} icon={c.icon} class="hotkey-settings-row">
+      {#snippet control()}
+        {#each hotkeys as hk (hk)}
+          <kbd class="kbd hotkey-settings-chip">
+            {formatHotkey(hk)}
+            <button type="button" class="hotkey-settings-chip-remove" aria-label={`${formatHotkey(hk)} を外す`} onclick={() => removeKey(c, hk)}>
+              <X size={12} />
+            </button>
+          </kbd>
         {:else}
-          <div class="hotkey-settings-slash">
-            <span class="muted">スラッシュコマンド /{slash}</span>
-            <IconButton label={`${c.name} のスラッシュコマンド名を変える`} class="hotkey-settings-slash-edit" onclick={() => startSlashEdit(c)}>
-              <Pencil size={14} />
-            </IconButton>
-            {#if hasSlashAlias(c)}
-              <IconButton label="元の名前に戻す" class="hotkey-settings-slash-revert" onclick={() => prefs.setSlashAlias(c.id, null)}>
-                <RotateCcw size={14} />
-              </IconButton>
-            {/if}
-          </div>
+          <span class="muted hotkey-settings-none">なし</span>
+        {/each}
+        {#if recording === c.id}
+          <span class="hotkey-settings-recording">キーを押してください…</span>
         {/if}
+        <IconButton
+          class="hotkey-settings-reset"
+          label="既定に戻す"
+          title="既定に戻す"
+          icon={RotateCcw}
+          iconSize={16}
+          disabled={!isHotkeyCustomized(c, prefs.hotkeys)}
+          onclick={() => prefs.setHotkeys(c.id, null)}
+        />
+        <IconButton
+          class="hotkey-settings-add"
+          label={`${c.name} のホットキーを追加`}
+          title="ホットキーを追加"
+          icon={Plus}
+          iconSize={16}
+          active={recording === c.id}
+          onclick={() => (recording === c.id ? stopRecording() : startRecording(c))}
+          onblur={() => recording === c.id && stopRecording()}
+        />
+      {/snippet}
+    </SettingRow>
+    {#if c.slash}
+      {@const slash = effectiveSlash(c, prefs.slashNames)}
+      {#if slashEditing === c.id}
+        <form
+          class="hotkey-settings-slash-form"
+          onsubmit={(e) => {
+            e.preventDefault();
+            saveSlash(c);
+          }}
+        >
+          <span class="muted">/</span>
+          <TextInput
+            class="hotkey-settings-slash-input"
+            bind:value={slashDraft}
+            maxlength={32}
+            autocomplete="off"
+            spellcheck={false}
+            aria-label={`${c.name} のスラッシュコマンド名`}
+            onkeydown={(e) => {
+              if (e.key === 'Escape') stopSlashEdit();
+            }}
+          />
+          <IconButton type="submit" label="保存" class="hotkey-settings-slash-save"><Check size={16} /></IconButton>
+          <IconButton label="キャンセル" class="hotkey-settings-slash-cancel" onclick={stopSlashEdit}><X size={16} /></IconButton>
+        </form>
+        {#if slashError}<p class="hotkey-settings-slash-error">{slashError}</p>{/if}
+      {:else}
+        <div class="hotkey-settings-slash">
+          <span class="muted">スラッシュコマンド /{slash}</span>
+          <IconButton label={`${c.name} のスラッシュコマンド名を変える`} class="hotkey-settings-slash-edit" onclick={() => startSlashEdit(c)}>
+            <Pencil size={14} />
+          </IconButton>
+          {#if hasSlashAlias(c)}
+            <IconButton label="元の名前に戻す" class="hotkey-settings-slash-revert" onclick={() => prefs.setSlashAlias(c.id, null)}>
+              <RotateCcw size={14} />
+            </IconButton>
+          {/if}
+        </div>
       {/if}
-      {#if same}
-        <StatusLine kind="warn" icon={TriangleAlert} class="hotkey-settings-conflict">
-          「{same.map((x) => x.name).join('」「')}」と同じキーです
-        </StatusLine>
-      {/if}
-    </div>
-  {/each}
-</Section>
+    {/if}
+    {#if same}
+      <StatusLine kind="warn" icon={TriangleAlert} class="hotkey-settings-conflict">
+        「{same.map((x) => x.name).join('」「')}」と同じキーです
+      </StatusLine>
+    {/if}
+  </div>
+{/each}
 
 <style>
   /* ほかのコマンドと同じキーになっているときの警告 */

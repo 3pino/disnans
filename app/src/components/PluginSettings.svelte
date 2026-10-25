@@ -8,7 +8,6 @@
   import Button from './ui/Button.svelte';
   import IconButton from './ui/IconButton.svelte';
   import PublishButton from './PublishButton.svelte';
-  import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import StatusLine from './ui/StatusLine.svelte';
   import TextInput from './ui/TextInput.svelte';
@@ -132,98 +131,96 @@
   }
 </script>
 
-<Section title="プラグイン" class="settings-plugins">
-  {#if pluginHost.serverError}
-    <StatusLine kind="error" icon={CircleAlert}>{pluginHost.serverError}</StatusLine>
-  {/if}
+{#if pluginHost.serverError}
+  <StatusLine kind="error" icon={CircleAlert}>{pluginHost.serverError}</StatusLine>
+{/if}
 
-  {#if entries.length === 0}
-    <p class="muted plugin-settings-empty">プラグインはまだありません。</p>
-  {/if}
+{#if entries.length === 0}
+  <p class="muted plugin-settings-empty">プラグインはまだありません。</p>
+{/if}
 
-  {#each entries as e (e.id)}
-    {@const m = e.manifest}
-    {@const canUpdate = hasPluginUpdate(e, hashes[e.id] ?? null)}
-    <div class="plugin-settings-item" class:plugin-settings-item-off={!e.enabled}>
-      <SettingRow name={nameOf(e)} description={m?.description || undefined} icon={e.icon} class="plugin-settings-row">
-        {#snippet control()}
-          <div class="plugin-settings-controls">
-            {#if canUpdate}
-              <IconButton
-                class="plugin-settings-update"
-                label="{nameOf(e)} のアップデートを配布"
-                title="アップデートを配布: {pluginUpdateText(e)}"
-                disabled={busy !== null || !!e.dev?.error}
-                onclick={() => doUpdate(e)}
-              >
-                <Upload size={16} />
-              </IconButton>
-            {/if}
-            <Toggle checked={e.enabled} label="{nameOf(e)} を有効にする" onchange={(on) => pluginHost.setEnabled(e.id, on)} />
-            {#if e.hasSettings || e.dev || e.server}
-              <Button
-                variant="ghost"
-                icon={Settings}
-                label="{nameOf(e)} の設定"
-                title="設定"
-                class="plugin-settings-open"
-                onclick={(ev) => openSettings(e, ev)}
-              />
-            {/if}
-          </div>
-        {/snippet}
-      </SettingRow>
-      <div class="muted plugin-settings-meta">
-        {#if m}<span class="plugin-settings-version">v{m.version}</span>{/if}
-        {#if m?.author}<span>{m.author}</span>{/if}
-        <span class="plugin-settings-id">{e.id}</span>
-        {#if e.dev}
-          <span class="plugin-settings-tag plugin-settings-tag-dev">開発中{e.server ? '（配布済みより優先）' : ''}</span>
-        {:else if e.server}
-          <span class="plugin-settings-tag">配布済み</span>
-        {/if}
-        {#if e.server?.visibility === 'private'}
-          <span class="plugin-settings-tag plugin-settings-tag-private">自分だけ</span>
-        {/if}
-      </div>
-      {#if e.error}
-        <p class="plugin-settings-error">{e.error}</p>
+{#each entries as e (e.id)}
+  {@const m = e.manifest}
+  {@const canUpdate = hasPluginUpdate(e, hashes[e.id] ?? null)}
+  <div class="plugin-settings-item" class:plugin-settings-item-off={!e.enabled}>
+    <SettingRow name={nameOf(e)} description={m?.description || undefined} icon={e.icon} class="plugin-settings-row">
+      {#snippet control()}
+        <div class="plugin-settings-controls">
+          {#if canUpdate}
+            <IconButton
+              class="plugin-settings-update"
+              label="{nameOf(e)} のアップデートを配布"
+              title="アップデートを配布: {pluginUpdateText(e)}"
+              disabled={busy !== null || !!e.dev?.error}
+              onclick={() => doUpdate(e)}
+            >
+              <Upload size={16} />
+            </IconButton>
+          {/if}
+          <Toggle checked={e.enabled} label="{nameOf(e)} を有効にする" onchange={(on) => pluginHost.setEnabled(e.id, on)} />
+          {#if e.hasSettings || e.dev || e.server}
+            <Button
+              variant="ghost"
+              icon={Settings}
+              label="{nameOf(e)} の設定"
+              title="設定"
+              class="plugin-settings-open"
+              onclick={(ev) => openSettings(e, ev)}
+            />
+          {/if}
+        </div>
+      {/snippet}
+    </SettingRow>
+    <div class="muted plugin-settings-meta">
+      {#if m}<span class="plugin-settings-version">v{m.version}</span>{/if}
+      {#if m?.author}<span>{m.author}</span>{/if}
+      <span class="plugin-settings-id">{e.id}</span>
+      {#if e.dev}
+        <span class="plugin-settings-tag plugin-settings-tag-dev">開発中{e.server ? '（配布済みより優先）' : ''}</span>
+      {:else if e.server}
+        <span class="plugin-settings-tag">配布済み</span>
       {/if}
-      {#each e.warnings as w (w)}
-        <p class="plugin-settings-warning">{w}</p>
-      {/each}
-
-    </div>
-  {/each}
-
-  {#if devSupported}
-    <form class="plugin-settings-dev" onsubmit={saveDevDir}>
-      <label class="field-label" for="plugin-settings-dev-dir">開発用フォルダ</label>
-      <div class="plugin-settings-dev-row">
-        <TextInput id="plugin-settings-dev-dir" bind:value={devDir} placeholder="例: /home/you/disnans-plugins" autocomplete="off" spellcheck={false} />
-        <Button icon={FolderSearch} onclick={browseDevDir}>参照…</Button>
-        <Button type="submit" disabled={devDir.trim() === pluginHost.devDir}><FolderOpen size={15} />設定</Button>
-      </div>
-      <p class="muted plugin-settings-small">
-        フォルダの中のサブフォルダ（manifest.json と main.js、テーマなら theme.css）を、このデバイスでだけ読み込みます。保存すると自動で読み込み直します。
-      </p>
-      {#if pluginHost.devError}
-        <StatusLine kind="error" icon={CircleAlert}>{pluginHost.devError}</StatusLine>
+      {#if e.server?.visibility === 'private'}
+        <span class="plugin-settings-tag plugin-settings-tag-private">自分だけ</span>
       {/if}
-    </form>
-  {/if}
-
-  {#if browser}
-    <div class="plugin-settings-upload">
-      <span class="field-label">ファイルを選んで配布</span>
-      <p class="muted plugin-settings-small">
-        manifest.json と main.js（と styles.css・icon.svg）をまとめて選びます。テーマなら manifest.json と theme.css です。
-      </p>
-      <input bind:this={fileInput} class="sr-only" type="file" multiple accept=".json,.js,.css,.svg" onchange={publishPicked} />
-      <PublishButton label="ファイルを選んで配布" disabled={busy !== null} onpublish={pickFiles} />
     </div>
-  {/if}
-</Section>
+    {#if e.error}
+      <p class="plugin-settings-error">{e.error}</p>
+    {/if}
+    {#each e.warnings as w (w)}
+      <p class="plugin-settings-warning">{w}</p>
+    {/each}
+
+  </div>
+{/each}
+
+{#if devSupported}
+  <form class="plugin-settings-dev" onsubmit={saveDevDir}>
+    <label class="field-label" for="plugin-settings-dev-dir">開発用フォルダ</label>
+    <div class="plugin-settings-dev-row">
+      <TextInput id="plugin-settings-dev-dir" bind:value={devDir} placeholder="例: /home/you/disnans-plugins" autocomplete="off" spellcheck={false} />
+      <Button icon={FolderSearch} onclick={browseDevDir}>参照…</Button>
+      <Button type="submit" disabled={devDir.trim() === pluginHost.devDir}><FolderOpen size={15} />設定</Button>
+    </div>
+    <p class="muted plugin-settings-small">
+      フォルダの中のサブフォルダ（manifest.json と main.js、テーマなら theme.css）を、このデバイスでだけ読み込みます。保存すると自動で読み込み直します。
+    </p>
+    {#if pluginHost.devError}
+      <StatusLine kind="error" icon={CircleAlert}>{pluginHost.devError}</StatusLine>
+    {/if}
+  </form>
+{/if}
+
+{#if browser}
+  <div class="plugin-settings-upload">
+    <span class="field-label">ファイルを選んで配布</span>
+    <p class="muted plugin-settings-small">
+      manifest.json と main.js（と styles.css・icon.svg）をまとめて選びます。テーマなら manifest.json と theme.css です。
+    </p>
+    <input bind:this={fileInput} class="sr-only" type="file" multiple accept=".json,.js,.css,.svg" onchange={publishPicked} />
+    <PublishButton label="ファイルを選んで配布" disabled={busy !== null} onpublish={pickFiles} />
+  </div>
+{/if}
 
 <style>
   .plugin-settings-empty,

@@ -6,6 +6,7 @@
 - サーバーの運用・WebDAV の接続・バックアップ: [server README](../crates/server/README.md)
 - プラグイン API: [PLUGINS.md](PLUGINS.md)、GUI の部品: [PLUGIN_UI.md](PLUGIN_UI.md)
 - テーマ: [THEMES.md](THEMES.md)
+- GUI と TUI の共通の画面の木: [UI_TREE.md](UI_TREE.md)
 
 ## 見た目と共通部品
 
@@ -48,14 +49,14 @@
 - デバイス ID はクライアント発行の ULID。`LocalStore::device_id(Surface)` が surface ごとに保存し、再利用する。ID は認証情報ではない。名前は既定で OS 名。デバイス一覧と prefs は別に保存する。
 - **デバイス台数の上限は設けない**。ユーザーごとの ID の分離、名前・設定サイズの検査は維持する。API は [API.md](API.md) を参照。
 - 起動時はキャッシュを表示し、サーバーの応答で置き換える。ユーザー共通は `prefs.updated` で読み直す。デバイス設定の変更イベントはなく、設定画面やフォーカス・可視状態の復帰で読み直す（連続した再取得は 5 秒間抑制）。
-- デバイスの一覧・名前変更・削除は、Tauri の GUI（設定の「デバイス」）に実装済み。このデバイスは一覧から削除できない。TUI のデバイス設定画面は未実装で、TUI はデバイス ID の発行・登録にもまだ接続していない。通知購読の状態の保存先も未整理。
+- デバイスの一覧・名前変更・削除は、Tauri の GUI（設定の「デバイス」）に実装済み。このデバイスは一覧から削除できない。TUI は設定の「接続」→「デバイス」で、このデバイスの名前だけを変えられる（一覧・削除は未実装）。通知購読の状態の保存先も未整理。
 
 ## TUI の互換 UI 部品（確定方針）
 
-現在の実装は `crates/cli/src/tui/ui/theme.rs` の色トークンまで。以下は部品を増やす際の設計方針で、実装済みを意味しない。残作業は [FEEDBACKS.md](../FEEDBACKS.md) に置く。
+部品（Menu / Choice / Dialog / Prompt）・色トークン・設定画面は `crates/cli/src/tui/` にある。設定画面とナビゲーションバーの構造は GUI と共通の木（`client-core::view::ui`）から作る（[UI_TREE.md](UI_TREE.md)）。以下は部品を増やす際の設計方針で、すべてが実装済みとは限らない。残作業は [FEEDBACKS.md](../FEEDBACKS.md) と [UI_TREE.md](UI_TREE.md) に置く。
 
 - 当面は `tui/ui/` に部品を作り、GUI の `disnans.ui` / `components/ui/` と名前・props・イベント・値の型をそろえる。
-- いずれプラグイン UI を TUI にも出す。状態・props・描画を分離し、描画に依存しない宣言的な木を `client-core::view::ui` に移せる形にする。現行 `disnans.ui` は DOM を返す命令型なので、そのままでは TUI で使えない。宣言型 API と JS ランタイム・実行対象の設計が別途必要。
+- いずれプラグイン UI を TUI にも出す。状態・props・描画を分離し、描画に依存しない宣言的な木（`client-core::view::ui`。いまは設定画面とナビゲーションバーだけ）に載せる。現行 `disnans.ui` は DOM を返す命令型なので、そのままでは TUI で使えない。宣言型 API と JS ランタイム・実行対象の設計が別途必要。
 - Nerd Font 前提。専用の代替文字セットは作らない。
 - キー入力・マウス入力を `Action` に変換して部品に渡す。Tab / Shift+Tab はフォーカス移動、矢印は選択・値変更、Enter は決定、Space はトグル、Esc は一段戻る。ヒントはキー設定から作る。既存の画面のキー操作は移行時に維持する。
 - モーダルはスタックの最上位だけが操作を受ける。画像がモーダルに重ならないよう配置を外す。選択モードや補完はリスト・ポップアップへのフォーカスとして扱う。

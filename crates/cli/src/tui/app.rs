@@ -21,6 +21,9 @@ use super::suggest::{self, Suggest};
 use super::textbuf::TextBuf;
 use super::transcript::{self, Row};
 use super::ui::modal::{Choice, Dialog, Menu, MenuItem, Modal, Outcome, Prompt};
+use disnans_client_core::view::ui::{
+    NAV_CHAT_ID, NAV_SEARCH_ID, NAV_SETTINGS_ID, SETTINGS_TOP, tui_nav_items,
+};
 
 /// 起動時・再取得時に読む件数。
 pub const PAGE_SIZE: u32 = 50;
@@ -224,7 +227,7 @@ pub struct SettingsView {
 pub enum Focus {
     Input,
     SendButton,
-    /// 下の画面切替バー。0 = Chat、1 = Settings。
+    /// 下の画面切替バー（`App::nav_items` の番号）。
     Nav(usize),
 }
 
@@ -274,6 +277,8 @@ pub struct App {
     pub settings_rows_at: Vec<Option<usize>>,
     /// 設定（読み込めるまで `None`）。
     pub settings: Option<Loaded>,
+    /// 接続先（設定画面に出す）。
+    pub server: String,
     /// 入力欄の補完（`@` `:` `/`）。
     pub suggest: Option<Suggest>,
     /// 補完で入れた `@表示名` と利用者 ID（送るとき `<@id>` に直す）。
@@ -336,12 +341,13 @@ impl App {
             navbar: None,
             screen: Screen::Chat,
             settings_view: SettingsView {
-                page: Page::Top,
+                page: SETTINGS_TOP,
                 cursor: 0,
             },
             settings_area: None,
             settings_rows_at: Vec::new(),
             settings: None,
+            server: String::new(),
             suggest: None,
             mentions: Vec::new(),
             send_button: None,
@@ -520,7 +526,7 @@ impl App {
                         == Some(commands::NAV_FOCUS)
                     && self.input_on_last_line()
                 {
-                    self.focus = Focus::Nav(0);
+                    self.focus = Focus::Nav(self.current_nav());
                     return effects;
                 }
                 if self.focus == Focus::SendButton {
@@ -1026,7 +1032,12 @@ impl App {
         }
         if self.modals.is_empty() {
             if let Some((_, width)) = self.navbar.filter(|(y, _)| *y == mouse.row) {
-                let index = usize::from(mouse.column >= width / 2);
+                // 幅の等分は view.rs の navbar_line と同じ割り方
+                let count = self.nav_items().len().max(1);
+                let column = usize::from(mouse.column);
+                let index = (0..count)
+                    .find(|i| column < usize::from(width) * (i + 1) / count)
+                    .unwrap_or(count - 1);
                 self.focus = Focus::Nav(index);
                 self.activate_nav(index, effects);
                 return;
@@ -1092,20 +1103,39 @@ impl App {
             self.notice = Some("設定をまだ読み込めていません".into());
             return;
         }
+        if self.mode == Mode::Search {
+            self.close_search();
+        }
         self.screen = Screen::Settings;
         self.mode = Mode::Input;
         self.selected = None;
-        self.settings_view = SettingsView {
-            page: Page::Top,
-            cursor: 0,
-        };
+        self.open_settings_page(SETTINGS_TOP, None);
         self.suggest = None;
         self.focus = Focus::Input;
     }
 
-    fn settings_len(&self) -> usize {
-        self.settings.as_ref().map_or(0, |l| {
-            settings::rows(l, &self.bindings, self.settings_view.page).len()
+    /// ページを開き、カーソルを `at` の行（無ければ最初の選べる行）に置く。
+    fn open_settings_page(&mut self, page: Page, at: Option<usize>) {
+        self.settings_view = SettingsView { page, cursor: 0 };
+        let rows = self.settings_rows();
+        self.settings_view.cursor = at
+            .filter(|i| rows.get(*i).is_some_and(settings::Row::selectable))
+            .or_else(|| rows.iter().position(settings::Row::selectable))
+            .unwrap_or(0);
+    }
+
+    /// 今のページの行（木から作る）。
+    pub fn settings_rows(&self) -> Vec<settings::Row> {
+        self.settings.as_ref().map_or_else(Vec::new, |l| {
+            settings::rows(
+                l,
+                &self.bindings,
+                self.settings_view.page,
+                settings::Info {
+                    server: &self.server,
+                    version: env!("CARGO_PKG_VERSION"),
+                },
+            )
         })
     }
 
@@ -1115,44 +1145,44 @@ impl App {
             self.on_action(action, effects);
             return;
         }
-        let len = self.settings_len();
-        let view = &mut self.settings_view;
+        let rows = self.settings_rows();
+        let cursor = self.settings_view.cursor;
         match self.bindings.command(Mode::Settings, &action, false) {
-            Some(commands::SETTINGS_PREV) => view.cursor = view.cursor.saturating_sub(1),
-            Some(commands::SETTINGS_NEXT) => {
-                if view.cursor + 1 < len {
-                    view.cursor += 1;
-                } else {
-                    self.focus = Focus::Nav(1);
+            Some(commands::SETTINGS_PREV) => {
+                if let Some(i) = (0..cursor).rev().find(|i| rows[*i].selectable()) {
+                    self.settings_view.cursor = i;
                 }
             }
-            Some(commands::SETTINGS_ACTIVATE) => {
-                let index = view.cursor;
-                self.edit_setting(index, effects);
+            Some(commands::SETTINGS_NEXT) => {
+                match (cursor + 1..rows.len()).find(|i| rows[*i].selectable()) {
+                    Some(i) => self.settings_view.cursor = i,
+                    None => self.focus = Focus::Nav(self.current_nav()),
+                }
             }
+            Some(commands::SETTINGS_ACTIVATE) => self.edit_setting(cursor, effects),
             Some(commands::SETTINGS_BACK) => self.settings_back(),
             _ => {}
         }
     }
 
-    /// サブページなら一覧へ、一覧ならチャットへ戻る。
+    /// サブページなら一覧へ（開いた行に戻る）、一覧ならチャットへ戻る。
     fn settings_back(&mut self) {
-        if self.settings_view.page == Page::Top {
+        let page = self.settings_view.page;
+        if page == SETTINGS_TOP {
             self.screen = Screen::Chat;
             self.focus = Focus::Input;
         } else {
-            self.settings_view = SettingsView {
-                page: Page::Top,
-                cursor: 0,
-            };
+            self.settings_view.page = SETTINGS_TOP;
+            let at = self
+                .settings_rows()
+                .iter()
+                .position(|r| r.target == Target::Page(page));
+            self.open_settings_page(SETTINGS_TOP, at);
         }
     }
 
     fn edit_setting(&mut self, index: usize, effects: &mut Vec<Effect>) {
-        let Some(loaded) = &self.settings else {
-            return;
-        };
-        let rows = settings::rows(loaded, &self.bindings, self.settings_view.page);
+        let rows = self.settings_rows();
         let Some(row) = rows.get(index) else {
             return;
         };
@@ -1167,26 +1197,25 @@ impl App {
                 self.save_setting(index, next, effects);
             }
             Editor::Choice(options) => {
-                let selected = options.iter().position(|o| *o == row.value).unwrap_or(0);
+                let labels: Vec<String> = options.iter().map(|o| o.label.to_owned()).collect();
+                let selected = labels.iter().position(|o| *o == row.value).unwrap_or(0);
                 self.modals.push(Modal::Choice(Choice::new(
-                    &row.label,
-                    &command,
-                    options.clone(),
-                    selected,
+                    &row.label, &command, labels, selected,
                 )));
             }
             Editor::Open => {
                 if let Target::Page(page) = row.target {
-                    self.settings_view = SettingsView { page, cursor: 0 };
+                    self.open_settings_page(page, None);
                 }
             }
-            Editor::Text | Editor::Number { .. } | Editor::Keys | Editor::Name => {
+            Editor::Number { .. } | Editor::Keys | Editor::Name => {
                 self.modals.push(Modal::Prompt(Prompt {
                     title: row.label.clone(),
                     command,
-                    text: TextBuf::from_text(&settings::initial_text(row)),
+                    text: TextBuf::from_text(&row.input),
                 }));
             }
+            Editor::Static | Editor::Note => {}
         }
     }
 
@@ -1194,7 +1223,7 @@ impl App {
         let Some(loaded) = &self.settings else {
             return;
         };
-        let rows = settings::rows(loaded, &self.bindings, self.settings_view.page);
+        let rows = self.settings_rows();
         let Some(row) = rows.get(index) else {
             return;
         };
@@ -1212,10 +1241,35 @@ impl App {
         !self.input.as_str()[self.input.before_cursor().len()..].contains('\n')
     }
 
+    /// 下の画面切替バーの項目（ID・表示名）。並びと表示名は GUI と同じユーザー共通の設定（`navBarItems`・`navBarLabels`）。
+    /// 設定を読めるまでは既定（Chat・Settings）。
+    pub fn nav_items(&self) -> Vec<(&'static str, String)> {
+        let empty = serde_json::Value::Null;
+        tui_nav_items(self.settings.as_ref().map_or(&empty, |l| &l.user))
+    }
+
+    /// 今の画面にあたるバーの項目の番号。
+    pub fn current_nav(&self) -> usize {
+        let current = if self.screen == Screen::Settings {
+            NAV_SETTINGS_ID
+        } else if self.mode == Mode::Search {
+            NAV_SEARCH_ID
+        } else {
+            NAV_CHAT_ID
+        };
+        let items = self.nav_items();
+        items
+            .iter()
+            .position(|(id, _)| *id == current)
+            .or_else(|| items.iter().position(|(id, _)| *id == NAV_CHAT_ID))
+            .unwrap_or(0)
+    }
+
     fn run_nav(&mut self, command: &str, index: usize, effects: &mut Vec<Effect>) {
+        let last = self.nav_items().len().saturating_sub(1);
         match command {
             commands::NAV_PREV => self.focus = Focus::Nav(index.saturating_sub(1)),
-            commands::NAV_NEXT => self.focus = Focus::Nav((index + 1).min(1)),
+            commands::NAV_NEXT => self.focus = Focus::Nav((index + 1).min(last)),
             commands::NAV_BACK => self.focus = Focus::Input,
             commands::NAV_ACTIVATE => self.activate_nav(index, effects),
             _ => {}
@@ -1223,13 +1277,23 @@ impl App {
     }
 
     fn activate_nav(&mut self, index: usize, _effects: &mut Vec<Effect>) {
-        if index == 0 {
-            self.screen = Screen::Chat;
-            self.focus = Focus::Input;
-        } else if self.screen == Screen::Settings {
-            self.focus = Focus::Input;
-        } else {
-            self.open_settings();
+        let Some((id, _)) = self.nav_items().get(index).cloned() else {
+            return;
+        };
+        match id {
+            NAV_SETTINGS_ID if self.screen == Screen::Settings => self.focus = Focus::Input,
+            NAV_SETTINGS_ID => self.open_settings(),
+            NAV_SEARCH_ID => {
+                self.screen = Screen::Chat;
+                self.open_search();
+            }
+            _ => {
+                if self.mode == Mode::Search {
+                    self.close_search();
+                }
+                self.screen = Screen::Chat;
+                self.focus = Focus::Input;
+            }
         }
     }
 
@@ -2728,24 +2792,26 @@ mod tests {
         type_text(&mut app, "/settings");
         send_key(&mut app);
         // 「キー割り当て ›」まで下げて開く
-        let len = app.settings_len();
+        let len = app.settings_rows().len();
         for _ in 0..len {
-            press(&mut app, KeyCode::Down, KeyModifiers::NONE);
-            if app.settings_view.page != Page::Top {
+            if app.settings_rows()[app.settings_view.cursor].target == Target::Page("tuiKeys") {
                 break;
             }
-            let rows = settings::rows(app.settings.as_ref().unwrap(), &app.bindings, Page::Top);
-            if matches!(rows[app.settings_view.cursor].target, Target::Page(_)) {
-                press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-            }
+            press(&mut app, KeyCode::Down, KeyModifiers::NONE);
         }
-        assert_eq!(app.settings_view.page, Page::Keys);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.settings_view.page, "tuiKeys");
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        // 一覧に戻り、開いた行にカーソルが戻る
         assert_eq!(
             (app.screen, app.settings_view.page),
-            (Screen::Settings, Page::Top)
+            (Screen::Settings, SETTINGS_TOP)
         );
-        // 最後の行で ↓ は画面切替バーへ。Chat を選ぶと戻る
+        assert_eq!(
+            app.settings_rows()[app.settings_view.cursor].target,
+            Target::Page("tuiKeys")
+        );
+        // 最後の行で ↓ は画面切替バーの Settings へ。Chat を選ぶと戻る
         for _ in 0..len {
             press(&mut app, KeyCode::Down, KeyModifiers::NONE);
         }
@@ -2753,6 +2819,81 @@ mod tests {
         press(&mut app, KeyCode::Left, KeyModifiers::NONE);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!((app.screen, app.focus), (Screen::Chat, Focus::Input));
+    }
+
+    #[test]
+    fn the_enter_keys_page_skips_the_note_and_saves_one_combo() {
+        let mut app = make();
+        connect(&mut app, 1);
+        loaded_settings(&mut app);
+        type_text(&mut app, "/settings");
+        send_key(&mut app);
+        let at = app
+            .settings_rows()
+            .iter()
+            .position(|r| r.target == Target::Page("enterKeys"))
+            .unwrap();
+        app.edit_setting(at, &mut Vec::new());
+        assert_eq!(app.settings_view.page, "enterKeys");
+        // 4 つの組み合わせのあとの補足の文には止まらず、バーへ移る
+        for _ in 0..3 {
+            press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        }
+        assert_eq!(app.settings_view.cursor, 3);
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert!(matches!(app.focus, Focus::Nav(_)));
+        app.focus = Focus::Input;
+        // Alt+Enter（既定は送信）を「改行」に
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        let effects = press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(
+            &effects[..],
+            [Effect::SaveSetting { save: Save::Pref { key, value, .. }, .. }]
+                if key == "enterKeys" && value["alt"] == "newline" && value["enter"] == "newline"
+        ));
+    }
+
+    #[test]
+    fn the_nav_bar_follows_the_gui_nav_items() {
+        let mut app = make();
+        connect(&mut app, 1);
+        assert_eq!(app.nav_items().len(), 2, "読み込むまでは Chat と Settings");
+        net(
+            &mut app,
+            NetEvent::Settings(Ok(Box::new(Loaded {
+                device_id: "dev".into(),
+                device_name: "n".into(),
+                user: serde_json::json!({
+                    "navBarItems": ["app:search", "app:open-chat", "dice:roll", "app:open-settings"],
+                    "navBarLabels": {"app:open-chat": "会話"},
+                }),
+                device: serde_json::json!({}),
+            }))),
+        );
+        let labels: Vec<String> = app.nav_items().into_iter().map(|(_, l)| l).collect();
+        assert_eq!(labels, ["Search", "会話", "Settings"]);
+        // 最下行の ↓ は、いまの画面（Chat）の項目へ
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.focus, Focus::Nav(1));
+        press(&mut app, KeyCode::Left, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.mode, Mode::Search);
+        assert_eq!(app.current_nav(), 0);
+        // 右端の Settings はクリックでも開く
+        app.navbar = Some((30, 90));
+        app.on_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                column: 89,
+                row: 30,
+                modifiers: KeyModifiers::NONE,
+            },
+            &mut Vec::new(),
+        );
+        assert_eq!(app.screen, Screen::Settings);
+        assert_ne!(app.mode, Mode::Search);
+        assert_eq!(app.current_nav(), 2);
     }
 
     #[test]

@@ -521,11 +521,21 @@ fn search_lines(app: &App, width: u16, height: u16) -> Vec<Line<'static>> {
     lines
 }
 
-/// 下部の画面切替バー。Settings は設定画面（モーダル）を開く。
-fn navbar_line(width: u16, focus: Option<usize>, current_index: usize) -> Line<'static> {
-    let cell = usize::from(width) / 2;
-    let item = |label: &str, style: Style| {
-        let pad = cell.saturating_sub(sanitize::display_width(label));
+/// 下部の画面切替バー。項目は GUI のナビゲーションバーと同じ設定（`App::nav_items`）で、幅を等分して並べる。
+fn navbar_line(
+    width: u16,
+    items: &[(&'static str, String)],
+    focus: Option<usize>,
+    current_index: usize,
+) -> Line<'static> {
+    let count = items.len().max(1);
+    let item = |i: usize, label: &str, style: Style| {
+        // 幅を等分する（余りは前から 1 桁ずつ配る）。マウスの当たり判定（App::on_mouse）と同じ割り方
+        let start = usize::from(width) * i / count;
+        let end = usize::from(width) * (i + 1) / count;
+        let cell = end - start;
+        let label = sanitize::truncate(&sanitize::inline(label), cell);
+        let pad = cell.saturating_sub(sanitize::display_width(&label));
         let left = pad / 2;
         Span::styled(
             format!("{}{label}{}", " ".repeat(left), " ".repeat(pad - left)),
@@ -543,7 +553,13 @@ fn navbar_line(width: u16, focus: Option<usize>, current_index: usize) -> Line<'
         _ if i == current_index => current,
         _ => normal,
     };
-    Line::from(vec![item("Chat", style(0)), item("Settings", style(1))])
+    Line::from(
+        items
+            .iter()
+            .enumerate()
+            .map(|(i, (_, label))| item(i, label, style(i)))
+            .collect::<Vec<_>>(),
+    )
 }
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -724,7 +740,12 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     );
     app.navbar = Some((r.navbar.y, r.navbar.width));
     frame.render_widget(
-        Paragraph::new(navbar_line(r.navbar.width, nav_focus, 0)),
+        Paragraph::new(navbar_line(
+            r.navbar.width,
+            &app.nav_items(),
+            nav_focus,
+            app.current_nav(),
+        )),
         r.navbar,
     );
     draw_suggest(frame, &r, app);
@@ -743,22 +764,19 @@ fn draw_settings_screen(frame: &mut Frame, area: Rect, app: &mut App) {
     let view = app.settings_view;
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            format!(" {}", view.page.title()),
+            format!(" {}", crate::tui::settings::title(view.page)),
             Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED),
         )))
         .style(Style::new().add_modifier(Modifier::REVERSED)),
         head,
     );
-    let rows = app
-        .settings
-        .as_ref()
-        .map(|l| crate::tui::settings::rows(l, &app.bindings, view.page))
-        .unwrap_or_default();
+    let rows = app.settings_rows();
     // 見出しも 1 行使うので、行ごとに画面上の位置を数える。選択行が窓に入るよう先頭を決める。
     let height = usize::from(body.height);
     let mut lines: Vec<(Option<usize>, Line)> = Vec::new();
     let label_w = rows
         .iter()
+        .filter(|r| r.selectable())
         .map(|r| sanitize::display_width(&r.label))
         .max()
         .unwrap_or(0);
@@ -779,13 +797,21 @@ fn draw_settings_screen(frame: &mut Frame, area: Rect, app: &mut App) {
             ));
         }
         let label = sanitize::inline(&row.label);
-        let pad = " ".repeat(label_w.saturating_sub(sanitize::display_width(&label)));
-        let text = format!("   {label}{pad}  {}", sanitize::inline(&row.value));
+        let (text, normal) = if row.selectable() {
+            let pad = " ".repeat(label_w.saturating_sub(sanitize::display_width(&label)));
+            (
+                format!("   {label}{pad}  {}", sanitize::inline(&row.value)),
+                Style::new(),
+            )
+        } else {
+            // 補足の文は控えめな色で、名前の幅にそろえない
+            (format!("   {label}"), Style::new().fg(t().text_muted))
+        };
         let style =
             if i == view.cursor && app.modals.is_empty() && !matches!(app.focus, Focus::Nav(_)) {
                 selected
             } else {
-                Style::new()
+                normal
             };
         lines.push((Some(i), Line::from(Span::styled(text, style))));
     }
@@ -821,7 +847,7 @@ fn draw_settings_screen(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         let text = if matches!(app.focus, Focus::Nav(_)) {
             "←→: 選択 | Enter: 切替 | ↑/Esc: 一覧へ戻る"
-        } else if view.page == crate::tui::settings::Page::Top {
+        } else if view.page == disnans_client_core::view::ui::SETTINGS_TOP {
             "↑↓: 選択 | Enter: 変更 | Esc: チャットへ戻る | クリック: 変更"
         } else {
             "↑↓: 選択 | Enter: 変更 | Esc/←: 設定へ戻る | クリック: 変更"
@@ -838,7 +864,12 @@ fn draw_settings_screen(frame: &mut Frame, area: Rect, app: &mut App) {
     app.navbar = Some((navbar.y, navbar.width));
     // 設定の画面では Settings が「いま開いている」側。
     frame.render_widget(
-        Paragraph::new(navbar_line(navbar.width, nav_focus, 1)),
+        Paragraph::new(navbar_line(
+            navbar.width,
+            &app.nav_items(),
+            nav_focus,
+            app.current_nav(),
+        )),
         navbar,
     );
 }
@@ -953,7 +984,8 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &mut App) {
         Modal::Choice(c) => {
             for (i, option) in c.options.iter().enumerate() {
                 let label = sanitize::inline(option);
-                want = want.max(text_w(&label) + 6);
+                // 枠・余白の 6 桁に、印（● と空白）の 2 桁を足す
+                want = want.max(text_w(&label) + 8);
                 let style = if i == c.cursor {
                     selected
                 } else {
@@ -1329,9 +1361,34 @@ mod tests {
         // 全画面: 見出し・節の見出し・下のナビ。履歴の入力欄は出ない
         assert!(lines[0].contains("設定"), "{lines:?}");
         assert!(lines.iter().any(|l| l.contains("外観")));
-        assert!(lines.iter().any(|l| l.contains("テーマdark")), "{lines:?}");
-        assert!(lines.iter().any(|l| l.contains("Linux(TUI)")));
-        assert!(lines.last().unwrap().contains("Chat"));
+        // 項目と文言は GUI と共通の木から（GUI だけの節は出さない）
+        assert!(
+            lines.iter().any(|l| l.contains("テーマダーク")),
+            "{lines:?}"
+        );
+        assert!(lines.iter().any(|l| l.contains("入力欄のキー›")));
+        assert!(
+            !lines
+                .iter()
+                .any(|l| l.contains("プロフィール") || l.contains("通知"))
+        );
+        assert!(lines.last().unwrap().contains("ChatSettings"));
         assert!(!lines.iter().any(|l| l.contains("送信")));
+        // サブページの補足の文も出す
+        app.settings_view.page = "enterKeys";
+        let lines = render(&mut app, 70, 30);
+        assert!(lines[0].contains("設定›入力欄のキー"), "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("Shift+Enter改行")));
+        assert!(lines.iter().any(|l| l.starts_with("メッセージの編集")));
+        // 選択肢の文言は切らずに出す（印の幅も数える）
+        app.modals
+            .push(Modal::Choice(crate::tui::ui::modal::Choice::new(
+                "テーマ",
+                "settings.set.0",
+                vec!["自動".into(), "ライト".into(), "ダーク".into()],
+                0,
+            )));
+        let lines = render(&mut app, 70, 30);
+        assert!(lines.iter().any(|l| l.contains("○ライト")), "{lines:?}");
     }
 }

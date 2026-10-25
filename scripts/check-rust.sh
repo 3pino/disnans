@@ -18,5 +18,5 @@ else
   echo "test: FAILED（全文: $LOG）"
   exit 1
 fi
-# 生成物（ts-rs の型・絵文字の表）は、テストが書き出したあとで、コミット済みの内容と一致すること
-git diff --exit-code --stat app/src/lib/protocol app/src/lib/emojiNames.generated.ts && echo "protocol: ok"
+# 生成物（ts-rs の型・絵文字の表・画面の構造）は、テストが書き出したあとで、コミット済みの内容と一致すること
+git diff --exit-code --stat app/src/lib/protocol app/src/lib/emojiNames.generated.ts app/src/lib/uiTree.generated.ts && echo "protocol: ok"
