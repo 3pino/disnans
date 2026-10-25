@@ -1,8 +1,5 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import Sun from '@lucide/svelte/icons/sun';
-  import Moon from '@lucide/svelte/icons/moon';
-  import Monitor from '@lucide/svelte/icons/monitor';
   import Bell from '@lucide/svelte/icons/bell';
   import BellOff from '@lucide/svelte/icons/bell-off';
   import BatteryCharging from '@lucide/svelte/icons/battery-charging';
@@ -17,7 +14,6 @@
   import X from '@lucide/svelte/icons/x';
   import ImageUp from '@lucide/svelte/icons/image-up';
   import Undo2 from '@lucide/svelte/icons/undo-2';
-  import Settings from '@lucide/svelte/icons/settings';
   import Avatar from './Avatar.svelte';
   import Markdown from './Markdown.svelte';
   import Button from './ui/Button.svelte';
@@ -25,32 +21,27 @@
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
   import TextInput from './ui/TextInput.svelte';
-  import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import StatusLine from './ui/StatusLine.svelte';
-  import Toggle from './ui/Toggle.svelte';
-  import SegmentedButton from './ui/SegmentedButton.svelte';
   import PluginSettings from './PluginSettings.svelte';
   import ThemeSettings from './ThemeSettings.svelte';
-  import EnterKeySettings from './EnterKeySettings.svelte';
   import HotkeySettings from './HotkeySettings.svelte';
   import NavBarSettings from './NavBarSettings.svelte';
   import ComposerMenuSettings from './ComposerMenuSettings.svelte';
-  import CallSettings from './CallSettings.svelte';
+  import CallDeviceSettings from './CallDeviceSettings.svelte';
+  import SettingsTree from './SettingsTree.svelte';
   import PanelBar from './ui/PanelBar.svelte';
   import DeviceKindSettings from './DeviceKindSettings.svelte';
   import DeviceListSettings from './DeviceListSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
-  import { prefs } from '../lib/stores/prefs.svelte';
-  import { ui, type SettingsSubpage, type ThemePref } from '../lib/stores/ui.svelte';
+  import { ui } from '../lib/stores/ui.svelte';
+  import { SETTINGS_TOP, settingsPage, type UiSlot } from '../lib/uiTree';
   import { updater } from '../lib/stores/updater.svelte';
   import { applyServerUrl, devUser, getServerUrl, isCustomAvatar } from '../lib/config';
-  import { isAndroid, isTauri } from '../lib/platform';
+  import { isTauri } from '../lib/platform';
   import { saveServerUrl } from '../lib/desktopStorage';
   import { notifications } from '../lib/stores/notifications.svelte';
-  import { orientation } from '../lib/stores/orientation.svelte';
   import { deviceSettings } from '../lib/stores/deviceSettings.svelte';
-  import type { OrientationMode } from '../lib/orientation';
 
   // 表示名は、カードの名前を押したときだけその場で編集する
   let editingName = $state(false);
@@ -81,27 +72,9 @@
     };
   });
 
-  // 「操作」の行。押すと、その設定のサブページを開く（ホットキーはデスクトップだけ）
-  const operations: { value: SettingsSubpage; name: string }[] = [
-    { value: 'enterKeys', name: '入力欄のキー' },
-    ...(isAndroid() ? [] : [{ value: 'hotkeys' as const, name: 'ホットキー' }]),
-    { value: 'navBar', name: 'ナビゲーションバー' },
-    { value: 'composerMenu', name: '＋メニュー' },
-    { value: 'call', name: '通話' },
-  ];
-
-  const themes: { value: ThemePref; label: string; icon: typeof Sun }[] = [
-    { value: 'system', label: '自動', icon: Monitor },
-    { value: 'light', label: 'ライト', icon: Sun },
-    { value: 'dark', label: 'ダーク', icon: Moon },
-  ];
-
-  // メッセージの表示。既定はリスト（Slack 風）
-  const orientationOptions: { value: OrientationMode; label: string }[] = [
-    { value: 'portrait', label: '向きを固定' },
-    { value: 'media', label: 'メディアのみ自動回転' },
-    { value: 'auto', label: '自動回転' },
-  ];
+  // ページの構造は設定の木（lib/uiTree.ts。正は core の view::ui）。Slot の中身はこのファイルの slot で描く
+  const topPage = settingsPage(SETTINGS_TOP)!;
+  const subPage = $derived(ui.settingsSub ? settingsPage(ui.settingsSub) : undefined);
 
   const perm = $derived(notifications.permission);
   const android = $derived(notifications.android);
@@ -236,6 +209,180 @@
   }
 </script>
 
+{#snippet slot(item: UiSlot)}
+  {#if item.id === 'profile'}
+    <div class="settings-profile-card">
+      {#if client.me}
+        <div class="settings-profile-avatar-wrap">
+          <button
+            type="button"
+            id="settings-profile-avatar"
+            class="settings-profile-avatar"
+            class:settings-profile-avatar-busy={avatarBusy}
+            aria-label="アバターを変更"
+            title="アバターを変更"
+            aria-busy={avatarBusy}
+            onclick={onAvatarClick}
+          >
+            <Avatar user={client.me} id={client.me.id} size={44} />
+            <span class="settings-profile-avatar-badge" aria-hidden="true"><Camera size={12} /></span>
+          </button>
+          {#if avatarMenuOpen}
+            <Menu class="settings-avatar-menu" label="アバター" onclose={() => (avatarMenuOpen = false)}>
+              <MenuItem class="settings-avatar-menu-pick" icon={ImageUp} onclick={pickAvatar}>画像を選ぶ</MenuItem>
+              <MenuItem class="settings-avatar-menu-revert" icon={Undo2} onclick={() => void revertAvatar()}>Tailscale の画像に戻す</MenuItem>
+            </Menu>
+          {/if}
+          <input bind:this={avatarInput} id="settings-avatar-input" type="file" accept="image/*" hidden onchange={onAvatarPicked} />
+        </div>
+        <div class="settings-profile-text">
+          {#if editingName}
+            <form id="settings-display-name-form" class="settings-display-name-form" onsubmit={save}>
+              <TextInput
+                id="settings-display-name-input"
+                class="settings-display-name-input"
+                bind:value={name}
+                maxlength={32}
+                autocomplete="nickname"
+                aria-label="表示名"
+                enterkeyhint="done"
+                onkeydown={onNameKeydown}
+              />
+              <IconButton type="submit" label="保存" class="settings-display-name-save" disabled={saving}><Check size={18} /></IconButton>
+              <IconButton label="キャンセル" class="settings-display-name-cancel" onclick={cancelEditName}><X size={18} /></IconButton>
+            </form>
+            {#if error}<p class="settings-display-name-error">{error}</p>{/if}
+          {:else}
+            <button type="button" id="settings-profile-display-name" class="settings-profile-display-name" title="表示名を変更" onclick={() => void startEditName()}>
+              <span class="settings-profile-display-name-text">{client.me.display_name}</span>
+              <Pencil size={13} class="settings-profile-display-name-icon" />
+            </button>
+          {/if}
+          <div class="muted settings-small-text settings-profile-login-name">{client.me.login_name}</div>
+        </div>
+      {/if}
+      <!-- このデバイスの種類は、プロフィールのカードの右に並べる -->
+      <DeviceKindSettings />
+    </div>
+  {:else if item.id === 'customThemes'}
+    <ThemeSettings />
+  {:else if item.id === 'notifications'}
+    {#if notifications.backend === 'android'}
+      {#if android && !android.permission}
+        <StatusLine kind="warn" icon={BellOff}>通知が許可されていません</StatusLine>
+        <Button onclick={() => notifications.requestPermission()}>
+          <Bell size={15} />通知を許可する
+        </Button>
+      {:else if android && !android.connected}
+        <StatusLine kind="muted" busy>通知用の接続を再試行しています…</StatusLine>
+      {/if}
+      {#if android && !android.batteryUnrestricted}
+        <p class="muted settings-small-text">電池の最適化を解除すると、省電力中も接続が切れにくくなり、通知が遅れにくくなります。</p>
+        <Button onclick={() => notifications.openBatterySettings()}>
+          <BatteryCharging size={15} />電池の最適化を解除
+        </Button>
+      {/if}
+    {:else if perm === 'unsupported'}
+      <p class="muted settings-small-text">この環境ではシステム通知を使えません。アプリ内に表示します。</p>
+    {:else if perm === 'denied'}
+      <p class="muted settings-small-text">通知はブロックされています。{isTauri() ? 'OS' : 'ブラウザー'}の設定から許可できます。</p>
+    {:else if perm === 'default'}
+      <Button onclick={() => notifications.requestPermission()}>
+        <Bell size={15} />通知を許可する
+      </Button>
+    {/if}
+    <Button disabled={notifications.sendingSample} onclick={() => notifications.sendSample()}>
+      <Send size={15} />サンプル通知を送信
+    </Button>
+  {:else if item.id === 'plugins'}
+    <PluginSettings />
+  {:else if item.id === 'server'}
+    <div class="settings-server">
+      <p class="muted settings-small-text settings-server-line">
+        <Server size={13} />
+        <span class="settings-server-url">{getServerUrl() || '同じオリジン（開発用プロキシ）'}</span>
+      </p>
+      {#if isTauri()}
+        <Button class="settings-change-server" onclick={changeServer}>サーバーを変更</Button>
+      {/if}
+    </div>
+    {#if devUser}<p class="muted settings-small-text">開発ユーザー: {devUser}</p>{/if}
+  {:else if item.id === 'version'}
+    <SettingRow name="バージョン" class="settings-version-row">
+      {#snippet control()}
+        <div class="settings-version-control">
+          <span class="settings-version">{updater.supported ? (updater.version ? `v${updater.version}` : '…') : '開発版'}</span>
+          {#if updater.supported}
+            <IconButton
+              class="settings-update-check"
+              label="アップデートを確認"
+              title="アップデートを確認"
+              disabled={busy}
+              onclick={checkUpdate}
+            >
+              <RefreshCw size={18} class={st.kind === 'checking' ? 'spin' : ''} />
+            </IconButton>
+          {/if}
+        </div>
+      {/snippet}
+    </SettingRow>
+
+    <!-- 新しいバージョンや、うまくいかなかったときだけ、その状態の表示と操作を出す（「最新です」はトーストで知らせる） -->
+    {#if updater.supported && st.kind !== 'idle' && st.kind !== 'checking' && st.kind !== 'latest'}
+      <div class="settings-update">
+        {#if st.kind === 'available'}
+          <StatusLine kind="accent">新しいバージョンがあります: v{st.version} が利用できます</StatusLine>
+          {#if st.notes}
+            <div class="settings-update-notes scroll"><Markdown body={st.notes} /></div>
+          {/if}
+        {:else if st.kind === 'permission'}
+          <StatusLine kind="accent">インストールの許可が必要です</StatusLine>
+          <p class="muted settings-small-text">
+            アップデートを入れるには、「不明なアプリのインストール」で disnans を許可してください。開いた設定画面で許可したら、戻って「続ける」を押してください。
+          </p>
+        {:else if st.kind === 'downloading'}
+          <StatusLine kind="muted" busy>
+            ダウンロード中…
+            {#if st.total}{Math.floor((st.downloaded / st.total) * 100)}%{:else}{mb(st.downloaded)} MB{/if}
+          </StatusLine>
+          <progress class="settings-update-progress" max={st.total ?? undefined} value={st.total ? st.downloaded : undefined}></progress>
+        {:else if st.kind === 'installing'}
+          <StatusLine kind="muted" busy>インストールしています…</StatusLine>
+        {:else if st.kind === 'error'}
+          <StatusLine kind="error">エラー: {st.message}</StatusLine>
+          <p class="muted settings-small-text">うまくいかないときは、リリースページから直接ダウンロードできます。</p>
+        {/if}
+
+        {#if st.kind === 'available' || st.kind === 'permission' || st.kind === 'error'}
+          <div class="settings-update-actions">
+            {#if st.kind === 'available'}
+              <Button variant="primary" onclick={() => updater.install()}>
+                <Download size={15} />ダウンロードしてインストール
+              </Button>
+            {:else if st.kind === 'permission'}
+              <Button variant="primary" onclick={() => updater.install()}>続ける</Button>
+            {:else}
+              <Button onclick={() => updater.openReleasePage()}>
+                <ExternalLink size={15} />リリースページを開く
+              </Button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {/if}
+  {:else if item.id === 'hotkeys'}
+    <HotkeySettings />
+  {:else if item.id === 'navBar'}
+    <NavBarSettings />
+  {:else if item.id === 'composerMenu'}
+    <ComposerMenuSettings />
+  {:else if item.id === 'callDevices'}
+    <CallDeviceSettings />
+  {:else if item.id === 'deviceList'}
+    <DeviceListSettings />
+  {/if}
+{/snippet}
+
 <div id="settings" class="settings-view">
   <!-- 「操作」のサブページ。一覧の上に重ねる（一覧はそのままにして、戻ったときに元の位置へ戻す） -->
   {#if ui.settingsSub}
@@ -243,19 +390,7 @@
       <PanelBar />
       <div class="scroll settings-sub-page-body">
         <div class="settings-sub-page-content">
-          {#if ui.settingsSub === 'enterKeys'}
-            <EnterKeySettings />
-          {:else if ui.settingsSub === 'hotkeys'}
-            <HotkeySettings />
-          {:else if ui.settingsSub === 'navBar'}
-            <NavBarSettings />
-          {:else if ui.settingsSub === 'call'}
-            <CallSettings />
-          {:else if ui.settingsSub === 'devices'}
-            <DeviceListSettings />
-          {:else}
-            <ComposerMenuSettings />
-          {/if}
+          {#if subPage}<SettingsTree page={subPage} {slot} />{/if}
         </div>
       </div>
     </div>
@@ -265,218 +400,7 @@
 
   <div class="scroll settings-body" inert={!!ui.settingsSub}>
     <div class="settings-content">
-      <Section title="プロフィール" class="settings-profile">
-        <div class="settings-profile-card">
-          {#if client.me}
-            <div class="settings-profile-avatar-wrap">
-              <button
-                type="button"
-                id="settings-profile-avatar"
-                class="settings-profile-avatar"
-                class:settings-profile-avatar-busy={avatarBusy}
-                aria-label="アバターを変更"
-                title="アバターを変更"
-                aria-busy={avatarBusy}
-                onclick={onAvatarClick}
-              >
-                <Avatar user={client.me} id={client.me.id} size={44} />
-                <span class="settings-profile-avatar-badge" aria-hidden="true"><Camera size={12} /></span>
-              </button>
-              {#if avatarMenuOpen}
-                <Menu class="settings-avatar-menu" label="アバター" onclose={() => (avatarMenuOpen = false)}>
-                  <MenuItem class="settings-avatar-menu-pick" icon={ImageUp} onclick={pickAvatar}>画像を選ぶ</MenuItem>
-                  <MenuItem class="settings-avatar-menu-revert" icon={Undo2} onclick={() => void revertAvatar()}>Tailscale の画像に戻す</MenuItem>
-                </Menu>
-              {/if}
-              <input bind:this={avatarInput} id="settings-avatar-input" type="file" accept="image/*" hidden onchange={onAvatarPicked} />
-            </div>
-            <div class="settings-profile-text">
-              {#if editingName}
-                <form id="settings-display-name-form" class="settings-display-name-form" onsubmit={save}>
-                  <TextInput
-                    id="settings-display-name-input"
-                    class="settings-display-name-input"
-                    bind:value={name}
-                    maxlength={32}
-                    autocomplete="nickname"
-                    aria-label="表示名"
-                    enterkeyhint="done"
-                    onkeydown={onNameKeydown}
-                  />
-                  <IconButton type="submit" label="保存" class="settings-display-name-save" disabled={saving}><Check size={18} /></IconButton>
-                  <IconButton label="キャンセル" class="settings-display-name-cancel" onclick={cancelEditName}><X size={18} /></IconButton>
-                </form>
-                {#if error}<p class="settings-display-name-error">{error}</p>{/if}
-              {:else}
-                <button type="button" id="settings-profile-display-name" class="settings-profile-display-name" title="表示名を変更" onclick={() => void startEditName()}>
-                  <span class="settings-profile-display-name-text">{client.me.display_name}</span>
-                  <Pencil size={13} class="settings-profile-display-name-icon" />
-                </button>
-              {/if}
-              <div class="muted settings-small-text settings-profile-login-name">{client.me.login_name}</div>
-            </div>
-          {/if}
-          <!-- このデバイスの種類は、プロフィールのカードの右に並べる -->
-          <DeviceKindSettings />
-        </div>
-      </Section>
-
-      <Section title="外観" class="settings-appearance">
-        <span class="field-label">テーマ</span>
-        <SegmentedButton class="settings-theme-picker" label="テーマ" options={themes} value={prefs.theme} onchange={(v) => prefs.setTheme(v)} />
-        <ThemeSettings />
-        {#if isTauri() && isAndroid()}
-          <SettingRow name="画面の向き" class="settings-orientation-row">
-            {#snippet control()}
-              <select
-                class="input settings-orientation-select"
-                aria-label="画面の向き"
-                value={orientation.mode}
-                onchange={(e) => orientation.set(e.currentTarget.value as OrientationMode)}
-              >
-                {#each orientationOptions as o (o.value)}
-                  <option value={o.value}>{o.label}</option>
-                {/each}
-              </select>
-            {/snippet}
-          </SettingRow>
-          <SettingRow name="ナビゲーションバーを隠す" class="settings-hide-nav-bar-row">
-            {#snippet control()}
-              <Toggle checked={ui.hideNavigationBar} label="ナビゲーションバーを隠す" onchange={(on) => ui.setHideNavigationBar(on)} />
-            {/snippet}
-          </SettingRow>
-        {/if}
-      </Section>
-
-      <Section title="操作" class="settings-operations">
-        {#each operations as op (op.value)}
-          <!-- 行全体がボタン。右のアイコンは飾り（読み上げは行の名前） -->
-          <SettingRow name={op.name} class="settings-operation-row" onclick={() => ui.openSettingsSub(op.value)}>
-            {#snippet control()}
-              <span class="settings-operation-icon" aria-hidden="true"><Settings size={18} /></span>
-            {/snippet}
-          </SettingRow>
-        {/each}
-      </Section>
-
-      <Section title="通知" class="settings-notifications">
-        {#if notifications.backend === 'android'}
-          {#if android && !android.permission}
-            <StatusLine kind="warn" icon={BellOff}>通知が許可されていません</StatusLine>
-            <Button onclick={() => notifications.requestPermission()}>
-              <Bell size={15} />通知を許可する
-            </Button>
-          {:else if android && !android.connected}
-            <StatusLine kind="muted" busy>通知用の接続を再試行しています…</StatusLine>
-          {/if}
-          {#if android && !android.batteryUnrestricted}
-            <p class="muted settings-small-text">電池の最適化を解除すると、省電力中も接続が切れにくくなり、通知が遅れにくくなります。</p>
-            <Button onclick={() => notifications.openBatterySettings()}>
-              <BatteryCharging size={15} />電池の最適化を解除
-            </Button>
-          {/if}
-        {:else if perm === 'unsupported'}
-          <p class="muted settings-small-text">この環境ではシステム通知を使えません。アプリ内に表示します。</p>
-        {:else if perm === 'denied'}
-          <p class="muted settings-small-text">通知はブロックされています。{isTauri() ? 'OS' : 'ブラウザー'}の設定から許可できます。</p>
-        {:else if perm === 'default'}
-          <Button onclick={() => notifications.requestPermission()}>
-            <Bell size={15} />通知を許可する
-          </Button>
-        {/if}
-        <Button disabled={notifications.sendingSample} onclick={() => notifications.sendSample()}>
-          <Send size={15} />サンプル通知を送信
-        </Button>
-      </Section>
-
-      <PluginSettings />
-
-      {#if isTauri() || devUser}
-        <Section title="接続" class="settings-connection">
-          <div class="settings-server">
-            <p class="muted settings-small-text settings-server-line">
-              <Server size={13} />
-              <span class="settings-server-url">{getServerUrl() || '同じオリジン（開発用プロキシ）'}</span>
-            </p>
-            {#if isTauri()}
-              <Button class="settings-change-server" onclick={changeServer}>サーバーを変更</Button>
-            {/if}
-          </div>
-          {#if devUser}<p class="muted settings-small-text">開発ユーザー: {devUser}</p>{/if}
-          {#if isTauri()}
-            <SettingRow name="デバイス" class="settings-operation-row" onclick={() => ui.openSettingsSub('devices')}>
-              {#snippet control()}
-                <span class="settings-operation-icon" aria-hidden="true"><Settings size={18} /></span>
-              {/snippet}
-            </SettingRow>
-          {/if}
-        </Section>
-      {/if}
-
-      <Section title="アプリ" class="settings-app">
-        <SettingRow name="バージョン" class="settings-version-row">
-          {#snippet control()}
-            <div class="settings-version-control">
-              <span class="settings-version">{updater.supported ? (updater.version ? `v${updater.version}` : '…') : '開発版'}</span>
-              {#if updater.supported}
-                <IconButton
-                  class="settings-update-check"
-                  label="アップデートを確認"
-                  title="アップデートを確認"
-                  disabled={busy}
-                  onclick={checkUpdate}
-                >
-                  <RefreshCw size={18} class={st.kind === 'checking' ? 'spin' : ''} />
-                </IconButton>
-              {/if}
-            </div>
-          {/snippet}
-        </SettingRow>
-
-        <!-- 新しいバージョンや、うまくいかなかったときだけ、その状態の表示と操作を出す（「最新です」はトーストで知らせる） -->
-        {#if updater.supported && st.kind !== 'idle' && st.kind !== 'checking' && st.kind !== 'latest'}
-          <div class="settings-update">
-            {#if st.kind === 'available'}
-              <StatusLine kind="accent">新しいバージョンがあります: v{st.version} が利用できます</StatusLine>
-              {#if st.notes}
-                <div class="settings-update-notes scroll"><Markdown body={st.notes} /></div>
-              {/if}
-            {:else if st.kind === 'permission'}
-              <StatusLine kind="accent">インストールの許可が必要です</StatusLine>
-              <p class="muted settings-small-text">
-                アップデートを入れるには、「不明なアプリのインストール」で disnans を許可してください。開いた設定画面で許可したら、戻って「続ける」を押してください。
-              </p>
-            {:else if st.kind === 'downloading'}
-              <StatusLine kind="muted" busy>
-                ダウンロード中…
-                {#if st.total}{Math.floor((st.downloaded / st.total) * 100)}%{:else}{mb(st.downloaded)} MB{/if}
-              </StatusLine>
-              <progress class="settings-update-progress" max={st.total ?? undefined} value={st.total ? st.downloaded : undefined}></progress>
-            {:else if st.kind === 'installing'}
-              <StatusLine kind="muted" busy>インストールしています…</StatusLine>
-            {:else if st.kind === 'error'}
-              <StatusLine kind="error">エラー: {st.message}</StatusLine>
-              <p class="muted settings-small-text">うまくいかないときは、リリースページから直接ダウンロードできます。</p>
-            {/if}
-
-            {#if st.kind === 'available' || st.kind === 'permission' || st.kind === 'error'}
-              <div class="settings-update-actions">
-                {#if st.kind === 'available'}
-                  <Button variant="primary" onclick={() => updater.install()}>
-                    <Download size={15} />ダウンロードしてインストール
-                  </Button>
-                {:else if st.kind === 'permission'}
-                  <Button variant="primary" onclick={() => updater.install()}>続ける</Button>
-                {:else}
-                  <Button onclick={() => updater.openReleasePage()}>
-                    <ExternalLink size={15} />リリースページを開く
-                  </Button>
-                {/if}
-              </div>
-            {/if}
-          </div>
-        {/if}
-      </Section>
+      <SettingsTree page={topPage} {slot} />
     </div>
   </div>
 </div>
@@ -667,15 +591,5 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-4);
-  }
-  /* 「操作」の行の右の飾りのアイコン */
-  .settings-operation-icon {
-    display: flex;
-    color: var(--text-muted);
-  }
-  /* 画面の向きの選択（.input の幅いっぱいにせず、中身の幅に合わせる。CallSettings の .call-select と同じ流儀） */
-  .settings-orientation-select {
-    width: auto;
-    max-width: 260px;
   }
 </style>

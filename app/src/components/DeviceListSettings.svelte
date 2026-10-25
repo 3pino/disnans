@@ -3,7 +3,6 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import IconButton from './ui/IconButton.svelte';
-  import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import StatusLine from './ui/StatusLine.svelte';
   import TextInput from './ui/TextInput.svelte';
@@ -54,51 +53,49 @@
   const busy = $derived(deviceList.loading || deviceList.busy !== null);
 </script>
 
-<Section title="デバイス" class="device-list-settings">
-  {#if deviceList.error}
-    <StatusLine kind="error" class="device-list-settings-error">{deviceList.error}</StatusLine>
+{#if deviceList.error}
+  <StatusLine kind="error" class="device-list-settings-error">{deviceList.error}</StatusLine>
+{/if}
+
+<div class="device-list-settings-actions">
+  <IconButton class="device-list-settings-refresh" label="一覧を読み直す" disabled={busy} onclick={() => void deviceList.load()}>
+    <RefreshCw size={18} />
+  </IconButton>
+  {#if busy}
+    <StatusLine busy>読み込み中…</StatusLine>
   {/if}
+</div>
 
-  <div class="device-list-settings-actions">
-    <IconButton class="device-list-settings-refresh" label="一覧を読み直す" disabled={busy} onclick={() => void deviceList.load()}>
-      <RefreshCw size={18} />
-    </IconButton>
-    {#if busy}
-      <StatusLine busy>読み込み中…</StatusLine>
-    {/if}
-  </div>
+{#if !deviceList.loading && deviceList.items.length === 0 && !deviceList.error}
+  <p class="muted device-list-settings-empty">デバイスはまだありません</p>
+{/if}
 
-  {#if !deviceList.loading && deviceList.items.length === 0 && !deviceList.error}
-    <p class="muted device-list-settings-empty">デバイスはまだありません</p>
-  {/if}
-
-  {#each deviceList.items as d (d.device_id)}
-    {@const self = deviceList.isSelf(d.device_id)}
-    <SettingRow name={d.name} description={meta(d)} class="device-list-settings-row">
-      {#snippet control()}
-        <div class="device-list-settings-controls">
-          <TextInput
-            class="device-list-settings-name"
-            aria-label="デバイスの名前"
-            value={d.name}
-            disabled={busy}
-            spellcheck={false}
-            autocomplete="off"
-            onchange={(e) => void rename(d, e.currentTarget.value)}
-          />
-          {#if !self}
-            <IconButton class="device-list-settings-delete" label="このデバイスを削除" disabled={busy} onclick={() => void remove(d)}>
-              <Trash2 size={16} />
-            </IconButton>
-          {:else}
-            <!-- 削除ボタンの幅を空けて、入力欄の位置をそろえる -->
-            <span class="device-list-settings-delete-space" aria-hidden="true"></span>
-          {/if}
-        </div>
-      {/snippet}
-    </SettingRow>
-  {/each}
-</Section>
+{#each deviceList.items as d (d.device_id)}
+  {@const self = deviceList.isSelf(d.device_id)}
+  <SettingRow name={d.name} description={meta(d)} class="device-list-settings-row">
+    {#snippet control()}
+      <div class="device-list-settings-controls">
+        <TextInput
+          class="device-list-settings-name"
+          aria-label="デバイスの名前"
+          value={d.name}
+          disabled={busy}
+          spellcheck={false}
+          autocomplete="off"
+          onchange={(e) => void rename(d, e.currentTarget.value)}
+        />
+        {#if !self}
+          <IconButton class="device-list-settings-delete" label="このデバイスを削除" disabled={busy} onclick={() => void remove(d)}>
+            <Trash2 size={16} />
+          </IconButton>
+        {:else}
+          <!-- 削除ボタンの幅を空けて、入力欄の位置をそろえる -->
+          <span class="device-list-settings-delete-space" aria-hidden="true"></span>
+        {/if}
+      </div>
+    {/snippet}
+  </SettingRow>
+{/each}
 
 <style>
   /* 名前の入力と削除ボタンを 1 段に並べる */

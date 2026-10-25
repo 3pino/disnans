@@ -6,7 +6,6 @@
   import TextInput from './ui/TextInput.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
-  import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import SortableList from './ui/SortableList.svelte';
   import { commandList, type AppCommand } from '../lib/commands.svelte';
@@ -48,59 +47,57 @@
   }
 </script>
 
-<Section title="ナビゲーションバー" class="nav-bar-settings">
-  <SortableList
-    items={shown}
-    getId={(c) => c.id}
-    getLabel={(c) => c.name}
-    onmove={reorder}
-    removable={(c) => navItemRemovable(c.id)}
-    onremove={remove}
-    class="nav-bar-settings-list"
-  >
-    {#snippet row(c, s)}
-      <SettingRow
-        name={c.name}
-        description={c.source}
-        icon={c.icon ?? Puzzle}
-        deleting={s.deleting}
-        ondelete={s.canRemove ? s.remove : undefined}
-        deleteLabel="{c.name} をナビゲーションバーから外す"
-      >
-        {#snippet control()}
-          <TextInput
-            class="nav-bar-settings-label"
-            aria-label="{c.name}の表示名"
-            placeholder={labelPlaceholder(c)}
-            value={navBar.labels[c.id] ?? ''}
-            spellcheck={false}
-            autocomplete="off"
-            onchange={(e) => navBar.setLabel(c.id, e.currentTarget.value)}
-          />
-        {/snippet}
-      </SettingRow>
-    {/snippet}
-  </SortableList>
+<SortableList
+  items={shown}
+  getId={(c) => c.id}
+  getLabel={(c) => c.name}
+  onmove={reorder}
+  removable={(c) => navItemRemovable(c.id)}
+  onremove={remove}
+  class="nav-bar-settings-list"
+>
+  {#snippet row(c, s)}
+    <SettingRow
+      name={c.name}
+      description={c.source}
+      icon={c.icon ?? Puzzle}
+      deleting={s.deleting}
+      ondelete={s.canRemove ? s.remove : undefined}
+      deleteLabel="{c.name} をナビゲーションバーから外す"
+    >
+      {#snippet control()}
+        <TextInput
+          class="nav-bar-settings-label"
+          aria-label="{c.name}の表示名"
+          placeholder={labelPlaceholder(c)}
+          value={navBar.labels[c.id] ?? ''}
+          spellcheck={false}
+          autocomplete="off"
+          onchange={(e) => navBar.setLabel(c.id, e.currentTarget.value)}
+        />
+      {/snippet}
+    </SettingRow>
+  {/snippet}
+</SortableList>
 
-  <div class="setting-list-actions">
-    <span class="setting-list-add">
-      <Button icon={Plus} aria-haspopup="menu" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>項目を追加</Button>
-      {#if pickerOpen}
-        <Menu class="setting-list-picker" label="追加する項目" onclose={() => (pickerOpen = false)}>
-          {#each addable as c (c.id)}
-            <MenuItem class="nav-bar-settings-pick" icon={c.icon ?? Puzzle} onclick={() => add(c.id)}>
-              {c.name}{#if c.source}<span class="muted setting-list-source"> · {c.source}</span>{/if}
-            </MenuItem>
-          {:else}
-            <p class="muted setting-list-none">追加できる項目はありません</p>
-          {/each}
-        </Menu>
-      {/if}
-    </span>
-    <Button icon={RotateCcw} onclick={() => navBar.resetLabels()}>表示名を既定に戻す</Button>
-    <Button icon={RotateCcw} onclick={() => navBar.reset()}>項目を既定に戻す</Button>
-  </div>
-</Section>
+<div class="setting-list-actions">
+  <span class="setting-list-add">
+    <Button icon={Plus} aria-haspopup="menu" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>項目を追加</Button>
+    {#if pickerOpen}
+      <Menu class="setting-list-picker" label="追加する項目" onclose={() => (pickerOpen = false)}>
+        {#each addable as c (c.id)}
+          <MenuItem class="nav-bar-settings-pick" icon={c.icon ?? Puzzle} onclick={() => add(c.id)}>
+            {c.name}{#if c.source}<span class="muted setting-list-source"> · {c.source}</span>{/if}
+          </MenuItem>
+        {:else}
+          <p class="muted setting-list-none">追加できる項目はありません</p>
+        {/each}
+      </Menu>
+    {/if}
+  </span>
+  <Button icon={RotateCcw} onclick={() => navBar.resetLabels()}>表示名を既定に戻す</Button>
+  <Button icon={RotateCcw} onclick={() => navBar.reset()}>項目を既定に戻す</Button>
+</div>
 
 <style>
   :global(.nav-bar-settings-list .nav-bar-settings-label) {

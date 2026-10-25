@@ -1,4 +1,5 @@
 import { moveItem } from './sortable';
+import { NAV_ITEMS } from './uiTree.generated';
 
 // ナビゲーションバーに出すコマンドの並び（デバイスごと。lib/stores/navBar.svelte.ts に保存する）
 // 項目は本体・プラグインのコマンドの ID（app:open-chat など）。登録されていないもの（外したプラグインなど）は出さないが、並びには残す
@@ -71,14 +72,12 @@ export function reorderNavItem(list: readonly string[], available: ReadonlySet<s
 }
 
 /**
- * 既定の表示名（短い英語）。ここにないものは、表示名を設定しなければコマンド名を出す
+ * 既定の表示名（短い英語）。ここにないものは、表示名を設定しなければコマンド名を出す。
+ * 正は core の view::ui::NAV_ITEMS（TUI のバーも同じ名前を使う）
  */
-export const DEFAULT_NAV_LABELS: Readonly<Record<string, string>> = {
-  [NAV_CHAT_ID]: 'Chat',
-  [NAV_SETTINGS_ID]: 'Settings',
-  [NAV_CALL_ID]: 'Call',
-  [NAV_SEARCH_ID]: 'Search',
-};
+export const DEFAULT_NAV_LABELS: Readonly<Record<string, string>> = Object.fromEntries(
+  NAV_ITEMS.flatMap((i) => (i.label === null ? [] : [[i.id, i.label] as const])),
+);
 
 /**
  * 項目の表示名を決める。

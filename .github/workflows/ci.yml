@@ -24,7 +24,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - name: 生成した TypeScript の型がコミット済みか確認
-        run: git diff --exit-code app/src/lib/protocol app/src/lib/emojiNames.generated.ts
+        run: git diff --exit-code app/src/lib/protocol app/src/lib/emojiNames.generated.ts app/src/lib/uiTree.generated.ts
 
   # 共通ファイルの排他・置換と CLI のプロセス境界は Windows でも検証する。
   client-windows:

@@ -15,6 +15,7 @@ pub mod emoji;
 pub mod markdown;
 pub mod settings;
 pub mod suggest;
+pub mod ui;
 
 use std::collections::HashMap;
 

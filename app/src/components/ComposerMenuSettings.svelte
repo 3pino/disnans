@@ -5,7 +5,6 @@
   import Button from './ui/Button.svelte';
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
-  import Section from './ui/Section.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import SortableList from './ui/SortableList.svelte';
   import Toggle from './ui/Toggle.svelte';
@@ -56,47 +55,45 @@
   }
 </script>
 
-<Section title="＋メニュー" class="composer-menu-settings">
-  <SortableList
-    items={items}
-    getId={(x) => x.entry.id}
-    getLabel={(x) => x.entry.label}
-    onmove={reorder}
-    removable={(x) => composerMenuRemovable(x.entry)}
-    onremove={remove}
-    class="composer-menu-settings-list"
-  >
-    {#snippet row(x, s)}
-      <SettingRow
-        name={x.entry.label}
-        description={x.entry.source ?? (x.entry.kind === 'command' ? 'コマンド' : undefined)}
-        icon={x.entry.icon ?? Puzzle}
-        deleting={s.deleting}
-        ondelete={s.canRemove ? s.remove : undefined}
-        deleteLabel="{x.entry.label} をメニューから外す"
-      >
-        {#snippet control()}
-          <Toggle checked={!x.hidden} label="{x.entry.label} を「＋」メニューに出す" onchange={(on) => setShown(x.entry.id, on)} />
-        {/snippet}
-      </SettingRow>
-    {/snippet}
-  </SortableList>
+<SortableList
+  items={items}
+  getId={(x) => x.entry.id}
+  getLabel={(x) => x.entry.label}
+  onmove={reorder}
+  removable={(x) => composerMenuRemovable(x.entry)}
+  onremove={remove}
+  class="composer-menu-settings-list"
+>
+  {#snippet row(x, s)}
+    <SettingRow
+      name={x.entry.label}
+      description={x.entry.source ?? (x.entry.kind === 'command' ? 'コマンド' : undefined)}
+      icon={x.entry.icon ?? Puzzle}
+      deleting={s.deleting}
+      ondelete={s.canRemove ? s.remove : undefined}
+      deleteLabel="{x.entry.label} をメニューから外す"
+    >
+      {#snippet control()}
+        <Toggle checked={!x.hidden} label="{x.entry.label} を「＋」メニューに出す" onchange={(on) => setShown(x.entry.id, on)} />
+      {/snippet}
+    </SettingRow>
+  {/snippet}
+</SortableList>
 
-  <div class="setting-list-actions">
-    <span class="setting-list-add">
-      <Button icon={Plus} aria-haspopup="menu" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>コマンドを追加</Button>
-      {#if pickerOpen}
-        <Menu class="setting-list-picker" label="追加するコマンド" onclose={() => (pickerOpen = false)}>
-          {#each addable as c (c.id)}
-            <MenuItem class="composer-menu-settings-pick" icon={c.icon ?? Puzzle} onclick={() => add(c.id)}>
-              {c.label}{#if c.source}<span class="muted setting-list-source"> · {c.source}</span>{/if}
-            </MenuItem>
-          {:else}
-            <p class="muted setting-list-none">追加できるコマンドはありません</p>
-          {/each}
-        </Menu>
-      {/if}
-    </span>
-    <Button icon={RotateCcw} onclick={resetMenu}>項目を既定に戻す</Button>
-  </div>
-</Section>
+<div class="setting-list-actions">
+  <span class="setting-list-add">
+    <Button icon={Plus} aria-haspopup="menu" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>コマンドを追加</Button>
+    {#if pickerOpen}
+      <Menu class="setting-list-picker" label="追加するコマンド" onclose={() => (pickerOpen = false)}>
+        {#each addable as c (c.id)}
+          <MenuItem class="composer-menu-settings-pick" icon={c.icon ?? Puzzle} onclick={() => add(c.id)}>
+            {c.label}{#if c.source}<span class="muted setting-list-source"> · {c.source}</span>{/if}
+          </MenuItem>
+        {:else}
+          <p class="muted setting-list-none">追加できるコマンドはありません</p>
+        {/each}
+      </Menu>
+    {/if}
+  </span>
+  <Button icon={RotateCcw} onclick={resetMenu}>項目を既定に戻す</Button>
+</div>
