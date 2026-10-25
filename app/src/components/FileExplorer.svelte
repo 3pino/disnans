@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import FileIcon from '@lucide/svelte/icons/file';
   import Folder from '@lucide/svelte/icons/folder';
@@ -35,6 +35,10 @@
   import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
   import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
   import { LONG_PRESS_MS } from '../lib/sortable';
+  import { copyText } from '../lib/clipboard';
+  import { readClipboardImage, readNativeClipboardImage } from '../lib/clipboardImage';
+  import { clipboardTextName, peekClipboard, readClipboardText, type ClipboardPeek } from '../lib/clipboardPaste';
+  import { isLinuxDesktop } from '../lib/platform';
   import { sharedApi, uploadShared } from '../lib/transport/shared';
   import { sharedFileUrl, fileUrl } from '../lib/config';
   import { isImage } from '../lib/fileLink';
@@ -189,6 +193,141 @@
     }
   }
 
+  // ---- OS のクリップボードとの同期 ----
+  // コピー・切り取りは、項目のパスを OS のクリップボードにも書く。貼り付けは、クリップボードがまだその文字ならバッファを、
+  // ほかでコピーし直していれば（ファイル・画像・文字）そちらを、開いているフォルダへ送る（文字は .txt のファイルにする）
+
+  /** クリップボードに何があるか（貼り付けを押せるか）。開いたとき・前面に戻ったとき・コピーしたとき・メニューを開いたときに確かめ直す */
+  let clip = $state<ClipboardPeek>({ text: false, image: false });
+  async function refreshClip(): Promise<void> {
+    clip = await peekClipboard();
+  }
+  const canPaste = $derived(!explorerBuffer.empty || clip === 'unknown' || clip.text || clip.image);
+
+  onMount(() => {
+    void refreshClip();
+    const onFocus = () => void refreshClip();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshClip();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    document.addEventListener('paste', onPasteEvent);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+      document.removeEventListener('paste', onPasteEvent);
+    };
+  });
+
+  /** バッファ（項目のパス）を OS のクリップボードにも書く。クリック・タップの処理の中から呼ぶ（でないと拒否される） */
+  function syncToClipboard(): void {
+    const text = explorerBuffer.items.map((i) => i.path).join('\n');
+    void copyText(text).then((ok) => {
+      // 書いている間にバッファを入れ替えていなければ、クリップボードと結び付ける
+      if (ok && explorerBuffer.items.map((i) => i.path).join('\n') === text) explorerBuffer.clipText = text;
+      void refreshClip();
+    });
+  }
+
+  /** 貼り付け（バーのボタン・空きスペースのメニュー）。OS のクリップボードを読んで、何を貼るか決める */
+  async function pasteAny(): Promise<void> {
+    if (pasting) return;
+    const dir = fileExplorer.dir;
+    // バッファをクリップボードに書けていない（結び付いていない）なら、クリップボードは読まずにバッファを貼る
+    if (!explorerBuffer.empty && explorerBuffer.clipText === null) return paste();
+    await pasteWith(dir, await readClipboardText(), [], readClipboardImage);
+  }
+
+  /**
+   * クリップボードの中身（files・text・画像）から貼る。ファイルがあればそれ。文字がバッファのもの（コピーしたまま）ならバッファ。
+   * そうでなければ画像、文字（.txt）の順。どれも無ければバッファ
+   */
+  async function pasteWith(dir: string, text: string | null, files: File[], image: () => Promise<File | null>): Promise<void> {
+    if (files.length > 0) {
+      for (const f of files) await sendOne(dir, f);
+      return;
+    }
+    if (!explorerBuffer.empty && (explorerBuffer.clipText === null || text === explorerBuffer.clipText)) return paste();
+    const img = await image();
+    if (img) return sendOne(dir, img);
+    if (text) return sendOne(dir, new File([text], clipboardTextName(), { type: 'text/plain' }));
+    if (!explorerBuffer.empty) return paste();
+    ui.toast('クリップボードに貼り付けられるものがありません');
+  }
+
+  /** Ctrl+V（入力欄の外）。OS のファイル（エクスプローラーでコピーしたもの）もここで受け取れる */
+  function onPasteEvent(ev: ClipboardEvent): void {
+    const t = ev.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || t.closest('input, textarea, [contenteditable="true"]'))) return;
+    ev.preventDefault();
+    const files = [...(ev.clipboardData?.files ?? [])];
+    const text = ev.clipboardData?.getData('text/plain') || null;
+    // Linux の WebKitGTK は、画像のペーストで files が空になることがある
+    void pasteWith(fileExplorer.dir, text, files, isLinuxDesktop() ? readNativeClipboardImage : async () => null);
+  }
+
+  // ---- 空きスペースの長押し（マウスは右クリック）のメニュー: アップロード・貼り付け ----
+
+  let ctx = $state<{ x: number; y: number } | null>(null);
+  let ctxTimer: ReturnType<typeof setTimeout> | undefined;
+  let ctxFrom: { x: number; y: number } | null = null;
+  /** 長押しでメニューを出した直後（指を離したときのタップで、出たメニューの幕を押して閉じないように） */
+  let ctxByPress = false;
+
+  /** 項目・ボタン・メニューの外（空きスペース）か */
+  function isEmptySpot(t: EventTarget | null): boolean {
+    return t instanceof Element && !t.closest('.file-explorer-item, .file-explorer-menu, .menu-backdrop, .file-explorer-columns, button, a, input, textarea');
+  }
+
+  function openCtx(x: number, y: number): void {
+    ctx = { x, y };
+    void refreshClip();
+  }
+
+  function runCtx(fn: () => void): void {
+    ctx = null;
+    fn();
+  }
+
+  function bodyPressStart(ev: PointerEvent): void {
+    if (ev.pointerType === 'mouse' || !isEmptySpot(ev.target)) return;
+    ctxByPress = false;
+    ctxFrom = { x: ev.clientX, y: ev.clientY };
+    clearTimeout(ctxTimer);
+    ctxTimer = setTimeout(() => {
+      const at = ctxFrom;
+      ctxFrom = null;
+      if (!at) return;
+      ctxByPress = true;
+      openCtx(at.x, at.y);
+    }, LONG_PRESS_MS);
+  }
+
+  function bodyPressMove(ev: PointerEvent): void {
+    if (!ctxFrom) return;
+    if (Math.abs(ev.clientX - ctxFrom.x) > 8 || Math.abs(ev.clientY - ctxFrom.y) > 8) bodyPressEnd();
+  }
+
+  function bodyPressEnd(): void {
+    clearTimeout(ctxTimer);
+    ctxFrom = null;
+  }
+
+  /** 長押しでメニューを出したあと、指を離したときのタップ（クリック）を出さない */
+  function bodyTouchEnd(ev: TouchEvent): void {
+    if (!ctxByPress) return;
+    ctxByPress = false;
+    ev.preventDefault();
+  }
+
+  /** 右クリック（Android の長押しで出ることもある）。空きスペースならメニューを出す */
+  function bodyContextMenu(ev: MouseEvent): void {
+    if (!isEmptySpot(ev.target)) return;
+    ev.preventDefault();
+    if (!ctx) openCtx(ev.clientX, ev.clientY);
+  }
+
   // ---- 複数選択の操作（コピー・切り取り・削除・移動）。まとめて 1 回の確認（削除・上書き） ----
 
   /** 選んでいる項目（一覧に今ある分。消えたものは外す） */
@@ -210,6 +349,7 @@
     if (allowed.length < items.length) ui.toast(`フォルダはコピーできないので、${items.length - allowed.length} 件を除きました`);
     if (allowed.length === 0) return;
     explorerBuffer.set('copy', allowed);
+    syncToClipboard();
     explorerSelection.clear();
   }
 
@@ -217,6 +357,7 @@
     const items = selectedItems;
     if (items.length === 0 || cutBlocked) return;
     explorerBuffer.set('move', items);
+    syncToClipboard();
     explorerSelection.clear();
   }
 
@@ -351,10 +492,17 @@
   }
 
   /** 入力欄を出したら、拡張子の前までを選ぶ（すぐ打ち替えられるように） */
-  function focusName(input: HTMLInputElement): void {
+  function focusName(input: HTMLTextAreaElement): void {
+    fitName(input);
     input.focus();
     const dot = input.value.lastIndexOf('.');
     input.setSelectionRange(0, dot > 0 ? dot : input.value.length);
+  }
+
+  /** 名前の入力欄の高さを中身に合わせる（長い名前は折り返して縦に伸ばす。改行は入れない: Enter は確定） */
+  function fitName(input: HTMLTextAreaElement): void {
+    input.style.height = 'auto';
+    input.style.height = `${input.scrollHeight}px`;
   }
 
   /** 選んでいる件数（0 のときは操作を押せない） */
@@ -371,7 +519,7 @@
 
   /** 空きスペース（項目の外）を押したら、選択を解除する。項目・バー・メニュー・パンくずは解除しない */
   function onbodyclick(ev: MouseEvent): void {
-    if (!explorerSelection.active) return;
+    if (!explorerSelection.active || ctx) return;
     if (ev.target instanceof Element && ev.target.closest('.file-explorer-item, .file-explorer-menu, .menu-backdrop, .file-explorer-bar, .file-explorer-crumbs, .file-explorer-columns')) return;
     explorerSelection.clear();
   }
@@ -422,20 +570,16 @@
         {/if}
         <IconButton label="コピー" title={selectionReason('コピー')} disabled={noneSelected} onclick={copySelected}><Copy size={18} /></IconButton>
         <IconButton label="切り取り" title={cutBlocked ?? selectionReason('切り取り')} disabled={noneSelected || cutBlocked !== null} onclick={cutSelected}><Scissors size={18} /></IconButton>
+        <!-- 貼り付けは選ばなくても押せる（アプリ内でコピーしたもの、または OS のクリップボードの中身） -->
+        <IconButton label="貼り付け" title={canPaste ? '貼り付け' : 'コピー・切り取りすると貼り付けられます'} disabled={!canPaste || pasting} onclick={() => void pasteAny()}><ClipboardPaste size={18} /></IconButton>
         <IconButton label="削除" title={deleteBlocked ?? selectionReason('削除')} disabled={noneSelected || deleteBlocked !== null} onclick={() => void deleteSelected()}><Trash size={18} /></IconButton>
       </div>
     </div>
     {#snippet actions()}
-    <IconButton
-      label="貼り付け"
-      title={explorerBuffer.empty ? 'コピー・切り取りすると貼り付けられます' : `貼り付け（${explorerBuffer.items.length} 件）`}
-      disabled={explorerBuffer.empty || pasting}
-      onclick={() => void paste()}><ClipboardPaste size={18} /></IconButton>
     <span class="file-explorer-popup">
       <IconButton label="メニュー" title="メニュー" active={menuOpen} onclick={() => (menuOpen = !menuOpen)}><MenuIcon size={18} /></IconButton>
       {#if menuOpen}
         <Menu class="file-explorer-popup-menu file-explorer-menu" label="共有フォルダの操作" onclose={() => (menuOpen = false)}>
-          <MenuItem icon={Upload} onclick={() => run(() => fileInput?.click())}>アップロード</MenuItem>
           {#if canCreateFolder}
             <MenuItem icon={FolderPlus} onclick={() => run(openMkdir)}>新しいフォルダ</MenuItem>
           {/if}
@@ -481,9 +625,20 @@
     </ul>
   {/if}
 
-  <!-- 項目の外側（空きスペース）を押すと、選択を解除する（項目・バー・メニュー・パンくずは解除しない） -->
+  <!-- 項目の外側（空きスペース）を押すと、選択を解除する（項目・バー・メニュー・パンくずは解除しない）。長押し・右クリックでメニュー -->
   <!-- 詳細は、狭い画面では横にはみ出させてスワイプで見る（「…」は右端に固定して常に見せる） -->
-  <div class="scroll file-explorer-body" class:file-explorer-body-details={dirView.view === 'details'} role="presentation" onclick={onbodyclick}>
+  <div
+    class="scroll file-explorer-body"
+    class:file-explorer-body-details={dirView.view === 'details'}
+    role="presentation"
+    onclick={onbodyclick}
+    onpointerdown={bodyPressStart}
+    onpointermove={bodyPressMove}
+    onpointerup={bodyPressEnd}
+    onpointercancel={bodyPressEnd}
+    ontouchend={bodyTouchEnd}
+    oncontextmenu={bodyContextMenu}
+  >
     {#if listing === undefined || listing.kind === 'loading'}
       <p class="file-explorer-status muted">読み込み中…</p>
     {:else if listing.kind === 'missing'}
@@ -526,19 +681,22 @@
             {#snippet name()}
               {#if renaming}
                 <span class="file-explorer-name file-explorer-name-editing">
-                  <input
+                  <!-- 長い名前は折り返して縦に伸ばす（textarea。Enter は確定なので改行は入らない） -->
+                  <textarea
                     class="file-explorer-rename"
                     aria-label="新しい名前"
                     aria-invalid={renameError !== null}
+                    rows="1"
                     bind:value={renameTo}
                     disabled={renameBusy}
                     use:focusName
+                    oninput={(ev) => fitName(ev.currentTarget)}
                     onkeydown={(ev) => renameKey(ev, e.path)}
                     onblur={() => void commitRename(e.path)}
-                  />
+                  ></textarea>
                   {#if renameError}
                     <span class="file-explorer-rename-error" role="alert">{renameError}</span>
-                  {:else}
+                  {:else if renameNote(e.path)}
                     <span class="file-explorer-rename-note muted">{renameNote(e.path)}</span>
                   {/if}
                 </span>
@@ -550,7 +708,7 @@
             {#snippet row()}
               {#if dirView.view === 'grid'}
                 {#if explorerSelection.active}
-                  <span class="file-explorer-check">{#if explorerSelection.has(e.path)}<SquareCheck size={18} />{:else}<Square size={18} />{/if}</span>
+                  <span class="file-explorer-check" class:file-explorer-check-on={explorerSelection.has(e.path)}>{#if explorerSelection.has(e.path)}<SquareCheck size={18} />{:else}<Square size={18} />{/if}</span>
                 {/if}
                 <span class="file-explorer-thumb">
                   {#if thumb}
@@ -562,7 +720,7 @@
                 <!-- 詳細。選択モードのときは、アイコンの場所にチェックを出す（同じ大きさで入れ替える） -->
                 <span class="file-explorer-icon">
                   {#if explorerSelection.active}
-                    <span class="file-explorer-check">{#if explorerSelection.has(e.path)}<SquareCheck size={18} />{:else}<Square size={18} />{/if}</span>
+                    <span class="file-explorer-check" class:file-explorer-check-on={explorerSelection.has(e.path)}>{#if explorerSelection.has(e.path)}<SquareCheck size={18} />{:else}<Square size={18} />{/if}</span>
                   {:else if action === 'enter'}<Folder size={18} />{:else if action === 'image'}<ImageIcon size={18} />{:else}<FileIcon size={18} />{/if}
                 </span>
                 {@render name()}
@@ -591,6 +749,18 @@
     {/if}
   </div>
 </div>
+
+<!-- 空きスペースの長押し・右クリックのメニュー（押したところに出す） -->
+{#if ctx}
+  <div class="file-explorer-context" style:left="{ctx.x}px" style:top="{ctx.y}px">
+    <Menu class="file-explorer-context-menu file-explorer-menu" label="このフォルダの操作" onclose={() => (ctx = null)}>
+      <MenuItem icon={Upload} onclick={() => runCtx(() => fileInput?.click())}>アップロード</MenuItem>
+      {#if canPaste}
+        <MenuItem icon={ClipboardPaste} disabled={pasting} onclick={() => runCtx(() => void pasteAny())}>貼り付け</MenuItem>
+      {/if}
+    </Menu>
+  </div>
+{/if}
 
 {#if mkdirOpen}
   <Modal title="新しいフォルダ" onclose={() => (mkdirOpen = false)} width={380}>
@@ -741,17 +911,43 @@
     gap: var(--space-1);
   }
   /* 選択の印（詳細は、アイコンと同じ場所に入れ替える。グリッドは画像の上に重ねる） */
+  /* 選んでいない印は灰色、選んだ印は水色 */
   .file-explorer-check {
     flex: none;
     display: flex;
+    color: var(--text-muted);
+  }
+  .file-explorer-check-on {
     color: var(--accent);
   }
-  .file-explorer-item-selected .file-explorer-row {
-    background: var(--hover);
+  /* 選んだ項目は、行全体（「…」を含む）を明るい水色にする。「…」は詳細では右端に固定して下が透けないよう、色は不透明 */
+  .file-explorer-item {
+    --file-explorer-item-bg: var(--bg);
+    border-radius: var(--radius-sm);
+  }
+  .file-explorer-item-selected {
+    --file-explorer-item-bg: color-mix(in oklch, var(--accent) 18%, var(--bg));
+    background: var(--file-explorer-item-bg);
+  }
+  .file-explorer-item-selected > :global(.shared-entry-actions .shared-entry-menu-button) {
+    background: var(--file-explorer-item-bg);
   }
   .file-explorer-popup {
     position: relative;
     display: inline-flex;
+  }
+  /* 空きスペースのメニュー: 押したところを基準にする（大きさ 0 の箱。メニューは下か、入らなければ上に出す） */
+  .file-explorer-context {
+    position: fixed;
+    width: 0;
+    height: 0;
+    z-index: var(--z-menu);
+  }
+  .file-explorer-context > :global(.file-explorer-context-menu) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    min-width: 12em;
   }
   /* z-index は指定しない（design-system の .menu は --z-menu。ここで下げると外側の幕（-1）に覆われて項目が押せない） */
   .file-explorer-popup > :global(.file-explorer-popup-menu) {
@@ -789,7 +985,7 @@
   .file-explorer-view-details .file-explorer-item > :global(.shared-entry-actions) {
     position: sticky;
     right: 0;
-    background: var(--bg);
+    background: var(--file-explorer-item-bg);
   }
   /* 見出しの「…」の列の空き（行の右の余白 + 隙間 + 「…」34px にそろえる） */
   .file-explorer-col-actions {
@@ -940,6 +1136,16 @@
     background: var(--surface);
     color: var(--text);
     font: inherit;
+    line-height: 1.4;
+    resize: none;
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  /* 枠（青）でフォーカスが分かるので、フォーカスの輪（白）は出さない */
+  .file-explorer-rename:focus,
+  .file-explorer-rename:focus-visible {
+    outline: none;
   }
   .file-explorer-rename[aria-invalid='true'] {
     border-color: var(--danger);

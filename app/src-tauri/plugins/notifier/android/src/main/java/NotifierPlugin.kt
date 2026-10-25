@@ -409,6 +409,48 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  /**
+   * クリップボードに何があるか（中身は読まない）。{ text, image } の真偽。
+   * 説明（primaryClipDescription）だけを見るので、Android 12 以降の「貼り付けました」の通知は出ない
+   */
+  @Command
+  fun clipboardPeek(invoke: Invoke) {
+    val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    val desc = clipboard?.primaryClipDescription
+    var text = false
+    var image = false
+    if (desc != null) {
+      for (i in 0 until desc.mimeTypeCount) {
+        val type = desc.getMimeType(i)
+        if (type.startsWith("text/")) text = true
+        if (type.startsWith("image/")) image = true
+      }
+    }
+    val ret = JSObject()
+    ret.put("text", text)
+    ret.put("image", image)
+    invoke.resolve(ret)
+  }
+
+  /** クリップボードの文字（前面のときだけ読める）。文字が無ければ null（`resolve()` は JS の null） */
+  @Command
+  fun clipboardText(invoke: Invoke) {
+    val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    val clip = clipboard?.primaryClip
+    if (clip == null || clip.itemCount == 0 || !clip.description.hasMimeType("text/*")) {
+      invoke.resolve()
+      return
+    }
+    val text = clip.getItemAt(0).coerceToText(activity)?.toString()
+    if (text.isNullOrEmpty()) {
+      invoke.resolve()
+      return
+    }
+    val ret = JSObject()
+    ret.put("text", text)
+    invoke.resolve(ret)
+  }
+
   companion object {
     private const val EXTRA_SHARE_HANDLED = "dev.disnans.notifier.SHARE_HANDLED"
     private const val SHARE_DIR = "disnans-share"

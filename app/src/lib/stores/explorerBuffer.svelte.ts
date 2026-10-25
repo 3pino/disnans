@@ -7,6 +7,11 @@ import type { TransferItem, TransferOp } from '../sharedTransfer';
 class ExplorerBuffer {
   mode = $state<TransferOp | null>(null);
   items = $state<TransferItem[]>([]);
+  /**
+   * コピー・切り取りのときに OS のクリップボードへ書いた文字（項目のパス）。書けなかったら null。
+   * 貼り付けのとき、クリップボードがまだこの文字なら、このバッファを貼る（ほかでコピーし直していれば、そちらを貼る）
+   */
+  clipText = $state<string | null>(null);
 
   get empty(): boolean {
     return this.items.length === 0;
@@ -16,6 +21,7 @@ class ExplorerBuffer {
   set(mode: TransferOp, items: TransferItem[]): void {
     this.mode = mode;
     this.items = [...items];
+    this.clipText = null;
   }
 
   /** 貼り付けたものを外す（切り取りのとき）。残りが無ければ空にする */
@@ -27,6 +33,7 @@ class ExplorerBuffer {
   clear(): void {
     this.mode = null;
     this.items = [];
+    this.clipText = null;
   }
 
   /** 切り取りの途中か（一覧で薄く出すため） */

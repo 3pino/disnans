@@ -159,7 +159,6 @@ async function pressItem(label, text) {
 const namesAre = (want) => evalJs(`[...document.querySelectorAll('.file-explorer-item .file-explorer-name')].map(x=>x.textContent).join(',') === ${JSON.stringify(want)}`);
 
 const MAIN_ITEMS = [
-  ['アップロード', 'アップロード', () => evalJs(`!document.querySelector('.file-explorer-menu')`)],
   ['新しいフォルダ', '新しいフォルダ', () => evalJs(`!!document.querySelector('.file-explorer-mkdir')`)],
   ['表示: アイコン', 'アイコン', () => evalJs(`!!document.querySelector('.file-explorer-view-grid')`)],
   ['表示: 詳細', '詳細', () => evalJs(`!!document.querySelector('.file-explorer-columns')`)],
@@ -167,14 +166,28 @@ const MAIN_ITEMS = [
   ['並び替え: 降順', '降順', () => namesAre('docs,a.txt,pic.png')],
   ['並び替え: 昇順', '昇順', () => namesAre('docs,pic.png,a.txt')],
 ];
-expect('≡ に「選択モード」「一覧」「貼り付け」は無い', await (async () => {
+expect('≡ に「選択モード」「一覧」「貼り付け」「アップロード」は無い', await (async () => {
   await openMainMenu();
-  const ok = await evalJs(`[...document.querySelectorAll('.file-explorer-menu .menu-item')].every(b=>!/選択モード|^一覧|貼り付け/.test(b.textContent.trim()))`);
+  const ok = await evalJs(`[...document.querySelectorAll('.file-explorer-menu .menu-item')].every(b=>!/選択モード|^一覧|貼り付け|アップロード/.test(b.textContent.trim()))`);
   await evalJs(`document.querySelector('.menu-backdrop')?.click(), 1`);
   await sleep(120);
   return ok;
 })());
-expect('上端に貼り付けのボタンがある（空なら押せない）', (await evalJs(`document.querySelector('.file-explorer-bar button[aria-label="貼り付け"]')?.disabled === true`)) === true);
+// （ブラウザーでは、許可を求めずにクリップボードの中身を確かめられないので、貼り付けは押せるまま。Tauri では中身が無ければ押せない）
+expect('選択のバーの削除の左に貼り付けがある', (await evalJs(`(()=>{const bs=[...document.querySelectorAll('.file-explorer-selection-actions button')].map(b=>b.getAttribute('aria-label')); return bs.indexOf('貼り付け') === bs.indexOf('削除') - 1})()`)) === true);
+// 空きスペースの長押しで、アップロードのメニューが押したところに出る
+{
+  const spot = await evalJs(`(()=>{const b=document.querySelector('.file-explorer-body').getBoundingClientRect(); return [b.x+b.width/2, b.bottom-40]})()`);
+  await S('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: spot[0], y: spot[1], id: 1 }] });
+  await sleep(600);
+  await S('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await sleep(250);
+  expect('空きスペースの長押しでメニューが出て、指を離しても閉じない', (await evalJs(`!!document.querySelector('.file-explorer-context .menu')`)) === true);
+  expect('長押しのメニューの「アップロード」が押せる', (await hitIsInside('.file-explorer-context .menu-item', 'アップロード')) === 'ok');
+  expect('長押しのメニューは画面に収まる', (await evalJs(`(()=>{const r=document.querySelector('.file-explorer-context .menu').getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight})()`)) === true);
+  await evalJs(`document.querySelector('.menu-backdrop')?.click(), 1`);
+  await sleep(150);
+}
 for (const [label, text, after] of MAIN_ITEMS) {
   await openMainMenu();
   if (!(await evalJs(`!!document.querySelector('.file-explorer-menu')`))) {

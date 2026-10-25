@@ -25,4 +25,6 @@ permissions = [
   "allow-request-recent-images-permission",
   "allow-read-image",
   "allow-clipboard-image",
+  "allow-clipboard-peek",
+  "allow-clipboard-text",
 ]

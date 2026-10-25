@@ -32,6 +32,25 @@ const h = vi.hoisted(() => ({
   copy: vi.fn(async () => ({})),
   remove: vi.fn(async (_path: string) => {}),
   move: vi.fn(async (_from: string, _to: string) => ({})),
+  /** OS のクリップボード（差し替え）。copyText で書いたものが text に入る */
+  clip: { text: null as string | null, image: null as File | null, writable: true },
+}));
+vi.mock('../lib/clipboard', () => ({
+  copyText: vi.fn(async (t: string) => {
+    if (!h.clip.writable) return false;
+    h.clip.text = t;
+    h.clip.image = null;
+    return true;
+  }),
+}));
+vi.mock('../lib/clipboardPaste', async (orig) => ({
+  ...(await orig<typeof import('../lib/clipboardPaste')>()),
+  peekClipboard: async () => ({ text: h.clip.text !== null, image: h.clip.image !== null }),
+  readClipboardText: async () => h.clip.text,
+}));
+vi.mock('../lib/clipboardImage', () => ({
+  readClipboardImage: async () => h.clip.image,
+  readNativeClipboardImage: async () => null,
 }));
 vi.mock('../lib/transport/shared', () => ({
   sharedApi: {
@@ -63,6 +82,7 @@ afterEach(async () => {
   h.copy.mockClear();
   h.remove.mockClear();
   h.move.mockClear();
+  h.clip = { text: null, image: null, writable: true };
   explorerSelection.clear();
   explorerView.reset();
 });
@@ -98,7 +118,7 @@ function menuLabels(el: HTMLElement): string[] {
 
 /** 上端の貼り付けを押す */
 function pasteClick(el: HTMLElement): void {
-  el.querySelector<HTMLButtonElement>('.panel-bar button[aria-label="貼り付け"]')!.click();
+  el.querySelector<HTMLButtonElement>('.file-explorer-selection button[aria-label="貼り付け"]')!.click();
   flushSync();
 }
 
@@ -241,14 +261,17 @@ describe('項目の操作と貼り付け（コピー・切り取り・移動）'
     expect(itemMenuLabels(el, 'a.txt')).toEqual(['プロパティ']);
   });
 
-  it('上端に貼り付けのボタンがある。バッファが空なら押せない（≡ には出さない）', async () => {
+  it('貼り付けは選択のバーの中、削除の左。何も無ければ押せない（≡ には出さない）', async () => {
     const el = await render();
-    const btn = el.querySelector<HTMLButtonElement>('.panel-bar button[aria-label="貼り付け"]')!;
+    const labels = [...el.querySelectorAll('.file-explorer-selection-actions button')].map((b) => b.getAttribute('aria-label'));
+    expect(labels).toEqual(['コピー', '切り取り', '貼り付け', '削除']);
+    const btn = el.querySelector<HTMLButtonElement>('.file-explorer-selection button[aria-label="貼り付け"]')!;
     expect(btn.disabled).toBe(true);
     explorerBuffer.set('copy', [{ path: 'x/b.txt', kind: 'file' }]);
     flushSync();
     expect(btn.disabled).toBe(false);
     expect(menuLabels(el)).not.toContain('貼り付け');
+    expect(menuLabels(el)).not.toContain('アップロード');
   });
 
   it('コピーしたものを貼り付けると、同名は確認してから上書きで送る', async () => {
@@ -469,7 +492,7 @@ describe('名前の変更（名前を押すと、その場で入力欄になる�
   function nameOf(el: HTMLElement, name: string): HTMLElement {
     return [...el.querySelectorAll<HTMLElement>('.file-explorer-name-text')].find((n) => n.textContent === name)!;
   }
-  function type(input: HTMLInputElement, value: string): void {
+  function type(input: HTMLTextAreaElement, value: string): void {
     input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
@@ -480,7 +503,7 @@ describe('名前の変更（名前を押すと、その場で入力欄になる�
     flushSync();
     expect(fileExplorer.dir).toBe('');
     expect(document.querySelector('.modal')).toBeNull();
-    const input = el.querySelector<HTMLInputElement>('.file-explorer-item .file-explorer-rename')!;
+    const input = el.querySelector<HTMLTextAreaElement>('.file-explorer-item textarea.file-explorer-rename')!;
     expect(input.value).toBe('docs');
     type(input, 'papers');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -488,17 +511,35 @@ describe('名前の変更（名前を押すと、その場で入力欄になる�
     await vi.waitFor(() => expect(el.querySelector('.file-explorer-rename')).toBeNull());
   });
 
+  it('共有フォルダの項目では、本文のリンクが切れる旨を出す。attachments の中では何も出さない', async () => {
+    h.current = [{ ...entry('a.png'), path: 'attachments/a.png' }, entry('b.txt')];
+    try {
+      const el = await render();
+      nameOf(el, 'a.png').click();
+      flushSync();
+      expect(el.querySelector('.file-explorer-rename')).not.toBeNull();
+      expect(el.querySelector('.file-explorer-rename-note')).toBeNull();
+      el.querySelector<HTMLTextAreaElement>('.file-explorer-rename')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      flushSync();
+      nameOf(el, 'b.txt').click();
+      flushSync();
+      expect(el.querySelector('.file-explorer-rename-note')?.textContent).toContain('リンクは切れます');
+    } finally {
+      h.current = null;
+    }
+  });
+
   it('Esc で取り消す（変えない）。使えない名前は理由を出して入力欄のまま', async () => {
     const el = await render();
     nameOf(el, 'a.txt').click();
     flushSync();
-    let input = el.querySelector<HTMLInputElement>('.file-explorer-rename')!;
+    let input = el.querySelector<HTMLTextAreaElement>('.file-explorer-rename')!;
     type(input, 'b:c.txt');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     flushSync();
     expect(el.querySelector('.file-explorer-rename-error')?.textContent).toContain('使えません');
     expect(h.move).not.toHaveBeenCalled();
-    input = el.querySelector<HTMLInputElement>('.file-explorer-rename')!;
+    input = el.querySelector<HTMLTextAreaElement>('.file-explorer-rename')!;
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     flushSync();
     expect(el.querySelector('.file-explorer-rename')).toBeNull();
@@ -519,5 +560,142 @@ describe('名前の変更（名前を押すと、その場で入力欄になる�
     row.querySelector<HTMLElement>('.file-explorer-icon')!.click();
     flushSync();
     expect(fileExplorer.dir).toBe('docs');
+  });
+});
+
+describe('選択の印', () => {
+  it('選んでいない印は灰色（印の色を付けない）、選んだ印だけ水色', async () => {
+    const el = await render();
+    explorerSelection.start('a.txt');
+    flushSync();
+    const checks = [...el.querySelectorAll('.file-explorer-check')];
+    expect(checks).toHaveLength(3);
+    expect(checks.filter((c) => c.classList.contains('file-explorer-check-on'))).toHaveLength(1);
+  });
+});
+
+describe('空きスペースの長押し・右クリックのメニュー', () => {
+  function ctxLabels(): string[] {
+    return [...document.querySelectorAll('.file-explorer-context .menu-item')].map((b) => b.textContent?.trim() ?? '');
+  }
+
+  it('長押しでアップロードのメニューが出る。何も無ければ貼り付けは出さない', async () => {
+    vi.useFakeTimers();
+    try {
+      const el = await render();
+      const body = el.querySelector<HTMLElement>('.file-explorer-body')!;
+      body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 50, clientY: 600 }));
+      vi.advanceTimersByTime(LONG_PRESS_MS + 20);
+      flushSync();
+      expect(ctxLabels()).toEqual(['アップロード']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('項目の上の長押しでは出さない（項目の選択になる）', async () => {
+    vi.useFakeTimers();
+    try {
+      const el = await render();
+      el.querySelector<HTMLElement>('.file-explorer-item')!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5 }));
+      vi.advanceTimersByTime(LONG_PRESS_MS + 20);
+      flushSync();
+      expect(document.querySelector('.file-explorer-context')).toBeNull();
+      expect(explorerSelection.active).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('右クリックでも出る。クリップボードに文字があれば貼り付けも出し、押すと .txt にして送る', async () => {
+    h.clip.text = 'hello';
+    const el = await render();
+    el.querySelector<HTMLElement>('.file-explorer-body')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 50, clientY: 600 }));
+    await vi.waitFor(() => expect(ctxLabels()).toEqual(['アップロード', '貼り付け']));
+    [...document.querySelectorAll<HTMLButtonElement>('.file-explorer-context .menu-item')].find((b) => b.textContent?.includes('貼り付け'))!.click();
+    flushSync();
+    expect(document.querySelector('.file-explorer-context')).toBeNull();
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledWith(expect.stringMatching(/^clipboard-\d{8}-\d{6}\.txt$/), expect.any(File), expect.any(Function)));
+  });
+});
+
+describe('OS のクリップボードとの同期', () => {
+  async function selectAndPress(el: HTMLElement, path: string, label: string): Promise<void> {
+    explorerSelection.start(path);
+    flushSync();
+    el.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click();
+    flushSync();
+    await vi.waitFor(() => expect(explorerBuffer.clipText).not.toBeNull());
+  }
+
+  it('コピーすると、項目のパスを OS のクリップボードにも書く。そのまま貼ればアプリ内のコピー', async () => {
+    fileExplorer.dir = '';
+    const el = await render();
+    await selectAndPress(el, 'a.txt', 'コピー');
+    expect(h.clip.text).toBe('a.txt');
+    // 別のフォルダへ貼る
+    fileExplorer.open('docs');
+    await vi.waitFor(() => expect(el.querySelector('.file-explorer-list')).not.toBeNull());
+    pasteClick(el);
+    // 仮の一覧はどのフォルダも同じ（a.txt がある）ので、上書きの確認が出る
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(h.copy).toHaveBeenCalledWith('a.txt', 'docs/a.txt', true));
+    expect(h.upload).not.toHaveBeenCalled();
+  });
+
+  it('コピーのあとに、ほかで文字をコピーし直していれば、その文字を貼る（バッファは貼らない）', async () => {
+    const el = await render();
+    await selectAndPress(el, 'a.txt', 'コピー');
+    h.clip.text = 'other';
+    pasteClick(el);
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalled());
+    expect(h.copy).not.toHaveBeenCalled();
+  });
+
+  it('ほかで画像をコピーし直していれば、画像を送る', async () => {
+    const el = await render();
+    await selectAndPress(el, 'a.txt', 'コピー');
+    h.clip.text = null;
+    h.clip.image = new File(['x'], 'clipboard-1.png', { type: 'image/png' });
+    pasteClick(el);
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledWith('clipboard-1.png', expect.any(File), expect.any(Function)));
+    expect(h.copy).not.toHaveBeenCalled();
+  });
+
+  it('クリップボードに書けなかったときは、バッファを貼る（クリップボードの古い中身は貼らない）', async () => {
+    h.clip.text = 'old';
+    h.clip.writable = false;
+    const el = await render();
+    explorerSelection.start('a.txt');
+    flushSync();
+    el.querySelector<HTMLButtonElement>('button[aria-label="コピー"]')!.click();
+    flushSync();
+    await Promise.resolve();
+    fileExplorer.open('docs');
+    await vi.waitFor(() => expect(el.querySelector('.file-explorer-list')).not.toBeNull());
+    pasteClick(el);
+    // 仮の一覧はどのフォルダも同じ（a.txt がある）ので、上書きの確認が出る
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(h.copy).toHaveBeenCalledWith('a.txt', 'docs/a.txt', true));
+    expect(h.upload).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+V（入力欄の外）で、OS のファイルを送る。入力欄の中の貼り付けは邪魔しない', async () => {
+    await render();
+    const file = new File(['x'], 'from-os.pdf');
+    const ev = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(ev, 'clipboardData', { value: { files: [file], getData: () => '' } });
+    document.body.dispatchEvent(ev);
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledWith('from-os.pdf', file, expect.any(Function)));
+    expect(ev.defaultPrevented).toBe(true);
+    const input = document.createElement('textarea');
+    document.body.appendChild(input);
+    const ev2 = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(ev2, 'clipboardData', { value: { files: [file], getData: () => '' } });
+    input.dispatchEvent(ev2);
+    expect(ev2.defaultPrevented).toBe(false);
+    input.remove();
   });
 });
