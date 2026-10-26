@@ -9,6 +9,7 @@ pub mod calls;
 pub mod chat;
 pub mod config;
 pub mod db;
+pub mod diag;
 pub mod error;
 pub mod files;
 pub mod hub;

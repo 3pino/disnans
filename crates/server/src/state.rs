@@ -1,6 +1,7 @@
 //! アプリケーション全体で共有する状態。
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use sqlx::SqlitePool;
 use tokio::sync::{Mutex, MutexGuard};
@@ -25,6 +26,8 @@ pub struct AppState {
     pub tailscale: Tailscale,
     /// 自動更新の入れ替えのあとの再起動の要求。
     pub restart: Restart,
+    /// 起動した時刻（診断の稼働時間に使う）。
+    pub started: Instant,
     /// 書き込みを1つずつ行うためのロック。
     ///
     /// 少人数なので並列に書く必要はない。直列にすると SQLite のロックの競合を避けられ、
@@ -51,6 +54,7 @@ impl AppState {
             presence: Presence::default(),
             tailscale,
             restart: Restart::default(),
+            started: Instant::now(),
             write_lock: Mutex::new(()),
         }
     }

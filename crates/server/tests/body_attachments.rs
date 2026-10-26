@@ -11,7 +11,10 @@ const ALICE: &str = "alice@test";
 const BOB: &str = "bob@test";
 
 fn req(server: &TestServer, m: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-    server.http.request(m, server.url(path)).header("X-Dev-User", ALICE)
+    server
+        .http
+        .request(m, server.url(path))
+        .header("X-Dev-User", ALICE)
 }
 
 async fn upload(server: &TestServer, name: &str) -> Attachment {
@@ -34,11 +37,15 @@ async fn upload(server: &TestServer, name: &str) -> Attachment {
 
 /// `attachments/` に直接作る（library）。
 async fn put_library(server: &TestServer, name: &str) -> SharedEntry {
-    let res = req(server, reqwest::Method::PUT, &format!("/api/shared/attachments/{name}"))
-        .body("lib".to_owned())
-        .send()
-        .await
-        .unwrap();
+    let res = req(
+        server,
+        reqwest::Method::PUT,
+        &format!("/api/shared/attachments/{name}"),
+    )
+    .body("lib".to_owned())
+    .send()
+    .await
+    .unwrap();
     assert!(res.status().is_success(), "{}", res.status());
     res.json().await.unwrap()
 }
@@ -162,10 +169,18 @@ async fn an_old_client_attachment_ids_send_becomes_an_embed_in_the_body() {
 async fn a_name_link_in_the_body_attaches_a_library_file() {
     let server = TestServer::start().await;
     let entry = put_library(&server, "lib.txt").await;
-    let m = send(&server, "look [[lib.txt]] and [[attachments/lib.txt|x]]", &[]).await;
+    let m = send(
+        &server,
+        "look [[lib.txt]] and [[attachments/lib.txt|x]]",
+        &[],
+    )
+    .await;
     assert_eq!(m.attachments.len(), 1, "同じ添付は一つ");
     assert_eq!(m.attachments[0].id, entry.file_id.unwrap());
-    assert_eq!(m.body, "look [[attachments/lib.txt]] and [[attachments/lib.txt|x]]");
+    assert_eq!(
+        m.body,
+        "look [[attachments/lib.txt]] and [[attachments/lib.txt|x]]"
+    );
 }
 
 async fn upload_as(server: &TestServer, user: &str, name: &str) -> Attachment {
@@ -281,10 +296,14 @@ async fn a_deleted_attachment_stays_as_a_mark_until_the_link_is_removed() {
     let server = TestServer::start().await;
     let a = upload(&server, "gone.txt").await;
     let m = send(&server, "with file", &[&a.id]).await;
-    let res = req(&server, reqwest::Method::DELETE, "/api/shared/attachments/gone.txt")
-        .send()
-        .await
-        .unwrap();
+    let res = req(
+        &server,
+        reqwest::Method::DELETE,
+        "/api/shared/attachments/gone.txt",
+    )
+    .send()
+    .await
+    .unwrap();
     assert_eq!(res.status(), 204);
     let marked = message(&server, &m.id).await;
     assert!(marked.attachments[0].deleted);
@@ -303,7 +322,10 @@ async fn a_bare_name_that_is_also_a_shared_file_is_ambiguous() {
     std::fs::create_dir_all(server.dir.path().join("shared")).unwrap();
     std::fs::write(server.dir.path().join("shared").join("same.txt"), b"shared").unwrap();
 
-    assert_eq!(send_error(&server, "[[same.txt]]", &[]).await, "ambiguous_link");
+    assert_eq!(
+        send_error(&server, "[[same.txt]]", &[]).await,
+        "ambiguous_link"
+    );
     // 書けば解決する
     let m = send(&server, "[[attachments/same.txt]]", &[]).await;
     assert_eq!(m.attachments.len(), 1);
@@ -317,9 +339,17 @@ async fn a_bare_name_that_is_also_a_shared_file_is_ambiguous() {
 async fn code_is_not_read_for_links() {
     let server = TestServer::start().await;
     put_library(&server, "code.txt").await;
-    let m = send(&server, "`[[attachments/code.txt]]` と\n```\n[[attachments/code.txt]]\n```", &[]).await;
+    let m = send(
+        &server,
+        "`[[attachments/code.txt]]` と\n```\n[[attachments/code.txt]]\n```",
+        &[],
+    )
+    .await;
     assert!(m.attachments.is_empty());
-    assert_eq!(m.body, "`[[attachments/code.txt]]` と\n```\n[[attachments/code.txt]]\n```");
+    assert_eq!(
+        m.body,
+        "`[[attachments/code.txt]]` と\n```\n[[attachments/code.txt]]\n```"
+    );
 }
 
 #[tokio::test]
@@ -329,7 +359,9 @@ async fn created_time_is_the_first_post_and_survives_detaching() {
     let m = send(&server, "see", &[&a.id]).await;
     let posted_ms = m.created_at;
     edit(&server, &m.id, "see").await;
-    let items = store_files::attachment_items(&server.state.pool).await.unwrap();
+    let items = store_files::attachment_items(&server.state.pool)
+        .await
+        .unwrap();
     let item = items.iter().find(|i| i.file_id == a.id).unwrap();
     assert_eq!(item.posted_at_ms, posted_ms);
 }
@@ -356,7 +388,10 @@ async fn webdav_creationdate_is_the_first_post_time_and_stays_after_detaching() 
     let xml = res.text().await.unwrap();
     // 投稿の時刻（ミリ秒）と同じ時刻の作成日時が返る（RFC 3339 の秒の精度）
     let at = chrono_like(m.created_at);
-    assert!(xml.contains(&format!("<D:creationdate>{at}</D:creationdate>")), "{xml}");
+    assert!(
+        xml.contains(&format!("<D:creationdate>{at}</D:creationdate>")),
+        "{xml}"
+    );
 }
 
 /// ミリ秒の UNIX 時刻を、WebDAV の creationdate（RFC 3339、UTC、秒まで）にする。テスト用の簡単な変換。

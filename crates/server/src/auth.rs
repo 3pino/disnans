@@ -12,6 +12,7 @@ use axum::response::Response;
 use disnans_shared::{ServerEvent, User};
 use serde::Deserialize;
 
+use crate::diag::UserSlot;
 use crate::error::{AppError, AppResult};
 use crate::state::SharedState;
 use crate::store::users;
@@ -78,6 +79,10 @@ pub async fn middleware(
             .broadcast(&ServerEvent::UserUpdated { user: user.clone() });
     }
 
+    // 診断のログに使う（ログには login_name だけ出す。トークンやヘッダーは出さない）
+    if let Some(slot) = req.extensions().get::<UserSlot>() {
+        slot.set(&user.login_name);
+    }
     req.extensions_mut().insert(CurrentUser(user));
     Ok(next.run(req).await)
 }

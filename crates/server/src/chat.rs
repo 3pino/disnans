@@ -42,7 +42,13 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
     dedup_keep_order(&mut attachment_ids);
     // 長さは送られた本文（表示の形）で見る。添付の埋め込みは末尾に足す（旧クライアントの attachment_ids）
     validate_body(&req.body, !attachment_ids.is_empty())?;
-    let stored = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &actor.user.id, &req.body).await?;
+    let stored = crate::links::to_stored(
+        &state.pool,
+        &state.config.shared_dir(),
+        &actor.user.id,
+        &req.body,
+    )
+    .await?;
     let body = crate::links::append_links(&stored, &attachment_ids);
 
     let _guard = state.write_lock().await;
@@ -64,7 +70,15 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
 
     let mut tx = state.pool.begin().await?;
     messages::insert(&mut tx, &row).await?;
-    claim_or_fail(&mut tx, &body, &attachment_ids, &row.id, &actor.user.id, row.created_at).await?;
+    claim_or_fail(
+        &mut tx,
+        &body,
+        &attachment_ids,
+        &row.id,
+        &actor.user.id,
+        row.created_at,
+    )
+    .await?;
     tx.commit().await?;
     // 投稿された添付は `attachments/` に現れる（新しく紐付いたもの）
     for file_id in &attachment_ids {
@@ -100,7 +114,9 @@ pub async fn post_bot_message(
     req: PluginPostMessage,
 ) -> AppResult<Message> {
     validate_body(&req.body, false)?;
-    let body = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &user.id, &req.body).await?;
+    let body =
+        crate::links::to_stored(&state.pool, &state.config.shared_dir(), &user.id, &req.body)
+            .await?;
     let name = match req.name.as_deref().map(str::trim) {
         None | Some("") => plugin.name.clone(),
         Some(name) => name.chars().take(MAX_BOT_NAME_CHARS).collect(),
@@ -149,15 +165,31 @@ pub async fn edit_message(
     }
     // 添付も本文の中にあるので、本文が空なら空のメッセージ
     validate_body(&body, false)?;
-    let stored = crate::links::to_stored(&state.pool, &state.config.shared_dir(), &actor.user.id, &body).await?;
+    let stored = crate::links::to_stored(
+        &state.pool,
+        &state.config.shared_dir(),
+        &actor.user.id,
+        &body,
+    )
+    .await?;
 
     let old_ids = crate::links::ids_in(&row.body);
     let new_ids = crate::links::ids_in(&stored);
-    let added: Vec<String> = new_ids.iter().filter(|id| !old_ids.contains(id)).cloned().collect();
-    let removed: Vec<String> = old_ids.iter().filter(|id| !new_ids.contains(id)).cloned().collect();
+    let added: Vec<String> = new_ids
+        .iter()
+        .filter(|id| !old_ids.contains(id))
+        .cloned()
+        .collect();
+    let removed: Vec<String> = old_ids
+        .iter()
+        .filter(|id| !new_ids.contains(id))
+        .cloned()
+        .collect();
 
     let mut tx = state.pool.begin().await?;
-    if let Some(bad) = file_store::claim(&mut tx, &added, &[], &row.id, &actor.user.id, db::now_ms()).await? {
+    if let Some(bad) =
+        file_store::claim(&mut tx, &added, &[], &row.id, &actor.user.id, db::now_ms()).await?
+    {
         return Err(invalid_link(&bad));
     }
     messages::update_body(&mut tx, message_id, &stored, db::now_ms()).await?;
@@ -367,7 +399,11 @@ fn invalid_link(id: &str) -> AppError {
 /// 添付の ID の並びを、今の別名に直す（変更の通知に使う）。
 async fn names_of(conn: &mut sqlx::SqliteConnection, ids: &[String]) -> AppResult<Vec<String>> {
     let rows = file_store::rows_by_ids(conn, ids).await?;
-    Ok(rows.into_iter().filter(|r| r.deleted_at.is_none()).map(|r| r.file_name).collect())
+    Ok(rows
+        .into_iter()
+        .filter(|r| r.deleted_at.is_none())
+        .map(|r| r.file_name)
+        .collect())
 }
 
 fn validate_body(body: &str, has_attachments: bool) -> AppResult<()> {

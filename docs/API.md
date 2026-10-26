@@ -16,6 +16,20 @@
 
 失敗時は 4xx / 5xx と `ApiError { code, message }` を返す。
 
+## 診断（認証なし）
+
+### `GET /api/health`
+
+障害の切り分けに使う。認証なしで答える（Tailscale の経路の確認にも使える）。
+応答は次の値だけ。利用者や接続元の情報は含まない。
+
+```json
+{ "ok": true, "version": "0.2.43", "uptime_secs": 12345, "db": { "ok": true, "ms": 0 }, "ws_connections": 3 }
+```
+
+- `ok` と `db.ok` が `false` のとき、HTTP は `503`（DB に `SELECT 1` が届かない）
+- `db.ms` は `SELECT 1` の所要ミリ秒、`ws_connections` は接続中の WebSocket の数
+
 ## REST
 
 | メソッド | パス | 内容 | レスポンス |

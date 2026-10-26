@@ -32,7 +32,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let bind = config.bind;
     let (app, state) = disnans_server::build(config).await?;
     // 自動更新は設定で有効にしたときだけ（既定は無効）。取得先は本番の固定値
-    if std::env::var("DISNANS_AUTO_UPDATE").is_ok_and(|v| v == "1") {
+    let auto_update = std::env::var("DISNANS_AUTO_UPDATE").is_ok_and(|v| v == "1");
+    tracing::info!(
+        版 = env!("CARGO_PKG_VERSION"),
+        待受 = %bind,
+        自動更新 = if auto_update { "有効" } else { "無効" },
+        "起動しました"
+    );
+    if auto_update {
         disnans_server::update::spawn_update_task(
             state.clone(),
             disnans_server::update::RELEASE_API_URL.into(),

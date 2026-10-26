@@ -69,6 +69,11 @@ impl Hub {
         (id, rx)
     }
 
+    /// いま接続している数（診断用）。
+    pub fn connection_count(&self) -> usize {
+        self.lock().len()
+    }
+
     pub fn unregister(&self, id: ConnId) {
         self.lock().remove(&id);
     }

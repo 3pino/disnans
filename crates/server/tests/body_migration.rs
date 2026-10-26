@@ -137,11 +137,16 @@ async fn existing_attachments_become_embeds_once_and_keep_their_first_post_time(
     tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     let pool = db::connect(&path).await.unwrap();
     assert_eq!(backups(dir.path()), 1);
-    assert_eq!(bodies(&pool).await[0].1, "![[disnans:file/f1]]\n![[disnans:file/f3]]");
-    let n: i64 = sqlx::query("SELECT COUNT(*) AS n FROM files WHERE first_posted_at IS NULL AND message_id IS NOT NULL")
-        .fetch_one(&pool)
-        .await
-        .unwrap()
-        .get("n");
+    assert_eq!(
+        bodies(&pool).await[0].1,
+        "![[disnans:file/f1]]\n![[disnans:file/f3]]"
+    );
+    let n: i64 = sqlx::query(
+        "SELECT COUNT(*) AS n FROM files WHERE first_posted_at IS NULL AND message_id IS NOT NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap()
+    .get("n");
     assert_eq!(n, 0);
 }

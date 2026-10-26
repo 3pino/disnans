@@ -73,7 +73,10 @@ pub async fn load(pool: &SqlitePool, ids: &[String]) -> sqlx::Result<Vec<Message
     .await?;
 
     // 添付は本文のリンクから導く（本文が真実）
-    let bodies: Vec<(String, String)> = rows.iter().map(|r| (r.id.clone(), r.body.clone())).collect();
+    let bodies: Vec<(String, String)> = rows
+        .iter()
+        .map(|r| (r.id.clone(), r.body.clone()))
+        .collect();
     let mut attachments = files::attachments_for_bodies(pool, &bodies).await?;
     let mut reactions = reactions_for(pool, &ids_json).await?;
     let mut cards = sessions::cards_for(pool, &ids_json).await?;
@@ -146,7 +149,10 @@ async fn search_ids(
                 format!("\"{}\"", term.replace('"', "\"\"")),
             )
         } else {
-            ("m.body LIKE ? ESCAPE '\\'", format!("%{}%", escape_like(term)))
+            (
+                "m.body LIKE ? ESCAPE '\\'",
+                format!("%{}%", escape_like(term)),
+            )
         };
         let names: Vec<String> = sqlx::query_scalar(
             "SELECT id FROM files WHERE deleted_at IS NULL AND file_name LIKE ? ESCAPE '\\'",
@@ -322,7 +328,12 @@ pub async fn insert(conn: &mut SqliteConnection, row: &MessageRow) -> sqlx::Resu
     Ok(())
 }
 
-pub async fn update_body(conn: &mut SqliteConnection, id: &str, body: &str, now: i64) -> sqlx::Result<()> {
+pub async fn update_body(
+    conn: &mut SqliteConnection,
+    id: &str,
+    body: &str,
+    now: i64,
+) -> sqlx::Result<()> {
     sqlx::query("UPDATE messages SET body = ?, edited_at = ? WHERE id = ?")
         .bind(body)
         .bind(now)

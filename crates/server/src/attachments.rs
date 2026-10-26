@@ -334,7 +334,10 @@ pub async fn discard(state: &SharedState, user_id: &str, id: &str) -> AppResult<
             ));
         }
         let mut tx = state.pool.begin().await?;
-        if store::referencing_message(&mut tx, id, None).await?.is_some() {
+        if store::referencing_message(&mut tx, id, None)
+            .await?
+            .is_some()
+        {
             return Err(AppError::forbidden("本文から参照されているため消せません"));
         }
         store::purge(&mut tx, id).await?;
@@ -348,7 +351,10 @@ pub async fn discard(state: &SharedState, user_id: &str, id: &str) -> AppResult<
 
 /// 行を消す（どこかの本文が参照していれば印を付けるだけ）。本体は呼び出し側で消す。
 async fn remove_row(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, row: &FileRow) -> AppResult<()> {
-    if store::referencing_message(tx, &row.id, None).await?.is_some() {
+    if store::referencing_message(tx, &row.id, None)
+        .await?
+        .is_some()
+    {
         store::mark_deleted(tx, &row.id, db::now_ms()).await?;
     } else {
         store::purge(tx, &row.id).await?;

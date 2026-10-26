@@ -2,6 +2,7 @@
 
 mod devices;
 mod files;
+mod health;
 mod messages;
 mod notify;
 mod plugins;
@@ -12,10 +13,9 @@ mod users;
 
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
-use axum::middleware::from_fn_with_state;
+use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, post, put};
 use tower_http::cors::CorsLayer;
-use tower_http::trace::TraceLayer;
 
 use crate::error::AppError;
 use crate::state::SharedState;
@@ -98,9 +98,14 @@ pub fn router(state: SharedState) -> Router {
         // /dav には付けない（CORS の層は OPTIONS に自分で答えてしまい、WebDAV の DAV: や Allow を返せなくなる）。
         .layer(CorsLayer::permissive());
 
+    // 診断用。認証の外に置く（障害時に、認証より前でサーバーが生きているかを見るため）
+    let health = Router::new().route("/api/health", get(health::get));
+
     Router::new()
         .nest("/api", api)
+        .merge(health)
         .merge(crate::webdav::router(state.clone()))
-        .layer(TraceLayer::new_for_http())
+        // 5xx・遅延・途中切断だけを記録する（クエリ文字列は出さない。全リクエストのアクセス記録はしない）
+        .layer(from_fn(crate::diag::observe))
         .with_state(state)
 }

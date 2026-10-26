@@ -17,6 +17,7 @@ use futures_util::{SinkExt, StreamExt};
 use crate::auth::CurrentUser;
 use crate::chat::{self, Actor, SendMessage};
 use crate::db;
+use crate::diag::{self, WsEnd};
 use crate::error::AppError;
 use crate::hub::ConnId;
 use crate::notify::{self, Notification};
@@ -63,6 +64,7 @@ async fn is_read(state: &SharedState, user: &User, n: &Notification) -> bool {
 }
 
 async fn run(state: SharedState, user: User, ip: IpAddr, socket: WebSocket) {
+    let connected = std::time::Instant::now();
     let users = match users::list(&state.pool).await {
         Ok(users) => users,
         Err(err) => {
@@ -81,39 +83,42 @@ async fn run(state: SharedState, user: User, ip: IpAddr, socket: WebSocket) {
     }
     // 切れていた間の通知（既読のものは除く）
     replay_recent(&state, &user, conn).await;
-    tracing::info!(conn, user = %user.login_name, "WebSocket 接続");
+    tracing::info!(conn, user = %user.login_name, 接続元 = diag::addr_kind(ip), "WebSocket 接続");
 
     let (mut sink, mut stream) = socket.split();
     let last_seen = Arc::new(AtomicI64::new(db::now_ms()));
 
     // 書き込みタスク: キューの中身と定期的な ping をソケットに書く
-    let mut writer = {
+    // 書き込みタスクは、止まった理由を返す（切断の記録に使う）
+    let mut writer: tokio::task::JoinHandle<WsEnd> = {
         let last_seen = last_seen.clone();
         tokio::spawn(async move {
             let mut ping = tokio::time::interval(PING_INTERVAL);
             ping.tick().await;
-            loop {
+            let end = loop {
                 tokio::select! {
                     text = queue.recv() => {
                         // None: Hub から外された（詰まった、または終了処理）
-                        let Some(text) = text else { break };
-                        if sink.send(WsMessage::Text(text)).await.is_err() {
-                            break;
+                        let Some(text) = text else { break WsEnd::ServerSide };
+                        if let Err(e) = sink.send(WsMessage::Text(text)).await {
+                            break WsEnd::WriteError(e.to_string());
                         }
                     }
                     _ = ping.tick() => {
                         let idle = db::now_ms() - last_seen.load(Ordering::Relaxed);
                         if idle > IDLE_TIMEOUT.as_millis() as i64 {
-                            tracing::info!("応答がないので切断します");
-                            break;
+                            break WsEnd::IdleTimeout {
+                                idle: Duration::from_millis(idle.max(0) as u64),
+                            };
                         }
-                        if sink.send(WsMessage::Ping(Default::default())).await.is_err() {
-                            break;
+                        if let Err(e) = sink.send(WsMessage::Ping(Default::default())).await {
+                            break WsEnd::WriteError(e.to_string());
                         }
                     }
                 }
-            }
+            };
             let _ = sink.close().await;
+            end
         })
     };
 
@@ -122,29 +127,46 @@ async fn run(state: SharedState, user: User, ip: IpAddr, socket: WebSocket) {
         user: &user,
         conn: Some(conn),
     };
-    loop {
+    let end: WsEnd = loop {
         tokio::select! {
             msg = stream.next() => {
-                let Some(Ok(msg)) = msg else { break };
+                let msg = match msg {
+                    Some(Ok(msg)) => msg,
+                    Some(Err(e)) => break WsEnd::ReadError(e.to_string()),
+                    None => break WsEnd::ClientGone,
+                };
                 last_seen.store(db::now_ms(), Ordering::Relaxed);
                 match msg {
                     WsMessage::Text(text) => handle_text(&state, &actor, conn, text.as_str()).await,
-                    WsMessage::Close(_) => break,
+                    WsMessage::Close(frame) => {
+                        let (code, reason) = match frame {
+                            Some(f) => (Some(f.code), f.reason.to_string()),
+                            None => (None, String::new()),
+                        };
+                        break WsEnd::ClientClose { code, reason };
+                    }
                     // ping への応答は axum（tungstenite）が自動で返す。pong は last_seen の更新だけ
                     _ => {}
                 }
             }
             // 書き込みタスクが終わったら（切断・タイムアウト）読み込みもやめる
-            _ = &mut writer => break,
+            res = &mut writer => break res.unwrap_or(WsEnd::ServerSide),
         }
-    }
+    };
 
     state.hub.unregister(conn);
     // 切れた接続は通話からも外し、開いていたセッションも閉じる
     state.calls.leave(&state.hub, conn);
     state.presence.disconnect(&state.hub, conn);
     writer.abort();
-    tracing::info!(conn, user = %user.login_name, "WebSocket 切断");
+    let text = end.describe();
+    let secs = connected.elapsed().as_secs();
+    let kind = diag::addr_kind(ip);
+    if end.is_warning() {
+        tracing::warn!(conn, user = %user.login_name, 接続元 = kind, 継続秒 = secs, "WebSocket 切断: {text}");
+    } else {
+        tracing::info!(conn, user = %user.login_name, 接続元 = kind, 継続秒 = secs, "WebSocket 切断: {text}");
+    }
 }
 
 async fn handle_text(state: &SharedState, actor: &Actor<'_>, conn: ConnId, text: &str) {

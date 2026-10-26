@@ -231,10 +231,23 @@ async fn a_linked_files_current_name_is_searchable_and_follows_renames() {
     let msg = upload_and_post(&server, "quarterly-report.pdf", "見て").await;
 
     // 本文は ID だけ。添付の名前で引ける（3 文字以上・短い語のどちらも）
-    assert_eq!(search(&server, "quarterly").await.first().map(|m| m.id.as_str()), Some(msg.id.as_str()));
+    assert_eq!(
+        search(&server, "quarterly")
+            .await
+            .first()
+            .map(|m| m.id.as_str()),
+        Some(msg.id.as_str())
+    );
     assert_eq!(search(&server, "quarterly-report").await.len(), 1);
-    assert_eq!(search(&server, "見て quarterly").await.len(), 1, "本文と名前の語が両方一致");
-    assert!(search(&server, "quarterly nothere").await.is_empty(), "AND なので、どちらかに無ければ出ない");
+    assert_eq!(
+        search(&server, "見て quarterly").await.len(),
+        1,
+        "本文と名前の語が両方一致"
+    );
+    assert!(
+        search(&server, "quarterly nothere").await.is_empty(),
+        "AND なので、どちらかに無ければ出ない"
+    );
 
     // 改名したら、新しい名前で引ける（古い名前では引けない）
     let res = server

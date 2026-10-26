@@ -25,7 +25,10 @@ const PATH_PREFIX: &str = "attachments/";
 /// - `[[パス]]` / `[[パス|別名]]`: パスは `|` か `]]` まで。`[` `]` を含まない。
 ///
 /// 読めない `[` は文字のまま（次の `[` から読み直す）。`!` の有無は関係ない（埋め込みも同じ位置）。
-fn rewrite_paths<E>(body: &str, mut f: impl FnMut(&str, bool) -> Result<String, E>) -> Result<String, E> {
+fn rewrite_paths<E>(
+    body: &str,
+    mut f: impl FnMut(&str, bool) -> Result<String, E>,
+) -> Result<String, E> {
     let segments: Vec<&str> = body.split_inclusive('\n').collect();
     let lines: Vec<String> = segments
         .iter()
@@ -44,7 +47,10 @@ fn rewrite_paths<E>(body: &str, mut f: impl FnMut(&str, bool) -> Result<String, 
 }
 
 /// 1 行の中のパスの位置。`\x`（ASCII の記号）と、`…` のコードの中は読まない（core の inline と同じ）。
-fn rewrite_line<E>(line: &str, f: &mut impl FnMut(&str, bool) -> Result<String, E>) -> Result<String, E> {
+fn rewrite_line<E>(
+    line: &str,
+    f: &mut impl FnMut(&str, bool) -> Result<String, E>,
+) -> Result<String, E> {
     let bytes = line.as_bytes();
     let mut out = String::with_capacity(line.len());
     let mut copied = 0usize;
@@ -215,7 +221,10 @@ struct ListLine {
 }
 
 fn list_match(line: &str) -> Option<ListLine> {
-    let indent_len = line.bytes().take_while(|b| *b == b' ' || *b == b'\t').count();
+    let indent_len = line
+        .bytes()
+        .take_while(|b| *b == b' ' || *b == b'\t')
+        .count();
     let rest = &line[indent_len..];
     let (marker_len, ordered) = if rest.starts_with(['-', '*', '+']) {
         (1, false)
@@ -227,7 +236,10 @@ fn list_match(line: &str) -> Option<ListLine> {
         (digits + 1, true)
     };
     let after = &rest[marker_len..];
-    let gap_len = after.bytes().take_while(|b| *b == b' ' || *b == b'\t').count();
+    let gap_len = after
+        .bytes()
+        .take_while(|b| *b == b' ' || *b == b'\t')
+        .count();
     if gap_len == 0 {
         return None;
     }
@@ -255,7 +267,10 @@ fn cols_of(ws: &str) -> usize {
 }
 
 fn indent_of(line: &str) -> &str {
-    let len = line.bytes().take_while(|b| *b == b' ' || *b == b'\t').count();
+    let len = line
+        .bytes()
+        .take_while(|b| *b == b' ' || *b == b'\t')
+        .count();
     &line[..len]
 }
 
@@ -519,7 +534,9 @@ pub async fn to_stored(
                 if shared_dir.join(&name).is_file() {
                     return Err(AppError::bad_request(
                         "ambiguous_link",
-                        format!("同じ名前が添付と共有フォルダにあります（attachments/{name} と書いてください）"),
+                        format!(
+                            "同じ名前が添付と共有フォルダにあります（attachments/{name} と書いてください）"
+                        ),
                     ));
                 }
                 ids.insert(path, id);
@@ -634,10 +651,15 @@ mod tests {
             vec!["x.png"],
             "項目の最初の行の ``` はフェンスではない"
         );
-        assert!(attachment_paths("1. a\n   - b\n     ```\n     [a](attachments/x.png)\n     ```").is_empty());
+        assert!(
+            attachment_paths("1. a\n   - b\n     ```\n     [a](attachments/x.png)\n     ```")
+                .is_empty()
+        );
         // 項目の外に出た行は、もうコードではない
         assert_eq!(
-            attachment_paths("- item\n  ```\n  [a](attachments/x.png)\n  ```\n[b](attachments/y.png)"),
+            attachment_paths(
+                "- item\n  ```\n  [a](attachments/x.png)\n  ```\n[b](attachments/y.png)"
+            ),
             vec!["y.png"]
         );
     }
@@ -658,7 +680,10 @@ mod tests {
     #[test]
     fn code_spans_fences_and_escapes_are_not_links() {
         assert!(attachment_paths("`[a](attachments/x.png)`").is_empty());
-        assert!(attachment_paths("\\[a](attachments/x.png)").is_empty(), "\\ でエスケープ");
+        assert!(
+            attachment_paths("\\[a](attachments/x.png)").is_empty(),
+            "\\ でエスケープ"
+        );
         assert_eq!(
             attachment_paths("```\n[a](attachments/x.png)\n```\n[a](attachments/y.png)"),
             vec!["y.png"],
@@ -683,8 +708,14 @@ mod tests {
     #[test]
     fn append_skips_ids_already_in_the_body_and_adds_no_newline_to_an_empty_body() {
         let ids = vec!["A".to_owned(), "B".to_owned()];
-        assert_eq!(append_links("", &ids), "![[disnans:file/A]]\n![[disnans:file/B]]");
-        assert_eq!(append_links("x ![[disnans:file/A]]", &ids), "x ![[disnans:file/A]]\n![[disnans:file/B]]");
+        assert_eq!(
+            append_links("", &ids),
+            "![[disnans:file/A]]\n![[disnans:file/B]]"
+        );
+        assert_eq!(
+            append_links("x ![[disnans:file/A]]", &ids),
+            "x ![[disnans:file/A]]\n![[disnans:file/B]]"
+        );
     }
 
     #[test]

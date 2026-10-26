@@ -135,7 +135,10 @@ pub(super) async fn attachments_for_bodies(
 }
 
 /// 本文の添付の行（削除された添付も含む）。`message_id` が NULL のものも ID で探す。
-pub async fn rows_by_ids(conn: &mut SqliteConnection, ids: &[String]) -> sqlx::Result<Vec<FileRow>> {
+pub async fn rows_by_ids(
+    conn: &mut SqliteConnection,
+    ids: &[String],
+) -> sqlx::Result<Vec<FileRow>> {
     sqlx::query_as(&format!(
         "SELECT {COLUMNS} FROM files WHERE id IN (SELECT value FROM json_each(?))"
     ))
