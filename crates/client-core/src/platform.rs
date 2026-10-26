@@ -24,9 +24,9 @@ pub enum Surface {
 #[serde(rename_all = "camelCase")]
 pub struct PlatformInfo {
     pub surface: Surface,
-    /// "windows" | "linux" | "macos" | "android" | "ios" | "other"
+    /// "windows" | "linux" | "android" | "ios" | "other"（ほかの OS は "other"）
     pub os: &'static str,
-    /// デスクトップ（Tauri なら windows・linux・macos。TUI・CLI はターミナルなので true）
+    /// デスクトップ（Tauri なら windows・linux。TUI・CLI はターミナルなので true）
     pub desktop: bool,
     /// Android の Tauri か
     pub android: bool,
@@ -42,7 +42,7 @@ pub struct Capabilities {
     pub shared_storage: bool,
     /// 読取・書込・添付を Rust 経路で行う
     pub rust_api: bool,
-    /// チャットの経路: "default"（Rust）・"off"（JS Socket。macOS と、ブラウザー）
+    /// チャットの経路: "default"（Rust）・"off"（JS Socket。ブラウザーと、"other" の OS）
     pub rust_chat: &'static str,
     /// 本体の渡し方: "raw"（バイト列）・"base64"（Android の WebView）
     pub body_mode: &'static str,
@@ -72,8 +72,6 @@ pub fn host_os() -> &'static str {
         "windows"
     } else if cfg!(target_os = "linux") {
         "linux"
-    } else if cfg!(target_os = "macos") {
-        "macos"
     } else {
         "other"
     }
@@ -208,11 +206,12 @@ mod tests {
         assert_eq!(linux.native_screen, Some("linux"));
         assert_eq!(linux.rust_chat, "default");
 
-        let mac = capabilities_for(Surface::Tauri, "macos", true, false);
-        assert!(!mac.shared_storage && !mac.rust_api);
-        assert_eq!(mac.rust_chat, "off");
-        assert!(mac.dev_folder);
-        assert_eq!(mac.native_screen, None);
+        // 対象外の OS（"other"）は、従来どおり共有の保存と Rust の API を使わない（JS Socket・フォルダの開発用は使える）
+        let other = capabilities_for(Surface::Tauri, "other", true, false);
+        assert!(!other.shared_storage && !other.rust_api);
+        assert_eq!(other.rust_chat, "off");
+        assert!(other.dev_folder);
+        assert_eq!(other.native_screen, None);
 
         let android = capabilities_for(Surface::Tauri, "android", false, true);
         assert!(android.rust_api && android.shared_storage && !android.dev_folder);
@@ -228,7 +227,7 @@ mod tests {
     /// TUI の行（ステップ8 の表）。どの OS でも同じ
     #[test]
     fn tui_row_is_the_terminal_policy_with_bell_and_cli_updates() {
-        for os in ["windows", "linux", "macos", "other"] {
+        for os in ["windows", "linux", "other"] {
             let tui = capabilities_for(Surface::Tui, os, true, false);
             assert!(tui.tui, "{os}");
             assert!(tui.shared_storage && tui.rust_api, "{os}");

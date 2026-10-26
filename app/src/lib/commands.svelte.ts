@@ -165,11 +165,11 @@ export function removeHotkey(list: string[], text: string): string[] {
  * 同じホットキーになっているコマンド。コマンド ID → ぶつかっているほかのコマンド（登録順）。
  * どれか1つでも同じキーがあればぶつかる。ぶつかっていないコマンドは入らない
  */
-export function findHotkeyConflicts(list: AppCommand[], overrides: HotkeyOverrides, mac?: boolean): Map<string, AppCommand[]> {
+export function findHotkeyConflicts(list: AppCommand[], overrides: HotkeyOverrides): Map<string, AppCommand[]> {
   const byKey = new Map<string, AppCommand[]>();
   const keysOf = new Map<AppCommand, string[]>();
   for (const c of list) {
-    const keys = [...new Set(effectiveHotkeys(c, overrides).map((t) => hotkeyId(t, mac)).filter((k): k is string => !!k))];
+    const keys = [...new Set(effectiveHotkeys(c, overrides).map((t) => hotkeyId(t)).filter((k): k is string => !!k))];
     keysOf.set(c, keys);
     for (const k of keys) {
       const same = byKey.get(k);
@@ -189,17 +189,17 @@ export function findHotkeyConflicts(list: AppCommand[], overrides: HotkeyOverrid
 
 /**
  * キーの入力に合うコマンド（なければ null）。typing は入力欄で打っている最中か
- * （そのときは Ctrl・Cmd・Alt を含むものと F1〜F12 だけ）。ぶつかっていたら先に登録したもの
+ * （そのときは Ctrl・Alt・Meta を含むものと F1〜F12 だけ）。ぶつかっていたら先に登録したもの
  */
 export function commandForKey(
   list: AppCommand[],
   overrides: HotkeyOverrides,
   e: KeyboardEvent,
-  { typing = false, mac }: { typing?: boolean; mac?: boolean } = {},
+  { typing = false }: { typing?: boolean } = {},
 ): AppCommand | null {
   for (const c of list) {
     for (const text of effectiveHotkeys(c, overrides)) {
-      const hk: Hotkey | null = parseHotkey(text, mac);
+      const hk: Hotkey | null = parseHotkey(text);
       if (!hk || (typing && !worksWhileTyping(hk))) continue;
       if (matchHotkey(hk, e)) return c;
     }

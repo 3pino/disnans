@@ -103,7 +103,7 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       id: PALETTE_COMMAND_ID,
       name: 'コマンドパレットを開く',
       icon: Command,
-      // Ctrl+P（macOS では Cmd+P）に加えて F2 でも開ける
+      // Ctrl+P に加えて F2 でも開ける
       defaultHotkey: ['Mod+P', 'F2'],
       // Android でも開ける（ナビゲーションバーの「コマンドパレットを開く」から）
       run: () => {
@@ -147,7 +147,7 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       id: id('search'),
       name: 'メッセージを検索',
       icon: Search,
-      // Ctrl+F（macOS では Cmd+F）。入力欄にいても開ける
+      // Ctrl+F。入力欄にいても開ける
       defaultHotkey: 'Mod+F',
       run: () => ui.openSearch(),
     },

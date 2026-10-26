@@ -51,9 +51,9 @@ test('parseArgs reads --stub and --target and rejects unknown arguments', () => 
 });
 
 test('an explicit --target wins over TAURI_ENV_TARGET_TRIPLE, which wins over the host', () => {
-  assert.equal(parseArgs([], { TAURI_ENV_TARGET_TRIPLE: 'aarch64-apple-darwin' }).target, 'aarch64-apple-darwin');
+  assert.equal(parseArgs([], { TAURI_ENV_TARGET_TRIPLE: 'aarch64-unknown-linux-gnu' }).target, 'aarch64-unknown-linux-gnu');
   assert.equal(
-    parseArgs(['--target', 'x86_64-pc-windows-gnu'], { TAURI_ENV_TARGET_TRIPLE: 'aarch64-apple-darwin' }).target,
+    parseArgs(['--target', 'x86_64-pc-windows-gnu'], { TAURI_ENV_TARGET_TRIPLE: 'aarch64-unknown-linux-gnu' }).target,
     'x86_64-pc-windows-gnu',
   );
 });

@@ -23,7 +23,7 @@ disnans のプラグインは、Obsidian のプラグインに近い仕組みで
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../packages/plugin-sdk/index.d.ts)（API の細かい説明はここが正）
 - UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](PLUGIN_UI.md)
 - ホスト API のバージョン: **12**（`addCommand` の `icon`・`slash`・`run(ctx)` は 2 から。`broadcast` / `onBroadcast`・`addStatusBarItem`・`holdBackground` は 3 から。`holdBackground` の通知のボタン `actions` / `onAction` と `update()` は 4 から。`disnans.audio` は 5、`postMessage` の `notify` と `openSettings` は 6、`disnans.call`（通話の拡張）は 7 から、`addMessageAction` / `openTimeline`・`disnans.screenCapture` / `disnans.pip`・`ui.onBack` / `ui.setImmersive` は 9 から、通話の画面の領域 `call.addPanel` と送信待ちの量 `call.bufferedAmount` は 10 から、ダイアログなしの静止画 `screenCapture.snapshot` は 11 から、通話画面だけに出すボタン `call.addButton({ location: 'view' })` と Linux のネイティブ画面取得（portal / PipeWire）は 12 から）
-- 通話（ボイスチャット）は**アプリ本体の機能**です。画面共有などの拡張は `disnans.call` で作れます（→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)）
+- 画面共有などの拡張は `disnans.call` で作れます（→ [通話の拡張 API](#通話の拡張-apidisnanscallv8)）
 
 ## 目次
 
@@ -263,7 +263,7 @@ app/node_modules/.bin/tsc -p examples/dice
 
 `addCommand` で足したコマンドは、次の3つから実行できます。
 
-- **コマンドパレット**（デスクトップ。既定は Ctrl+P、macOS では Cmd+P）: 名前で絞り込んで Enter
+- **コマンドパレット**（デスクトップ。既定は Ctrl+P）: 名前で絞り込んで Enter
 - **ホットキー**（デスクトップ。Android では効きません）: `hotkey` は既定のキーで、利用者は **設定 → ホットキー** で変えたり外したりできます
 - **スラッシュコマンド**: `slash` を付けると、入力欄の `/名前` にもなります（補完に出ます）
 
@@ -272,7 +272,7 @@ this.addCommand({
   id: 'roll',                    // プラグインの中で一意。利用者のホットキーの設定は `dice:roll` で保存される
   name: 'サイコロを用意する',      // パレット・設定の一覧に出る名前
   icon: 'dice-cube',             // アイコン（addIcon で登録したもの。省略するとプラグインのアイコン）
-  hotkey: 'Mod+Shift+D',         // 既定のホットキー。Mod は Ctrl（macOS では Cmd）
+  hotkey: 'Mod+Shift+D',         // 既定のホットキー。Mod は Ctrl
   slash: 'dice',                 // `/dice`。英小文字・数字・ハイフン。省略するとスラッシュコマンドにしない
   description: 'サイコロを振る',   // 補完に出る説明（省略すると name）
   args: '[個数]d[面数]',           // 引数の書き方のヒント
@@ -294,7 +294,7 @@ this.addCommand({
 - 入力の誤りは `disnans.ui.toast('…', 'error')` で知らせます。`run` が例外を投げた（reject した）ときも、本体がエラーのトーストを出します
 - 候補（`Suggestion`）は `{ value, label?, description? }`。`value` が入力欄に入ります
 - `hotkey` が読めない・`slash` の名前が正しくないときは、その部分を外して登録し、設定のプラグイン一覧にエラーを出します
-- ホットキーは、入力欄で文字を打っている間は Ctrl・Cmd・Alt を含むもの（と F1〜F12）だけが効きます
+- ホットキーは、入力欄で文字を打っている間は Ctrl・Alt・Meta を含むもの（と F1〜F12）だけが効きます
 - 本体のコマンド（設定を開く・チャットを開く・コマンドパレットなど）と同じキーにすると、設定のホットキーの一覧に警告が出ます。先に登録されたもの（本体のもの）が優先されます
 
 #### addSlashCommand（API v1 の書き方）
@@ -884,7 +884,7 @@ try {
   const { dataUrl, width, height, source } = await screenCapture.snapshot(); // source: 'screen'（画面全体）| 'app'（disnans 自身）
   img.src = dataUrl;
 } catch {
-  // ブラウザー版・macOS などでは撮れない
+  // ブラウザー版などでは撮れない
 }
 
 // Android: Activity の PiP（小窓）。小窓の間はアプリの画面がそのまま小さく出るので、onChange で表示を切り替える
@@ -897,7 +897,7 @@ if (pip.supported) {
 - `screenCapture.start` は、断られたら例外です。ユーザーが許可のダイアログでキャンセルしたときの例外は `name` が `AbortError` です（v10。知らせずに終えてください）。フレームは、画面が変わったときと、変わらなくても `keepaliveMs`（既定 5 秒）ごとに 1 枚届きます。`color` が `c256` / `gray` のときは、減色したうえで可逆の WebP（Android 11 以降。それ以前は PNG）と lossy の WebP を比べて小さいほうを渡します
 - Linux の `start` は OS の画面・ウィンドウ選択を使い、選んだソースだけを共有します（主モニターや disnans の静止画に勝手に置き換えません）。GStreamer の行の詰め物を考慮して RGBx を読み、縮小・減色・変化の検出を行い JPEG にします（Linux では `format: 'jpeg'` のみ）。`update({ quality, scale })` は静止した画面にも効きます。最初の実際のフレームが取れなければ開始を失敗として片付けます。AppImage は GStreamer / PipeWire プラグインを同梱し、deb は GStreamer・PipeWire プラグインと portal を依存に含めます。OS 側にはデスクトップに合った portal バックエンドが必要です
 - `onEnd` は、通知欄の「停止」やシステム側の操作で止められたときに呼ばれます（`stop()` では呼ばれません）
-- `screenCapture.snapshot()`（v11）は、設定のプレビューのような「いまの画面を 1 枚だけ見たい」用途向けです。`getDisplayMedia` や `start` と違って、どの画面を共有するかの選択も許可のダイアログも出しません。撮れるものは環境で違い、`source` で分かります: Windows は主モニター全体（GDI）、Linux は X11 なら主モニター全体（ルートウィンドウ）で Wayland などでは disnans 自身の画面（WebKitGTK のスナップショット）、Android は disnans 自身の画面（PixelCopy。MediaProjection は使わない）。長辺 1920 以下に縮めた JPEG の data URL を返します。ブラウザー版・macOS では例外です
+- `screenCapture.snapshot()`（v11）は、設定のプレビューのような「いまの画面を 1 枚だけ見たい」用途向けです。`getDisplayMedia` や `start` と違って、どの画面を共有するかの選択も許可のダイアログも出しません。撮れるものは環境で違い、`source` で分かります: Windows は主モニター全体（GDI）、Linux は X11 なら主モニター全体（ルートウィンドウ）で Wayland などでは disnans 自身の画面（WebKitGTK のスナップショット）、Android は disnans 自身の画面（PixelCopy。MediaProjection は使わない）。長辺 1920 以下に縮めた JPEG の data URL を返します。ブラウザー版では例外です
 - `screenCapture.supported` は Android / Linux のアプリ版で `true`、それ以外は `false` です。`pip.supported` は Android だけ `true` です。デスクトップの PiP は `<video>` の `requestPictureInPicture()` を使ってください
 - 通話中にアプリを裏に回しても共有が続くのは、通話のフォアグラウンドサービス（マイク）と、画面のキャプチャのフォアグラウンドサービス（`mediaProjection`）が動いているためです
 
@@ -1035,14 +1035,6 @@ esbuild は型をチェックしないので、`tsc --noEmit` も合わせて使
 - `minApiVersion` より古い本体では読み込まれません（これは従来どおり）
 
 ## 注意点
-
-### sandbox はありません
-
-プラグインは本体と同じ WebView の中で、制限なく動きます。友達同士の信頼が前提です。そのぶん、次のことを守ってください。
-
-- **本体の DOM を壊さない**: 触ってよいのは、`onOpen` や `display` などで渡された要素の中だけです。本体の要素を書き換えたり、消したりしないでください
-- **グローバルを汚さない**: `window` に変数を足したり、組み込みのオブジェクトを書き換えたりしないでください。ホットリロードのたびに積み重なります
-- 例外は握りつぶさず、利用者にはトーストで、詳細は `console.error` で出します
 
 ### 後始末は register* で
 

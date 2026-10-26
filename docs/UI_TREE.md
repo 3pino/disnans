@@ -37,7 +37,7 @@ Page（id・title・show）
 ## GUI
 
 - `components/SettingsTree.svelte` が 1 ページを描き、`components/SettingsField.svelte` が Field を描く
-- Field の読み書きは `lib/settingsBindings.svelte.ts`（key → ストア）。プラットフォームで変わる文言（macOS の `⌘+Enter`）もここで直す
+- Field の読み書きは `lib/settingsBindings.svelte.ts`（key → ストア）。プラットフォームで変わる文言（Enter の組み合わせの表記など）もここで直す
 - Slot の中身は `components/SettingsView.svelte` の `slot`（id ごと）。サブページの中身だけの部品（`HotkeySettings` など）は Section を持たない（節は木が作る）
 - 節のクラスは以前のもの（`settings-profile`・`enter-key-settings` など）を残し、無いものは `settings-section-{id}`
 - `lib/uiTree.test.ts` が、GUI に出す Field に読み書きの先があること・Slot を SettingsView が描くことを確かめる

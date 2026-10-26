@@ -33,14 +33,13 @@ function fakeTarget() {
 }
 
 describe('拡大の判定', () => {
-  it('Ctrl か Cmd を押したホイールだけを拡大とみなす', () => {
-    expect(isZoomWheel({ ctrlKey: true, metaKey: false })).toBe(true);
-    expect(isZoomWheel({ ctrlKey: false, metaKey: true })).toBe(true);
-    expect(isZoomWheel({ ctrlKey: false, metaKey: false })).toBe(false);
+  it('Ctrl を押したホイールだけを拡大とみなす', () => {
+    expect(isZoomWheel({ ctrlKey: true })).toBe(true);
+    expect(isZoomWheel({ ctrlKey: false })).toBe(false);
   });
 
   it('Ctrl+± と Ctrl+0 だけを拡大のキーとみなす', () => {
-    const k = (key: string, o: Partial<KeyboardEvent> = {}) => isZoomKey({ key, ctrlKey: true, metaKey: false, altKey: false, ...o });
+    const k = (key: string, o: Partial<KeyboardEvent> = {}) => isZoomKey({ key, ctrlKey: true, altKey: false, ...o });
     expect(k('+')).toBe(true);
     expect(k('=')).toBe(true);
     expect(k('-')).toBe(true);
@@ -49,7 +48,7 @@ describe('拡大の判定', () => {
     expect(k('a')).toBe(false);
     expect(k('+', { ctrlKey: false })).toBe(false);
     expect(k('+', { altKey: true })).toBe(false);
-    expect(k('+', { ctrlKey: false, metaKey: true })).toBe(true);
+    expect(k('+', { ctrlKey: false, metaKey: true })).toBe(false);
   });
 });
 
@@ -87,10 +86,10 @@ describe('startZoomGuard', () => {
     const stop = startZoomGuard(w as never);
     let prevented = 0;
     const ev = (o: object) => ({ ...o, preventDefault: () => prevented++ });
-    w.fire('wheel', ev({ ctrlKey: true, metaKey: false }));
-    w.fire('wheel', ev({ ctrlKey: false, metaKey: false }));
-    w.fire('keydown', ev({ key: '=', ctrlKey: true, metaKey: false, altKey: false }));
-    w.fire('keydown', ev({ key: 'a', ctrlKey: true, metaKey: false, altKey: false }));
+    w.fire('wheel', ev({ ctrlKey: true }));
+    w.fire('wheel', ev({ ctrlKey: false }));
+    w.fire('keydown', ev({ key: '=', ctrlKey: true, altKey: false }));
+    w.fire('keydown', ev({ key: 'a', ctrlKey: true, altKey: false }));
     expect(prevented).toBe(2);
     stop();
     expect(w.count('wheel')).toBe(0);

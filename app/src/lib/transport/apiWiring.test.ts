@@ -6,7 +6,7 @@ import { createHttpReadApi } from './http';
 // 決定関数を、スタブした実行環境から直接検証する。
 
 const LINUX = 'Mozilla/5.0 (X11; Linux x86_64)';
-const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)';
+const OTHER = 'Mozilla/5.0 (OtherOS; x86_64)';
 
 type Env = { flag?: string; ua: string; tauri: boolean; server?: string };
 
@@ -71,12 +71,12 @@ describe('boot-time read transport choice', () => {
     expect(boot({ ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('tauri');
   });
 
-  it('macOS: HTTP even without a flag', () => {
-    expect(boot({ ua: MAC, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
+  it('Tauri on an OS other than Windows, Linux and Android: HTTP even without a flag', () => {
+    expect(boot({ ua: OTHER, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
   });
 
-  it('flag on but macOS: HTTP', () => {
-    expect(boot({ flag: '1', ua: MAC, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
+  it('flag on but another OS: HTTP', () => {
+    expect(boot({ flag: '1', ua: OTHER, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
   });
 
   it('no flag in a browser (no Tauri): HTTP', () => {
@@ -106,8 +106,8 @@ describe('boot-time write transport choice (follows the same rule as reads)', ()
     expect(bootWrite({ flag: '0', ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
   });
 
-  it('macOS and the browser keep HTTP, even with a flag of "1"', () => {
-    expect(bootWrite({ ua: MAC, tauri: true }).kind).toBe('http');
+  it('another OS and the browser keep HTTP, even with a flag of "1"', () => {
+    expect(bootWrite({ ua: OTHER, tauri: true }).kind).toBe('http');
     expect(bootWrite({ flag: '1', ua: LINUX, tauri: false }).kind).toBe('http');
   });
 

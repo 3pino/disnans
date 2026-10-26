@@ -1,5 +1,3 @@
-import { isMacLike } from '../platform';
-
 /** "Mod+Shift+D" を読んだもの */
 export type Hotkey = {
   ctrl: boolean;
@@ -10,15 +8,11 @@ export type Hotkey = {
   key: string;
 };
 
-/** Mac か（Rust の値があればそれ。無ければ UA。判定は platform.ts） */
-export function isMac(): boolean {
-  return isMacLike();
-}
-
 /**
- * "Mod+Shift+D" 形式を読む。Mod は Ctrl（macOS では Cmd）。読めなければ null。
+ * "Mod+Shift+D" 形式を読む。Mod は Ctrl（manifest の互換のために "Mod" と書く）。読めなければ null。
+ * "Meta" は Windows・Linux のキー（Windows キーなど）。
  */
-export function parseHotkey(text: string, mac = isMac()): Hotkey | null {
+export function parseHotkey(text: string): Hotkey | null {
   const parts = text
     .split('+')
     .map((p) => p.trim())
@@ -28,13 +22,10 @@ export function parseHotkey(text: string, mac = isMac()): Hotkey | null {
   for (const [i, raw] of parts.entries()) {
     const p = raw.toLowerCase();
     const last = i === parts.length - 1;
-    if (p === 'mod') {
-      if (mac) hk.meta = true;
-      else hk.ctrl = true;
-    } else if (p === 'ctrl' || p === 'control') hk.ctrl = true;
-    else if (p === 'cmd' || p === 'meta') hk.meta = true;
+    if (p === 'mod' || p === 'ctrl' || p === 'control') hk.ctrl = true;
+    else if (p === 'meta') hk.meta = true;
     else if (p === 'shift') hk.shift = true;
-    else if (p === 'alt' || p === 'option') hk.alt = true;
+    else if (p === 'alt') hk.alt = true;
     else if (last) hk.key = p === 'space' ? ' ' : p === 'esc' ? 'escape' : p === 'plus' ? '+' : p;
     else return null;
   }
@@ -56,10 +47,10 @@ export function matchHotkey(hk: Hotkey, e: KeyboardEvent): boolean {
 }
 
 /**
- * 比べるための正規化した文字列（"Mod+Shift+D" と "Shift+Ctrl+d" は、macOS 以外では同じ）。読めなければ null
+ * 比べるための正規化した文字列（"Mod+Shift+D" と "Shift+Ctrl+d" は同じ）。読めなければ null
  */
-export function hotkeyId(text: string, mac = isMac()): string | null {
-  const hk = parseHotkey(text, mac);
+export function hotkeyId(text: string): string | null {
+  const hk = parseHotkey(text);
   if (!hk) return null;
   return [hk.ctrl && 'ctrl', hk.meta && 'meta', hk.alt && 'alt', hk.shift && 'shift', hk.key].filter(Boolean).join('+');
 }
@@ -86,13 +77,12 @@ function keyLabel(key: string): string {
 }
 
 /**
- * 表示用の文字列（"Ctrl+Shift+D"。macOS では "⌘⇧D"）。読めなければ元の文字列のまま
+ * 表示用の文字列（"Ctrl+Shift+D"）。読めなければ元の文字列のまま
  */
-export function formatHotkey(text: string, mac = isMac()): string {
-  const hk = parseHotkey(text, mac);
+export function formatHotkey(text: string): string {
+  const hk = parseHotkey(text);
   if (!hk) return text;
   const key = keyLabel(hk.key);
-  if (mac) return [hk.ctrl && '⌃', hk.alt && '⌥', hk.shift && '⇧', hk.meta && '⌘', key].filter(Boolean).join('');
   return [hk.ctrl && 'Ctrl', hk.meta && 'Meta', hk.alt && 'Alt', hk.shift && 'Shift', key].filter(Boolean).join('+');
 }
 
@@ -101,9 +91,9 @@ const IGNORED_KEYS = new Set(['control', 'shift', 'alt', 'meta', 'os', 'altgraph
 
 /**
  * 押したキーを "Mod+Shift+D" 形式にする（ホットキーの記録に使う）。修飾キーだけのときは null。
- * デバイスをまたいで使えるように、Ctrl（macOS では Cmd）は Mod にする
+ * Ctrl は Mod にする（デバイスをまたいで使えるように）
  */
-export function hotkeyFromEvent(e: KeyboardEvent, mac = isMac()): string | null {
+export function hotkeyFromEvent(e: KeyboardEvent): string | null {
   if (IGNORED_KEYS.has(e.key.toLowerCase())) return null;
   // 文字キー・数字キーは、Shift などで変わらないように物理キーから取る
   let key: string;
@@ -116,20 +106,15 @@ export function hotkeyFromEvent(e: KeyboardEvent, mac = isMac()): string | null 
   else if (e.key.length === 1) key = e.key.toUpperCase();
   else key = e.key;
   const parts: string[] = [];
-  if (mac) {
-    if (e.metaKey) parts.push('Mod');
-    if (e.ctrlKey) parts.push('Ctrl');
-  } else {
-    if (e.ctrlKey) parts.push('Mod');
-    if (e.metaKey) parts.push('Meta');
-  }
+  if (e.ctrlKey) parts.push('Mod');
+  if (e.metaKey) parts.push('Meta');
   if (e.altKey) parts.push('Alt');
   if (e.shiftKey) parts.push('Shift');
   parts.push(key);
   return parts.join('+');
 }
 
-/** 入力欄で文字を打っている間も効かせてよいか（Ctrl・Cmd・Alt のどれかを含むか、F1〜F12） */
+/** 入力欄で文字を打っている間も効かせてよいか（Ctrl・Alt・Meta のどれかを含むか、F1〜F12） */
 export function worksWhileTyping(hk: Hotkey): boolean {
   return hk.ctrl || hk.meta || hk.alt || /^f[0-9]{1,2}$/.test(hk.key);
 }

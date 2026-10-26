@@ -17,7 +17,7 @@ describe('desktop storage IPC adapter', () => {
   it('enables only Windows/Linux desktop user agents', () => {
     expect(supportsDesktopStoragePlatform('Mozilla Windows NT 10.0', 'Win32')).toBe(true);
     expect(supportsDesktopStoragePlatform('Mozilla X11 Linux x86_64', 'Linux x86_64')).toBe(true);
-    expect(supportsDesktopStoragePlatform('Mozilla Mac OS X', 'MacIntel')).toBe(false);
+    expect(supportsDesktopStoragePlatform('Mozilla OtherOS', 'Other')).toBe(false);
     expect(supportsDesktopStoragePlatform('Mozilla Linux Android 14', 'Linux armv8l')).toBe(false);
     expect(supportsDesktopStoragePlatform('Mozilla Chrome browser', '')).toBe(false);
   });

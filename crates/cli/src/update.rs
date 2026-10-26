@@ -282,10 +282,6 @@ mod tests {
             detect_method(Path::new("/usr/bin/disnans"), "linux", "aarch64"),
             Method::Manual(_)
         ));
-        assert!(matches!(
-            detect_method(Path::new("/usr/bin/disnans"), "macos", "x86_64"),
-            Method::Manual(_)
-        ));
         assert_eq!(
             detect_method(Path::new("disnans.exe"), "windows", "x86_64"),
             Method::WindowsSetup

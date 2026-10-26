@@ -21,8 +21,6 @@ export function defaultDeviceName(os: string): string {
       return 'Linux';
     case 'android':
       return 'Android';
-    case 'macos':
-      return 'macOS';
     case 'ios':
       return 'iOS';
     default:

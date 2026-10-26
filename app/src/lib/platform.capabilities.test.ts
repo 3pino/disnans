@@ -6,15 +6,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { capabilities, type Capabilities } from './platform';
 import { bootChatTransport, bootReadApi, bootWriteApi, currentBootEnv } from './transport/boot';
 
-type Os = 'windows' | 'linux' | 'macos' | 'android';
+type Os = 'windows' | 'linux' | 'other' | 'android';
 
 const UA: Record<Os, string> = {
   windows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
   linux: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) WebKitGTK/2.44',
-  macos: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+  other: 'Mozilla/5.0 (OtherOS; x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)',
   android: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36',
 };
-const PLATFORM: Record<Os, string> = { windows: 'Win32', linux: 'Linux x86_64', macos: 'MacIntel', android: 'Linux armv8l' };
+const PLATFORM: Record<Os, string> = { windows: 'Win32', linux: 'Linux x86_64', other: 'Other', android: 'Linux armv8l' };
 
 /** Rust の capabilities_for と同じ規則（テストの側に写したもの。Rust 側のテストと対になる） */
 function rustCaps(os: Os): Capabilities {
@@ -64,13 +64,13 @@ afterEach(() => {
 });
 
 describe('推測（Rust の値が無いとき）は Rust の表と同じ', () => {
-  it.each(['windows', 'linux', 'macos', 'android'] as const)('Tauri の %s', (os) => {
+  it.each(['windows', 'linux', 'other', 'android'] as const)('Tauri の %s', (os) => {
     stub({ tauri: true, os });
     expect(capabilities()).toEqual(rustCaps(os));
   });
 
   it('ブラウザー（Tauri でない）は、Rust の無い既定の値', () => {
-    for (const os of ['windows', 'linux', 'macos', 'android'] as const) {
+    for (const os of ['windows', 'linux', 'other', 'android'] as const) {
       stub({ tauri: false, os });
       expect(capabilities()).toEqual({
         sharedStorage: false,
@@ -89,7 +89,7 @@ describe('推測（Rust の値が無いとき）は Rust の表と同じ', () =>
 });
 
 describe('Rust の値があるとき', () => {
-  it.each(['windows', 'linux', 'macos', 'android'] as const)('Tauri の %s は同じ表', (os) => {
+  it.each(['windows', 'linux', 'other', 'android'] as const)('Tauri の %s は同じ表', (os) => {
     stub({ tauri: true, os, inject: injectedFor(os) });
     expect(capabilities()).toEqual(rustCaps(os));
   });

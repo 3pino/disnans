@@ -91,7 +91,7 @@ describe('chat over Tauri', () => {
 });
 
 describe('chat mode selection (S7: Tauri always rust; the flag is ignored)', () => {
-  it('Tauri desktop (Windows/Linux) is rust whatever the flag says; browser and macOS stay js', () => {
+  it('Tauri desktop (Windows/Linux) is rust whatever the flag says; browser stays js', () => {
     expect(selectChatMode({ flag: null, desktop: true })).toBe('rust');
     expect(selectChatMode({ flag: '1', desktop: true })).toBe('rust');
     expect(selectChatMode({ flag: '0', desktop: true })).toBe('rust');

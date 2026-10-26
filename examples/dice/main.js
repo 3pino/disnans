@@ -15,7 +15,7 @@
  * - onload / onunload ............................. DicePlugin
  * - loadData / saveData / addSettingTab ............ 「設定」の節（ui.setting / toggle / segmented / button / divider / confirm）
  * - addIcon ........................................ DIE_ICON（独自のアイコン）
- * - addCommand（icon・hotkey・slash・args・suggestArgs）... `/dice` と Ctrl+Shift+D（macOS では Cmd+Shift+D）
+ * - addCommand（icon・hotkey・slash・args・suggestArgs）... `/dice` と Ctrl+Shift+D
  * - addCommand（パレットだけ）........................ 「20面のサイコロを用意する」
  * - addComposerAction（Lucide のアイコン）........... 「＋」メニューの「サイコロ（2d6）」
  *   （addSlashCommand は addCommand の slash に置き換わったので使っていない。古いプラグインのために残っている）
@@ -130,7 +130,7 @@ export default class DicePlugin extends Plugin {
     this.addIcon(DIE_ICON, DIE_SVG);
 
     // コマンド。コマンドパレット（Ctrl+P）と設定のショートカットの一覧に出る。
-    // hotkey は既定のショートカット（デスクトップ。Mod は Ctrl、macOS では Cmd。利用者が設定で変えられる）、
+    // hotkey は既定のショートカット（デスクトップ。Mod は Ctrl。利用者が設定で変えられる）、
     // slash を付けると入力欄の `/dice` にもなる。icon を省くとプラグインのアイコン（icon.svg）になる
     this.addCommand({
       id: 'roll',
@@ -531,7 +531,7 @@ class DiceView {
       items.splice(
         2,
         0,
-        ['keyboard', 'Ctrl+Shift+D（macOS では Cmd+Shift+D）で、既定のサイコロを用意します。キーは 設定 → ショートカット で変えられます'],
+        ['keyboard', 'Ctrl+Shift+D で、既定のサイコロを用意します。キーは 設定 → ショートカット で変えられます'],
         ['command', 'コマンドパレット（Ctrl+P）の「20面のサイコロを用意する」も使えます'],
       );
     }

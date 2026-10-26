@@ -70,7 +70,7 @@ export function fieldBinding(key: string): FieldBinding | null {
 /** 配線済みの key（テスト用） */
 export const BOUND_KEYS: readonly string[] = Object.keys(BINDINGS);
 
-/** 画面の名前。木の文言を使い、環境で変わるものだけ直す（macOS の Ctrl → ⌘ など） */
+/** 画面の名前。木の文言を使い、環境で変わるものだけ直す（Enter の組み合わせの表記など） */
 export function fieldLabel(field: UiField): string {
   if (field.key.startsWith('enterKeys.')) return enterComboLabel(field.key.slice('enterKeys.'.length) as EnterCombo);
   return field.label;

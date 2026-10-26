@@ -7,14 +7,14 @@ export const APP_HEIGHT_VAR = '--app-height';
 
 type VisualViewportLike = Pick<VisualViewport, 'height' | 'addEventListener' | 'removeEventListener'>;
 
-/** Ctrl（Mac は Cmd）を押しながらのホイール。トラックパッドのピンチもこれで届く */
-export function isZoomWheel(e: Pick<WheelEvent, 'ctrlKey' | 'metaKey'>): boolean {
-  return e.ctrlKey || e.metaKey;
+/** Ctrl を押しながらのホイール。トラックパッドのピンチもこれで届く */
+export function isZoomWheel(e: Pick<WheelEvent, 'ctrlKey'>): boolean {
+  return e.ctrlKey;
 }
 
-/** 拡大・縮小・等倍のキー（Ctrl or Cmd と + - = 0。テンキーの Add・Subtract も含む） */
-export function isZoomKey(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>): boolean {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey) return false;
+/** 拡大・縮小・等倍のキー（Ctrl と + - = 0。テンキーの Add・Subtract も含む） */
+export function isZoomKey(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey'>): boolean {
+  if (!e.ctrlKey || e.altKey) return false;
   return ['+', '=', '-', '_', '0', 'Add', 'Subtract'].includes(e.key);
 }
 

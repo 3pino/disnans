@@ -51,7 +51,7 @@ export type ReadApiEnv = {
 
 /**
  * 読取の経路を決める。呼び出し側はモジュールの読み込み時に1回だけ呼ぶ（boot 時固定）。
- * デスクトップ以外（ブラウザ・Android・macOS）と、フラグ "0" のときは HTTP のまま。
+ * 方針（rustApi）が off のとき（ブラウザ・Windows と Linux と Android 以外の Tauri）と、フラグ "0" のときは HTTP のまま。
  */
 export function selectReadApi(env: ReadApiEnv): ReadApiChoice {
   const choice: ReadApiChoice =
@@ -80,7 +80,7 @@ export function selectWriteApi(env: ReadApiEnv): WriteApiChoice {
 /**
  * チャットの経路（契約 §8.1。S7）。
  * - Tauri の Windows・Linux と Android: 常に rust。JS Socket は作らない。逃げ道（"disnans.rustChat" の "0"）は廃止。
- * - ブラウザー（開発用）は js（Socket を残す）。macOS は方針が off（対象外。Q1 のとおり従来の js）。
+ * - ブラウザー（開発用）は js（Socket を残す）。
  * 方針の値（capabilities.rustChat）があれば、それに従う。無いときは desktop と android から決める。
  * flag は互換のために受け取るだけで、見ない。
  */

@@ -286,7 +286,7 @@ describe('desktop shared storage integration', () => {
     await expect(drafts.flushDraftSaves()).resolves.toBeUndefined();
   });
 
-  it('keeps browser and macOS server writes local without calling Tauri IPC', async () => {
+  it('keeps browser and other-OS server writes local without calling Tauri IPC', async () => {
     delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
     Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla Chrome browser' });
     Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Win32' });
@@ -294,8 +294,8 @@ describe('desktop shared storage integration', () => {
     expect(invokeMock).not.toHaveBeenCalled();
 
     installDesktopGlobals();
-    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla Mac OS X' });
-    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' });
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla OtherOS' });
+    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Other' });
     expect(await saveServerUrl(server)).toEqual({ status: 'local' });
     expect(invokeMock).not.toHaveBeenCalled();
   });

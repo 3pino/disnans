@@ -59,7 +59,7 @@ export function startBackNav(target: BackTarget, h: HistoryLike = history, w: Ev
   };
 }
 
-/** PC の Alt+←（戻る）かどうか。Ctrl・Cmd・Shift を一緒に押していれば違う操作なので除く */
+/** PC の Alt+←（戻る）かどうか。Ctrl・Meta・Shift を一緒に押していれば違う操作なので除く */
 export function isBackKey(e: Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'isComposing'>): boolean {
   return e.key === 'ArrowLeft' && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.isComposing;
 }

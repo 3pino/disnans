@@ -1,9 +1,7 @@
-import { isMac } from './plugins/hotkey';
-
 /** 入力欄で Enter を押したときの動作 */
 export type EnterAction = 'send' | 'newline' | 'none';
 
-/** 設定できる Enter の組み合わせ（ctrl は Ctrl か Cmd） */
+/** 設定できる Enter の組み合わせ */
 export type EnterCombo = 'enter' | 'shift' | 'ctrl' | 'alt';
 
 export type EnterKeyPrefs = Record<EnterCombo, EnterAction>;
@@ -18,26 +16,25 @@ export const DEFAULT_ENTER_KEYS: Readonly<EnterKeyPrefs> = Object.freeze({
   alt: 'send',
 });
 
-/** 表示用の名前（"Ctrl+Enter"。macOS では "⌘+Enter"） */
-export function enterComboLabel(combo: EnterCombo, mac = isMac()): string {
+/** 表示用の名前（"Ctrl+Enter"） */
+export function enterComboLabel(combo: EnterCombo): string {
   switch (combo) {
     case 'enter':
       return 'Enter';
     case 'shift':
       return 'Shift+Enter';
     case 'ctrl':
-      return mac ? '⌘+Enter' : 'Ctrl+Enter';
+      return 'Ctrl+Enter';
     case 'alt':
-      return mac ? '⌥+Enter' : 'Alt+Enter';
+      return 'Alt+Enter';
   }
 }
 
 /** Enter のキー入力がどの組み合わせか。Enter でない・修飾キーを2つ以上押しているときは null */
 export function enterComboOf(e: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'ctrlKey' | 'metaKey' | 'altKey'>): EnterCombo | null {
   if (e.key !== 'Enter') return null;
-  const mods = [e.shiftKey && 'shift', (e.ctrlKey || e.metaKey) && 'ctrl', e.altKey && 'alt'].filter(Boolean) as EnterCombo[];
-  // Ctrl と Cmd を同時に押したときも2つとみなす
-  if (mods.length > 1 || (e.ctrlKey && e.metaKey)) return null;
+  const mods = [e.shiftKey && 'shift', e.ctrlKey && 'ctrl', e.altKey && 'alt'].filter(Boolean) as EnterCombo[];
+  if (mods.length > 1) return null;
   return mods[0] ?? 'enter';
 }
 

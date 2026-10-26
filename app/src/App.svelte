@@ -10,7 +10,6 @@
   import { isAndroid, isTauri } from './lib/platform';
   import { didInitializeWithLegacyFallback, getDesktopSharedStorage, initializeDesktopStorage, isDesktopStorageSupported } from './lib/desktopStorage';
   import { flushDraftSaves } from './lib/drafts';
-  import { isMac } from './lib/plugins/hotkey';
   import { startViewportSync, startZoomGuard } from './lib/viewport';
   import { client } from './lib/stores/client.svelte';
   import { ui } from './lib/stores/ui.svelte';
@@ -140,10 +139,6 @@
     if (isAndroid()) return;
     const onKey = (e: KeyboardEvent) => {
       if (!isBackKey(e)) return;
-      // Mac の Option+← は入力欄で単語の移動に使うので、入力欄の中では効かせない
-      const t = e.target;
-      const typing = t instanceof HTMLElement && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable);
-      if (isMac() && typing) return;
       e.preventDefault();
       ui.back();
     };

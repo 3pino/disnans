@@ -6,7 +6,6 @@ import { needsServerSetup } from './config';
 import { isAndroid, isLinuxDesktop, isTauri } from './platform';
 import { isDesktopStorageSupported } from './desktopStorage';
 import { devFolderSupported } from './plugins/dev';
-import { isMac } from './plugins/hotkey';
 import { guessDeviceKind } from './deviceKind.svelte';
 import { bootChatTransport, bootReadApi, bootWriteApi, currentBootEnv } from './transport/boot';
 import type { ReadApiEnv } from './transport/select';
@@ -16,18 +15,17 @@ type Env = { name: string; tauri: boolean; userAgent: string; platform: string }
 const UA = {
   windows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
   linux: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) WebKitGTK/2.44',
-  mac: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+  other: 'Mozilla/5.0 (OtherOS; x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)',
   android: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36',
 };
 
 const ENVS: Env[] = [
   { name: 'windows Tauri', tauri: true, userAgent: UA.windows, platform: 'Win32' },
   { name: 'linux Tauri', tauri: true, userAgent: UA.linux, platform: 'Linux x86_64' },
-  { name: 'mac Tauri', tauri: true, userAgent: UA.mac, platform: 'MacIntel' },
+  { name: 'other Tauri', tauri: true, userAgent: UA.other, platform: 'Other' },
   { name: 'android Tauri', tauri: true, userAgent: UA.android, platform: 'Linux armv8l' },
   { name: 'windows browser', tauri: false, userAgent: UA.windows, platform: 'Win32' },
   { name: 'linux browser', tauri: false, userAgent: UA.linux, platform: 'Linux x86_64' },
-  { name: 'mac browser', tauri: false, userAgent: UA.mac, platform: 'MacIntel' },
   { name: 'android browser', tauri: false, userAgent: UA.android, platform: 'Linux armv8l' },
 ];
 
@@ -54,9 +52,8 @@ type Row = {
   isTauri: boolean;
   isAndroid: boolean;
   isLinuxDesktop: boolean;
-  sharedStorage: boolean; // isDesktopStorageSupported（macOS は false のまま。Android は true（step6 の (3)））
+  sharedStorage: boolean; // isDesktopStorageSupported（Windows・Linux 以外の Tauri は false のまま。Android は true（step6 の (3)））
   devFolder: boolean;
-  isMac: boolean;
   needsServerSetup: boolean;
   readApi: 'tauri' | 'http';
   writeApi: 'tauri' | 'http';
@@ -65,21 +62,20 @@ type Row = {
   deviceKindGuess: 'smartphone' | 'laptop';
 };
 
-// 現在の挙動（P0 時点）。mac は Tauri でも shared storage と Rust の API（読取・書込）は使わない（Q1 の判断: 変えない）
+// 現在の挙動（P0 時点）。Windows・Linux・Android 以外の Tauri は shared storage と Rust の API（読取・書込）は使わない（Q1 の判断: 変えない）
 const EXPECTED: Row[] = [
-  { env: 'windows Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: false, sharedStorage: true, devFolder: true, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
-  { env: 'linux Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: true, sharedStorage: true, devFolder: true, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
-  { env: 'mac Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: true, isMac: true, needsServerSetup: true, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
-  { env: 'android Tauri', isTauri: true, isAndroid: true, isLinuxDesktop: false, sharedStorage: true, devFolder: false, isMac: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'base64', chat: 'rust', deviceKindGuess: 'smartphone' },
-  { env: 'windows browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
-  { env: 'linux browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
-  { env: 'mac browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: true, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
-  { env: 'android browser', isTauri: false, isAndroid: true, isLinuxDesktop: false, sharedStorage: false, devFolder: false, isMac: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'smartphone' },
+  { env: 'windows Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: false, sharedStorage: true, devFolder: true, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
+  { env: 'linux Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: true, sharedStorage: true, devFolder: true, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
+  { env: 'other Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: true, needsServerSetup: true, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
+  { env: 'android Tauri', isTauri: true, isAndroid: true, isLinuxDesktop: false, sharedStorage: true, devFolder: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'base64', chat: 'rust', deviceKindGuess: 'smartphone' },
+  { env: 'windows browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
+  { env: 'linux browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
+  { env: 'android browser', isTauri: false, isAndroid: true, isLinuxDesktop: false, sharedStorage: false, devFolder: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'smartphone' },
 ];
 
 /** Rust の値（platform.rs と同じ形）。Tauri の行だけ作る */
 function injectedFor(env: Env): unknown {
-  const os = env.name.startsWith('windows') ? 'windows' : env.name.startsWith('linux') ? 'linux' : env.name.startsWith('mac') ? 'macos' : 'android';
+  const os = env.name.startsWith('windows') ? 'windows' : env.name.startsWith('linux') ? 'linux' : env.name.startsWith('other') ? 'other' : 'android';
   return { os, desktop: os !== 'android', android: os === 'android' };
 }
 
@@ -90,7 +86,6 @@ function assertRow(env: Env, row: Row): void {
     expect(isLinuxDesktop()).toBe(row.isLinuxDesktop);
     expect(isDesktopStorageSupported()).toBe(row.sharedStorage);
     expect(devFolderSupported()).toBe(row.devFolder);
-    expect(isMac()).toBe(row.isMac);
     expect(needsServerSetup()).toBe(row.needsServerSetup);
     expect(guessDeviceKind(env.userAgent)).toBe(row.deviceKindGuess);
 
@@ -143,7 +138,6 @@ describe('デバイス判定の特徴付け（現在の挙動を固定）', () =
     stubEnv({ name: 'x', tauri: true, userAgent: UA.linux, platform: 'Linux x86_64' }, { os: 'windows', desktop: true, android: false });
     expect(isLinuxDesktop()).toBe(false);
     expect(isDesktopStorageSupported()).toBe(true);
-    expect(isMac()).toBe(false);
   });
 
   it('書込の本体の形（base64 か raw）は Android の Tauri だけ base64', () => {
@@ -186,7 +180,7 @@ describe('通知とアップデートの経路（モジュールの読込時に�
   it.each([
     ['windows Tauri', 'desktop'],
     ['linux Tauri', 'desktop'],
-    ['mac Tauri', 'desktop'],
+    ['other Tauri', 'desktop'],
     ['android Tauri', 'android'],
     ['windows browser', 'web'],
     ['android browser', 'web'],

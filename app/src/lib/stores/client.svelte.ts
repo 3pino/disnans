@@ -83,7 +83,7 @@ class Client {
     return Object.values(this.users).sort((a, b) => a.display_name.localeCompare(b.display_name, 'ja'));
   }
 
-  /** 起動時に1回呼ぶ。chat を渡すと、チャットは Rust 経路。Tauri の Windows・Linux・Android は必ず渡す（S7）。JS Socket はブラウザーと macOS だけ */
+  /** 起動時に1回呼ぶ。chat を渡すと、チャットは Rust 経路。Tauri の Windows・Linux・Android は必ず渡す（S7）。JS Socket はブラウザーだけ */
   start(chat: ChatTransport | null = bootChatTransport()): void {
     if (this.socket || this.chat) return;
     page.init();

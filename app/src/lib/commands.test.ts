@@ -114,21 +114,19 @@ describe('hotkeys', () => {
   });
 
   it('同じキーのコマンドを見つける（書き方が違っても同じキーなら。複数のどれかが同じでも）', () => {
-    const conflicts = findHotkeyConflicts([a, b, c, d], {}, false);
+    const conflicts = findHotkeyConflicts([a, b, c, d], {});
     expect(conflicts.get('app:a')).toEqual([b]);
     expect(conflicts.get('dice:b')).toEqual([a]);
     expect(conflicts.has('dice:c')).toBe(false);
-    // macOS では Mod は Cmd なので、Ctrl とはぶつからない
-    expect(findHotkeyConflicts([a, b], {}, true).size).toBe(0);
     // 設定で変えればぶつからない。3つ目が同じキーにすれば、それぞれ2つとぶつかる
-    expect(findHotkeyConflicts([a, b], { 'dice:b': ['Mod+K'] }, false).size).toBe(0);
-    const three = findHotkeyConflicts([a, b, c], { 'dice:c': ['shift+ctrl+d'] }, false);
+    expect(findHotkeyConflicts([a, b], { 'dice:b': ['Mod+K'] }).size).toBe(0);
+    const three = findHotkeyConflicts([a, b, c], { 'dice:c': ['shift+ctrl+d'] });
     expect(three.get('dice:c')).toEqual([a, b]);
     // 外したものはぶつからない
-    expect(findHotkeyConflicts([a, b], { 'app:a': [] }, false).size).toBe(0);
+    expect(findHotkeyConflicts([a, b], { 'app:a': [] }).size).toBe(0);
     // 二つ目のキーが同じでもぶつかる
     const xy = cmd({ id: 'x:y' });
-    const second = findHotkeyConflicts([a, xy], { 'x:y': ['F9', 'Ctrl+Shift+D'] }, false);
+    const second = findHotkeyConflicts([a, xy], { 'x:y': ['F9', 'Ctrl+Shift+D'] });
     expect(second.get('x:y')).toEqual([a]);
     expect(second.get('app:a')).toEqual([xy]);
   });
@@ -137,20 +135,20 @@ describe('hotkeys', () => {
     const list = [a, b, c, d, multi];
     const ctrlShiftD = key({ key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true });
     // ぶつかっていたら先に登録したもの
-    expect(commandForKey(list, {}, ctrlShiftD, { mac: false })).toBe(a);
-    expect(commandForKey(list, { 'app:a': [] }, ctrlShiftD, { mac: false })).toBe(b);
-    expect(commandForKey(list, { 'dice:c': ['Mod+K'] }, key({ key: 'k', code: 'KeyK', ctrlKey: true }), { mac: false })).toBe(c);
+    expect(commandForKey(list, {}, ctrlShiftD)).toBe(a);
+    expect(commandForKey(list, { 'app:a': [] }, ctrlShiftD)).toBe(b);
+    expect(commandForKey(list, { 'dice:c': ['Mod+K'] }, key({ key: 'k', code: 'KeyK', ctrlKey: true }))).toBe(c);
     const j = key({ key: 'j', code: 'KeyJ' });
-    expect(commandForKey(list, {}, j, { mac: false })).toBe(d);
-    expect(commandForKey(list, {}, j, { mac: false, typing: true })).toBeNull();
-    expect(commandForKey(list, {}, ctrlShiftD, { mac: false, typing: true })).toBe(a);
-    expect(commandForKey(list, {}, key({ key: 'x', code: 'KeyX' }), { mac: false })).toBeNull();
+    expect(commandForKey(list, {}, j)).toBe(d);
+    expect(commandForKey(list, {}, j, { typing: true })).toBeNull();
+    expect(commandForKey(list, {}, ctrlShiftD, { typing: true })).toBe(a);
+    expect(commandForKey(list, {}, key({ key: 'x', code: 'KeyX' }))).toBeNull();
     // 既定の 2 つ目（F2）でも、1 つ目（Ctrl+P）でも開く
-    expect(commandForKey(list, {}, key({ key: 'F2', code: 'F2' }), { mac: false, typing: true })).toBe(multi);
-    expect(commandForKey(list, {}, key({ key: 'p', code: 'KeyP', ctrlKey: true }), { mac: false })).toBe(multi);
+    expect(commandForKey(list, {}, key({ key: 'F2', code: 'F2' }), { typing: true })).toBe(multi);
+    expect(commandForKey(list, {}, key({ key: 'p', code: 'KeyP', ctrlKey: true }))).toBe(multi);
     // 追加したものでも効く
     const extra = { 'dice:c': ['F7'] };
-    expect(commandForKey(list, extra, key({ key: 'F7', code: 'F7' }), { mac: false })).toBe(c);
+    expect(commandForKey(list, extra, key({ key: 'F7', code: 'F7' }))).toBe(c);
   });
 });
 
@@ -187,28 +185,27 @@ describe('スラッシュコマンドの別名', () => {
 
 describe('hotkey の記録と表示', () => {
   it('押したキーを Mod 形式にする（修飾キーだけなら null）', () => {
-    expect(hotkeyFromEvent(key({ key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true }), false)).toBe('Mod+Shift+D');
-    expect(hotkeyFromEvent(key({ key: 'd', code: 'KeyD', metaKey: true }), true)).toBe('Mod+D');
-    expect(hotkeyFromEvent(key({ key: 'd', code: 'KeyD', ctrlKey: true }), true)).toBe('Ctrl+D');
-    expect(hotkeyFromEvent(key({ key: '!', code: 'Digit1', shiftKey: true, altKey: true }), false)).toBe('Alt+Shift+1');
-    expect(hotkeyFromEvent(key({ key: ',', code: 'Comma', ctrlKey: true }), false)).toBe('Mod+,');
-    expect(hotkeyFromEvent(key({ key: ' ', code: 'Space', ctrlKey: true }), false)).toBe('Mod+Space');
-    expect(hotkeyFromEvent(key({ key: 'F5', code: 'F5' }), false)).toBe('F5');
-    expect(hotkeyFromEvent(key({ key: 'Control', code: 'ControlLeft', ctrlKey: true }), false)).toBeNull();
-    expect(hotkeyFromEvent(key({ key: 'Shift', code: 'ShiftLeft', shiftKey: true }), false)).toBeNull();
+    expect(hotkeyFromEvent(key({ key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true }))).toBe('Mod+Shift+D');
+    expect(hotkeyFromEvent(key({ key: 'd', code: 'KeyD', metaKey: true }))).toBe('Meta+D');
+    expect(hotkeyFromEvent(key({ key: 'd', code: 'KeyD', ctrlKey: true }))).toBe('Mod+D');
+    expect(hotkeyFromEvent(key({ key: '!', code: 'Digit1', shiftKey: true, altKey: true }))).toBe('Alt+Shift+1');
+    expect(hotkeyFromEvent(key({ key: ',', code: 'Comma', ctrlKey: true }))).toBe('Mod+,');
+    expect(hotkeyFromEvent(key({ key: ' ', code: 'Space', ctrlKey: true }))).toBe('Mod+Space');
+    expect(hotkeyFromEvent(key({ key: 'F5', code: 'F5' }))).toBe('F5');
+    expect(hotkeyFromEvent(key({ key: 'Control', code: 'ControlLeft', ctrlKey: true }))).toBeNull();
+    expect(hotkeyFromEvent(key({ key: 'Shift', code: 'ShiftLeft', shiftKey: true }))).toBeNull();
     // 記録したものは読めて、同じキーとして比べられる
-    expect(hotkeyId('Mod+Shift+D', false)).toBe(hotkeyId('shift+ctrl+d', false));
-    expect(hotkeyId('Mod+Space', false)).toBe('ctrl+ ');
-    expect(hotkeyId('Mod+Plus', false)).toBe('ctrl++');
+    expect(hotkeyId('Mod+Shift+D')).toBe(hotkeyId('shift+ctrl+d'));
+    expect(hotkeyId('Mod+Space')).toBe('ctrl+ ');
+    expect(hotkeyId('Mod+Plus')).toBe('ctrl++');
   });
 
   it('表示用の文字列', () => {
-    expect(formatHotkey('Mod+Shift+D', false)).toBe('Ctrl+Shift+D');
-    expect(formatHotkey('Mod+Shift+D', true)).toBe('⇧⌘D');
-    expect(formatHotkey('Mod+,', false)).toBe('Ctrl+,');
-    expect(formatHotkey('Alt+ArrowUp', false)).toBe('Alt+↑');
-    expect(formatHotkey('f5', false)).toBe('F5');
-    expect(formatHotkey('Foo+X', false)).toBe('Foo+X');
+    expect(formatHotkey('Mod+Shift+D')).toBe('Ctrl+Shift+D');
+    expect(formatHotkey('Mod+,')).toBe('Ctrl+,');
+    expect(formatHotkey('Alt+ArrowUp')).toBe('Alt+↑');
+    expect(formatHotkey('f5')).toBe('F5');
+    expect(formatHotkey('Foo+X')).toBe('Foo+X');
   });
 });
 

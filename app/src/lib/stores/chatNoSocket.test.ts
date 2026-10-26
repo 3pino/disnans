@@ -1,5 +1,5 @@
 // S7: Tauri の Windows・Linux・Android は JS Socket を作らない（チャットは必ず Rust 経路）。
-// ブラウザー（開発用）と macOS（方針 off）は従来どおり JS Socket。起動時の経路の決め方（bootChatTransport）から確かめる。
+// ブラウザー（開発用）と、Windows・Linux・Android 以外の Tauri（方針 off）は従来どおり JS Socket。起動時の経路の決め方（bootChatTransport）から確かめる。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 class FakeSocket {
@@ -21,10 +21,10 @@ class FakeSocket {
 const UA = {
   windows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124',
   linux: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 WebKitGTK/2.44',
-  mac: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15',
+  other: 'Mozilla/5.0 (OtherOS; x86_64) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15',
   android: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36',
 };
-const PLATFORM = { windows: 'Win32', linux: 'Linux x86_64', mac: 'MacIntel', android: 'Linux armv8l' };
+const PLATFORM = { windows: 'Win32', linux: 'Linux x86_64', other: 'Other', android: 'Linux armv8l' };
 
 function stub(os: keyof typeof UA, tauri: boolean): void {
   vi.stubGlobal('navigator', { userAgent: UA[os], platform: PLATFORM[os] });
@@ -86,8 +86,8 @@ describe('the JS socket remains where it is still used', () => {
     expect(FakeSocket.instances).toBe(1);
   });
 
-  it('macOS Tauri (policy off, out of scope per Q1) keeps the JS socket as before', async () => {
-    await startLikeBoot('mac', true);
+  it('Tauri on another OS (policy off, out of scope per Q1) keeps the JS socket as before', async () => {
+    await startLikeBoot('other', true);
     expect(FakeSocket.instances).toBe(1);
   });
 });

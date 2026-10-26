@@ -513,15 +513,16 @@ describe('Session', () => {
 describe('hotkey', () => {
   const key = (init: KeyboardEventInit) => new KeyboardEvent('keydown', init);
 
-  it('Mod+Shift+D を読む（Mod は Ctrl、macOS では Cmd）', () => {
-    expect(parseHotkey('Mod+Shift+D', false)).toEqual({ ctrl: true, meta: false, shift: true, alt: false, key: 'd' });
-    expect(parseHotkey('Mod+Shift+D', true)).toEqual({ ctrl: false, meta: true, shift: true, alt: false, key: 'd' });
-    expect(parseHotkey('Shift+', false)).toBeNull();
-    expect(parseHotkey('Foo+D', false)).toBeNull();
+  it('Mod+Shift+D を読む（Mod は Ctrl）', () => {
+    expect(parseHotkey('Mod+Shift+D')).toEqual({ ctrl: true, meta: false, shift: true, alt: false, key: 'd' });
+    expect(parseHotkey('Shift+')).toBeNull();
+    expect(parseHotkey('Foo+D')).toBeNull();
+    // Meta は Windows・Linux のキー（Windows キーなど）
+    expect(parseHotkey('Meta+D')).toEqual({ ctrl: false, meta: true, shift: false, alt: false, key: 'd' });
   });
 
   it('修飾キーがすべて合うときだけ一致する', () => {
-    const hk = parseHotkey('Mod+Shift+D', false)!;
+    const hk = parseHotkey('Mod+Shift+D')!;
     expect(matchHotkey(hk, key({ key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true }))).toBe(true);
     expect(matchHotkey(hk, key({ key: 'D', code: 'KeyD', ctrlKey: true }))).toBe(false);
     expect(matchHotkey(hk, key({ key: 'd', code: 'KeyD', ctrlKey: true, shiftKey: true, altKey: true }))).toBe(false);

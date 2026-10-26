@@ -56,7 +56,7 @@ describe('read transport selection', () => {
     expect(r.calls[1].args).toBeInstanceOf(Uint8Array);
   });
 
-  it('a plain browser on Android (not Tauri) and macOS stay HTTP', () => {
+  it('a plain browser on Android (not Tauri) stays HTTP', () => {
     expect(selectReadApi({ ...base, desktop: false, android: false, flag: null }).kind).toBe('http');
     expect(selectWriteApi({ ...base, desktop: false, android: false, flag: null }).kind).toBe('http');
   });

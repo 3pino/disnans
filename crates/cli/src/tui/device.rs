@@ -24,7 +24,6 @@ pub fn default_name() -> String {
     let os = match host_os() {
         "windows" => "Windows",
         "linux" => "Linux",
-        "macos" => "macOS",
         _ => "このデバイス",
     };
     format!("{os} (TUI)")

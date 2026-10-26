@@ -148,7 +148,7 @@ declare global {
        * 静止画を 1 枚だけ撮る（API v11）。どの画面を共有するかの選択や、許可のダイアログを出さない（設定のプレビューなど向け）。
        * `supported` に関係なく、本体のアプリ（Tauri）で使える。撮れるもの: Windows は主モニター全体、
        * Linux は X11 なら主モニター全体・Wayland などでは disnans 自身の画面、Android は disnans 自身の画面（`source` で分かる）。
-       * 長辺は 1920 以下に縮める。ブラウザ・macOS など撮れない環境では例外
+       * 長辺は 1920 以下に縮める。ブラウザなど撮れない環境では例外
        */
       snapshot(): Promise<ScreenSnapshot>;
     }
@@ -621,7 +621,7 @@ declare global {
       /** アイコン（省略するとプラグインのアイコン） */
       icon?: IconName;
       /**
-       * 既定のホットキー。例: "Mod+Shift+D"（Mod は Ctrl。macOS では Cmd）。
+       * 既定のホットキー。例: "Mod+Shift+D"（Mod は Ctrl）。
        * 利用者は設定で変えたり外したりできる。デスクトップだけ（Android では効かない）
        */
       hotkey?: string;

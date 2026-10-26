@@ -604,7 +604,7 @@ export function containSize(natural, stage) {
 
 /**
  * ホイールの操作を、拡大縮小か移動に読み替える。
- * - Ctrl（Mac は ⌘）+ ホイール: 拡大縮小。トラックパッドのピンチもブラウザーがこれにして渡してくる
+ * - Ctrl + ホイール: 拡大縮小。トラックパッドのピンチもブラウザーがこれにして渡してくる
  * - 拡大中のホイール: 移動（Shift なら横）
  * - 等倍のときに上へ回す: 拡大（埋め込みの表示では、ページのスクロールに譲る）
  * @param {{ deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }} e

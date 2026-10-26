@@ -6,9 +6,9 @@
 
 /** Rust が入れるデバイスの事実（JSON は camelCase。platform.rs の PlatformInfo と揃える） */
 export type InjectedPlatform = {
-  /** "windows" | "linux" | "macos" | "android" | "ios" | "other" */
+  /** "windows" | "linux" | "android" | "ios" | "other"（Windows・Linux・Android 以外は other） */
   os: string;
-  /** デスクトップの Tauri か（windows・linux・macos） */
+  /** デスクトップの Tauri か（Android 以外） */
   desktop: boolean;
   /** Android の Tauri か */
   android: boolean;
@@ -22,7 +22,7 @@ export type Capabilities = {
   sharedStorage: boolean;
   /** 読取・書込・添付を Rust 経路で行う（既定で on。localStorage の "0" で off） */
   rustApi: boolean;
-  /** チャットの経路。"default" は Rust（S7 で逃げ道を廃止）、"off" は JS Socket（ブラウザーと macOS） */
+  /** チャットの経路。"default" は Rust（S7 で逃げ道を廃止）、"off" は JS Socket（ブラウザー） */
   rustChat: 'default' | 'off';
   /** 本体の渡し方（Android の WebView は base64） */
   bodyMode: 'raw' | 'base64';
@@ -54,7 +54,7 @@ export function injectedPlatform(): InjectedPlatform | null {
 }
 
 /** Tauri の中か（WebView の内部オブジェクトの有無） */
-/** このデバイスの OS の名前（windows・linux・macos・android・ios。分からなければ空）。Rust の値が正しければそれ、無ければ UA から */
+/** このデバイスの OS の名前（windows・linux・android・ios・other。分からなければ空）。Rust の値が正しければそれ、無ければ UA から */
 export function osName(): string {
   const os = injectedPlatform()?.os;
   if (os && os !== 'other') return os;
@@ -91,19 +91,12 @@ export function supportsDesktopStoragePlatform(userAgent: string, platform = '')
   return /windows|linux/i.test(agent) && !/android/i.test(agent);
 }
 
-/** shared-file storage を使えるか（Windows か Linux の Tauri 版。macOS とブラウザーは使わない）。Rust の値を優先し、無ければ UA */
+/** shared-file storage を使えるか（Windows か Linux の Tauri 版。ブラウザーは使わない）。Rust の値を優先し、無ければ UA */
 export function isSharedStorageOs(): boolean {
   if (!isTauri() || isAndroid()) return false;
   const info = injectedPlatform();
   if (info) return info.os === 'windows' || info.os === 'linux';
   return typeof navigator !== 'undefined' && supportsDesktopStoragePlatform(navigator.userAgent, navigator.platform);
-}
-
-/** Mac か（キーの表記。Cmd と Ctrl の扱い）。iPhone・iPad も含める（従来どおり） */
-export function isMacLike(): boolean {
-  const info = injectedPlatform();
-  if (info) return info.os === 'macos' || info.os === 'ios';
-  return typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
 }
 
 /**

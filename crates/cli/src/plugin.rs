@@ -118,8 +118,6 @@ fn default_device_name() -> &'static str {
         "windows" => "Windows",
         "linux" => "Linux",
         "android" => "Android",
-        "macos" => "macOS",
-        "ios" => "iOS",
         _ => "このデバイス",
     }
 }

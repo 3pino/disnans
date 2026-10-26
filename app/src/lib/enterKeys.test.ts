@@ -18,15 +18,14 @@ describe('enterComboOf', () => {
     expect(enterComboOf(ev())).toBe('enter');
     expect(enterComboOf(ev({ shiftKey: true }))).toBe('shift');
     expect(enterComboOf(ev({ ctrlKey: true }))).toBe('ctrl');
-    // Cmd も Ctrl と同じ
-    expect(enterComboOf(ev({ metaKey: true }))).toBe('ctrl');
+    // Meta（Windows キーなど）は Ctrl とはみなさない
+    expect(enterComboOf(ev({ metaKey: true }))).toBe('enter');
     expect(enterComboOf(ev({ altKey: true }))).toBe('alt');
   });
 
   it('Enter でない・修飾キーが2つ以上なら null', () => {
     expect(enterComboOf(ev({ key: 'a' }))).toBeNull();
     expect(enterComboOf(ev({ ctrlKey: true, shiftKey: true }))).toBeNull();
-    expect(enterComboOf(ev({ ctrlKey: true, metaKey: true }))).toBeNull();
   });
 });
 
@@ -43,7 +42,7 @@ describe('resolveEnterAction', () => {
     const prefs: EnterKeyPrefs = { enter: 'newline', shift: 'none', ctrl: 'send', alt: 'newline' };
     expect(resolveEnterAction(ev(), prefs)).toBe('newline');
     expect(resolveEnterAction(ev({ shiftKey: true }), prefs)).toBe('none');
-    expect(resolveEnterAction(ev({ metaKey: true }), prefs)).toBe('send');
+    expect(resolveEnterAction(ev({ metaKey: true }), prefs)).toBe('newline');
     expect(resolveEnterAction(ev({ altKey: true }), prefs)).toBe('newline');
     expect(sendCombos(prefs)).toEqual(['ctrl']);
   });
@@ -72,8 +71,7 @@ describe('改行', () => {
   });
 
   it('表示用の名前', () => {
-    expect(enterComboLabel('ctrl', false)).toBe('Ctrl+Enter');
-    expect(enterComboLabel('ctrl', true)).toBe('⌘+Enter');
-    expect(enterComboLabel('shift', false)).toBe('Shift+Enter');
+    expect(enterComboLabel('ctrl')).toBe('Ctrl+Enter');
+    expect(enterComboLabel('shift')).toBe('Shift+Enter');
   });
 });
