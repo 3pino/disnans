@@ -10,6 +10,8 @@ export type SocketOptions = {
 };
 
 const PING_INTERVAL = 25_000;
+/** つながるまでの上限。ブラウザーの接続は、届かない相手に長く待つことがあるため、ここで打ち切って再試行する */
+const CONNECT_TIMEOUT = 15_000;
 const IDLE_TIMEOUT = 60_000;
 const BACKOFF_BASE = 1_000;
 const BACKOFF_MAX = 30_000;
@@ -22,6 +24,7 @@ export class Socket {
   private ws: WebSocket | null = null;
   private attempt = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private lastSeen = 0;
   private queue: ClientEvent[] = [];
@@ -90,7 +93,23 @@ export class Socket {
       return;
     }
     this.ws = ws;
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = null;
+      if (this.ws !== ws || ws.readyState === WebSocket.OPEN) return;
+      // 届かないまま待たない。閉じて、ふつうの再試行に任せる
+      this.ws = null;
+      ws.onclose = null;
+      try {
+        ws.close();
+      } catch {
+        // 閉じられなくても、次の接続は作れる
+      }
+      this.opts.onStatus('closed', this.attempt);
+      if (!this.stopped) this.scheduleRetry();
+    }, CONNECT_TIMEOUT);
     ws.onopen = () => {
+      if (this.connectTimer) clearTimeout(this.connectTimer);
+      this.connectTimer = null;
       this.attempt = 0;
       this.lastSeen = Date.now();
       this.opts.onStatus('open', 0);
@@ -136,6 +155,8 @@ export class Socket {
   }
 
   private clearTimers(): void {
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.retryTimer = null;

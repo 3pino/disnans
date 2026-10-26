@@ -1,4 +1,5 @@
 import { api } from '../api';
+import { failureReason, isConnectionFailure } from '../connection';
 import type { Message } from '../protocol/Message';
 import type { Reaction } from '../protocol/Reaction';
 import type { Block } from '../markdown';
@@ -24,6 +25,14 @@ export type PendingMessage = Message & {
 
 const PAGE = 50;
 
+/**
+ * 最初の 1 ページを読むべきか。失敗したあとは読まない（自動で読み直すと、つながらないあいだ失敗を繰り返す）。
+ * 読み直すのは、再試行の操作か、接続が戻って hello を受けたとき（client が呼ぶ）
+ */
+export function needsFirstLoad(ready: boolean, t: { loaded: boolean; loading: boolean; error: string | null }): boolean {
+  return ready && !t.loaded && !t.loading && t.error === null;
+}
+
 /** メインチャットのメッセージ */
 export class Timeline {
   messages = $state<Message[]>([]);
@@ -33,19 +42,23 @@ export class Timeline {
   loadingOlder = $state(false);
   hasMore = $state(true);
   error = $state<string | null>(null);
+  /** 失敗の原因が、つながらないこと（応答がない・届かない）か。画面は接続の案内を出す */
+  errorIsConnection = $state(false);
 
   /** 最新のページを取り、手元と突き合わせる（初回・再接続時） */
   async load(): Promise<void> {
     if (this.loading) return;
     this.loading = true;
     this.error = null;
+    this.errorIsConnection = false;
     try {
       const page = await api.messages({ limit: PAGE });
       this.mergeLatest(page);
       if (!this.loaded) this.hasMore = page.length >= PAGE;
       this.loaded = true;
     } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e);
+      this.error = failureReason(e);
+      this.errorIsConnection = isConnectionFailure(e);
     } finally {
       this.loading = false;
     }

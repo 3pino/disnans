@@ -3,7 +3,7 @@ import type { SharedListing } from '../protocol/SharedListing';
 import type { SharedOp } from '../protocol/SharedOp';
 import type { ApiError } from '../protocol/ApiError';
 import { apiUrl, authHeaders } from '../config';
-import { HttpError, request, toError } from './http';
+import { HttpError, READ, request, toError } from './http';
 import { sharedPath } from '../sharedPath';
 
 /**
@@ -35,7 +35,7 @@ type MoveCopyOp = { op: 'move' | 'copy'; from: string; to: string; overwrite?: b
 
 export const sharedApi: SharedApi = {
   async list(path) {
-    const listing = await request<SharedListing>('GET', sharedPath(path));
+    const listing = await request<SharedListing>('GET', sharedPath(path), undefined, undefined, READ);
     return listing.entries;
   },
   async read(path) {

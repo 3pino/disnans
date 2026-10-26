@@ -6,6 +6,7 @@
   import Composer from './Composer.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { needsFirstLoad } from '../lib/stores/timeline.svelte';
   import { isLinuxDesktop } from '../lib/platform';
   import { listenNativeDrop, pointInRect, readDroppedFiles } from '../lib/dropFiles';
 
@@ -29,8 +30,9 @@
   let nativeOver = $state(false);
   let section: HTMLElement | undefined = $state();
 
+  // 最初の 1 ページ。失敗したら読み直さない（画面の再試行・接続が戻ったとき。needsFirstLoad）
   $effect(() => {
-    if (client.ready && !timeline.loaded && !timeline.loading) void timeline.load();
+    if (needsFirstLoad(client.ready, timeline)) void timeline.load();
   });
 
   // Linux では WebKitGTK の HTML5 のドロップで File が届かないため、Tauri のドロップ（パス）で受ける。

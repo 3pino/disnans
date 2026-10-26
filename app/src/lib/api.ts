@@ -8,7 +8,7 @@ import type { UpdateMe } from './protocol/UpdateMe';
 import type { UpdateSession } from './protocol/UpdateSession';
 import type { User } from './protocol/User';
 import { apiUrl, authHeaders } from './config';
-import { qs, request, toError } from './transport/http';
+import { READ, qs, request, toError } from './transport/http';
 import { bootReadApi, bootWriteApi } from './transport/boot';
 import type { UploadHandle } from './transport/upload';
 import { sharedApi } from './transport/shared';
@@ -24,7 +24,7 @@ const writes = bootWriteApi();
 export const api = {
   me: () => reads.me(),
   /** 初回設定で、保存前のサーバー URL に接続できるか確かめる */
-  probe: (base: string) => request<User>('GET', '/api/me', undefined, base),
+  probe: (base: string) => request<User>('GET', '/api/me', undefined, base, READ),
   updateMe: (body: UpdateMe) => writes.write.updateMe(body),
   /** 自分のアバターを設定する（サーバーで中央を正方形に切り抜き、256px の WebP にする） */
   setAvatar: (file: Blob, fileName = 'avatar'): Promise<User> => writes.write.setAvatar(file, fileName),

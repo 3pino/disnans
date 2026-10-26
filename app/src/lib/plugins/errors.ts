@@ -1,4 +1,4 @@
-import { HttpError } from '../transport/http';
+import { ConnectionError, HttpError } from '../transport/http';
 import { errorMessage } from './types';
 
 /**
@@ -63,8 +63,8 @@ export function toPluginError(e: unknown, fallback: LocalErrorCode = 'failed'): 
     if (e.code === VERSION_CONFLICT) return new VersionConflictError(e.message);
     return new PluginError(e.code, e.message);
   }
-  // fetch が届かなかったときは TypeError（ブラウザ・WebView の共通）
-  if (e instanceof TypeError) return new PluginError('disconnected', errorMessage(e));
+  // 届かなかった通信（応答がない・fetch の失敗）は disconnected
+  if (e instanceof ConnectionError || e instanceof TypeError) return new PluginError('disconnected', errorMessage(e));
   return new PluginError(fallback, errorMessage(e));
 }
 

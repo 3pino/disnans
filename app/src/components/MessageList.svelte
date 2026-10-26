@@ -7,6 +7,7 @@
   import type { Message } from '../lib/protocol/Message';
   import type { Timeline } from '../lib/stores/timeline.svelte';
   import { dayLabel, sameDay } from '../lib/format';
+  import { CONNECTION_HINT } from '../lib/connection';
   import { isContinuation } from '../lib/messageRows';
   import { ui } from '../lib/stores/ui.svelte';
   import { client } from '../lib/stores/client.svelte';
@@ -209,9 +210,17 @@
       <div class="message-list-start">ここが始まりです</div>
     {/if}
     {#if timeline.error && !timeline.loaded}
-      <div class="message-list-error">
-        読み込めませんでした（{timeline.error}）
-        <Button onclick={() => timeline.load()}>再試行</Button>
+      <div class="message-list-error" role="alert">
+        {#if timeline.errorIsConnection}
+          <p>{CONNECTION_HINT}</p>
+          <p class="message-list-error-reason">原因: {timeline.error}</p>
+        {:else}
+          <p>読み込めませんでした（{timeline.error}）</p>
+        {/if}
+        <div class="message-list-error-actions">
+          <Button onclick={() => timeline.load()}>再試行</Button>
+          <Button onclick={() => ui.openSettings()}>接続設定</Button>
+        </div>
       </div>
     {/if}
     {#if timeline.loaded && all.length === 0 && empty}
@@ -267,12 +276,28 @@
   }
   .message-list-error {
     display: flex;
-    gap: var(--space-5);
+    flex-direction: column;
+    gap: var(--space-4);
     align-items: center;
     justify-content: center;
     padding: var(--space-7);
     color: var(--danger);
     font-size: var(--fs-base);
+    text-align: center;
+  }
+  .message-list-error p {
+    margin: 0;
+  }
+  .message-list-error-reason {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    overflow-wrap: anywhere;
+  }
+  .message-list-error-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-5);
+    justify-content: center;
   }
   .message-list-day-divider {
     display: flex;

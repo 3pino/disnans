@@ -16,6 +16,7 @@ import { page, unread } from './unread.svelte';
 import { errorText } from '../errors';
 import { SEND_TEXT, describeEmitError, emitFailureText, isRejectedSendCode, unknownReasonText } from '../sendOutcome';
 import { bootChatTransport } from '../transport/boot';
+import { failureReason } from '../connection';
 import { CALL_CONTROL_TYPES, CHAT_EVENT_TYPES, isChatEmit, type ChatEmitEvent, type ChatItem, type ChatSendEvent, type ChatTransport, type SendOutcome } from '../transport/chat';
 import { replyPreviewOf } from '../reply';
 import { reply } from './reply.svelte';
@@ -54,6 +55,8 @@ class Client {
   me = $state<User | null>(null);
   users = $state<Record<string, User>>({});
   status = $state<SocketStatus>('connecting');
+  /** つながらない原因の 1 行（接続バナーの診断用）。つながったら消す */
+  linkReason = $state<string | null>(null);
   /** 最初の hello を受け取ったか */
   ready = $state(false);
   /** 何度目の接続か（再接続の判定用） */
@@ -105,7 +108,10 @@ class Client {
       onEvent: (ev) => this.dispatch(ev),
       onStatus: (s) => {
         this.setLink(s);
-        if (s === 'closed') this.main.markSentUnknown();
+        if (s === 'closed') {
+          this.linkReason = 'WebSocket が応答しません（接続できない・切れた）';
+          this.main.markSentUnknown();
+        }
       },
     });
     this.socket.start();
@@ -118,6 +124,7 @@ class Client {
   }
 
   private setLink(s: SocketStatus): void {
+    if (s === 'open') this.linkReason = null;
     if (this.status === s) return;
     this.status = s;
     for (const fn of this.linkListeners) fn(s === 'open');
@@ -383,6 +390,7 @@ class Client {
 
   /** 接続できない（終端の失敗を含む）。最初の1回だけ toast し、以後は CHAT_RETRY_MS ごとに再試行する */
   private chatFailed(e: unknown, prefix = 'チャットに接続できませんでした'): void {
+    this.linkReason = failureReason(e);
     this.chatState = 'failed';
     this.chatDown = true;
     this.setLink('closed');

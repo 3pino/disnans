@@ -30,6 +30,12 @@ describe('toPluginError', () => {
     expect(toPluginError(e)).toBe(e);
   });
 
+  it('届かなかった通信（接続の失敗）は disconnected（従来と同じ code）', async () => {
+    const { ConnectionError } = await import('../transport/http');
+    expect(toPluginError(new ConnectionError('timeout', '応答がありません')).code).toBe('disconnected');
+    expect(toPluginError(new ConnectionError('network', '届きません')).code).toBe('disconnected');
+  });
+
   it('サーバーのエラーは、サーバーの code をそのまま使う', () => {
     const e = toPluginError(new HttpError(404, 'not_found', 'ありません'));
     expect(e).toBeInstanceOf(PluginError);
