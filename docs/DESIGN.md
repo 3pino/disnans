@@ -98,54 +98,12 @@
 | `--mark` | 検索ヒット |
 | `--on-accent` | アクセント背景上の文字 |
 
-## 別アプリ・画面の切り出し（検討中・未着手）
+## 別アプリ・画面の切り出し(設計案・未実装)
 
-2026-10 の調査（FEEDBACKS「ファイルエクスプローラー機能を別のアプリとして切り出したい」）。**方針の候補であり、実装はまだ。**
+エクスプローラーのような画面を、アプリの外(プラグイン、いずれは apk 単位)へ切り出す。設計は [CORE_PLUGINS.md](CORE_PLUGINS.md)(と `docs/core-plugins/`)にある。要点:
 
-
-#### 1. 現状: プラグインで「画面」をどこまで作れるか
-- 作れるもの(API v15 / `docs/PLUGINS.md`): `registerView`/`openView`(パネル、モバイルは全画面。`containerEl` に DOM を描く命令型)、`addCommand`(パレット・ホットキー・スラッシュ。ナビバーにも出せる)、`addSettingTab`、`addStatusBarItem`、通話の拡張(`disnans.call.addPanel/addButton`)、`files`(共有フォルダ API、permissions:["files"])、`loadData/saveData`、`holdBackground`、通知、`styles.css`。
-- 使える部品: `disnans.ui`(button/toggle/input/segmented/navbar/divider/setting/icon/toast/confirm、`PLUGIN_UI.md`)と DS のグローバル CSS クラス・CSS 変数。**Svelte 部品・ストア・本体の import は不可**(プラグインは配布された JS 単体で、`disnans` オブジェクトだけを受け取る)。
-- できないこと(エクスプローラーに必要なもの): Modal/Menu/MenuItem/PanelBar/SortableList/Lightbox 相当の部品、全画面で既存画面(チャット等)を隠す指定(`shell-panel-files` は本体専用の分岐)、ナビバー項目の専用追加(コマンド経由のみ)、戻る操作とパネルの統合(`ui.onBack` はあるが履歴に載る画面にはできない)、長押し・範囲選択などのジェスチャーの共通部品、クリップボード(画像/テキスト)・ファイル選択・ダウンロード/保存、PDF サムネイル、ドラッグ&ドロップ、アップロード進捗付きの `files.write`、複数選択の操作、URL(`sharedFileUrl`)の取得。
-
-#### 2. エクスプローラーの依存(FileExplorer.svelte 1185 行ほか)
-本体のみにあるもの / プラグインに足りない API:
-| 依存 | 現状の置き場 | 足りない API(プラグイン側) |
-|---|---|---|
-| 共有フォルダの REST | `transport/shared.ts`(sharedApi, uploadShared) | `files` は list/read/write/mkdir/remove/move/copy ありで概ね足りる。足りない: **進捗付きアップロード**、**ファイル/画像の URL**(`<img src>`、DL 用)、`SharedEntry.file_id/mime` |
-| 一覧の写し・更新 | `stores/sharedIndex`(files.changed で破棄)、`fileExplorer`、`explorerView/Buffer/Selection` | `files.onChange` あり。写し(キャッシュ)は各プラグインが自前 |
-| 部品 | `ui/IconButton, PanelBar, Button, Modal, TextInput, Menu, MenuItem`、`SharedEntryActions`、`PdfThumb` | **Modal / Menu / PanelBar / IconButton を `disnans.ui` に追加**(今は toast・confirm のみ) |
-| 画面の置き場 | `Shell` の `panel.kind==='files'`(チャットを隠して全域)、`ui.openFiles` | **全画面ビュー**(`openView({ fullscreen })`)、ナビバー項目(`addNavItem`) |
-| 戻る・履歴 | `navHistory.Panel` | view を履歴に載せる(Android 戻る/Alt+←で閉じる) |
-| 設定 | `explorerView`(表示形式を prefs/deviceSettings) | `loadData/saveData` で代替可 |
-| 入出力 | `clipboard*`、`clipboardPaste`、`dropFiles`、`lib/platform`、Lightbox(`ui.lightbox`) | **clipboard、Lightbox(画像表示)、ファイル選択、ダウンロード保存、長押し** |
-| テーマ | CSS 変数・DS クラス | 既に使える |
-| コマンド | `app:open-files` | `addCommand` で可 |
-結論: 足りないのは「部品(Modal/Menu/PanelBar/Lightbox)」「全画面ビュー+ナビバー項目」「クリップボード/ファイル選択/保存」「アップロード進捗」。
-
-#### 3. 切り出しの粒度
-- **A. 内蔵プラグイン(同梱だが plugin API だけに依存)**: 同じ WebView・同じ認証/WS を使うので共有問題なし。利点: 最小コスト、API が実戦で育つ、配布・オン/オフ(設定のプラグイン一覧)が使える。欠点: 命令型 DOM(Svelte が使えない)ので 1185 行の書き直し(or Svelte を IIFE にビルドして同梱)。apk は分かれない。工数: API 追加 2〜3 週 + 移植 1〜2 週。
-- **B. 別配布のプラグイン(JS+CSS、部品は UI SDK)**: A の延長。Svelte で作って UI SDK(部品を Svelte でも提供)にすれば再利用が楽。利点: 誰でも画面を作れる。欠点: SDK の安定化・版管理が必要。工数: A の後 +2〜3 週。
-- **C. Android の別 Activity + 別 WebView(同一 apk)**: 同一プロセス・同一 UID なので Intent で起動し、サーバーURL/トークン相当は SharedPreferences/ContentProvider 共有が可能。WS は Rust のチャット(`chat_start`)が 1 つ必要で、別 WebView 側は IPC か別の接続になる。**Tauri 公式**: マルチ WebView/ウィンドウは Android 未対応(issue #11528, 2024〜)。2026-08 に issue #15857、2026-10-12 に PR #16262(`feat(android): use a task per window, activity embedding for multiwebview`)が open。つまり**現時点で公式の安定機能ではない**(PR 未マージ)。自前で Kotlin の Activity を足す手もあるが、Tauri の WebView 起動/IPC の枠外で保守が重い。工数: 公式待ちなら不明、自前なら 4〜8 週+保守。
-- **D. 別 apk**: 署名と shared UID は同一鍵が必要(共有 UID は非推奨)。認証/設定の受け渡しは ContentProvider/bound service か、各 apk が独立に接続(サーバー URL を入力 or Intent で受け取り)。配布は release.yml に apk を増やし、更新は個別(版の食い違い対策が要る)。利点: 完全に独立(プロセス・クラッシュ・更新)、Android の最近のアプリに別アイコンで出る。欠点: 設定・認証の二重管理、配布/更新の複雑化、デスクトップには無関係。工数: 最小の別アプリ化でも 3〜6 週+運用負荷。
-- 参考(デスクトップ): Tauri v2 は複数ウィンドウ/マルチ WebView が使える(WebView の追加は `unstable` 機能)。デスクトップなら別ウィンドウで同じアプリ内に出せる。
-
-#### 4. 推奨する道筋
-1. **A: 内蔵プラグイン化**でプラグイン API を育てる(エクスプローラーを最初の利用者にする)。
-2. 共通部品を UI SDK として整理(Svelte 部品を `disnans.ui` とそろえる。DS 化済みなので CSS は共有できている)。
-3. 公式の Android マルチ WebView(#16262)がマージされたら C を評価。別 apk(D)は、サーバー URL・認証の受け渡し(1 回の入力 or Intent)で済む独立アプリが欲しくなった時点で。
-最初の一歩(最小の API 追加 3〜5 個):
-- (a) `disnans.ui.modal` / `ui.menu`(位置指定のメニュー)/ `ui.panelBar`(本体の Modal/Menu/PanelBar と同じ DOM)
-- (b) `registerView` の `fullscreen`(チャットを隠す)+ `addNavItem`(ナビバー項目)+ 戻る操作の履歴統合
-- (c) `files.url(path)`(`<img>`/ダウンロード用)と `files.upload(path, blob, { onProgress })`
-- (d) `disnans.clipboard`(テキスト/画像)、`disnans.pickFiles()`、`disnans.save(blob, name)`
-- (e) `disnans.lightbox(src, alt)`
-その上でエクスプローラーを `examples/explorer/`(内蔵プラグイン、`permissions:["files","clipboard"]`)に移し、本体の `panel.kind==='files'` 分岐・`app:open-files` を、プラグインのコマンド・view に置き換える。
-
-#### 5. 環境ごとの扱い
-- デスクトップ(Tauri): A/B は同一 WebView。C 相当は別ウィンドウで可能(マルチウィンドウは対応)。
-- Android: A/B は同一 WebView(通知・戻る・safe-area は PanelBar/Shell が担当)。C/D は上記のとおり公式待ち or 自前。
-- TUI: プラグインは JS の DOM を返す命令型なので TUI では動かない(`docs/UI_TREE.md` は設定画面とナビバーだけの共通木)。エクスプローラー相当の TUI は、`crates/client-core` の shared REST を使う別実装(core の `view::ui` に画面の木を足す方向)。FEEDBACKS にある「宣言的な木 API」と合流させるのが筋で、プラグイン API の宣言型化が前提。
-#### リスク
-- 命令型 DOM での 1185 行の書き直しは回帰が起きやすい(テストの移植が要る)。Svelte を同梱ビルドする案も比較に値する。
-- API を増やすほど後方互換(apiVersion)の負担が増える。最初は内蔵(本体と同時に更新)で割り切る。
+- **コアプラグイン** = 同じ plugin API だけを使う・アプリに同梱・本体と同時に更新・プラグイン一覧に出す(オン・オフはさせない)。
+- 作り方は Svelte のまま、プラグイン用にビルドして同梱する(Svelte のランタイムは本体と共有)。
+- **TUI と画面の定義を共有する目標は必ず成し遂げる。** Svelte 同梱は GUI だけで動く中継で、最終形は状態から作る宣言的な「画面の木」(GUI も TUI も同じ木を描く)。設定画面とナビバーの静的な木(`view::ui`)がその出発点。
+- apk 単位の分割は、Tauri 公式の Android 複数 WebView / Activity(PR #16262、2026-10 時点で open・未マージ)を待つ。
+- 段階: 状態と操作を UI から分ける → コアプラグインの供給元と足りない API → 木の型と GUI の描画 → TUI の描画と JS 実行 → エクスプローラーを木へ移す。
