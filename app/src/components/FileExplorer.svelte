@@ -30,7 +30,7 @@
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
   import { attachmentActionText } from '../lib/fileLink';
-  import { childPath, deleteManyConfirm, inAttachments, nameError, overwriteConfirm, planUpload, renameAllowed, renameNote, renameTarget } from '../lib/sharedOps';
+  import { childPath, deleteManyConfirm, inAttachments, nameError, overwriteConfirm, planUpload, renameAllowed, renameTarget } from '../lib/sharedOps';
   import { checkTransfer, runTransfer, transferFailure, type TransferItem } from '../lib/sharedTransfer';
   import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
   import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
@@ -41,7 +41,9 @@
   import { isLinuxDesktop } from '../lib/platform';
   import { sharedApi, uploadShared } from '../lib/transport/shared';
   import { sharedFileUrl, fileUrl } from '../lib/config';
-  import { isImage } from '../lib/fileLink';
+  import { isImage, isPdf } from '../lib/fileLink';
+  import { PDF_THUMB_MAX_BYTES } from '../lib/pdfThumb';
+  import PdfThumb from './PdfThumb.svelte';
   import { formatSize, formatStamp } from '../lib/format';
   import type { SharedEntry } from '../lib/protocol/SharedEntry';
 
@@ -87,6 +89,12 @@
   function thumbUrl(e: SharedEntry): string | null {
     if (e.kind === 'dir' || !isImage(e.name, e.mime)) return null;
     return e.file_id ? fileUrl(e.file_id, true) : sharedFileUrl(e.path);
+  }
+
+  /** PDF のサムネイルの元（1 ページ目を描く）。大きすぎる PDF・PDF でなければ無し */
+  function pdfSource(e: SharedEntry): { url: string; key: string } | null {
+    if (e.kind === 'dir' || !isPdf(e.name, e.mime) || e.size > PDF_THUMB_MAX_BYTES) return null;
+    return { url: e.file_id ? fileUrl(e.file_id) : sharedFileUrl(e.path), key: `${e.path}:${e.modified}:${e.size}` };
   }
 
   // 操作のメニュー（≡）。項目を選んだら閉じてから動く
@@ -664,6 +672,7 @@
         {#each sorted as e (e.path)}
           {@const action = entryAction(e)}
           {@const thumb = dirView.view === 'grid' ? thumbUrl(e) : null}
+          {@const pdf = dirView.view === 'grid' ? pdfSource(e) : null}
           {@const renaming = renamingPath === e.path}
           <li
             class="file-explorer-item"
@@ -696,8 +705,6 @@
                   ></textarea>
                   {#if renameError}
                     <span class="file-explorer-rename-error" role="alert">{renameError}</span>
-                  {:else if renameNote(e.path)}
-                    <span class="file-explorer-rename-note muted">{renameNote(e.path)}</span>
                   {/if}
                 </span>
               {:else}
@@ -713,6 +720,8 @@
                 <span class="file-explorer-thumb">
                   {#if thumb}
                     <img src={thumb} alt="" loading="lazy" decoding="async" />
+                  {:else if pdf}
+                    <PdfThumb url={pdf.url} key={pdf.key} />
                   {:else if action === 'enter'}<Folder size={32} />{:else if action === 'image'}<ImageIcon size={32} />{:else}<FileIcon size={32} />{/if}
                 </span>
                 {@render name()}
@@ -1067,10 +1076,11 @@
     color: var(--text-muted);
     overflow: hidden;
   }
+  /* 画像は欠けないよう、全体を枠に収める（余りは枠の地の色） */
   .file-explorer-thumb img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
   }
   .file-explorer-view-grid .file-explorer-name {
     flex: none;
@@ -1150,8 +1160,7 @@
   .file-explorer-rename[aria-invalid='true'] {
     border-color: var(--danger);
   }
-  .file-explorer-rename-error,
-  .file-explorer-rename-note {
+  .file-explorer-rename-error {
     font-size: var(--fs-xs);
     overflow-wrap: anywhere;
   }

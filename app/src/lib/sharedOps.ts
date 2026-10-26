@@ -54,11 +54,6 @@ export function renameAllowed(path: string): Allowed {
   return path === ATTACHMENTS_DIR ? { ok: false, message: RESERVED_REASON } : { ok: true };
 }
 
-/** 名前の変更の注意（本文のリンクが切れる旨）。attachments/ の中はリンクが新しい名前で出るので、注意は無い（null） */
-export function renameNote(path: string): string | null {
-  return inAttachments(path) ? null : '名前を変えると、この名前を指している本文のリンクは切れます';
-}
-
 /** 削除の確認の文（ui.confirm に渡す形）。attachments/ の中は本文のリンクが「削除されたファイル」になる */
 export function deleteConfirm(path: string, dir: boolean): { title: string; body: string; okLabel: string; danger: true } {
   const name = baseName(path);

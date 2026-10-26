@@ -15,6 +15,12 @@ export function isImage(name: string, mime?: string | null): boolean {
   return IMAGE_EXT.test(name);
 }
 
+/** PDF か（mime が無い・汎用のときは拡張子で見る） */
+export function isPdf(name: string, mime?: string | null): boolean {
+  if (mime && mime !== 'application/octet-stream') return mime === 'application/pdf';
+  return /\.pdf$/i.test(name);
+}
+
 /** 削除された添付の名前（消される直前の別名）。本文のリンクが指すものを「削除されたファイル」と見分けるため */
 export function deletedAttachmentNames(messages: readonly Message[]): Set<string> {
   const out = new Set<string>();
