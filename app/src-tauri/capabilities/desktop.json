@@ -4,8 +4,7 @@
   "description": "デスクトップ版のアップデート、通知、開発用フォルダを選ぶダイアログ、クリップボードの画像と文字（共有フォルダへの貼り付け）、最近の画像（ピクチャのフォルダ）の読み込み",
   "platforms": [
     "linux",
-    "windows",
-    "macOS"
+    "windows"
   ],
   "windows": [
     "main"

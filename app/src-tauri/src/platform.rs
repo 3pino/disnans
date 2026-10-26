@@ -7,7 +7,7 @@
 //! 方針（capabilities）の表は disnans-client-core（`platform.rs`）が 1 か所で持つ（ステップ8・V1）。
 //! ここは、Tauri のデバイスの事実（cfg）を集めて渡すだけ。
 
-use disnans_client_core::{PlatformInfo, Surface, host_os};
+use disnans_client_core::{host_os, PlatformInfo, Surface};
 
 /// 今のビルドのデバイスの事実と方針（Tauri の環境）
 pub fn info() -> PlatformInfo {
@@ -42,8 +42,6 @@ mod tests {
         assert_eq!(info().os, "windows");
         #[cfg(target_os = "linux")]
         assert_eq!(info().os, "linux");
-        #[cfg(target_os = "macos")]
-        assert_eq!(info().os, "macos");
         #[cfg(target_os = "android")]
         assert_eq!(info().os, "android");
     }
@@ -58,7 +56,7 @@ mod tests {
         assert_eq!(i.surface, Surface::Tauri);
     }
 
-    /// この OS のビルドでは、実際の判定が core の表と一致する（CI の windows・linux・macos・android で走る）
+    /// この OS のビルドでは、実際の判定が core の表と一致する（CI の windows・linux・android で走る）
     #[test]
     fn this_build_reports_the_matching_row() {
         let i = info();

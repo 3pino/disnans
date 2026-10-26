@@ -203,6 +203,7 @@ WebDAV（`/dav/`）と同じ中身・同じ規則。全員で共有する 1 つ�
   - 自分のメッセージに、他人が返信した（`reply_to`）
   - `POST /api/notify/sample` で自分に送った（`sample: true`。クライアントは表示中でもシステム通知を出す）
 - `notify` はそのユーザーのすべての接続に送る。Android アプリは WebView とは別に、通知用の常駐サービスからも接続する
+- システム通知を押すと、どの環境でもウィンドウを前面に出してチャットを表示する（Android・Web と同じ動作）。デスクトップ（Tauri の Windows・Linux）は Rust が出し、押すとウィンドウを前面に出してから、フロントに知らせる（アプリが動いているあいだだけ。終了していれば何もしない）。Android は常駐サービスが出す
 - `message.send` の `silent: true`（省略は `false`）は、通知を一切送らない（配信は普通の投稿と同じ）
 - 編集・削除は本人のメッセージだけ
 - 古いクライアントの `message.send` に付いている `thread_id` / `start_thread` は無視し、メインチャットに入れる。`thread.create` は知らない形として `invalid_event` で断る

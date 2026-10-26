@@ -30,12 +30,16 @@ mod api_bridge;
 
 // チャット WebSocket の Rust 経路（段4）。契約は .pi/step4-ipc-contract.md §8。
 // デスクトップは ws 依存と同じ OS だけ。Android も使う（段4）
-#[cfg(any(all(desktop, any(target_os = "macos", windows, target_os = "linux")), target_os = "android"))]
+#[cfg(any(all(desktop, any(windows, target_os = "linux")), target_os = "android"))]
 mod chat_bridge;
 
 // 画面の静止画（プラグイン API v11 の screenCapture.snapshot。ダイアログを出さない）
 #[cfg(desktop)]
 mod snapshot;
+
+// デスクトップの通知（Windows・Linux は押したらウィンドウを前面に出す）
+#[cfg(desktop)]
+mod desktop_notify;
 
 // Linux の画面共有: portal / PipeWire。静止画のプレビューとは別の取得経路
 #[cfg(target_os = "linux")]
@@ -177,7 +181,7 @@ pub fn run() {
         }));
     }
 
-    #[cfg(any(all(desktop, any(target_os = "macos", windows, target_os = "linux")), target_os = "android"))]
+    #[cfg(any(all(desktop, any(windows, target_os = "linux")), target_os = "android"))]
     {
         builder = builder.manage(chat_bridge::ChatHub::default());
     }
@@ -202,6 +206,7 @@ pub fn run() {
         {
             builder = builder.invoke_handler(tauri::generate_handler![
                 open_devtools,
+                desktop_notify::desktop_notify,
                 recent_images::recent_images,
                 dev_plugins::dev_plugins_scan,
                 dev_plugins::dev_plugin_read,
@@ -252,6 +257,7 @@ pub fn run() {
                 .manage(linux_capture::LinuxScreenState::default())
                 .invoke_handler(tauri::generate_handler![
                     open_devtools,
+                    desktop_notify::desktop_notify,
                     recent_images::recent_images,
                     dev_plugins::dev_plugins_scan,
                     dev_plugins::dev_plugin_read,
@@ -397,7 +403,7 @@ pub fn run() {
             _app.state::<linux_capture::LinuxScreenState>().shutdown();
         }
         // チャット接続を中止する。待たない（準備中の接続も止める）。保留中の送信は unknown になり、再送はしない
-        #[cfg(any(all(desktop, any(target_os = "macos", windows, target_os = "linux")), target_os = "android"))]
+        #[cfg(any(all(desktop, any(windows, target_os = "linux")), target_os = "android"))]
         if matches!(_event, tauri::RunEvent::Exit) {
             use tauri::Manager;
             _app.state::<chat_bridge::ChatHub>().shutdown_now();

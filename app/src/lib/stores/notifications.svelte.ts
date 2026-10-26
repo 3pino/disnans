@@ -1,15 +1,17 @@
 import { api } from '../api';
 import { getServerUrl } from '../config';
 import { capabilities } from '../platform';
+import { listenSystemOpen, sendSystemNote } from '../systemNotify';
 import { ui, type ToastAvatar } from './ui.svelte';
 
 /**
  * 通知の出し方は環境ごとに違う。
  * - android: 常駐サービス（自前の notifier プラグイン）がサーバーにつなぎ、アプリが裏にあるときに出す
- * - desktop: 公式の notification プラグイン。ウィンドウにフォーカスがないときに出す
+ * - desktop: Rust（desktop_notify）が出す。ウィンドウにフォーカスがないときに出す
  * - web: ブラウザーの Notification API（開発用）
  *
  * どの環境でも、アプリを見ているときは、見ている場所以外の通知をアプリ内のトーストで出す。
+ * 送ることと押したときの動作（チャットを表示する）は lib/systemNotify.ts にまとめている。
  */
 export type Backend = 'android' | 'desktop' | 'web';
 
@@ -69,9 +71,8 @@ class Notifications {
   }
 
   private async initAndroid(): Promise<void> {
-    const { addPluginListener } = await import('@tauri-apps/api/core');
-    // 通知から開いたら、チャットを表示する
-    await addPluginListener('notifier', 'open', () => this.openTarget());
+    // 通知から開いたら、チャットを表示する（押したときの動作は lib/systemNotify.ts）
+    await listenSystemOpen('android', () => this.openTarget());
     const { target } = await invokeNotifier<{ target?: unknown }>('take_launch_target');
     if (target) this.openTarget();
 
@@ -82,6 +83,7 @@ class Notifications {
   }
 
   private async initDesktop(): Promise<void> {
+    await listenSystemOpen('desktop', () => this.openTarget());
     const { isPermissionGranted, requestPermission } = await import('@tauri-apps/plugin-notification');
     this.permission = (await isPermissionGranted()) ? 'granted' : await requestPermission();
   }
@@ -164,23 +166,7 @@ class Notifications {
   }
 
   private showSystem(ev: NotifyEvent): boolean {
-    try {
-      if (this.backend === 'desktop') {
-        void import('@tauri-apps/plugin-notification').then(({ sendNotification }) =>
-          sendNotification({ title: ev.title, body: ev.body }),
-        );
-        return true;
-      }
-      const n = new Notification(ev.title, { body: ev.body, tag: 'main' });
-      n.onclick = () => {
-        window.focus();
-        this.openTarget();
-        n.close();
-      };
-      return true;
-    } catch {
-      return false;
-    }
+    return sendSystemNote(this.backend, ev, () => this.openTarget());
   }
 
   private toast(ev: NotifyEvent): void {

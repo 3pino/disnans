@@ -38,7 +38,7 @@ futures-util = { version = "0.3", default-features = false, features = ["sink"] 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"
 
-[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+[target.'cfg(any(windows, target_os = "linux"))'.dependencies]
 disnans-client-core = { path = "../../crates/client-core", features = ["ws"] }
 tauri-plugin-notification = "2"
 tauri-plugin-process = "2"
@@ -55,6 +55,8 @@ tauri-plugin-clipboard-manager = "2"
 webkit2gtk = { version = "2", features = ["v2_40"] }
 # 画面の静止画（screen_snapshot）: X11 のルートウィンドウを撮る（tauri が使うものと同じ版。新しいクレートは増えない）
 gdk = "0.18"
+# 通知を押したらウィンドウを前面に出す（desktop_notify.rs）。プラグインと同じ版・機能（新しいクレートは増えない）
+notify-rust = "4.11"
 
 # Linux のネイティブ画面共有（linux_capture.rs）: xdg-desktop-portal の ScreenCast（ashpd）で選んだ画面を、
 # GStreamer の pipewiresrc → appsink で受ける。ビルドには libgstreamer1.0-dev / libgstreamer-plugins-base1.0-dev が要る
@@ -72,6 +74,8 @@ futures-util = "0.3"
 # 画面の静止画（screen_snapshot）: GDI で主モニターを撮る（tauri が使うものと同じ版。新しいクレートは増えない）
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
+# 通知を押したときの動作（on_activated）を持つトーストを出す（notify-rust が使うものと同じ版。新しいクレートは増えない）
+tauri-winrt-notification = "0.8"
 
 [target.'cfg(target_os = "android")'.dependencies]
 # REST（読取・書込み・アップロード）とチャット（ws）の Rust 経路（段4）
