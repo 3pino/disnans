@@ -430,6 +430,34 @@ describe('表示方法と並び順', () => {
     }
   });
 
+  it('PDF を押すと、全画面のプレビュー（kind: pdf）で開く。画像は画像のまま', async () => {
+    h.current = [{ ...entry('doc.pdf'), mime: 'application/pdf' }, { ...entry('pic.png'), mime: 'image/png' }];
+    try {
+      const el = await render();
+      const row = (n: string) => [...el.querySelectorAll('.file-explorer-item')].find((li) => li.textContent?.includes(n))!.querySelector<HTMLElement>('.file-explorer-row')!;
+      expect(row('doc.pdf').tagName).toBe('BUTTON');
+      row('doc.pdf').querySelector<HTMLElement>('.file-explorer-icon')!.click();
+      expect(ui.lightbox).toMatchObject({ alt: 'doc.pdf', kind: 'pdf' });
+      expect(ui.lightbox!.src).toContain('/doc.pdf');
+      ui.lightbox = null;
+      row('pic.png').querySelector<HTMLElement>('.file-explorer-icon')!.click();
+      expect(ui.lightbox).toMatchObject({ alt: 'pic.png', kind: 'image' });
+    } finally {
+      h.current = null;
+      ui.lightbox = null;
+    }
+  });
+
+  it('アイコン表示の枠に地の色は付けない。選んだ項目の「…」に色を付けるのは詳細だけ', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = (readFileSync('src/components/FileExplorer.svelte', 'utf8').split('<style>')[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const thumb = css.match(/\.file-explorer-thumb \{[^}]*\}/)![0];
+    expect(thumb).not.toMatch(/background/);
+    const dots = css.match(/[^{}]*shared-entry-menu-button\)[^{}]*\{[^}]*\}/g) ?? [];
+    expect(dots.length).toBeGreaterThan(0);
+    for (const rule of dots) expect(rule).toMatch(/file-explorer-view-details/);
+  });
+
   it('サムネイルは欠けないよう、全体を枠に収める（object-fit: contain）', async () => {
     const { readFileSync } = await import('node:fs');
     for (const file of ['FileExplorer.svelte', 'PdfThumb.svelte']) {
