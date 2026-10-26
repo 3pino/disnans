@@ -4,6 +4,7 @@ import { prefs } from './prefs.svelte';
 import { deviceSettings } from './deviceSettings.svelte';
 import { setSettingsErrorHandler } from '../settingsModel';
 import type { User } from '../protocol/User';
+import type { LightboxGallery, LightboxItem } from '../lightbox';
 import { forgetPanelIn, navBack, navBackDepth, navigate, normalizeNav, type NavMode, type NavState, type NavTab, type Panel, type SettingsSubpage } from '../navHistory';
 
 export type ThemePref = 'system' | 'light' | 'dark';
@@ -51,7 +52,10 @@ class Ui {
   pluginSettings = $state<string | null>(null);
   /** 設定で開いている「操作」のサブページ。設定のタブでだけ使う */
   settingsSub = $state<SettingsSubpage | null>(null);
-  lightbox = $state<{ src: string; alt: string; downloadUrl: string } | null>(null);
+  /** 拡大表示の画像（いま見ている 1 枚）。開くのは openLightbox で */
+  lightbox = $state<LightboxItem | null>(null);
+  /** 拡大表示の前後をたどる一覧（呼ぶたびに今の一覧を返す）。ないときは前後に移れない */
+  lightboxGallery = $state<LightboxGallery | null>(null);
   /** メッセージ検索中か（コマンドで入る。メインチャットの入力欄が検索モードになり、タイムラインが結果に絞り込まれる） */
   searchOpen = $state(false);
   /** 検索中にもう一度コマンドを実行したとき、検索欄にフォーカスを戻すための合図 */
@@ -229,6 +233,12 @@ class Ui {
   forgetPanel(match: (p: NonNullable<Panel>) => boolean): void {
     if (this.panel && match(this.panel)) this.closePanel();
     this.navStack = forgetPanelIn(this.navStack, match);
+  }
+
+  /** 拡大表示を開く。gallery を渡すと、前後の画像に移れる（一覧は移るたびに取り直す）。渡さなければ 1 枚だけ */
+  openLightbox(item: LightboxItem, gallery: LightboxGallery | null = null): void {
+    this.lightboxGallery = gallery;
+    this.lightbox = item;
   }
 
   /**

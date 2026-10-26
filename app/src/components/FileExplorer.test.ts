@@ -6,6 +6,7 @@ import type { SharedEntry } from '../lib/protocol/SharedEntry';
 import { fileExplorer } from '../lib/stores/fileExplorer.svelte';
 import { sharedIndex } from '../lib/stores/sharedIndex.svelte';
 import { ui } from '../lib/stores/ui.svelte';
+import { adjacentItem } from '../lib/lightbox';
 import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
 import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
 import { explorerView } from '../lib/stores/explorerView.svelte';
@@ -726,5 +727,27 @@ describe('OS のクリップボードとの同期', () => {
     input.dispatchEvent(ev2);
     expect(ev2.defaultPrevented).toBe(false);
     input.remove();
+  });
+});
+
+describe('写真の拡大（前後は、このフォルダの画像を今の並び順で）', () => {
+  it('画像を開くと、前後は画像だけ（並び順どおり）。ファイル・PDF は含めない。←→で移る', async () => {
+    const img = (name: string): SharedEntry => ({ ...entry(name), mime: 'image/png' });
+    h.current = [img('b.png'), entry('note.txt'), img('a.png'), { ...entry('doc.pdf'), mime: 'application/pdf' }, img('c.png')];
+    try {
+      const el = await render();
+      const row = [...el.querySelectorAll<HTMLElement>('.file-explorer-item')].find((li) => li.textContent?.includes('b.png'))!;
+      row.querySelector<HTMLButtonElement>('.file-explorer-row')!.click();
+      flushSync();
+      expect(ui.lightbox?.alt).toBe('b.png');
+      const gallery = ui.lightboxGallery!();
+      expect(gallery.map((i) => i.alt)).toEqual(['a.png', 'b.png', 'c.png']);
+      // 前後の決まり（←→の動きは Lightbox.test.ts）
+      expect(adjacentItem(gallery, ui.lightbox!.src, -1)?.alt).toBe('a.png');
+    } finally {
+      h.current = null;
+      ui.lightbox = null;
+      ui.lightboxGallery = null;
+    }
   });
 });

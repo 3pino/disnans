@@ -7,6 +7,7 @@
   import { formatSize } from '../lib/format';
   import { bodyAttachmentNames } from '../lib/fileLink';
   import { ui } from '../lib/stores/ui.svelte';
+  import { chatGallery } from '../lib/chatGallery';
 
   // 本文に埋め込まれた添付は、本文の中（FileLink）で出す。ここは本文に無い添付（送信の途中の仮表示など）だけを出す
   let {
@@ -57,7 +58,7 @@
           style:width="{b.w}px"
           style:height="{b.h}px"
           style:aspect-ratio="{b.w} / {b.h}"
-          onclick={() => (ui.lightbox = { src: local[a.id] ?? fileUrl(a.id), alt: a.file_name, downloadUrl: fileUrl(a.id) })}
+          onclick={() => ui.openLightbox({ src: local[a.id] ?? fileUrl(a.id), alt: a.file_name, downloadUrl: fileUrl(a.id) }, chatGallery)}
           aria-label="{a.file_name} を開く"
         >
           <img class="attachment-image-thumb" src={thumbSrc(a)} alt={a.file_name} loading="lazy" decoding="async" />

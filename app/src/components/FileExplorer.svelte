@@ -106,9 +106,19 @@
   const VIEW_LABEL = { details: '詳細', grid: 'アイコン' } as const;
   const KEY_LABEL = { name: '名前', modified: '更新日時', size: 'サイズ' } as const;
 
+  /** 写真の拡大（前後は、このフォルダの画像を今の並び順で。ファイル・PDF は対象外） */
   function openImage(e: SharedEntry): void {
-    const src = e.file_id ? fileUrl(e.file_id) : href(e);
-    ui.lightbox = { src, alt: e.name, downloadUrl: src };
+    const item = (x: SharedEntry) => {
+      const src = x.file_id ? fileUrl(x.file_id) : href(x);
+      return { src, alt: x.name, downloadUrl: src };
+    };
+    const folderImages = () =>
+      listing?.kind === 'ok'
+        ? sortEntries(listing.entries.values(), dirView.sortKey, dirView.sortOrder)
+            .filter((x) => x.kind === 'file' && isImage(x.name, x.mime))
+            .map(item)
+        : [];
+    ui.openLightbox(item(e), folderImages);
   }
 
   // ---- 書き込み（アップロード・新しいフォルダ）。どの人も変えられる。変わったことは files.changed で全員に届く ----

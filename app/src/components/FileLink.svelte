@@ -10,6 +10,7 @@
   import { deletedAttachmentNames, fileLinkView } from '../lib/fileLink';
   import { formatSize } from '../lib/format';
   import { parentOf } from '../lib/sharedPath';
+  import { chatGallery } from '../lib/chatGallery';
 
   // 本文のファイルリンク（`[別名](パス)`）と埋め込み（`![…](パス)`）。どちらも共有フォルダのパスを今の一覧と突き合わせて表す。
   // 見た目は仮（利用者の確認を取る）。判断の決まりは lib/fileLink.ts
@@ -40,13 +41,13 @@
 {:else if view.kind === 'link'}
   <a class="file-link inline-link" href={view.href} download={view.name} target="_blank" rel="noopener">{view.text}</a>
 {:else if view.kind === 'image'}
-  <button type="button" class="file-link file-link-button" onclick={() => (ui.lightbox = { src: view.src, alt: view.alt, downloadUrl: view.src })}>{view.text}</button>
+  <button type="button" class="file-link file-link-button" onclick={() => ui.openLightbox({ src: view.src, alt: view.alt, downloadUrl: view.src }, chatGallery)}>{view.text}</button>
 {:else if view.kind === 'embedImage'}
   <button
     type="button"
     class="file-link-embed-image"
     aria-label="{view.alt} を開く"
-    onclick={() => (ui.lightbox = { src: view.src, alt: view.alt, downloadUrl: view.src })}
+    onclick={() => ui.openLightbox({ src: view.src, alt: view.alt, downloadUrl: view.src }, chatGallery)}
   >
     <img class="file-link-embed-image-img" src={view.src} alt={view.alt} loading="lazy" decoding="async" onerror={() => (broken = true)} />
   </button>

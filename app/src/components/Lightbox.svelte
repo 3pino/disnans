@@ -1,8 +1,11 @@
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
   import Download from '@lucide/svelte/icons/download';
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import IconButton from './ui/IconButton.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { adjacentItem } from '../lib/lightbox';
   import {
     DOUBLE_TAP_ZOOM,
     IDENTITY_VIEW,
@@ -21,6 +24,8 @@
   const TAP_SLOP = 8;
   /** 背景タップで閉じるまでの待ち時間（ダブルタップと区別するため） */
   const CLOSE_DELAY = 300;
+  /** 横のスワイプとみなす距離（px）。等倍のときだけ、1 本指のタッチで使う */
+  const SWIPE_MIN = 56;
 
   let view = $state<ZoomView>({ ...IDENTITY_VIEW });
   let stageEl = $state<HTMLDivElement>();
@@ -35,6 +40,23 @@
   let moved = false;
   let lastTap: TapRecord | null = null;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** スワイプの始まり（1 本指のタッチで、等倍のときだけ）。2 本指になったら取り消す */
+  let swipeFrom: Point | null = null;
+  /** このジェスチャーで 2 本指になったか（ピンチ）。ピンチの後は、スワイプにしない */
+  let pinched = false;
+
+  /** 前後の画像（一覧が無い・端のときは null）。一覧は移るたびに取り直す */
+  const items = $derived(ui.lightbox && ui.lightboxGallery ? ui.lightboxGallery() : []);
+  const prev = $derived(ui.lightbox ? adjacentItem(items, ui.lightbox.src, -1) : null);
+  const next = $derived(ui.lightbox ? adjacentItem(items, ui.lightbox.src, 1) : null);
+
+  /** 前（-1）か次（+1）の画像へ移る。端では動かさない。切り替えの表示（等倍・中央）は下の effect が戻す */
+  function step(delta: -1 | 1): void {
+    const lb = ui.lightbox;
+    if (!lb || !ui.lightboxGallery) return;
+    const target = adjacentItem(ui.lightboxGallery(), lb.src, delta);
+    if (target) ui.lightbox = target;
+  }
 
   /** 舞台（全画面）の中心を原点にした座標 */
   function local(e: { clientX: number; clientY: number }): Point {
@@ -73,9 +95,18 @@
     }
     clearTimeout(closeTimer);
     const p = local(e);
-    if (pointers.size === 0) moved = false;
+    if (pointers.size === 0) {
+      moved = false;
+      pinched = false;
+      // スワイプは 1 本指のタッチで、拡大していないときだけ（拡大中はパンを優先する）
+      swipeFrom = e.pointerType === 'touch' && view.scale <= MIN_ZOOM ? p : null;
+    }
     pointers.set(e.pointerId, p);
-    if (pointers.size > 1) moved = true;
+    if (pointers.size > 1) {
+      moved = true;
+      pinched = true;
+      swipeFrom = null;
+    }
     restart(p);
   }
 
@@ -97,7 +128,28 @@
       return;
     }
     start = null;
+    const from = swipeFrom;
+    swipeFrom = null;
+    if (e.type === 'pointerup' && from && !pinched) {
+      // 横が縦より大きく、一定以上動いたら、前か次へ（左へ動かすと次）
+      const to = local(e);
+      const dx = to.x - from.x;
+      if (Math.abs(dx) >= SWIPE_MIN && Math.abs(dx) > Math.abs(to.y - from.y)) {
+        step(dx < 0 ? 1 : -1);
+        return;
+      }
+    }
     if (e.type === 'pointerup' && !moved) handleTap(local(e));
+  }
+
+  /** ← → キーで前後へ。拡大表示が開いている間は、入力欄などより先に受ける（その分は伝えない） */
+  function onKeyCapture(e: KeyboardEvent): void {
+    if (!ui.lightbox || e.isComposing) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    step(e.key === 'ArrowLeft' ? -1 : 1);
   }
 
   /** 1 本指のタップ。ダブルタップで拡大・等倍に戻し、等倍の背景タップなら閉じる */
@@ -144,6 +196,7 @@
 
 <svelte:window
   onkeydown={(e) => e.key === 'Escape' && ui.lightbox && (ui.lightbox = null)}
+  onkeydowncapture={onKeyCapture}
   onresize={() => (view = fit(view))}
 />
 
@@ -162,6 +215,13 @@
     >
       <img bind:this={imgEl} class="lightbox-image" src={lb.src} alt={lb.alt} style:transform />
     </div>
+    <!-- 前後の画像（端では出さない）。PC 向けの押すボタン。タッチはスワイプで移る -->
+    {#if prev}
+      <button type="button" class="icon-btn lightbox-nav lightbox-prev" aria-label="前の画像" onclick={() => step(-1)}><ChevronLeft size={28} /></button>
+    {/if}
+    {#if next}
+      <button type="button" class="icon-btn lightbox-nav lightbox-next" aria-label="次の画像" onclick={() => step(1)}><ChevronRight size={28} /></button>
+    {/if}
     <div class="lightbox-toolbar">
       <span class="lightbox-file-name">{lb.alt}</span>
       <a class="icon-btn lightbox-download" href={lb.downloadUrl} download={lb.alt} target="_blank" rel="noopener" aria-label="ダウンロード"
@@ -220,6 +280,22 @@
     color: inherit;
   }
   .lightbox-toolbar > :global(.icon-btn:hover) {
+    background: var(--on-scrim-soft);
+  }
+  .lightbox-nav {
+    position: absolute;
+    top: 50%;
+    z-index: 1;
+    transform: translateY(-50%);
+    color: var(--on-scrim);
+  }
+  .lightbox-prev {
+    left: 8px;
+  }
+  .lightbox-next {
+    right: 8px;
+  }
+  .lightbox-nav:hover {
     background: var(--on-scrim-soft);
   }
   .lightbox-file-name {
