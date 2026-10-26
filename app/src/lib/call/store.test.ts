@@ -75,7 +75,7 @@ class FakeAudioContext {
 
 // ---- サーバーの代わり ----
 
-type Client = { store: CallStore; settings: CallSettings; userId: string; conn: number; toast: ReturnType<typeof vi.fn>; confirm: ReturnType<typeof vi.fn>; hold: ReturnType<typeof vi.fn>; sent: ClientEvent[] };
+type Client = { store: CallStore; settings: CallSettings; userId: string; conn: number; toast: ReturnType<typeof vi.fn>; confirm: ReturnType<typeof vi.fn>; hold: ReturnType<typeof vi.fn>; sent: ClientEvent[]; failService: () => void; serviceOff: ReturnType<typeof vi.fn> };
 
 class FakeServer {
   clients: Client[] = [];
@@ -150,7 +150,11 @@ function makeClient(userId: string, opts: { device?: string } = {}): Client {
   const toast = vi.fn();
   const confirm = vi.fn(async () => true);
   const hold = vi.fn(async () => Object.assign(() => {}, { update: vi.fn() }));
-  const client = { userId, conn: server.clients.length + 1, toast, confirm, hold, sent: [] as ClientEvent[] } as Client;
+  const serviceCbs = new Set<() => void>();
+  const serviceOff = vi.fn();
+  const client = { userId, conn: server.clients.length + 1, toast, confirm, hold, sent: [] as ClientEvent[], serviceOff } as Client;
+  // 前景サービスが後から失敗したことを、テストから起こす
+  client.failService = () => serviceCbs.forEach((f) => f());
   client.settings = new CallSettings(createCallSource());
   const deps: CallDeps = {
     send: (ev) => server.handle(client, ev),
@@ -159,6 +163,13 @@ function makeClient(userId: string, opts: { device?: string } = {}): Client {
     toast,
     confirm,
     hold,
+    onServiceFailed: (cb) => {
+      serviceCbs.add(cb);
+      return () => {
+        serviceCbs.delete(cb);
+        serviceOff();
+      };
+    },
     audio: {
       listOutputs: async () => [
         { id: 'earpiece', label: '受話口', kind: 'earpiece', selected: false },
@@ -758,7 +769,7 @@ describe('参加と音声', () => {
     a.store.onServerEvent({ type: 'error', code: 'not_in_call', message: '通話に参加していません' } as never);
     await flush();
     expect(a.store.joined).toBe(false);
-    expect(a.toast).toHaveBeenCalledWith('通話から外れました', 'info');
+    expect(a.toast).toHaveBeenCalledWith(expect.stringContaining('通話から外れました'), 'info');
   });
 
   it('一覧から自分が消えたら（サーバーが外した）、一度だけ入り直す。入り直しても外れたら通話から外れる', async () => {
@@ -778,7 +789,84 @@ describe('参加と音声', () => {
     // 2 度目に外されたら、もう入り直さない
     a.store.onServerEvent({ type: 'call.state', members: [] } as never);
     expect(a.store.joined).toBe(false);
-    expect(a.toast).toHaveBeenCalledWith('通話から外れました', 'info');
+    expect(a.toast).toHaveBeenCalledWith(expect.stringContaining('通話から外れました'), 'info');
+  });
+
+  it('静かに入り直したときは、再接続したことを 1 回知らせる（接続が戻ったため）', async () => {
+    const a = makeClient('u1');
+    await a.store.join();
+    await flush();
+    a.toast.mockClear();
+    a.store.onServerEvent({ type: 'hello' } as never);
+    await flush();
+    expect(a.store.joined).toBe(true);
+    expect(a.toast).toHaveBeenCalledWith('通話に再接続しました（接続が戻ったため）', 'info');
+    expect(a.toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('一覧から外れて入り直したときも、再接続を知らせる（理由つき）。外れたときは理由を知らせる', async () => {
+    const a = makeClient('u1');
+    await a.store.join();
+    await flush();
+    a.toast.mockClear();
+    a.store.onServerEvent({ type: 'call.state', members: [] } as never);
+    expect(a.toast).toHaveBeenCalledWith('通話に再接続しました（サーバーの一覧から外れていたため）', 'info');
+    await flush();
+    expect(a.store.listed).toBe(true);
+  });
+
+  it('接続が切れていたあとに外れたら、理由は ws_closed。切れていなければ server_removed', async () => {
+    const a = makeClient('u1');
+    await a.store.join();
+    await flush();
+    a.store.onLink(false);
+    a.store.onServerEvent({ type: 'call.state', members: [] } as never);
+    await flush();
+    a.toast.mockClear();
+    a.store.onServerEvent({ type: 'call.state', members: [] } as never);
+    expect(a.store.joined).toBe(false);
+    expect(a.toast).toHaveBeenCalledWith('通話から外れました（理由: ws_closed）', 'info');
+
+    const b = makeClient('u2');
+    await b.store.join();
+    await flush();
+    b.store.onServerEvent({ type: 'call.state', members: [] } as never);
+    await flush();
+    b.toast.mockClear();
+    b.store.onServerEvent({ type: 'call.state', members: [] } as never);
+    expect(b.toast).toHaveBeenCalledWith('通話から外れました（理由: server_removed）', 'info');
+  });
+
+  it('自分で抜けたときは、理由の知らせは出さない', async () => {
+    const a = makeClient('u1');
+    await a.store.join();
+    await flush();
+    a.toast.mockClear();
+    a.store.leave(true, 'user');
+    expect(a.toast).not.toHaveBeenCalled();
+  });
+
+  it('前景サービスを始められなかったら（常駐が throw）、バックグラウンドで切れうることを 1 回だけ知らせ、通話は続ける', async () => {
+    const a = makeClient('u1');
+    a.hold.mockRejectedValueOnce(new Error('start not allowed'));
+    await a.store.join();
+    await flush();
+    expect(a.store.joined).toBe(true);
+    expect(a.toast).toHaveBeenCalledWith('バックグラウンドでは通話が切れることがあります', 'info');
+    expect(a.toast.mock.calls.filter((c) => String(c[0]).includes('バックグラウンド'))).toHaveLength(1);
+    a.store.leave(true, 'user');
+  });
+
+  it('参加のあとに前景サービスが失敗したら知らせる（1 回だけ）。抜けたあとは購読を外す', async () => {
+    const a = makeClient('u1');
+    await a.store.join();
+    await flush();
+    a.toast.mockClear();
+    a.failService();
+    a.failService();
+    expect(a.toast.mock.calls.filter((c) => String(c[0]).includes('バックグラウンド'))).toHaveLength(1);
+    a.store.leave(true, 'user');
+    expect(a.serviceOff).toHaveBeenCalled();
   });
 
   it('外されて入り直したあと、一覧に戻らなければ 3 秒で閉じて理由を知らせる', async () => {

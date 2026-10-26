@@ -12,6 +12,7 @@ import android.os.Build
 import android.net.Uri
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -34,6 +35,7 @@ data class CallButton(val id: String, val title: String, val dismiss: Boolean)
 class CallService : Service() {
   companion object {
     private const val CHANNEL_CALL = "call"
+    private const val LOG_TAG = "disnans"
     private const val ONGOING_ID = 2
     private const val EXTRA_TITLE = "title"
     private const val EXTRA_TEXT = "text"
@@ -46,6 +48,9 @@ class CallService : Service() {
 
     /** ボタンが押されたときの届け先（プラグインが入れる）。届けたら true */
     @Volatile var actionSink: ((String) -> Boolean)? = null
+
+    /** 前景にできなかったときの届け先（プラグインが入れる）。JS に知らせる */
+    @Volatile var failedSink: (() -> Unit)? = null
 
     /** 届けられなかったボタン。JS が準備できたら受け取る */
     val pendingActions = ConcurrentLinkedQueue<String>()
@@ -111,11 +116,24 @@ class CallService : Service() {
     val list = parseButtons(intent?.getStringExtra(EXTRA_ACTIONS))
     buttons = list
     val n = notification(title, text, list)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      val type = if (microphone) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING
-      startForeground(ONGOING_ID, n, type)
-    } else {
-      startForeground(ONGOING_ID, n)
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val type = if (microphone) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING
+        startForeground(ONGOING_ID, n, type)
+      } else {
+        startForeground(ONGOING_ID, n)
+      }
+    } catch (e: Exception) {
+      // 前景にできなかった（マイクの許可の失効・開始できない条件など）。ここで落とすとアプリごと止まるので、記録して常駐なしで続ける
+      Log.w(LOG_TAG, "[call] 前景サービスを始められませんでした: ${e.javaClass.simpleName}: ${e.message}")
+      running = false
+      try {
+        failedSink?.invoke()
+      } catch (ignored: Exception) {
+        // 知らせられなくても、通話は続ける
+      }
+      stopSelf()
+      return START_NOT_STICKY
     }
     if (!running && microphone) CallAudio.begin(this)
     holdWakeLock()

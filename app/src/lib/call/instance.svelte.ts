@@ -1,7 +1,7 @@
 import { client } from '../stores/client.svelte';
 import { ui } from '../stores/ui.svelte';
 import { deviceKind } from '../deviceKind.svelte';
-import { holdBackground } from '../plugins/background';
+import { holdBackground, onBackgroundServiceFailed } from '../plugins/background';
 import { audio } from '../plugins/audio';
 import { toPluginUser } from '../plugins/sessions';
 import { createCallApi } from './api';
@@ -17,6 +17,7 @@ export const call = new CallStore({
   toast: (text, kind) => ui.toast(text, kind),
   confirm: (o) => ui.confirm(o),
   hold: (opts) => holdBackground(opts),
+  onServiceFailed: (cb) => onBackgroundServiceFailed(cb),
   audio,
   settings: callSettings,
   deviceKind: () => deviceKind.value,

@@ -53,6 +53,8 @@ export type CallDeps = {
   confirm(opts: { title: string; body?: string; okLabel: string; danger?: boolean }): Promise<boolean>;
   /** 画面を切っても動き続けるための常駐（Android） */
   hold(opts: Disnans.BackgroundOptions): Promise<Disnans.BackgroundHandle>;
+  /** 常駐の前景サービスを始められなかったとき（後から）呼ばれる。戻り値の関数で外す（任意） */
+  onServiceFailed?(cb: () => void): () => void;
   audio: Disnans.Audio;
   settings: CallSettings;
   /** このデバイスの種類（smartphone / tablet / laptop / monitor） */
@@ -401,13 +403,24 @@ export class CallStore {
     this.deps.toast('通話の接続が切れました。つながると自動で入り直します', 'info');
   }
 
-  /** つなぎ直したら、サーバーは自分を通話から外している。入り直す */
+  /** つなぎ直したら、サーバーは自分を通話から外している。入り直す（入り直したことは 1 回知らせる） */
   private onReconnect(): void {
     if (!this.joined) return;
     // 前の接続 ID は、前の接続がサーバーに残っているあいだは使えない（peer_in_use）。新しい ID で入る
     this.rejoinRetried = false;
     this.rejoin();
+    this.deps.toast('通話に再接続しました（接続が戻ったため）', 'info');
   }
+
+  /** 前景サービスが無いまま（開始できなかった・後から止まった）。バックグラウンドで切れうることを 1 回だけ知らせる */
+  private noticeBackground(): void {
+    if (this.backgroundNoticed) return;
+    this.backgroundNoticed = true;
+    console.warn('[call] 前景サービスが動いていません（バックグラウンドでは通話が切れることがあります）');
+    this.deps.toast('バックグラウンドでは通話が切れることがあります', 'info');
+  }
+  private backgroundNoticed = false;
+  private serviceOff: (() => void) | null = null;
 
   /** peer_in_use の再入りを、1 回の入り直しにつき 1 度だけにする */
   private rejoinRetried = false;
@@ -444,10 +457,13 @@ export class CallStore {
       console.warn('[call] サーバーの一覧から外れたので、入り直します');
       this.listed = false;
       this.rejoin();
+      this.deps.toast('通話に再接続しました（サーバーの一覧から外れていたため）', 'info');
       return;
     }
-    this.leave(false, 'not-listed');
-    this.deps.toast('通話から外れました', 'info');
+    // 理由: 接続が切れていたなら ws_closed、切れていなかったのにサーバーが外したなら server_removed（サーバーの理由は見えない）
+    const reason = this.linkDown ? 'ws_closed' : 'server_removed';
+    this.leave(false, reason);
+    this.deps.toast(`通話から外れました（理由: ${reason}）`, 'info');
   }
   /** 出力の時計（ctx.currentTime）の見張り。進まないまま止まっているかを見る */
   private stallCtxTime = -1;
@@ -646,6 +662,9 @@ export class CallStore {
       // マイクの許可を得たあとで常駐を始める（Android 14 以降は許可前だと失敗する）
       try {
         this.notifyKey = '';
+        this.backgroundNoticed = false;
+        this.serviceOff?.();
+        this.serviceOff = this.deps.onServiceFailed?.(() => this.noticeBackground()) ?? null;
         this.background = await this.deps.hold({
           microphone: true,
           ...this.notification(),
@@ -659,7 +678,7 @@ export class CallStore {
         this.notifyKey = JSON.stringify(this.notification());
       } catch (e) {
         console.error('[call] 常駐を始められませんでした', e);
-        this.deps.toast('画面を消すと通話が切れることがあります', 'info');
+        this.noticeBackground();
       }
 
       this.localStream = stream;
@@ -744,6 +763,8 @@ export class CallStore {
     this.limitKey = '';
     this.background?.();
     this.background = null;
+    this.serviceOff?.();
+    this.serviceOff = null;
     this.refresh();
   }
 

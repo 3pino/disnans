@@ -11,6 +11,10 @@ type Held = Disnans.BackgroundOptions;
 /** 通知のボタンが押されたときのイベント名（notifier プラグインの trigger("call_action")） */
 const ACTION_EVENT = 'call_action';
 let listening: Promise<void> | null = null;
+/** 前景サービスを始められなかったときのイベント名（notifier プラグインの trigger("call_service_failed")） */
+const SERVICE_FAILED_EVENT = 'call_service_failed';
+const failedListeners = new Set<() => void>();
+let failedListening: Promise<void> | null = null;
 
 const held = new Set<Held>();
 /** サービスの開始・停止を順番に行う */
@@ -51,6 +55,37 @@ function ensureListener(): Promise<void> {
     });
   }
   return listening;
+}
+
+/**
+ * 前景サービスを始められなかった（Android）ことを知らせる。戻り値の関数で外す。
+ * 外れていなければ、サービスの失敗のたびに cb が呼ばれる（JS が準備できる前に起きた分は届かない）
+ */
+export function onBackgroundServiceFailed(cb: () => void): () => void {
+  if (!capabilities().backgroundService) return () => {};
+  failedListeners.add(cb);
+  if (!failedListening) {
+    failedListening = (async () => {
+      const { addPluginListener } = await import('@tauri-apps/api/core');
+      await addPluginListener(
+        'notifier',
+        SERVICE_FAILED_EVENT,
+        () => failedListeners.forEach((f) => {
+          try {
+            f();
+          } catch (e) {
+            console.error('前景サービスの失敗の通知で例外', e);
+          }
+        }),
+      );
+    })().catch((e) => {
+      failedListening = null;
+      console.warn('前景サービスの失敗を受け取れません', e);
+    });
+  }
+  return () => {
+    failedListeners.delete(cb);
+  };
 }
 
 function sync(): Promise<void> {

@@ -122,11 +122,13 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     NotifyService.createChannels(activity)
     launchTarget = targetOf(activity.intent)
     CallService.actionSink = { id -> deliverCallAction(id) }
+    CallService.failedSink = { deliverServiceFailed() }
     handleShare(activity.intent)
   }
 
   override fun onDestroy() {
     CallService.actionSink = null
+    CallService.failedSink = null
     shareExecutor.shutdown()
   }
 
@@ -144,6 +146,12 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     o.put("id", id)
     trigger("call_action", o)
     return true
+  }
+
+  /** 前景サービスを始められなかったことを、JS（リスナーがあれば）に知らせる */
+  private fun deliverServiceFailed() {
+    if (webView == null || !hasListener("call_service_failed")) return
+    trigger("call_service_failed", JSObject())
   }
 
   /** 届けられなかったボタンを受け取る（リスナーを付けた直後に呼ぶ） */
