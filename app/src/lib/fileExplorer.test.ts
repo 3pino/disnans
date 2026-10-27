@@ -58,10 +58,12 @@ describe('breadcrumbs', () => {
 });
 
 describe('entryAction', () => {
-  it('フォルダは中へ、画像は拡大、ほかはファイル', () => {
+  it('フォルダは中へ、画像は拡大、PDF はプレビュー、ほかはファイル', () => {
     expect(entryAction(e('d', 'dir'))).toBe('enter');
     expect(entryAction(e('a.PNG'))).toBe('image');
     expect(entryAction(e('x', 'file', 'image/jpeg'))).toBe('image');
-    expect(entryAction(e('a.pdf'))).toBe('file');
+    expect(entryAction(e('a.pdf'))).toBe('pdf');
+    expect(entryAction(e('x', 'file', 'application/pdf'))).toBe('pdf');
+    expect(entryAction(e('a.txt'))).toBe('file');
   });
 });

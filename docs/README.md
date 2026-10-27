@@ -1,6 +1,6 @@
 # ドキュメントの目次
 
-文書の目次はこのファイルだけです。文書を足したら、ここに載せてください（書き方は [CONTRIBUTING.md](../CONTRIBUTING.md#ドキュメント)）。未対応の項目・既知の問題・進行中の作業は [FEEDBACKS.md](../FEEDBACKS.md) にあります。
+文書を足したら、ここに載せてください（書き方は [CONTRIBUTING.md](../CONTRIBUTING.md#ドキュメント)）。未対応の項目・既知の問題・進行中の作業は [FEEDBACKS.md](../FEEDBACKS.md) にあります。
 
 ## 利用者・管理者
 

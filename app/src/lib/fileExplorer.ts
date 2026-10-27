@@ -1,7 +1,7 @@
 // 共有フォルダを見る画面（components/FileExplorer.svelte）の決まり。見た目は持たない。
 
 import type { SharedEntry } from './protocol/SharedEntry';
-import { isImage } from './fileLink';
+import { isImage, isPdf } from './fileLink';
 
 /** 並べる key（名前・更新日時・サイズ）と向き */
 export type SortKey = 'name' | 'modified' | 'size';
@@ -43,8 +43,9 @@ export function breadcrumbs(dir: string): { name: string; path: string }[] {
   return out;
 }
 
-/** 項目を押したときの動き: フォルダは中へ、画像は拡大表示、ほかはファイルとして開く・保存する */
-export function entryAction(e: SharedEntry): 'enter' | 'image' | 'file' {
+/** 項目を押したときの動き: フォルダは中へ、画像と PDF は全画面で見る、ほかはファイルとして開く・保存する */
+export function entryAction(e: SharedEntry): 'enter' | 'image' | 'pdf' | 'file' {
   if (e.kind === 'dir') return 'enter';
-  return isImage(e.name, e.mime) ? 'image' : 'file';
+  if (isImage(e.name, e.mime)) return 'image';
+  return isPdf(e.name, e.mime) ? 'pdf' : 'file';
 }

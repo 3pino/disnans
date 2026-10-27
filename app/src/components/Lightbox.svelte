@@ -4,6 +4,7 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import IconButton from './ui/IconButton.svelte';
+  import PdfViewer from './PdfViewer.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { adjacentItem } from '../lib/lightbox';
   import {
@@ -144,7 +145,8 @@
 
   /** ← → キーで前後へ。拡大表示が開いている間は、入力欄などより先に受ける（その分は伝えない） */
   function onKeyCapture(e: KeyboardEvent): void {
-    if (!ui.lightbox || e.isComposing) return;
+    // PDF は前後に移らない（←→ はビューアーの横スクロールに使う）
+    if (!ui.lightbox || ui.lightbox.kind === 'pdf' || e.isComposing) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
@@ -203,6 +205,10 @@
 {#if ui.lightbox}
   {@const lb = ui.lightbox}
   <div class="lightbox" role="dialog" aria-modal="true" aria-label={lb.alt}>
+    {#if lb.kind === 'pdf'}
+      <!-- PDF はページを縦に並べてスクロールで見る（拡大・縮小はビューアーのボタン・Ctrl+ホイール） -->
+      <PdfViewer src={lb.src} />
+    {:else}
     <div
       class="lightbox-stage"
       class:zoomed={view.scale > MIN_ZOOM}
@@ -215,6 +221,7 @@
     >
       <img bind:this={imgEl} class="lightbox-image" src={lb.src} alt={lb.alt} style:transform />
     </div>
+    {/if}
     <!-- 前後の画像（端では出さない）。PC 向けの押すボタン。タッチはスワイプで移る -->
     {#if prev}
       <button type="button" class="icon-btn lightbox-nav lightbox-prev" aria-label="前の画像" onclick={() => step(-1)}><ChevronLeft size={28} /></button>

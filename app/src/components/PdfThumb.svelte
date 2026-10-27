@@ -1,5 +1,5 @@
 <script lang="ts">
-  import FileIcon from '@lucide/svelte/icons/file';
+  import FileText from '@lucide/svelte/icons/file-text';
   import { pdfThumb } from '../lib/pdfThumb';
 
   // 共有フォルダのアイコン表示の、PDF の 1 ページ目のサムネイル。画面に入ってから作る（作るまで・作れなければファイルの絵）
@@ -37,7 +37,7 @@
   {#if src}
     <img {src} alt="" decoding="async" />
   {:else}
-    <FileIcon size={32} />
+    <FileText size={64} />
   {/if}
 </span>
 

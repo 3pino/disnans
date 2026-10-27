@@ -2,6 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import FileIcon from '@lucide/svelte/icons/file';
+  import FileText from '@lucide/svelte/icons/file-text';
   import Folder from '@lucide/svelte/icons/folder';
   import ImageIcon from '@lucide/svelte/icons/image';
   import Upload from '@lucide/svelte/icons/upload';
@@ -119,6 +120,12 @@
             .map(item)
         : [];
     ui.openLightbox(item(e), folderImages);
+  }
+
+  /** PDF のプレビュー（ページを並べて見る）。前後の切り替えはしない（ビューアーの横スクロール・ピンチと重なるため） */
+  function openPdf(e: SharedEntry): void {
+    const src = e.file_id ? fileUrl(e.file_id) : href(e);
+    ui.openLightbox({ src, alt: e.name, downloadUrl: src, kind: 'pdf' });
   }
 
   // ---- 書き込み（アップロード・新しいフォルダ）。どの人も変えられる。変わったことは files.changed で全員に届く ----
@@ -732,7 +739,7 @@
                     <img src={thumb} alt="" loading="lazy" decoding="async" />
                   {:else if pdf}
                     <PdfThumb url={pdf.url} key={pdf.key} />
-                  {:else if action === 'enter'}<Folder size={32} />{:else if action === 'image'}<ImageIcon size={32} />{:else}<FileIcon size={32} />{/if}
+                  {:else if action === 'enter'}<Folder size={64} />{:else if action === 'image'}<ImageIcon size={64} />{:else if action === 'pdf'}<FileText size={64} />{:else}<FileIcon size={64} />{/if}
                 </span>
                 {@render name()}
               {:else}
@@ -740,7 +747,7 @@
                 <span class="file-explorer-icon">
                   {#if explorerSelection.active}
                     <span class="file-explorer-check" class:file-explorer-check-on={explorerSelection.has(e.path)}>{#if explorerSelection.has(e.path)}<SquareCheck size={18} />{:else}<Square size={18} />{/if}</span>
-                  {:else if action === 'enter'}<Folder size={18} />{:else if action === 'image'}<ImageIcon size={18} />{:else}<FileIcon size={18} />{/if}
+                  {:else if action === 'enter'}<Folder size={18} />{:else if action === 'image'}<ImageIcon size={18} />{:else if action === 'pdf'}<FileText size={18} />{:else}<FileIcon size={18} />{/if}
                 </span>
                 {@render name()}
                 <span class="file-explorer-col-kind">{kindLabel(e)}</span>
@@ -755,8 +762,8 @@
               <button type="button" class="file-explorer-row" aria-pressed={explorerSelection.has(e.path)} onclick={(ev) => rowClick(ev, e, () => {})}>{@render row()}</button>
             {:else if action === 'enter'}
               <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e, () => fileExplorer.open(e.path))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
-            {:else if action === 'image'}
-              <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e, () => openImage(e))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
+            {:else if action === 'image' || action === 'pdf'}
+              <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e, () => (action === 'pdf' ? openPdf(e) : openImage(e)))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
             {:else}
               <a class="file-explorer-row" href={href(e)} download={e.name} target="_blank" rel="noopener" onclick={(ev) => rowClick(ev, e, () => {})} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</a>
             {/if}
@@ -923,11 +930,14 @@
     color: var(--text-muted);
     white-space: nowrap;
   }
+  /* 操作は ≡ と同じく右に寄せ、≡ とは少し空ける */
   .file-explorer-selection-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1);
+    margin-left: auto;
+    margin-right: var(--space-6);
   }
   /* 選択の印（詳細は、アイコンと同じ場所に入れ替える。グリッドは画像の上に重ねる） */
   /* 選んでいない印は灰色、選んだ印は水色 */
@@ -948,7 +958,8 @@
     --file-explorer-item-bg: color-mix(in oklch, var(--accent) 18%, var(--bg));
     background: var(--file-explorer-item-bg);
   }
-  .file-explorer-item-selected > :global(.shared-entry-actions .shared-entry-menu-button) {
+  /* 詳細では「…」が右端に固定され下が透けないので、選んだ行の色を「…」にも付ける（アイコン表示は付けない） */
+  .file-explorer-view-details .file-explorer-item-selected > :global(.shared-entry-actions .shared-entry-menu-button) {
     background: var(--file-explorer-item-bg);
   }
   .file-explorer-popup {
@@ -1082,11 +1093,10 @@
     justify-content: center;
     aspect-ratio: 1;
     border-radius: var(--radius-xs);
-    background: var(--surface-2);
     color: var(--text-muted);
     overflow: hidden;
   }
-  /* 画像は欠けないよう、全体を枠に収める（余りは枠の地の色） */
+  /* 画像は欠けないよう、全体を枠に収める（枠に地の色は付けない） */
   .file-explorer-thumb img {
     width: 100%;
     height: 100%;

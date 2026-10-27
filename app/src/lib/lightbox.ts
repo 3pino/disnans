@@ -5,7 +5,8 @@ import type { Message } from './protocol/Message';
 import { fileUrl } from './config';
 import { attachmentRefs, bodyAttachmentNames, type AttachmentRef } from './fileLink';
 
-export type LightboxItem = { src: string; alt: string; downloadUrl: string };
+/** 拡大表示の 1 件。kind: 'pdf' は PDF のページを並べて見る（前後の一覧には入れない）。無ければ画像 */
+export type LightboxItem = { src: string; alt: string; downloadUrl: string; kind?: 'image' | 'pdf' };
 
 /** 前後をたどる一覧。呼ぶたびに今の一覧を返す */
 export type LightboxGallery = () => LightboxItem[];
