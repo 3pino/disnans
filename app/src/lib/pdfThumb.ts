@@ -1,5 +1,7 @@
+import { loadPdfjs } from './pdfjs';
+
 // PDF の 1 ページ目の縮小画像（共有フォルダのアイコン表示のサムネイル）。
-// pdf.js（古い WebView でも動く legacy 版）は、PDF のサムネイルを初めて作るときだけ読み込む。
+// pdf.js（lib/pdfjs.ts）は、PDF のサムネイルを初めて作るときだけ読み込む。
 // サーバーは Range に答えるので、大きな PDF でも 1 ページ目に要る分だけ読む。作った画像は object URL で覚えておく
 
 /** これより大きい PDF はサムネイルを作らない（Range が効かない環境で全部を読まないように） */
@@ -43,10 +45,7 @@ async function limited<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function render(url: string, px: number): Promise<string | null> {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
-  }
+  const pdfjs = await loadPdfjs();
   // 1 ページ目に要る分だけ読む（先読み・流し読みはしない）。PDF の中のスクリプトは評価しない
   const task = pdfjs.getDocument({ url, isEvalSupported: false, disableAutoFetch: true, disableStream: true });
   try {
