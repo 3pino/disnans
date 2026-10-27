@@ -56,6 +56,18 @@ describe('PDF のプレビュー', () => {
     expect(zoomOut.disabled).toBe(false);
   });
 
+  it('PDF では ←→ キーを前後の切り替えに使わない（ビューアーの横スクロールに残す）', async () => {
+    instance = mount(Lightbox, { target: document.body });
+    const pdf = { src: 'a.pdf', alt: 'a.pdf', downloadUrl: 'a.pdf', kind: 'pdf' as const };
+    ui.openLightbox(pdf, () => [pdf, { src: 'b.png', alt: 'b.png', downloadUrl: 'b.png' }]);
+    flushSync();
+    const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+    window.dispatchEvent(ev);
+    flushSync();
+    expect(ev.defaultPrevented).toBe(false);
+    expect(ui.lightbox?.src).toBe('a.pdf');
+  });
+
   it('画像（kind なし）は、これまでどおり画像を出す', () => {
     instance = mount(Lightbox, { target: document.body });
     ui.lightbox = { src: 'x.png', alt: 'x.png', downloadUrl: 'x.png' };

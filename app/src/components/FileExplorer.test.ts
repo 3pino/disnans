@@ -430,7 +430,7 @@ describe('表示方法と並び順', () => {
     }
   });
 
-  it('PDF を押すと、全画面のプレビュー（kind: pdf）で開く。画像は画像のまま', async () => {
+  it('PDF を押すと、全画面のプレビュー（kind: pdf）で開き、前後には移らない。画像の前後の一覧に PDF は入らない', async () => {
     h.current = [{ ...entry('doc.pdf'), mime: 'application/pdf' }, { ...entry('pic.png'), mime: 'image/png' }];
     try {
       const el = await render();
@@ -439,9 +439,12 @@ describe('表示方法と並び順', () => {
       row('doc.pdf').querySelector<HTMLElement>('.file-explorer-icon')!.click();
       expect(ui.lightbox).toMatchObject({ alt: 'doc.pdf', kind: 'pdf' });
       expect(ui.lightbox!.src).toContain('/doc.pdf');
+      expect(ui.lightboxGallery).toBeNull();
       ui.lightbox = null;
       row('pic.png').querySelector<HTMLElement>('.file-explorer-icon')!.click();
-      expect(ui.lightbox).toMatchObject({ alt: 'pic.png', kind: 'image' });
+      expect(ui.lightbox).toMatchObject({ alt: 'pic.png' });
+      expect(ui.lightbox!.kind).toBeUndefined();
+      expect(ui.lightboxGallery!().map((i) => i.alt)).toEqual(['pic.png']);
     } finally {
       h.current = null;
       ui.lightbox = null;
