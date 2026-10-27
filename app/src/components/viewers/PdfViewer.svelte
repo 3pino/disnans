@@ -44,8 +44,9 @@
       const pdfjs = await loadPdfjs();
       if (!alive) return;
       // PDF の中のスクリプトは評価しない
-      // 前後の隣のものも開くので、全体は先読みしない（見るページの分だけ Range で取る）
-      const task = pdfjs.getDocument({ url, isEvalSupported: false, disableAutoFetch: true });
+      // 前後の隣のものも開くので、全体は先読みしない（見るページの分だけ Range で取る）。
+      // pdf.js はストリーミングも止めないと disableAutoFetch が効かない。
+      const task = pdfjs.getDocument({ url, isEvalSupported: false, disableAutoFetch: true, disableStream: true });
       destroy = () => task.destroy();
       const d = await task.promise;
       const first = (await d.getPage(1)).getViewport({ scale: 1 });

@@ -6,7 +6,7 @@ import { ui } from '../../lib/stores/ui.svelte';
 
 // PDF のプレビュー（Lightbox の kind: 'pdf'）。pdf.js は差し替える（ページの数と大きさだけ返す）
 const h = vi.hoisted(() => ({
-  getDocument: vi.fn((_opts: { url: string; isEvalSupported: boolean; disableAutoFetch?: boolean }) => ({
+  getDocument: vi.fn((_opts: { url: string; isEvalSupported: boolean; disableAutoFetch?: boolean; disableStream?: boolean }) => ({
     promise: Promise.resolve({
       numPages: 3,
       getPage: async () => ({
@@ -43,7 +43,7 @@ describe('PDF のプレビュー', () => {
     ui.lightbox = { src: 'http://s/api/shared/a.pdf', alt: 'a.pdf', downloadUrl: 'http://s/api/shared/a.pdf', kind: 'pdf' };
     flushSync();
     await vi.waitFor(() => expect(document.querySelectorAll('.pdf-viewer-page')).toHaveLength(3));
-    expect(h.getDocument).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://s/api/shared/a.pdf', isEvalSupported: false, disableAutoFetch: true }));
+    expect(h.getDocument).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://s/api/shared/a.pdf', isEvalSupported: false, disableAutoFetch: true, disableStream: true }));
     expect(document.querySelector('.pdf-viewer-count')?.textContent).toBe('3 ページ');
     // 画像の舞台は出さない。ファイル名・ダウンロード・閉じるは画像と同じ
     expect(document.querySelector('.image-viewer')).toBeNull();
