@@ -4,7 +4,7 @@
 // - タッチは Touch Events で受ける（2 本指の touchmove を止めて、ブラウザーのスクロール・拡大に取られないようにするため。
 //   Pointer Events は、ブラウザーがスクロールを始めると pointercancel で切れる）
 // - マウスは Pointer Events（ドラッグで移動、ダブルクリックで拡大）
-// - Ctrl+ホイールは、Windows・macOS のトラックパッドのピンチもこれで届く。小さい量が続けて届くので、量に比例して拡大する
+// - Ctrl+ホイールは、トラックパッドのピンチもこれで届く。小さい量が続けて届くので、量に比例して拡大する
 
 import { isDoubleTap, type Point, type TapRecord } from './zoom';
 
