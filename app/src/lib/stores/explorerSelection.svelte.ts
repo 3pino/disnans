@@ -32,10 +32,11 @@ class ExplorerSelection {
     this.active = true;
   }
 
-  /** 選ぶ・選ばないを切り替える（選択モードのまま） */
+  /** 選ぶ・選ばないを切り替える。最後の 1 件を外したら（0 件になったら）選択モードを終える */
   toggle(path: string): void {
     if (this.set.has(path)) this.set.delete(path);
     else this.set.add(path);
+    if (this.set.size === 0) this.active = false;
   }
 
   /** 与えた項目をすべて選ぶ（選択モードに入る） */

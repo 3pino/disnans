@@ -1,18 +1,19 @@
 <script lang="ts">
   import ZoomIn from '@lucide/svelte/icons/zoom-in';
   import ZoomOut from '@lucide/svelte/icons/zoom-out';
-  import { tick } from 'svelte';
-  import IconButton from './ui/IconButton.svelte';
-  import { PDF_DOUBLE_TAP_ZOOM, PDF_MAX_ZOOM, PDF_MIN_ZOOM, anchoredScroll, clampZoom, stepZoom } from '../lib/pdfZoom';
-  import { isDoubleTap, type TapRecord } from '../lib/zoom';
-  import { loadPdfjs } from '../lib/pdfjs';
-  import { attachmentActionText } from '../lib/fileLink';
+  import { tick, untrack } from 'svelte';
+  import IconButton from '../ui/IconButton.svelte';
+  import { PDF_DOUBLE_TAP_ZOOM, PDF_MAX_ZOOM, PDF_MIN_ZOOM, anchoredScroll, clampZoom, stepZoom } from '../../lib/pdfZoom';
+  import { loadPdfjs } from '../../lib/pdfjs';
+  import { attachmentActionText } from '../../lib/fileLink';
+  import { zoomGesture, type GestureFrame } from '../../lib/zoomGesture';
+  import type { ViewerProps } from '../../lib/viewers';
   import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
-  // PDF のプレビュー（全画面の Lightbox の中）。ページを縦に並べてスクロールで見る。
+  // PDF のビューアー（拡大表示の中）。ページを縦に並べてスクロールで見る。
   // ページは画面に近づいてから描き、拡大・縮小（ピンチ・ダブルタップ・ボタン・Ctrl+ホイール）では見えているページだけ描き直す。
-  // ピンチの間は見た目だけ拡大し（描き直さない）、指を離したらその倍率で描く
-  let { src }: { src: string } = $props();
+  // 等倍のときは横にスクロールしない（1 本指の左右の動きは、Lightbox が前後の切り替えに使う）
+  let { src, active, onzoom }: ViewerProps = $props();
 
   /** 等倍のときのページの幅の上限（px） */
   const MAX_PAGE_WIDTH = 900;
@@ -43,7 +44,8 @@
       const pdfjs = await loadPdfjs();
       if (!alive) return;
       // PDF の中のスクリプトは評価しない
-      const task = pdfjs.getDocument({ url, isEvalSupported: false });
+      // 前後の隣のものも開くので、全体は先読みしない（見るページの分だけ Range で取る）
+      const task = pdfjs.getDocument({ url, isEvalSupported: false, disableAutoFetch: true });
       destroy = () => task.destroy();
       const d = await task.promise;
       const first = (await d.getPage(1)).getViewport({ scale: 1 });
@@ -139,107 +141,80 @@
     });
   }
 
-  /** スクロールの枠の左上からの位置 */
-  function local(p: { clientX: number; clientY: number }): { x: number; y: number } {
-    const r = scroller!.getBoundingClientRect();
-    return { x: p.clientX - r.left, y: p.clientY - r.top };
-  }
+  // ---- ピンチ・ダブルタップ・Ctrl+ホイール（lib/zoomGesture）。1 本指のスクロールはブラウザーに任せる ----
+  // ピンチ・ホイールの間は見た目だけ拡大し（描き直さない）、終わったらその倍率で描く
 
-  // ---- ピンチ・ダブルタップ（タッチ）。1 本指のスクロールはブラウザーに任せる ----
+  /** 見た目だけの拡大の始まり（倍率と中心）。null はしていない */
+  let preview: { zoom: number; mid: { x: number; y: number } } | null = null;
+  /** 見た目の倍率（始まりの倍率に対して） */
+  let previewScale = 1;
+  let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+  /** ホイールが止まってから描き直すまで（ms） */
+  const WHEEL_SETTLE_MS = 160;
 
-  /** ピンチの始まり（指の間隔・倍率・中点）。null はピンチしていない */
-  let pinch: { dist: number; zoom: number; mid: { x: number; y: number } } | null = null;
-  /** ピンチ中の見た目の倍率（始まりの倍率に対して） */
-  let pinchScale = 1;
-  let tapFrom: { x: number; y: number } | null = null;
-  let lastTap: TapRecord | null = null;
-
-  function spread(t: TouchList): { dist: number; mid: { x: number; y: number } } {
-    const a = local(t[0]);
-    const b = local(t[1]);
-    return { dist: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
-  }
-
-  /** ピンチ中の見た目（ページの並びを、中点を中心に拡大する） */
-  function showPinch(scale: number): void {
-    if (!pagesEl || !scroller || !pinch) return;
-    const ox = scroller.scrollLeft + pinch.mid.x - pagesEl.offsetLeft;
-    const oy = scroller.scrollTop + pinch.mid.y - pagesEl.offsetTop;
+  /** 見た目の拡大（ページの並びを、中心の点で拡大する） */
+  function showPreview(scale: number): void {
+    if (!pagesEl || !scroller || !preview) return;
+    previewScale = clampZoom(preview.zoom * scale) / preview.zoom;
+    const ox = scroller.scrollLeft + preview.mid.x - pagesEl.offsetLeft;
+    const oy = scroller.scrollTop + preview.mid.y - pagesEl.offsetTop;
     pagesEl.style.transformOrigin = `${ox}px ${oy}px`;
-    pagesEl.style.transform = scale === 1 ? '' : `scale(${scale})`;
+    pagesEl.style.transform = previewScale === 1 ? '' : `scale(${previewScale})`;
   }
 
-  function onTouchStart(e: TouchEvent): void {
-    if (e.touches.length >= 2) {
-      const g = spread(e.touches);
-      pinch = { dist: Math.max(1, g.dist), zoom, mid: g.mid };
-      pinchScale = 1;
-      tapFrom = null;
-      return;
-    }
-    tapFrom = e.touches.length === 1 ? local(e.touches[0]) : null;
+  /** 見た目の拡大を終え、その倍率で描き直す */
+  function commitPreview(): void {
+    clearTimeout(wheelTimer);
+    if (!preview) return;
+    const { zoom: from, mid } = preview;
+    const scale = previewScale;
+    if (pagesEl) pagesEl.style.transform = '';
+    preview = null;
+    previewScale = 1;
+    setZoom(from * scale, mid);
   }
 
-  function onTouchMove(e: TouchEvent): void {
-    if (tapFrom && e.touches.length === 1) {
-      const p = local(e.touches[0]);
-      if (Math.hypot(p.x - tapFrom.x, p.y - tapFrom.y) > 8) tapFrom = null;
-    }
-    if (!pinch || e.touches.length < 2) return;
-    // 2 本指の間はスクロールさせず、拡大だけする
-    e.preventDefault();
-    const g = spread(e.touches);
-    pinchScale = clampZoom((pinch.zoom * g.dist) / pinch.dist) / pinch.zoom;
-    showPinch(pinchScale);
-  }
-
-  function onTouchEnd(e: TouchEvent): void {
-    if (pinch && e.touches.length < 2) {
-      const { zoom: from, mid } = pinch;
-      showPinch(1);
-      pinch = null;
-      lastTap = null;
-      setZoom(from * pinchScale, mid);
-      return;
-    }
-    if (e.touches.length > 0 || !tapFrom) return;
-    const tap = { t: Date.now(), x: tapFrom.x, y: tapFrom.y };
-    tapFrom = null;
-    if (isDoubleTap(lastTap, tap)) {
+  const gesture = {
+    start: (f: GestureFrame) => {
+      commitPreview();
+      if (active && f.count >= 2) preview = { zoom, mid: f.mid };
+    },
+    move: (first: GestureFrame, now: GestureFrame) => {
+      if (preview && now.count >= 2) showPreview(now.dist / Math.max(1, first.dist));
+    },
+    end: () => commitPreview(),
+    tap: (p: { x: number; y: number }, double: boolean) => {
       // ダブルタップ: 等倍なら拡大、拡大中なら等倍に戻す（タップした所を中心に）
-      lastTap = null;
-      e.preventDefault();
-      setZoom(zoom > PDF_MIN_ZOOM + 0.01 ? PDF_MIN_ZOOM : PDF_DOUBLE_TAP_ZOOM, tap);
-      return;
-    }
-    lastTap = tap;
-  }
+      if (active && double) setZoom(zoom > PDF_MIN_ZOOM + 0.01 ? PDF_MIN_ZOOM : PDF_DOUBLE_TAP_ZOOM, p);
+    },
+    wheel: (factor: number, p: { x: number; y: number }) => {
+      if (!active) return;
+      // トラックパッドのピンチは小さい量が続けて届く。止まるまでは見た目だけ拡大する
+      if (!preview) preview = { zoom, mid: p };
+      showPreview(previewScale * factor);
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(commitPreview, WHEEL_SETTLE_MS);
+    },
+  };
 
-  // 2 本指の動きを止めるため、touchmove は passive にしない。Ctrl+ホイール（トラックパッドのピンチ）でも拡大・縮小する
+  const zoomed = $derived(zoom > PDF_MIN_ZOOM + 0.001);
   $effect(() => {
-    const el = scroller;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return;
-      e.preventDefault();
-      setZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), local(e));
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    el.addEventListener('touchend', onTouchEnd, { passive: false });
-    el.addEventListener('touchcancel', onTouchEnd, { passive: false });
-    return () => {
-      el.removeEventListener('wheel', onWheel);
-      el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('touchend', onTouchEnd);
-      el.removeEventListener('touchcancel', onTouchEnd);
-    };
+    const z = zoomed;
+    untrack(() => onzoom?.(z));
+  });
+
+  // 隣（前後）に回ったら、等倍・先頭に戻す
+  $effect(() => {
+    if (active) return;
+    untrack(() => {
+      commitPreview();
+      zoom = PDF_MIN_ZOOM;
+      if (scroller) scroller.scrollTop = 0;
+    });
   });
 </script>
 
-<div class="pdf-viewer scroll" bind:this={scroller} bind:clientWidth={scrollerWidth}>
+<div class="pdf-viewer scroll" class:pdf-viewer-zoomed={zoomed} bind:this={scroller} bind:clientWidth={scrollerWidth} use:zoomGesture={gesture}>
   {#if error}
     <p class="pdf-viewer-status" role="alert">PDF を開けませんでした: {error}</p>
   {:else if !doc}
@@ -258,7 +233,7 @@
     </div>
   {/if}
 </div>
-{#if doc}
+{#if doc && active}
   <div class="pdf-viewer-zoom">
     <span class="pdf-viewer-count">{count} ページ</span>
     <IconButton label="縮小" disabled={zoom <= PDF_MIN_ZOOM} onclick={() => setZoom(stepZoom(zoom, -1))}><ZoomOut size={20} /></IconButton>
@@ -273,7 +248,10 @@
     inset: calc(env(safe-area-inset-top) + 52px) 0 0;
     overflow: auto;
     overscroll-behavior: contain;
-    /* 1 本指のスクロールはブラウザー、2 本指（ピンチ）はこちらで受ける */
+    /* 1 本指のスクロールはブラウザー、2 本指（ピンチ）はこちらで受ける。等倍のときの左右は、前後の切り替えのスワイプ */
+    touch-action: pan-y;
+  }
+  .pdf-viewer-zoomed {
     touch-action: pan-x pan-y;
   }
   .pdf-viewer-pages {

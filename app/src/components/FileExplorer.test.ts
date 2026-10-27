@@ -430,7 +430,7 @@ describe('表示方法と並び順', () => {
     }
   });
 
-  it('PDF を押すと、全画面のプレビュー（kind: pdf）で開き、前後には移らない。画像の前後の一覧に PDF は入らない', async () => {
+  it('PDF も画像も、同じ拡大表示（種類は kind）で開き、前後は両方を並び順で', async () => {
     h.current = [{ ...entry('doc.pdf'), mime: 'application/pdf' }, { ...entry('pic.png'), mime: 'image/png' }];
     try {
       const el = await render();
@@ -439,12 +439,10 @@ describe('表示方法と並び順', () => {
       row('doc.pdf').querySelector<HTMLElement>('.file-explorer-icon')!.click();
       expect(ui.lightbox).toMatchObject({ alt: 'doc.pdf', kind: 'pdf' });
       expect(ui.lightbox!.src).toContain('/doc.pdf');
-      expect(ui.lightboxGallery).toBeNull();
+      expect(ui.lightboxGallery!().map((i) => i.alt)).toEqual(['doc.pdf', 'pic.png']);
       ui.lightbox = null;
       row('pic.png').querySelector<HTMLElement>('.file-explorer-icon')!.click();
-      expect(ui.lightbox).toMatchObject({ alt: 'pic.png' });
-      expect(ui.lightbox!.kind).toBeUndefined();
-      expect(ui.lightboxGallery!().map((i) => i.alt)).toEqual(['pic.png']);
+      expect(ui.lightbox).toMatchObject({ alt: 'pic.png', kind: 'image' });
     } finally {
       h.current = null;
       ui.lightbox = null;
@@ -648,7 +646,7 @@ describe('空きスペースの長押し・右クリックのメニュー', () =
       body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 50, clientY: 600 }));
       vi.advanceTimersByTime(LONG_PRESS_MS + 20);
       flushSync();
-      expect(ctxLabels()).toEqual(['アップロード']);
+      expect(ctxLabels()).toEqual(['アップロード', '新しいフォルダ']);
     } finally {
       vi.useRealTimers();
     }
@@ -672,7 +670,7 @@ describe('空きスペースの長押し・右クリックのメニュー', () =
     h.clip.text = 'hello';
     const el = await render();
     el.querySelector<HTMLElement>('.file-explorer-body')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 50, clientY: 600 }));
-    await vi.waitFor(() => expect(ctxLabels()).toEqual(['アップロード', '貼り付け']));
+    await vi.waitFor(() => expect(ctxLabels()).toEqual(['アップロード', '新しいフォルダ', '貼り付け']));
     [...document.querySelectorAll<HTMLButtonElement>('.file-explorer-context .menu-item')].find((b) => b.textContent?.includes('貼り付け'))!.click();
     flushSync();
     expect(document.querySelector('.file-explorer-context')).toBeNull();
@@ -761,8 +759,8 @@ describe('OS のクリップボードとの同期', () => {
   });
 });
 
-describe('写真の拡大（前後は、このフォルダの画像を今の並び順で）', () => {
-  it('画像を開くと、前後は画像だけ（並び順どおり）。ファイル・PDF は含めない。←→で移る', async () => {
+describe('拡大表示（前後は、このフォルダの拡大表示で見られるものを今の並び順で）', () => {
+  it('画像を開くと、前後は画像と PDF（並び順どおり）。ほかのファイルは含めない', async () => {
     const img = (name: string): SharedEntry => ({ ...entry(name), mime: 'image/png' });
     h.current = [img('b.png'), entry('note.txt'), img('a.png'), { ...entry('doc.pdf'), mime: 'application/pdf' }, img('c.png')];
     try {
@@ -772,7 +770,7 @@ describe('写真の拡大（前後は、このフォルダの画像を今の並�
       flushSync();
       expect(ui.lightbox?.alt).toBe('b.png');
       const gallery = ui.lightboxGallery!();
-      expect(gallery.map((i) => i.alt)).toEqual(['a.png', 'b.png', 'c.png']);
+      expect(gallery.map((i) => i.alt)).toEqual(['a.png', 'b.png', 'c.png', 'doc.pdf']);
       // 前後の決まり（←→の動きは Lightbox.test.ts）
       expect(adjacentItem(gallery, ui.lightbox!.src, -1)?.alt).toBe('a.png');
     } finally {
@@ -780,5 +778,109 @@ describe('写真の拡大（前後は、このフォルダの画像を今の並�
       ui.lightbox = null;
       ui.lightboxGallery = null;
     }
+  });
+});
+
+describe('戻る（前に開いていたフォルダへ）', () => {
+  it('「戻る」は、親ではなく前に開いていたフォルダへ。履歴が尽きたらパネルの戻るに任せる', async () => {
+    ui.pluginBack = [];
+    const el = await render();
+    fileExplorer.open('docs');
+    flushSync();
+    fileExplorer.open('');
+    flushSync();
+    fileExplorer.open('docs');
+    flushSync();
+    expect(ui.pluginBack).toHaveLength(1);
+    ui.back();
+    flushSync();
+    expect(fileExplorer.dir).toBe('');
+    ui.back();
+    flushSync();
+    expect(fileExplorer.dir).toBe('docs');
+    ui.back();
+    flushSync();
+    expect(fileExplorer.dir).toBe('');
+    expect(ui.pluginBack).toHaveLength(0);
+    void el;
+  });
+
+  it('選択モードの「戻る」は、フォルダを戻らず選択だけ解除する', async () => {
+    ui.pluginBack = [];
+    await render();
+    fileExplorer.open('docs');
+    flushSync();
+    explorerSelection.start('docs/a.txt');
+    flushSync();
+    ui.back();
+    flushSync();
+    expect(explorerSelection.active).toBe(false);
+    expect(fileExplorer.dir).toBe('docs');
+  });
+});
+
+describe('選択モードの解除', () => {
+  it('最後の 1 件を外すと、すぐ選択モードを終える', async () => {
+    const el = await render();
+    explorerSelection.start('a.txt');
+    flushSync();
+    const row = [...el.querySelectorAll<HTMLElement>('.file-explorer-item')].find((li) => li.textContent?.includes('a.txt'))!;
+    row.querySelector<HTMLButtonElement>('.file-explorer-row')!.click();
+    flushSync();
+    expect(explorerSelection.active).toBe(false);
+    expect(el.querySelector('.file-explorer-check')).toBeNull();
+  });
+});
+
+describe('タッチの長押し（Android）', () => {
+  function touchDown(li: Element): void {
+    const ev = new MouseEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5 });
+    Object.defineProperty(ev, 'pointerType', { value: 'touch' });
+    li.dispatchEvent(ev);
+  }
+
+  it('こちらのタイマーより先に止められても、WebView の長押し（contextmenu）で選択モードに入る', async () => {
+    const el = await render();
+    const li = el.querySelector<HTMLElement>('.file-explorer-item')!;
+    touchDown(li);
+    li.dispatchEvent(new Event('pointercancel', { bubbles: true }));
+    const ctx = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    li.dispatchEvent(ctx);
+    flushSync();
+    expect(explorerSelection.active).toBe(true);
+    expect(ctx.defaultPrevented).toBe(true);
+  });
+
+  it('マウスの右クリックでは、選択モードに入らない', async () => {
+    const el = await render();
+    const li = el.querySelector<HTMLElement>('.file-explorer-item')!;
+    li.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    flushSync();
+    expect(explorerSelection.active).toBe(false);
+  });
+});
+
+describe('クリップボードから貼ったら、すぐ名前の書き換え', () => {
+  it('画像を貼ると、送り終えて一覧に出たところで、その項目の名前が入力欄になる', async () => {
+    h.clip.image = new File(['x'], 'clipboard-1.png', { type: 'image/png' });
+    h.upload.mockImplementation(() => ({ promise: Promise.resolve(), abort: () => {} }));
+    const el = await render();
+    h.current = [...listing, { ...entry('clipboard-1.png'), mime: 'image/png' }];
+    try {
+      pasteClick(el);
+      await vi.waitFor(() => expect(el.querySelector<HTMLTextAreaElement>('.file-explorer-rename')?.value).toBe('clipboard-1.png'));
+    } finally {
+      h.current = null;
+    }
+  });
+});
+
+describe('詳細の見出し', () => {
+  it('縦にスクロールしても上端に残し、文字は選べない', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = (readFileSync('src/components/FileExplorer.svelte', 'utf8').split('<style>')[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = css.match(/\.file-explorer-columns \{[^}]*\}/g)!.join('\n');
+    expect(rule).toContain('position: sticky');
+    expect(rule).toContain('user-select: none');
   });
 });

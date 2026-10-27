@@ -35,6 +35,11 @@ export type AppCommand = {
   suggestArgs?: (input: string) => SlashArgSuggestion[];
   /** 出どころ（プラグイン名など）。本体のコマンドは省略 */
   source?: string;
+  /**
+   * ホットキーが効く条件（省略すると常に）。特定の画面・状態でだけ使うキー（Esc で選択モードを解除など）に使う。
+   * 条件に合わないときは、そのキーをほかに渡す（止めない）
+   */
+  when?: () => boolean;
   run(ctx: CommandContext): void | Promise<void>;
 };
 
@@ -198,6 +203,7 @@ export function commandForKey(
   { typing = false }: { typing?: boolean } = {},
 ): AppCommand | null {
   for (const c of list) {
+    if (c.when && !c.when()) continue;
     for (const text of effectiveHotkeys(c, overrides)) {
       const hk: Hotkey | null = parseHotkey(text);
       if (!hk || (typing && !worksWhileTyping(hk))) continue;

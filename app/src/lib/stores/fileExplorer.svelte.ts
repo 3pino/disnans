@@ -8,11 +8,29 @@ import { sharedIndex, type DirState } from './sharedIndex.svelte';
  */
 class FileExplorerState {
   dir = $state('');
+  /** 前に開いていたフォルダ（古い順）。「戻る」で 1 つずつ戻る（ブラウザーの戻ると同じ） */
+  history = $state.raw<string[]>([]);
 
-  /** フォルダを開く（一覧が手元になければ読む） */
+  /** フォルダを開く（一覧が手元になければ読む）。前のフォルダは「戻る」の履歴に積む */
   open(dir: string): void {
+    if (dir !== this.dir) this.history = [...this.history, this.dir];
     this.dir = dir;
     sharedIndex.ensure(dir);
+  }
+
+  /** 前に開いていたフォルダへ戻る。履歴が無ければ false */
+  back(): boolean {
+    const prev = this.history.at(-1);
+    if (prev === undefined) return false;
+    this.history = this.history.slice(0, -1);
+    this.dir = prev;
+    sharedIndex.ensure(prev);
+    return true;
+  }
+
+  /** 戻るの履歴を捨てる（パネルを開き直したとき） */
+  forgetHistory(): void {
+    this.history = [];
   }
 
   /** 1 つ上のフォルダへ。直下なら false（呼ぶ側でパネルを閉じるなどする） */
@@ -36,4 +54,7 @@ class FileExplorerState {
 
 export const fileExplorer = new FileExplorerState();
 // 接続先が変わったら、旧サーバーの場所を開いたままにしない
-onServerChange(() => (fileExplorer.dir = ''));
+onServerChange(() => {
+  fileExplorer.dir = '';
+  fileExplorer.forgetHistory();
+});

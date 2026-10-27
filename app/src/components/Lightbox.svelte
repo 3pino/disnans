@@ -4,149 +4,137 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import IconButton from './ui/IconButton.svelte';
-  import PdfViewer from './PdfViewer.svelte';
+  import { VIEWERS } from './viewers';
   import { ui } from '../lib/stores/ui.svelte';
-  import { adjacentItem } from '../lib/lightbox';
-  import {
-    DOUBLE_TAP_ZOOM,
-    IDENTITY_VIEW,
-    MIN_ZOOM,
-    clampView,
-    isDoubleTap,
-    pinchView,
-    zoomAt,
-    zoomByWheel,
-    type Point,
-    type TapRecord,
-    type ZoomView,
-  } from '../lib/zoom';
+  import { adjacentItem, type LightboxItem } from '../lib/lightbox';
+  import { swipeOutcome, SLIDE_GAP, SWIPE_EDGE_RESISTANCE } from '../lib/lightboxSwipe';
 
-  /** 1 本指の動きがこれより小さければタップとみなす（px） */
-  const TAP_SLOP = 8;
-  /** 背景タップで閉じるまでの待ち時間（ダブルタップと区別するため） */
-  const CLOSE_DELAY = 300;
-  /** 横のスワイプとみなす距離（px）。等倍のときだけ、1 本指のタッチで使う */
-  const SWIPE_MIN = 56;
+  // 拡大表示（全画面）。ファイルの種類ごとの見え方・拡大はビューアー（components/viewers/）が受け持ち、
+  // ここは前後の切り替え（←→ キー・ボタン・1 本指の左右のスワイプ）・ファイル名・ダウンロード・閉じるを受け持つ。
+  // 前後の切り替えは、ビューアーが等倍のときだけ（拡大中の 1 本指・←→ は、ビューアーの移動・スクロールに使う）。
+  // スワイプの間は、指に合わせて前後のファイルが横から出てくる（前後のビューアーも隣に置いておく）
 
-  let view = $state<ZoomView>({ ...IDENTITY_VIEW });
-  let stageEl = $state<HTMLDivElement>();
-  let imgEl = $state<HTMLImageElement>();
-  const transform = $derived(`translate(${view.x}px, ${view.y}px) scale(${view.scale})`);
+  /** 切り替えのアニメーションの長さ（ms） */
+  const SLIDE_MS = 220;
 
-  /** 指の位置（舞台の中心からの位置）。pointerId ごと */
-  const pointers = new Map<number, Point>();
-  /** いまのジェスチャーの始まり（指の数が変わるたびに作り直す） */
-  let start: { view: ZoomView; mid: Point; dist: number; tap: Point } | null = null;
-  /** このジェスチャーで、タップ（動かさず 1 本指で触れた）ではなくなったか */
-  let moved = false;
-  let lastTap: TapRecord | null = null;
-  let closeTimer: ReturnType<typeof setTimeout> | undefined;
-  /** スワイプの始まり（1 本指のタッチで、等倍のときだけ）。2 本指になったら取り消す */
-  let swipeFrom: Point | null = null;
-  /** このジェスチャーで 2 本指になったか（ピンチ）。ピンチの後は、スワイプにしない */
-  let pinched = false;
+  /** いまのビューアーが等倍から拡大しているか */
+  let zoomed = $state(false);
+  /** 並びのずれ（px。スワイプ中は指に合わせる） */
+  let dx = $state(0);
+  /** アニメーション中か（transition を付ける） */
+  let sliding = $state(false);
+  let slideTimer: ReturnType<typeof setTimeout> | undefined;
+  let rootEl = $state<HTMLDivElement>();
 
-  /** 前後の画像（一覧が無い・端のときは null）。一覧は移るたびに取り直す */
+  /** 前後（一覧が無い・端のときは null）。一覧は移るたびに取り直す */
   const items = $derived(ui.lightbox && ui.lightboxGallery ? ui.lightboxGallery() : []);
   const prev = $derived(ui.lightbox ? adjacentItem(items, ui.lightbox.src, -1) : null);
   const next = $derived(ui.lightbox ? adjacentItem(items, ui.lightbox.src, 1) : null);
-
-  /** 前（-1）か次（+1）の画像へ移る。端では動かさない。切り替えの表示（等倍・中央）は下の effect が戻す */
-  function step(delta: -1 | 1): void {
+  /** 並べるもの（前・いま・次）。前後のビューアーは、スワイプで見えるよう隣に置く */
+  const slides = $derived.by(() => {
     const lb = ui.lightbox;
-    if (!lb || !ui.lightboxGallery) return;
-    const target = adjacentItem(ui.lightboxGallery(), lb.src, delta);
-    if (target) ui.lightbox = target;
+    if (!lb) return [];
+    const out: { item: LightboxItem; offset: -1 | 0 | 1 }[] = [];
+    if (prev) out.push({ item: prev, offset: -1 });
+    out.push({ item: lb, offset: 0 });
+    if (next) out.push({ item: next, offset: 1 });
+    return out;
+  });
+
+  function width(): number {
+    return rootEl?.clientWidth || window.innerWidth;
   }
 
-  /** 舞台（全画面）の中心を原点にした座標 */
-  function local(e: { clientX: number; clientY: number }): Point {
-    const r = stageEl?.getBoundingClientRect();
-    if (!r) return { x: 0, y: 0 };
-    return { x: e.clientX - (r.left + r.width / 2), y: e.clientY - (r.top + r.height / 2) };
-  }
-
-  /** 表示を、舞台と画像の大きさに合わせて収める */
-  function fit(v: ZoomView): ZoomView {
-    const stage = { w: stageEl?.clientWidth ?? 0, h: stageEl?.clientHeight ?? 0 };
-    const img = { w: imgEl?.offsetWidth ?? 0, h: imgEl?.offsetHeight ?? 0 };
-    return clampView(v, stage, img);
-  }
-
-  /** 指の中点と間隔（指が 2 本未満なら間隔は 0） */
-  function geometry(): { mid: Point; dist: number } {
-    const pts = [...pointers.values()].slice(0, 2);
-    const mid = { x: (pts[0].x + pts[pts.length - 1].x) / 2, y: (pts[0].y + pts[pts.length - 1].y) / 2 };
-    const dist = pts.length > 1 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0;
-    return { mid, dist };
-  }
-
-  /** 指の数が変わったら、いまの表示と指の位置から始め直す */
-  function restart(first: Point) {
-    const g = geometry();
-    start = { view, mid: g.mid, dist: g.dist, tap: first };
-  }
-
-  function onPointerDown(e: PointerEvent) {
-    if (!stageEl || e.button !== 0) return;
-    try {
-      stageEl.setPointerCapture(e.pointerId);
-    } catch {
-      // 取れなくても動く
-    }
-    clearTimeout(closeTimer);
-    const p = local(e);
-    if (pointers.size === 0) {
-      moved = false;
-      pinched = false;
-      // スワイプは 1 本指のタッチで、拡大していないときだけ（拡大中はパンを優先する）
-      swipeFrom = e.pointerType === 'touch' && view.scale <= MIN_ZOOM ? p : null;
-    }
-    pointers.set(e.pointerId, p);
-    if (pointers.size > 1) {
-      moved = true;
-      pinched = true;
-      swipeFrom = null;
-    }
-    restart(p);
-  }
-
-  function onPointerMove(e: PointerEvent) {
-    if (!pointers.has(e.pointerId) || !start) return;
-    const p = local(e);
-    pointers.set(e.pointerId, p);
-    if (pointers.size > 1 || Math.hypot(p.x - start.tap.x, p.y - start.tap.y) > TAP_SLOP) moved = true;
-    const g = geometry();
-    view = fit(pinchView(start.view, start.mid, start.dist, g.mid, g.dist));
-  }
-
-  function onPointerEnd(e: PointerEvent) {
-    if (!pointers.delete(e.pointerId)) return;
-    if (pointers.size > 0) {
-      // 指が残っているなら、残りの指で続ける（タップにはしない）
-      const [, rest] = [...pointers.entries()][0];
-      restart(rest);
+  /** 前（-1）か次（+1）へ、横に流してから移る。端・動いている最中は動かさない */
+  function step(delta: -1 | 1): void {
+    const target = delta < 0 ? prev : next;
+    if (!target || sliding) {
+      if (!sliding) settle();
       return;
     }
-    start = null;
-    const from = swipeFrom;
-    swipeFrom = null;
-    if (e.type === 'pointerup' && from && !pinched) {
-      // 横が縦より大きく、一定以上動いたら、前か次へ（左へ動かすと次）
-      const to = local(e);
-      const dx = to.x - from.x;
-      if (Math.abs(dx) >= SWIPE_MIN && Math.abs(dx) > Math.abs(to.y - from.y)) {
-        step(dx < 0 ? 1 : -1);
-        return;
-      }
-    }
-    if (e.type === 'pointerup' && !moved) handleTap(local(e));
+    sliding = true;
+    dx = -delta * (width() + SLIDE_GAP);
+    clearTimeout(slideTimer);
+    slideTimer = setTimeout(() => {
+      // 隣にあったビューアーが真ん中に来る（keyed なので部品は作り直さない）。ずれは同時に 0 に戻す
+      sliding = false;
+      dx = 0;
+      zoomed = false;
+      ui.lightbox = target;
+    }, SLIDE_MS);
   }
 
-  /** ← → キーで前後へ。拡大表示が開いている間は、入力欄などより先に受ける（その分は伝えない） */
+  /** 元の位置に戻す（スワイプが足りなかった） */
+  function settle(): void {
+    if (dx === 0) return;
+    sliding = true;
+    dx = 0;
+    clearTimeout(slideTimer);
+    slideTimer = setTimeout(() => (sliding = false), SLIDE_MS);
+  }
+
+  // ---- 1 本指の左右のスワイプ（タッチ。等倍のときだけ） ----
+
+  /** スワイプの始まり。axis は向きが決まったら x（スワイプ）か y（縦のスクロールに任せる） */
+  let swipe: { x: number; y: number; t: number; axis: 'x' | 'y' | null } | null = null;
+
+  function onTouchStart(e: TouchEvent): void {
+    if (e.touches.length !== 1 || zoomed || sliding) {
+      // 2 本指になったら（ピンチ）、スワイプはやめて元に戻す
+      if (swipe?.axis === 'x') settle();
+      swipe = null;
+      return;
+    }
+    const t = e.touches[0];
+    swipe = { x: t.clientX, y: t.clientY, t: Date.now(), axis: null };
+  }
+
+  function onTouchMove(e: TouchEvent): void {
+    if (!swipe || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const mx = t.clientX - swipe.x;
+    const my = t.clientY - swipe.y;
+    if (swipe.axis === null) {
+      if (Math.abs(mx) > 10 && Math.abs(mx) > Math.abs(my)) swipe.axis = 'x';
+      else if (Math.abs(my) > 10) swipe.axis = 'y';
+    }
+    if (swipe.axis !== 'x') return;
+    if (e.cancelable) e.preventDefault();
+    // 端（その向きに続きが無い）では、少しだけ動いて戻る
+    const blocked = (mx > 0 && !prev) || (mx < 0 && !next);
+    dx = blocked ? mx * SWIPE_EDGE_RESISTANCE : mx;
+  }
+
+  function onTouchEnd(e: TouchEvent): void {
+    if (!swipe || e.touches.length > 0) return;
+    const s = swipe;
+    swipe = null;
+    if (s.axis !== 'x') return;
+    const t = e.changedTouches[0];
+    const mx = (t?.clientX ?? s.x) - s.x;
+    const delta = swipeOutcome(mx, Date.now() - s.t, width());
+    if (delta) step(delta);
+    else settle();
+  }
+
+  $effect(() => {
+    const el = rootEl;
+    if (!el) return;
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd);
+    el.addEventListener('touchcancel', onTouchEnd);
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
+  });
+
+  /** ← → キーで前後へ（等倍のときだけ）。拡大表示が開いている間は、入力欄などより先に受ける（その分は伝えない） */
   function onKeyCapture(e: KeyboardEvent): void {
-    // PDF は前後に移らない（←→ はビューアーの横スクロールに使う）
-    if (!ui.lightbox || ui.lightbox.kind === 'pdf' || e.isComposing) return;
+    if (!ui.lightbox || zoomed || e.isComposing) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
@@ -154,87 +142,60 @@
     step(e.key === 'ArrowLeft' ? -1 : 1);
   }
 
-  /** 1 本指のタップ。ダブルタップで拡大・等倍に戻し、等倍の背景タップなら閉じる */
-  function handleTap(p: Point) {
-    const tap = { t: Date.now(), x: p.x, y: p.y };
-    if (isDoubleTap(lastTap, tap)) {
-      clearTimeout(closeTimer);
-      lastTap = null;
-      view = fit(view.scale > MIN_ZOOM ? { ...IDENTITY_VIEW } : zoomAt(view, DOUBLE_TAP_ZOOM, p));
-      return;
-    }
-    lastTap = tap;
-    // 拡大中は、タップで閉じない
-    if (view.scale > MIN_ZOOM) return;
-    closeTimer = setTimeout(() => {
-      ui.lightbox = null;
-    }, CLOSE_DELAY);
+  function close(): void {
+    ui.lightbox = null;
   }
 
-  // Ctrl+ホイール（トラックパッドのピンチ）で拡大縮小する。WebView 自体のズームは止める
+  // 閉じたら、途中の切り替えを捨てる
   $effect(() => {
-    const el = stageEl;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return;
-      e.preventDefault();
-      const p = local(e);
-      view = fit(zoomAt(view, zoomByWheel(view.scale, e.deltaY), p));
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  });
-
-  // 開くたびに等倍・中央から始める
-  $effect(() => {
-    void ui.lightbox;
-    view = { ...IDENTITY_VIEW };
-    lastTap = null;
-    start = null;
-    pointers.clear();
-    clearTimeout(closeTimer);
+    if (ui.lightbox) return;
+    clearTimeout(slideTimer);
+    sliding = false;
+    dx = 0;
+    zoomed = false;
+    swipe = null;
   });
 </script>
 
-<svelte:window
-  onkeydown={(e) => e.key === 'Escape' && ui.lightbox && (ui.lightbox = null)}
-  onkeydowncapture={onKeyCapture}
-  onresize={() => (view = fit(view))}
-/>
+<svelte:window onkeydown={(e) => e.key === 'Escape' && ui.lightbox && close()} onkeydowncapture={onKeyCapture} />
 
 {#if ui.lightbox}
   {@const lb = ui.lightbox}
-  <div class="lightbox" role="dialog" aria-modal="true" aria-label={lb.alt}>
-    {#if lb.kind === 'pdf'}
-      <!-- PDF はページを縦に並べてスクロールで見る（拡大・縮小はビューアーのボタン・Ctrl+ホイール） -->
-      <PdfViewer src={lb.src} />
-    {:else}
-    <div
-      class="lightbox-stage"
-      class:zoomed={view.scale > MIN_ZOOM}
-      role="presentation"
-      bind:this={stageEl}
-      onpointerdown={onPointerDown}
-      onpointermove={onPointerMove}
-      onpointerup={onPointerEnd}
-      onpointercancel={onPointerEnd}
-    >
-      <img bind:this={imgEl} class="lightbox-image" src={lb.src} alt={lb.alt} style:transform />
+  <div class="lightbox" role="dialog" aria-modal="true" aria-label={lb.alt} bind:this={rootEl}>
+    <div class="lightbox-track" class:lightbox-sliding={sliding} style:transform="translateX({dx}px)" style:--lightbox-slide-ms="{SLIDE_MS}ms">
+      {#each slides as s (s.item.src)}
+        {@const Viewer = VIEWERS[s.item.kind ?? 'image']}
+        <div
+          class="lightbox-slide"
+          class:lightbox-slide-current={s.offset === 0}
+          style:transform="translateX(calc({s.offset * 100}% + {s.offset * SLIDE_GAP}px))"
+          aria-hidden={s.offset !== 0}
+        >
+          <Viewer
+            src={s.item.src}
+            alt={s.item.alt}
+            active={s.offset === 0}
+            onzoom={(z) => {
+              if (s.offset === 0) zoomed = z;
+            }}
+            ontap={close}
+          />
+        </div>
+      {/each}
     </div>
-    {/if}
-    <!-- 前後の画像（端では出さない）。PC 向けの押すボタン。タッチはスワイプで移る -->
+    <!-- 前後（端では出さない）。PC 向けの押すボタン。タッチはスワイプで移る -->
     {#if prev}
-      <button type="button" class="icon-btn lightbox-nav lightbox-prev" aria-label="前の画像" onclick={() => step(-1)}><ChevronLeft size={28} /></button>
+      <button type="button" class="icon-btn lightbox-nav lightbox-prev" aria-label="前のファイル" onclick={() => step(-1)}><ChevronLeft size={28} /></button>
     {/if}
     {#if next}
-      <button type="button" class="icon-btn lightbox-nav lightbox-next" aria-label="次の画像" onclick={() => step(1)}><ChevronRight size={28} /></button>
+      <button type="button" class="icon-btn lightbox-nav lightbox-next" aria-label="次のファイル" onclick={() => step(1)}><ChevronRight size={28} /></button>
     {/if}
     <div class="lightbox-toolbar">
       <span class="lightbox-file-name">{lb.alt}</span>
       <a class="icon-btn lightbox-download" href={lb.downloadUrl} download={lb.alt} target="_blank" rel="noopener" aria-label="ダウンロード"
         ><Download size={20} /></a
       >
-      <IconButton class="lightbox-close" label="閉じる" onclick={() => (ui.lightbox = null)}><X size={22} /></IconButton>
+      <IconButton class="lightbox-close" label="閉じる" onclick={close}><X size={22} /></IconButton>
     </div>
   </div>
 {/if}
@@ -244,33 +205,24 @@
     position: fixed;
     inset: 0;
     z-index: 100;
-    display: grid;
-    place-items: center;
+    overflow: hidden;
     background: var(--scrim-strong);
     animation: fade 0.15s;
   }
-  /* 全画面の操作面。ブラウザ自身のパン・ズームは効かせず、指の動きはすべてこちらで受ける */
-  .lightbox-stage {
+  /* 前・いま・次を横に並べる帯。スワイプの間は指に合わせてずらす */
+  .lightbox-track {
     position: absolute;
     inset: 0;
-    display: grid;
-    place-items: center;
-    overflow: hidden;
-    touch-action: none;
-    user-select: none;
-    -webkit-user-select: none;
-    cursor: zoom-out;
   }
-  .lightbox-stage.zoomed {
-    cursor: grab;
+  .lightbox-sliding {
+    transition: transform var(--lightbox-slide-ms) ease-out;
   }
-  .lightbox-image {
-    position: relative;
-    max-width: calc(100vw - 32px);
-    max-height: calc(100dvh - 96px);
-    object-fit: contain;
-    border-radius: var(--radius-xs);
-    box-shadow: var(--shadow-media);
+  .lightbox-slide {
+    position: absolute;
+    inset: 0;
+  }
+  /* 隣（前後）は見えるだけで、押せない */
+  .lightbox-slide:not(.lightbox-slide-current) {
     pointer-events: none;
   }
   .lightbox-toolbar {

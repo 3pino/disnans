@@ -37,12 +37,15 @@
   import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
   import { LONG_PRESS_MS } from '../lib/sortable';
   import { copyText } from '../lib/clipboard';
+  import { diagLog } from '../lib/diagLog';
   import { readClipboardImage, readNativeClipboardImage } from '../lib/clipboardImage';
   import { clipboardTextName, peekClipboard, readClipboardText, type ClipboardPeek } from '../lib/clipboardPaste';
   import { isLinuxDesktop } from '../lib/platform';
   import { sharedApi, uploadShared } from '../lib/transport/shared';
   import { sharedFileUrl, fileUrl } from '../lib/config';
   import { isImage, isPdf } from '../lib/fileLink';
+  import { viewerKind } from '../lib/viewers';
+  import type { LightboxItem } from '../lib/lightbox';
   import { PDF_THUMB_MAX_BYTES } from '../lib/pdfThumb';
   import PdfThumb from './PdfThumb.svelte';
   import { formatSize, formatStamp } from '../lib/format';
@@ -76,6 +79,13 @@
     return untrack(() => ui.addPluginBack(() => explorerSelection.clear()));
   });
 
+  // 「戻る」は、前に開いていたフォルダへ（履歴が無ければ、パネルの戻る＝閉じるなどに任せる）。
+  // 戻る操作は登録を外してから呼ぶので、履歴が変わるたびに登録し直す
+  $effect(() => {
+    if (fileExplorer.history.length === 0) return;
+    return untrack(() => ui.addPluginBack(() => fileExplorer.back()));
+  });
+
   /** 開いているフォルダの表示方法と並び順（フォルダごと・この端末） */
   const dirView = $derived(explorerView.of(fileExplorer.dir));
   function setView(v: ViewMode): void {
@@ -107,25 +117,21 @@
   const VIEW_LABEL = { details: '詳細', grid: 'アイコン' } as const;
   const KEY_LABEL = { name: '名前', modified: '更新日時', size: 'サイズ' } as const;
 
-  /** 写真の拡大（前後は、このフォルダの画像を今の並び順で。ファイル・PDF は対象外） */
-  function openImage(e: SharedEntry): void {
-    const item = (x: SharedEntry) => {
+  /**
+   * 拡大表示で開く（画像・PDF など。lib/viewers.ts）。前後は、このフォルダの拡大表示で見られるものを今の並び順で
+   */
+  function openViewer(e: SharedEntry): void {
+    const item = (x: SharedEntry): LightboxItem => {
       const src = x.file_id ? fileUrl(x.file_id) : href(x);
-      return { src, alt: x.name, downloadUrl: src };
+      return { src, alt: x.name, downloadUrl: src, kind: viewerKind(x.name, x.mime) ?? undefined };
     };
-    const folderImages = () =>
+    const viewable = () =>
       listing?.kind === 'ok'
         ? sortEntries(listing.entries.values(), dirView.sortKey, dirView.sortOrder)
-            .filter((x) => x.kind === 'file' && isImage(x.name, x.mime))
+            .filter((x) => x.kind === 'file' && viewerKind(x.name, x.mime) !== null)
             .map(item)
         : [];
-    ui.openLightbox(item(e), folderImages);
-  }
-
-  /** PDF のプレビュー（ページを並べて見る）。前後の切り替えはしない（ビューアーの横スクロール・ピンチと重なるため） */
-  function openPdf(e: SharedEntry): void {
-    const src = e.file_id ? fileUrl(e.file_id) : href(e);
-    ui.openLightbox({ src, alt: e.name, downloadUrl: src, kind: 'pdf' });
+    ui.openLightbox(item(e), viewable);
   }
 
   // ---- 書き込み（アップロード・新しいフォルダ）。どの人も変えられる。変わったことは files.changed で全員に届く ----
@@ -154,18 +160,18 @@
     for (const file of picked) await sendOne(dir, file);
   }
 
-  /** 1 件を送る。同名があれば確認してから上書きする（確認なしには上書きしない） */
-  async function sendOne(dir: string, file: File): Promise<void> {
+  /** 1 件を送る。同名があれば確認してから上書きする（確認なしには上書きしない）。送れたらそのパス、送らなかった・失敗は null */
+  async function sendOne(dir: string, file: File): Promise<string | null> {
     uploads.push({ key: ++uploadSeq, name: file.name, ratio: 0, error: null, abort: null });
     const row = uploads[uploads.length - 1];
     const plan = planUpload(dir, file.name, sharedIndex.state(dir) ?? { kind: 'loading' });
     if (plan.kind === 'blocked') {
       row.error = plan.message;
-      return;
+      return null;
     }
     if (plan.kind === 'overwrite' && !(await ui.confirm(overwriteConfirm(plan.path)))) {
       dropUpload(row.key);
-      return;
+      return null;
     }
     const h = uploadShared(plan.path, file, (r) => (row.ratio = r));
     row.abort = h.abort;
@@ -173,13 +179,15 @@
       await h.promise;
       dropUpload(row.key);
       sharedIndex.invalidate(plan.path);
+      return plan.path;
     } catch (err) {
       // 中止（×で消した）は、失敗として出さない
-      if (!uploads.some((x) => x.key === row.key)) return;
+      if (!uploads.some((x) => x.key === row.key)) return null;
       row.abort = null;
       const aborted = err && typeof err === 'object' && (err as { code?: unknown }).code === 'aborted';
       if (aborted) dropUpload(row.key);
       else row.error = attachmentActionText(err);
+      return null;
     }
   }
 
@@ -230,6 +238,8 @@
   const canPaste = $derived(!explorerBuffer.empty || clip === 'unknown' || clip.text || clip.image);
 
   onMount(() => {
+    // 戻るの履歴は、パネルを開いたところから数える
+    fileExplorer.forgetHistory();
     void refreshClip();
     const onFocus = () => void refreshClip();
     const onVisible = () => {
@@ -270,15 +280,28 @@
    */
   async function pasteWith(dir: string, text: string | null, files: File[], image: () => Promise<File | null>): Promise<void> {
     if (files.length > 0) {
-      for (const f of files) await sendOne(dir, f);
+      const sent: (string | null)[] = [];
+      for (const f of files) sent.push(await sendOne(dir, f));
+      if (sent.length === 1) renameAfterPaste(dir, sent[0]);
       return;
     }
     if (!explorerBuffer.empty && (explorerBuffer.clipText === null || text === explorerBuffer.clipText)) return paste();
     const img = await image();
-    if (img) return sendOne(dir, img);
-    if (text) return sendOne(dir, new File([text], clipboardTextName(), { type: 'text/plain' }));
+    if (img) return renameAfterPaste(dir, await sendOne(dir, img));
+    if (text) return renameAfterPaste(dir, await sendOne(dir, new File([text], clipboardTextName(), { type: 'text/plain' })));
     if (!explorerBuffer.empty) return paste();
     ui.toast('クリップボードに貼り付けられるものがありません');
+  }
+
+  /**
+   * クリップボードから貼った 1 件は、すぐ名前の書き換えに入る（画像・文字は仮の名前で送るので）。
+   * 一覧に出たところで入力欄に替わる。送っている間に別のフォルダへ移っていたら何もしない
+   */
+  function renameAfterPaste(dir: string, path: string | null): void {
+    if (!path || fileExplorer.dir !== dir || !renameAllowed(path).ok) return;
+    renamingPath = path;
+    renameTo = baseName(path);
+    renameError = null;
   }
 
   /** Ctrl+V（入力欄の外）。OS のファイル（エクスプローラーでコピーしたもの）もここで受け取れる */
@@ -292,7 +315,7 @@
     void pasteWith(fileExplorer.dir, text, files, isLinuxDesktop() ? readNativeClipboardImage : async () => null);
   }
 
-  // ---- 空きスペースの長押し（マウスは右クリック）のメニュー: アップロード・貼り付け ----
+  // ---- 空きスペースの長押し（マウスは右クリック）のメニュー: アップロード・新しいフォルダ・貼り付け ----
 
   let ctx = $state<{ x: number; y: number } | null>(null);
   let ctxTimer: ReturnType<typeof setTimeout> | undefined;
@@ -409,6 +432,15 @@
   let pressFrom: { x: number; y: number } | null = null;
   /** 長押しで選択に入ったところ（直後のクリックは無視する） */
   let longPressed = false;
+  /** いまの押し（診断ログ用。タッチ・ペンだけ）。t は押し始めの時刻 */
+  let pressLog: { t: number; type: string } | null = null;
+
+  // Android で「長押しで振動する（WebView の長押しの合図）のに選択モードにならない」ことがあり、手元で再現しないため、
+  // タッチの長押しの経過を診断ログに残す（名前・パスは書かない）
+  function logPress(what: string): void {
+    if (!pressLog) return;
+    diagLog('info', `[explorer] 長押し: ${what} 経過=${Date.now() - pressLog.t}ms 種類=${pressLog.type} 選択モード=${explorerSelection.active}`);
+  }
 
   function pressStart(ev: PointerEvent, path: string): void {
     if (ev.pointerType === 'mouse' && ev.button !== 0) return;
@@ -416,22 +448,46 @@
     if (ev.target instanceof Element && ev.target.closest('.shared-entry-actions, .file-explorer-rename')) return;
     longPressed = false;
     pressFrom = { x: ev.clientX, y: ev.clientY };
+    pressLog = ev.pointerType === 'mouse' ? null : { t: Date.now(), type: ev.pointerType };
     clearTimeout(pressTimer);
     pressTimer = setTimeout(() => {
       longPressed = true;
       pressFrom = null;
       explorerSelection.start(path);
+      logPress('選択モードに入った');
     }, LONG_PRESS_MS);
   }
 
   function pressMove(ev: PointerEvent): void {
     if (!pressFrom) return;
-    if (Math.abs(ev.clientX - pressFrom.x) > 8 || Math.abs(ev.clientY - pressFrom.y) > 8) pressEnd();
+    const dx = Math.abs(ev.clientX - pressFrom.x);
+    const dy = Math.abs(ev.clientY - pressFrom.y);
+    if (dx > 8 || dy > 8) pressEnd(`動いた dx=${Math.round(dx)} dy=${Math.round(dy)}`);
   }
 
-  function pressEnd(): void {
+  /** 押しが終わった・取り消された。長押しの前なら、why を診断ログに残す */
+  function pressEnd(why: string): void {
+    // 長押しになる前に止まった（短いタップの指離しは記録しない）
+    if (pressFrom && why !== 'pointerup') logPress(`取り消し 理由=${why}`);
     clearTimeout(pressTimer);
     pressFrom = null;
+  }
+
+  /**
+   * 右クリック・WebView の長押し（Android は振動して contextmenu が来る）。選択モードなら既定のメニューを出さない。
+   * タッチの長押しで、こちらのタイマーより先に止められて選択モードに入れていなければ、ここで入る
+   */
+  function rowContextMenu(ev: MouseEvent, path: string): void {
+    const touch = pressLog !== null;
+    if (touch) logPress(`contextmenu 長押し済み=${longPressed}`);
+    if (touch && !explorerSelection.active && !longPressed) {
+      clearTimeout(pressTimer);
+      pressFrom = null;
+      longPressed = true;
+      explorerSelection.start(path);
+      logPress('contextmenu で選択モードに入った');
+    }
+    if (explorerSelection.active || longPressed) ev.preventDefault();
   }
 
   /** 行を押したとき（選択モードの中では選び直す。長押しの直後は何もしない。名前の文字を押したら書き換える） */
@@ -697,12 +753,10 @@
             class:file-explorer-item-selected={explorerSelection.has(e.path)}
             onpointerdown={(ev) => pressStart(ev, e.path)}
             onpointermove={pressMove}
-            onpointerup={pressEnd}
-            onpointerleave={pressEnd}
-            onpointercancel={pressEnd}
-            oncontextmenu={(ev) => {
-              if (explorerSelection.active || longPressed) ev.preventDefault();
-            }}
+            onpointerup={() => pressEnd('pointerup')}
+            onpointerleave={() => pressEnd('pointerleave')}
+            onpointercancel={() => pressEnd('pointercancel')}
+            oncontextmenu={(ev) => rowContextMenu(ev, e.path)}
           >
             {#snippet name()}
               {#if renaming}
@@ -762,8 +816,8 @@
               <button type="button" class="file-explorer-row" aria-pressed={explorerSelection.has(e.path)} onclick={(ev) => rowClick(ev, e, () => {})}>{@render row()}</button>
             {:else if action === 'enter'}
               <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e, () => fileExplorer.open(e.path))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
-            {:else if action === 'image' || action === 'pdf'}
-              <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e, () => (action === 'pdf' ? openPdf(e) : openImage(e)))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
+            {:else if action !== 'file'}
+              <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e, () => openViewer(e))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
             {:else}
               <a class="file-explorer-row" href={href(e)} download={e.name} target="_blank" rel="noopener" onclick={(ev) => rowClick(ev, e, () => {})} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</a>
             {/if}
@@ -781,6 +835,9 @@
   <div class="file-explorer-context" style:left="{ctx.x}px" style:top="{ctx.y}px">
     <Menu class="file-explorer-context-menu file-explorer-menu" label="このフォルダの操作" onclose={() => (ctx = null)}>
       <MenuItem icon={Upload} onclick={() => runCtx(() => fileInput?.click())}>アップロード</MenuItem>
+      {#if canCreateFolder}
+        <MenuItem icon={FolderPlus} onclick={() => runCtx(openMkdir)}>新しいフォルダ</MenuItem>
+      {/if}
       {#if canPaste}
         <MenuItem icon={ClipboardPaste} disabled={pasting} onclick={() => runCtx(() => void pasteAny())}>貼り付け</MenuItem>
       {/if}
@@ -1022,11 +1079,19 @@
     flex: none;
     width: calc(var(--space-5) + var(--space-2) + 34px - var(--space-3));
   }
+  /* 見出しは、縦にスクロールしても上端に残す（横は行と一緒に動く）。文字は選べない */
   .file-explorer-columns {
-    padding: var(--space-2) 0 var(--space-2) var(--space-5);
+    position: sticky;
+    top: calc(-1 * var(--space-4));
+    z-index: 2;
+    margin-top: calc(-1 * var(--space-4));
+    padding: calc(var(--space-2) + var(--space-4)) 0 var(--space-2) var(--space-5);
+    background: var(--bg);
     color: var(--text-muted);
     font-size: var(--fs-sm);
     border-bottom: 1px solid var(--border);
+    user-select: none;
+    -webkit-user-select: none;
   }
   .file-explorer-col-name {
     flex: 1;
