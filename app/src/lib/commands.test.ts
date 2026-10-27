@@ -150,6 +150,15 @@ describe('hotkeys', () => {
     const extra = { 'dice:c': ['F7'] };
     expect(commandForKey(list, extra, key({ key: 'F7', code: 'F7' }))).toBe(c);
   });
+
+  it('when が偽のあいだは、そのホットキーは効かない（キーはほかに渡す）', () => {
+    let on = false;
+    const esc = cmd({ id: 'app:esc', defaultHotkey: 'Escape', when: () => on });
+    const escape = key({ key: 'Escape', code: 'Escape' });
+    expect(commandForKey([esc], {}, escape)).toBeNull();
+    on = true;
+    expect(commandForKey([esc], {}, escape)).toBe(esc);
+  });
 });
 
 describe('スラッシュコマンドの別名', () => {

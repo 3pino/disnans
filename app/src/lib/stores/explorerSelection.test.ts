@@ -19,6 +19,12 @@ describe('一覧の複数選択', () => {
     expect(explorerSelection.active).toBe(true);
   });
 
+  it('最後の 1 件を外して 0 件になったら、選択モードを終える', () => {
+    explorerSelection.start('a.txt');
+    explorerSelection.toggle('a.txt');
+    expect(explorerSelection.active).toBe(false);
+  });
+
   it('すべて選ぶ・選択を終える', () => {
     explorerSelection.selectAll(['a', 'b', 'c']);
     expect(explorerSelection.count).toBe(3);

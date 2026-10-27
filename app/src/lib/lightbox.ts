@@ -2,11 +2,12 @@
 // 画像の見分けは src（URL）。同じ画像が 2 回出るとき、前後は最初に出た位置から数える（既知の制限）
 
 import type { Message } from './protocol/Message';
+import type { ViewerKind } from './viewers';
 import { fileUrl } from './config';
 import { attachmentRefs, bodyAttachmentNames, type AttachmentRef } from './fileLink';
 
-/** 拡大表示の 1 件。kind: 'pdf' は PDF のページを並べて見る（前後の一覧には入れない）。無ければ画像 */
-export type LightboxItem = { src: string; alt: string; downloadUrl: string; kind?: 'image' | 'pdf' };
+/** 拡大表示の 1 件。kind はビューアーの種類（lib/viewers.ts）。無ければ画像 */
+export type LightboxItem = { src: string; alt: string; downloadUrl: string; kind?: ViewerKind };
 
 /** 前後をたどる一覧。呼ぶたびに今の一覧を返す */
 export type LightboxGallery = () => LightboxItem[];

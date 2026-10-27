@@ -15,6 +15,7 @@ describe('fileExplorer', () => {
     sharedIndex.invalidate('');
     sharedIndex.invalidate('docs');
     fileExplorer.dir = '';
+    fileExplorer.forgetHistory();
   });
 
   it('開くと一覧を読み、up で親へ戻る。直下の up は false', async () => {
@@ -26,6 +27,18 @@ describe('fileExplorer', () => {
     expect(fileExplorer.up()).toBe(true);
     expect(fileExplorer.dir).toBe('');
     expect(fileExplorer.up()).toBe(false);
+  });
+
+  it('戻る（back）は、前に開いていたフォルダへ（親ではなく、開いた順に戻る）。履歴が無ければ false', () => {
+    list.mockResolvedValue([]);
+    fileExplorer.open('a/b/c');
+    fileExplorer.open('x');
+    fileExplorer.open('x'); // 同じフォルダは積まない
+    expect(fileExplorer.back()).toBe(true);
+    expect(fileExplorer.dir).toBe('a/b/c');
+    expect(fileExplorer.back()).toBe(true);
+    expect(fileExplorer.dir).toBe('');
+    expect(fileExplorer.back()).toBe(false);
   });
 
   it('失敗は error になり、reload で読み直せる', async () => {
