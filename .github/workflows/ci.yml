@@ -135,13 +135,38 @@ jobs:
         with:
           node-version: 24
       - name: NSIS を入れる
-        run: choco install nsis -y --no-progress
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Find-Makensis {
+            $command = Get-Command makensis.exe -ErrorAction SilentlyContinue
+            if ($command) { return $command.Source }
+            foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+              $candidate = Join-Path $base 'NSIS\makensis.exe'
+              if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+            }
+          }
+          # Chocolatey の取得失敗で、終了コードが 0 でも未インストールになる場合がある。
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            $makensis = Find-Makensis
+            if ($makensis) { break }
+            choco install nsis -y --no-progress
+            $installExit = $LASTEXITCODE
+            $makensis = Find-Makensis
+            if ($makensis) { break }
+            if ($attempt -eq 3) { throw "NSIS を取得できませんでした（終了コード: $installExit）" }
+            Write-Warning "NSIS がありません。取得を再試行します（$attempt/3、終了コード: $installExit）"
+            Start-Sleep -Seconds (10 * $attempt)
+          }
+          "NSIS_MAKENSIS=$makensis" >> $env:GITHUB_ENV
+          $global:LASTEXITCODE = 0
       - name: テストをコンパイルして実行し、結果を確かめる
         working-directory: scripts/nsis
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          $makensis = $env:NSIS_MAKENSIS
+          if (-not (Test-Path -LiteralPath $makensis -PathType Leaf)) { throw 'NSIS の実行ファイルがありません' }
           # Tauri のインストーラと同じく、スクリプトは UTF-8 として読む（既定の ANSI だと日本語の文字列が崩れる）
           & $makensis -INPUTCHARSET UTF8 /WX cli-path-harness.nsi
           if ($LASTEXITCODE -ne 0) { throw 'makensis が失敗しました' }
