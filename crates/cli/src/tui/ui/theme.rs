@@ -1,5 +1,5 @@
 //! 色のトークン。画面のコードは `Color::Rgb(..)` を直接書かず、ここから引く。
-//! 名前は GUI の CSS 変数（design-system の tokens.css）に対応する（docs/DESIGN.md の「色トークンの対応」）。
+//! 名前は GUI の CSS 変数（design-system の tokens.css）に対応する（docs/design/tui.md の「色トークンの対応」）。
 //! 今は組み込みの既定だけ。`theme.css` の読み込みは次の段階。
 
 use ratatui::style::Color;

@@ -1,6 +1,6 @@
 //! 設定項目の定義（ステップ8・V5）。キー・保存先（scope）・型・既定値を、ここの一か所に置く。
 //!
-//! 保存先の分類（docs/DESIGN.md の「設定の保存先」）:
+//! 保存先の分類（docs/design/settings-storage.md）:
 //! - `User`: ユーザー共通。サーバーの `/api/me/prefs` に置く（この表は値の形と既定を決めるだけ）。
 //! - `Device`: デバイスごと。サーバーの `/api/me/devices/{id}/prefs` に置く（`normalize_device_prefs` で正規化する）。
 //! - `Local`: このデバイスだけ。サーバーには送らない（接続先・開発用の値・更新の確認など）。

@@ -1,4 +1,4 @@
-//! 本文のリンク（`attachments/` のパス → 添付の ID → 今の名前）の結合テスト。設計は docs/API.md の「本文のリンク」。
+//! 本文のリンク（`attachments/` のパス → 添付の ID → 今の名前）の結合テスト。設計は docs/api/rest.md の「本文のリンク」。
 
 mod common;
 

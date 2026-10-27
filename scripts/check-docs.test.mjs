@@ -1,0 +1,169 @@
+// node --test scripts/check-docs.test.mjs
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { checkDocs, exitCode, formatReport, headings, links, selectFiles, slugify } from './check-docs.mjs';
+
+/** メモリ上のリポジトリ（{ 相対パス: 中身 }）で検査する */
+function repo(files) {
+  const dirs = new Set();
+  for (const p of Object.keys(files)) {
+    const parts = p.split('/');
+    for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join('/'));
+  }
+  const run = (map = files) =>
+    checkDocs({
+      files: Object.keys(map).filter((p) => p.endsWith('.md')),
+      readFile: (rel) => files[rel],
+      exists: (rel) => rel in files || dirs.has(rel),
+      isDir: (rel) => dirs.has(rel),
+    });
+  return run();
+}
+
+test('スラッグ: 実際に使われているアンカー（PLUGINS.md の目次）と同じになる', () => {
+  assert.equal(slugify('5分で動かす'), '5分で動かす');
+  assert.equal(slugify('main.js の書き方'), 'mainjs-の書き方');
+  assert.equal(slugify('配布・更新・削除と、デバイスごとのオンオフ'), '配布更新削除とデバイスごとのオンオフ');
+  assert.equal(slugify('通話の拡張 API（disnans.call、v8）'), '通話の拡張-apidisnanscallv8');
+  assert.equal(slugify('ホスト API'), 'ホスト-api');
+  assert.equal(slugify('TypeScript で書く'), 'typescript-で書く');
+});
+
+test('スラッグ: 空白は 1 文字ずつ `-` になり、アンダースコアは残る', () => {
+  assert.equal(slugify('a - b'), 'a---b');
+  assert.equal(slugify('foo_bar'), 'foo_bar');
+  assert.equal(slugify('1. 開発用フォルダを決める'), '1-開発用フォルダを決める');
+});
+
+test('スラッグ: 記号を消したあとの先頭の空白は残る（絵文字の見出しは先頭が -）', () => {
+  // 丸数字（④）は文字として残る。記号（ここでは ・）は消える
+  assert.equal(slugify('④ 段階的な計画'), '④-段階的な計画');
+  assert.equal(slugify('🚀 はじめに'), '-はじめに');
+});
+
+test('見出し: 同じスラッグは -1, -2 …、コードブロックの中は見ない', () => {
+  const text = ['# 注意点', '```', '# 注意点', '```', '## 注意点', '### `code` と [リンク](x.md)'].join('\n');
+  const hs = headings(text);
+  assert.deepEqual(
+    hs.map((h) => h.slug),
+    ['注意点', '注意点-1', 'code-と-リンク'],
+  );
+  assert.equal(hs[2].text, 'code と リンク');
+});
+
+test('リンク: コードの中の疑似リンクは無視し、画像のリンクは拾う', () => {
+  const text = ['[a](one.md)', '`[b](two.md)`', '```', '[c](three.md)', '```', '![img](pic.png)', '[d](four.md#x)'].join('\n');
+  assert.deepEqual(
+    links(text).map((l) => [l.line, l.target]),
+    [
+      [1, 'one.md'],
+      [6, 'pic.png'],
+      [7, 'four.md#x'],
+    ],
+  );
+});
+
+test('検査: 存在しないファイルへのリンクはエラー（行つき）', () => {
+  const r = repo({ 'docs/a.md': 'x\n[t](missing.md)\n' });
+  assert.deepEqual(r.errors, [{ file: 'docs/a.md', line: 2, message: 'リンク先のファイルがありません: missing.md' }]);
+  assert.equal(exitCode(r), 1);
+});
+
+test('検査: 見出しのないアンカーはエラー。あるものは通る（相対・同じファイル・日本語）', () => {
+  const r = repo({
+    'docs/a.md': '# 開始\n[ok](b.md#配布-と-更新)\n[self](#開始)\n[bad](b.md#なし)\n[self-bad](#無い)\n',
+    'docs/b.md': '## 配布 と 更新\n',
+  });
+  assert.deepEqual(
+    r.errors.map((e) => [e.line, e.message]),
+    [
+      [4, 'リンク先の見出しがありません: #なし（docs/b.md）'],
+      [5, 'リンク先の見出しがありません: #無い（docs/a.md）'],
+    ],
+  );
+});
+
+test('検査: 重複見出しの -1 も見出しとして認める', () => {
+  const r = repo({
+    'docs/a.md': '[x](b.md#注意点-1)\n',
+    'docs/b.md': '## 注意点\n## 注意点\n',
+  });
+  assert.equal(r.errors.length, 0);
+});
+
+test('検査: ディレクトリへのリンクは通る。リポジトリの外へのリンクはエラー', () => {
+  const r = repo({
+    'docs/a.md': '[dir](sub/)\n[out](../../x.md)\n',
+    'docs/sub/readme.md': '# hi\n',
+  });
+  assert.deepEqual(
+    r.errors.map((e) => e.message),
+    ['リンク先がリポジトリの外です: ../../x.md'],
+  );
+});
+
+test('検査: 外部のリンクは見ない', () => {
+  const r = repo({ 'docs/a.md': '[w](https://example.com/x#y) [m](mailto:a@b) [p](//host/x)\n' });
+  assert.equal(r.errors.length, 0);
+});
+
+test('検査: 目次（docs/README.md）に載っていない docs/ の md は警告。エラーにはしない', () => {
+  const r = repo({
+    'docs/README.md': '- [A](a.md)\n',
+    'docs/a.md': '# a\n',
+    'docs/b.md': '# b\n',
+    'docs/sub/c.md': '# c\n',
+    'README.md': '# root\n',
+  });
+  assert.deepEqual(
+    r.warnings.map((w) => w.file),
+    ['docs/b.md', 'docs/sub/c.md'],
+  );
+  assert.equal(r.errors.length, 0);
+  assert.equal(exitCode(r), 0);
+});
+
+test('検査: docs/README.md が無いときは目次の検査をしない', () => {
+  const r = repo({ 'docs/a.md': '# a\n', 'docs/b.md': '# b\n' });
+  assert.equal(r.warnings.filter((w) => w.message.includes('目次')).length, 0);
+});
+
+test('検査: 「端末」は docs/ と README.md で警告（ほかのフォルダは見ない）', () => {
+  const r = repo({
+    'README.md': 'a\n端末の話\n',
+    'docs/x.md': '\n\n端末\n',
+    'crates/y/README.md': '端末\n',
+  });
+  assert.deepEqual(
+    r.warnings.filter((w) => w.message.includes('端末')).map((w) => [w.file, w.line]),
+    [
+      ['docs/x.md', 3],
+      ['README.md', 2],
+    ],
+  );
+});
+
+test('終了コード: エラーがあれば 1、警告だけなら 0。報告は「ファイル:行:」の形', () => {
+  const r = repo({
+    'docs/a.md': '[t](nope.md)\n端末\n',
+    'docs/README.md': '- [A](a.md)\n',
+  });
+  assert.equal(exitCode(r), 1);
+  const text = formatReport(r);
+  assert.match(text, /^docs\/a\.md:1: リンク先のファイルがありません: nope\.md$/m);
+  assert.match(text, /^docs\/a\.md:2: 警告: 「端末」/m);
+  assert.match(text, /エラー 1 件、警告 1 件/);
+});
+
+test('対象の選び方: 自動生成の reference.md と node_modules は外す', () => {
+  assert.deepEqual(
+    selectFiles([
+      'docs/a.md',
+      'app/src-tauri/plugins/x/autogenerated/reference.md',
+      'app/node_modules/pkg/README.md',
+      'src/main.rs',
+      'notes/autogenerated/other.md',
+    ]),
+    ['docs/a.md', 'notes/autogenerated/other.md'],
+  );
+});

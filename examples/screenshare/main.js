@@ -28,7 +28,7 @@
  * payload は JSON なので画像を base64 にして送る（4/3 倍になる）。1 回の上限 64 KB を超えるフレームは分割して送り、受け手が組み立てる。
  * 色数を減らす設定では、減色したあとの画像を JPEG / WebP / PNG の候補のうち小さいもので送る（JPEG は減色の効果が薄いため）。
  *
- * 使っている API（→ docs/PLUGINS.md）:
+ * 使っている API（→ docs/plugins/README.md）:
  * - call.addButton / addPanel / update / onChange / onEvent / emit / participants / joined / bufferedAmount
  * - addStatusBarItem ............ 見る入口
  * - addSettingTab / loadData / saveData ... FPS・画質・色数の設定とプレビュー

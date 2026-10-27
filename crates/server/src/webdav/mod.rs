@@ -1,7 +1,7 @@
 //! WebDAV（共有フォルダを、ネットワークドライブとしてエクスプローラー等からつなぐ）。
 //!
 //! `/dav/` の直下に `attachments/`（添付の仮想フォルダ。中のファイルは変更可能）と、共有フォルダ（`data/shared/`）がある。
-//! 設計は `docs/API.md` の「共有フォルダ」。プロトコルの処理は dav-server クレートに任せる。
+//! 設計は `docs/api/shared-folder.md`。プロトコルの処理は dav-server クレートに任せる。
 
 pub mod fs;
 pub mod identity;

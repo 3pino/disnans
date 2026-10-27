@@ -11,7 +11,7 @@
  *    結果が全員に同期して、カードが書き換わる
  * 3. ほかの人はカードをタップすると、パネルで結果を見られる
  *
- * 使っている API（→ docs/PLUGINS.md）:
+ * 使っている API（→ docs/plugins/README.md）:
  * - onload / onunload ............................. DicePlugin
  * - loadData / saveData / addSettingTab ............ 「設定」の節（ui.setting / toggle / segmented / button / divider / confirm）
  * - addIcon ........................................ DIE_ICON（独自のアイコン）

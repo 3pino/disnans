@@ -44,7 +44,7 @@ pub enum Inline {
     },
     /// 共有フォルダのファイルへのリンク（`[別名](パス)`・`[[パス|別名]]`）。`embed` は先頭に `!` が付いた埋め込み（`![別名](パス)`・`![[パス]]`）。
     /// `path` は共有フォルダの相対パス（`attachments/photo.png`）。`alias` は省略されたら `None`（`[[パス]]`）。
-    /// 表示の本文では、サーバーが ID を今の名前に戻している（`docs/API.md`「本文のリンク」）。
+    /// 表示の本文では、サーバーが ID を今の名前に戻している（`docs/api/rest.md`「本文のリンク」）。
     FileLink {
         path: String,
         alias: Option<String>,

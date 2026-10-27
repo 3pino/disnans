@@ -1,5 +1,5 @@
 // 画面の構造（GUI と TUI の共通の木）の型と、GUI での出し分け。
-// 木の正は crates/client-core/src/view/ui.rs で、ここへは uiTree.generated.ts として届く（説明は docs/UI_TREE.md）。
+// 木の正は crates/client-core/src/view/ui.rs で、ここへは uiTree.generated.ts として届く（説明は docs/design/ui-tree.md）。
 // 値は木に入っていない。設定の値の読み書きは lib/settingsBindings.svelte.ts、描画は components/SettingsTree.svelte
 
 import { SETTINGS_PAGES } from './uiTree.generated';

@@ -2,8 +2,8 @@
 
 本体の画面で使い回す小さな部品です。**見た目の正はグローバルの CSS クラス（`node_modules/@3pino/design-system/src/components.css`。トークンは同じ `tokens.css`）** で、
 ここの Svelte コンポーネントはそのクラスを付けるだけの薄い包みです。
-プラグイン向けの DOM 部品（`disnans.ui`。`src/lib/plugins/ui.ts`、説明は `docs/PLUGIN_UI.md`）も、同じクラスを付けた同じ DOM を作ります。
-部品を足したり DOM を変えたりしたら、Svelte の部品・`ui.ts`・`@3pino/design-system`・`index.d.ts`・`docs/PLUGIN_UI.md` をそろえてください。
+プラグイン向けの DOM 部品（`disnans.ui`。`src/lib/plugins/ui.ts`、説明は `docs/plugins/ui.md`）も、同じクラスを付けた同じ DOM を作ります。
+部品を足したり DOM を変えたりしたら、Svelte の部品・`ui.ts`・`@3pino/design-system`・`index.d.ts`・`docs/plugins/ui.md` をそろえてください。
 
 - 位置や大きさなど、使う場所だけの調整は `class` を渡し、使う側の `<style>` で `:global(.xxx)` を使って書く
 - クラス名の規約: 部品は `.part`、部品の中は `.part-child`、状態は `.part-state`（例: `.toggle-on`）

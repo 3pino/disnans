@@ -14,5 +14,5 @@
 ## 作り方と変え方
 
 `expected` は、この fixture を作ったときの GUI の出力を記録し、人が読んで正しいと確かめたもの（特徴付け）。
-規則を変えるときは、先に `expected` を書き換えない。変える理由を `docs/DESIGN.md` かコミットに書いてから、GUI と core を両方直す。
+規則を変えるときは、先に `expected` を書き換えない。変える理由を `docs/design/architecture.md` かコミットに書いてから、GUI と core を両方直す。
 絵文字の表（名前の並び）は `view/emoji.rs` が正で、GUI の `emojiNames.generated.ts` は生成物。fixture には表を入れない。

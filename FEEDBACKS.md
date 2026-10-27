@@ -39,13 +39,13 @@
 
 - 状態: 未着手
 - 現状・メモ: 色トークンへの集約は実装済み。GUI の `theme.css` を読み、ライト/ダークもテーマに従う。oklch・var()・color-mix と明暗ルールの解釈、theme.css 由来の色数の少ない環境への変換は未実装（tmux 内の既存色の 256 色変換は対応済み）。
-- 設計: [docs/DESIGN.md](docs/DESIGN.md#tui-の互換-ui-部品確定方針)
+- 設計: [docs/design/tui.md](docs/design/tui.md)
 
 ### TUI向けのプラグイン（JS 実行）
 
 - 状態: 未着手（設計待ち）
 - 現状・メモ: いずれプラグイン UI を TUI にも出す。現行の DOM を返す API をそのまま動かさず、描画に依存しない宣言的な木（core の `view::ui`）と GUI/TUI の描画を分ける。宣言型 API・JS ランタイム・対象デバイスの指定は未実装。
-- 設計: [docs/DESIGN.md](docs/DESIGN.md#tui-の互換-ui-部品確定方針)
+- 設計: [docs/design/tui.md](docs/design/tui.md)
 
 
 ### Linux の通話で、自分のマイクの音が遅れる
@@ -93,7 +93,7 @@
 - メモ: Action/Keymap とフォーカス・マウス、モーダルのスタック、Menu/Choice/Dialog/Suggest 等の共通部品を作り、既存の選択・リアクション入力を載せ替える。Nerd Font 前提。core の設定定義から設定画面を作り、ユーザー共通 prefs と surface `tui` のデバイス prefs に保存する。TUI はデバイス ID の発行・登録も未接続。ベル・通知対象・画像・時刻帯・Enter・密度の扱いもここで整理する。
 - 実装済み（v0.2.35）: 第1段（Bindings、モーダルのスタック、Menu/Choice/Dialog/Prompt、マウス）、第2段（`@` メンバー・`:` 絵文字・行頭 `/` の補完。キーは設定の tuiKeys から変更）、第3段の土台（TUI のデバイス ID・登録、設定画面 `/settings`: テーマ・Enter キー・デバイス名・キー割り当て）。
 - 残り: デバイス一覧・削除、`prefs.updated` での画面の自動更新、theme.css 連携、TUI 用の定義を core の DEFINITIONS に足すか（今は未定義キーのまま保存）、ベル・通知対象・画像・時刻帯・密度。見た目・tmux・マウスは確認待ち。
-- 設計: [docs/DESIGN.md](docs/DESIGN.md#tui-の互換-ui-部品確定方針)。テーマ・補完・プラグインの残作業はそれぞれの項目で管理する。
+- 設計: [docs/design/tui.md](docs/design/tui.md)。テーマ・補完・プラグインの残作業はそれぞれの項目で管理する。
 - 追記: そもそも Settings が開けないから確認のしようがないが。テキスト入力欄の一番下の行で↓を押したら、Chat か Settings を左右で選ばせて。理想的には共通のDOMを、GUI用のhtmlとTUIのものに分けて解釈したい
 - 対応（v0.2.37）: 入力欄の最下行で ↓ を押すと、下の Chat / Settings の切替バーにフォーカスが移り、←→ で選んで Enter で切り替える（Esc / ↑ で入力欄へ。マウス可）。「開けない」原因は、Enter の既定が改行のため `/settings` だけ入力して Enter しても実行されなかったこと（名前だけの入力は Enter の設定に関わらず実行するよう修正）。
 - Settings が全画面じゃなくてポップアップになっているのが想定外。普通のGUIとあえてそこは変える必要ないはずだよ？ そもそもDOMの、GUI/TUI共通化ができていないならそこからかもしれないが。
@@ -140,7 +140,7 @@
 ### 最終的には、ファイルエクスプローラー機能を別のアプリとして切り出したい
 - 状態: まだ
 - メモ: プラグインからも、新しいアプリや画面をどんどん作っていきたいと思っている。それがラクにできるような環境作りをしてほしい。apk 単位で分けにいくのが理想だけど、アクティビティも悪いわけではない。
-- 調査（v0.2.45）: [docs/DESIGN.md](docs/DESIGN.md#別アプリ画面の切り出し検討中未着手) に整理。Tauri 公式は Android の複数 WebView・複数 Activity が未対応（PR 未マージ）のため、まず同じ WebView 内の内蔵プラグインにして、足りない API（Modal/Menu/PanelBar、全画面ビュー+ナビバー項目、files.url/upload、clipboard/pickFiles/save、lightbox）を育てる道筋を推奨。着手の判断待ち。
+- 方針（2026-10）: 「コアプラグイン」（同じ plugin API だけを使い、アプリに同梱し、本体と同時に更新し、プラグイン一覧に出す。オン・オフはさせない）にする。作り方は Svelte のままプラグイン用にビルドして同梱する。apk の分割は、エクスプローラーを土台にしたかったが、コミュニティプラグインでもついでにできるようにしたい、という副次的な狙い。GUI と TUI の画面定義（DOM）の共通化は取り下げた（理由は [docs/proposals/ideas.md](docs/proposals/ideas.md)）。設計は [docs/proposals/core-plugins.md](docs/proposals/core-plugins.md)。着手は文書の片付けのあと。
 
 ### Android で接続エラーのまま「読み込み中」が続く
 - 状態: 対応済み（v0.2.46、実機確認待ち）

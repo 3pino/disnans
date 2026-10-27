@@ -1,6 +1,6 @@
 # disnans-server
 
-disnans のサーバー（axum + SQLite）。API は [`docs/API.md`](../../docs/API.md) を参照。
+disnans のサーバー（axum + SQLite）。API は [API](../../docs/api/shared-folder.md) を参照。
 
 ## 環境変数
 
@@ -104,21 +104,13 @@ cargo test -p disnans-server
 
 ## 共有フォルダ（WebDAV）
 
-`/dav/` で、全員が同じ共有フォルダを WebDAV として使う（エクスプローラーやファイルマネージャーからネットワークドライブとしてつなぐ）。ユーザー別の領域や容量上限は無い。操作の契約は [`docs/API.md`](../../docs/API.md)。
+`/dav/` で、全員が同じ共有フォルダを WebDAV として使う（エクスプローラーやファイルマネージャーからネットワークドライブとしてつなぐ）。規則（メソッド・名前の検査・`attachments/`・書き込みの方式・CORS）は [共有フォルダの API](../../docs/api/shared-folder.md)。ここは運用（認証・Tailscale Serve・OS 側の制限）だけ。
 
-- 直下に `attachments/` があり、添付の一覧が並ぶ（投稿されたものと、直接作ったもの）。別名はアップロードの時に決まり、同名は `名前 (2).拡張子`。名前に `[` `]` `|` は使えない。中身の差し替え・名前の変更・削除ができる（`attachments/` と共有フォルダの間の移動は不可、コピーは可）。実体は `data/files/<ID>` で、別名は DB に保存する。詳細は [`docs/API.md`](../../docs/API.md)。
-- それ以外は共有フォルダ（`data/shared/`、全員で同じもの）。作成・上書き・移動・コピー・削除ができる。
-- 許可するメソッド: OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY, LOCK, UNLOCK。PROPPATCH は 405。`attachments/` フォルダそのものの削除・改名は 403（中のファイルの操作は可能）。ルートの削除も拒否する。
-- 名前: `..`・区切り文字・Windows で使えない文字（`: * ? " < > |`）・予約名（CON・NUL・COM1 など）・末尾の `.` や空白は拒否。`.disnans-` で始まる名前は内部用。
-- シンボリックリンクは辿らない（途中のどこかがリンクなら拒否）。一覧にも出さない。
-- 書き込みは一時ファイル（`.disnans-tmp-*`）に書いてから rename する。上書きでも既存の実体の中身は書き換えない（バックアップのハードリンクを守るため）。
 - 認証は `/api` と同じ（whois）。Tailscale Serve 経由では接続元がループバックになるため、その場合だけ `Tailscale-User-Login` / `-Name` / `-Profile-Pic` を使う。RFC 2047 の Q 符号化も復号する。外部からの同名ヘッダーは無視する。サーバーのホスト上のプロセスは信頼する前提。タグ付きノードのように利用者の情報が無い場合の接続は保証しない。
 - Serve の例: `tailscale serve --bg --https=8445 --set-path /dav http://127.0.0.1:8080/dav`（`DISNANS_LOCAL_BIND=127.0.0.1:8080` が要る）。TLS は Serve で終端する。ポートは既存のサービスと衝突しないものを選ぶ。
   - Windows: `\\<ホストのTailscale名>@SSL@8445\dav`
   - Linux: `davs://<ホストのTailscale名>:8445/dav`
   - Windows WebClient には OS 側の転送サイズ制限などがあり、大きなファイルやプレビューの動作はファイラーに依存する。CLI の `disnans files` も使える。Basic 認証を新設したり、レジストリを自動変更したりはしない。
-- CORS は `/api` だけに付ける（`/dav` の OPTIONS は WebDAV の `DAV:` と `Allow` を返す必要があるため）。
-- 同じ中身を REST で見せる: `/api/shared`（[`docs/API.md`](../../docs/API.md)）。変更は WebSocket の `files.changed` で全員に知らせる。
 
 ## 添付の別名の移行
 

@@ -1,4 +1,4 @@
-# disnans API
+# disnans API: REST
 
 型の定義は `crates/shared/src/lib.rs`（TypeScript 版は `app/src/lib/protocol/`、自動生成）。
 すべてのパスは `/api` から始まる。JSON のフィールド名は snake_case。
@@ -56,11 +56,7 @@
 | GET | `/api/files/{id}` | ファイル本体（削除された添付は `410`、code `deleted`） | バイナリ |
 | GET | `/api/files/{id}/thumb` | サムネイル（WebP） | バイナリ |
 | DELETE | `/api/files/{id}` | 投稿前のアップロードを取り消す。本人の、どの本文にも投稿されていない添付だけ（ほかの人のもの・投稿済み・`attachments/` のライブラリは `403`、無ければ `404`） | `204` |
-| GET | `/api/shared` | 共有フォルダの直下の一覧 | `SharedListing` |
-| GET | `/api/shared/{パス}` | フォルダなら一覧、ファイルなら中身（`Range` 可、ファイルの種類は拡張子で決まる） | `SharedListing` / バイナリ |
-| PUT | `/api/shared/{パス}` | 本文をそのパスのファイルにする（作成・上書き。本文は任意の大きさ）。親のフォルダがなければ `409 parent_missing` | `SharedEntry` |
-| DELETE | `/api/shared/{パス}` | 削除（フォルダは中身ごと） | `204` |
-| POST | `/api/shared` | フォルダの作成・移動・コピー（body: `SharedOp` = `{ op: "mkdir", path }` / `{ op: "move", from, to, overwrite? }` / `{ op: "copy", from, to, overwrite? }`。`overwrite` は省略で `false`）。結果の項目を返す | `SharedEntry` |
+| — | `/api/shared`（一覧・取得・作成・削除・移動・コピー） | 共有フォルダ。[shared-folder.md](shared-folder.md) | — |
 | POST | `/api/notify/sample` | 自分にサンプルの `notify` を送る（通知の動作確認用）。送り先は、リクエストと同じ IP アドレス（デバイス）からの接続だけ | `204` |
 | GET | `/api/plugins` | 自分に見えるプラグイン・テーマの一覧（みんなのものと自分だけのもの。ID 順） | `PluginInfo[]` |
 | POST | `/api/plugins` | プラグイン・テーマの配布・更新（multipart、フィールド名 `file` を複数、`visibility`） | `PluginInfo` |
@@ -84,7 +80,7 @@
 
 ### 設定（prefs）
 
-保存先の分類とクライアントの `{ raw, view }` の扱いは [設計](DESIGN.md#設定の保存先) を参照。REST は元の JSON オブジェクトを返す（Tauri 内部の応答とは異なる）。デバイス台数の上限は設けない（ID の形式・名前の長さ・設定サイズの検査は行う）。
+保存先の分類とクライアントの `{ raw, view }` の扱いは [設計](../design/settings-storage.md#設定の保存先) を参照。REST は元の JSON オブジェクトを返す（Tauri 内部の応答とは異なる）。デバイス台数の上限は設けない（ID の形式・名前の長さ・設定サイズの検査は行う）。
 
 - ユーザーごとに1つの JSON オブジェクトを保存し、同じユーザーのデバイスどうしで共有する。中身はクライアントが決める（サーバーは形と大きさだけを確かめる）
   - いまの中身: `hotkeys`（コマンド ID → `"Mod+Shift+D"` 形式のホットキーの配列。空の配列は「なし」、項目がなければ既定。古い1つだけの文字列も読める）、`slashNames`（コマンド ID → スラッシュコマンドの別名。項目がなければ元の名前）、`enterKeys`（`enter` / `shift` / `ctrl` / `alt` → `"send"` / `"newline"` / `"none"`）
@@ -141,24 +137,6 @@
 - 削除された添付: `attachments/` から消されると、投稿されていた添付は本体が消え、そのリンクのあるメッセージの `Attachment` に `deleted: true` が付く（`file_name` は消される直前の別名。`size` などは残る）。`GET /api/files/{id}` は `410`（code `deleted`）
 - 投稿されていない直接の添付（`attachments/` の中に作ったもの）は、消されるまで残る（24時間の掃除の対象外）。だれでもメッセージに付けられる
 
-### 共有フォルダ（`/api/shared`）
-
-WebDAV（`/dav/`）と同じ中身・同じ規則。全員で共有する 1 つのフォルダ（`data/shared/`）。ユーザー別の領域や所有者ごとの制限、容量上限は設けない。`attachments/` は仮想フォルダで、実体は `data/files/` に ID 名で保存する。二重にコピーしない。接続とバックアップは [server README](../crates/server/README.md) を参照。
-
-- パスは共有フォルダからの相対（`docs/a.txt`）。区切りごとに名前を検査する: `..`・区切り文字・Windows で使えない文字（`: * ? " < > |`）・予約名（CON・NUL・COM1 など）・末尾の `.` や空白・`.disnans-` で始まる名前は拒否（`403`）
-- 直下の `attachments/` は添付の一覧（投稿された添付と、直接作った添付が並ぶ。`file_id` と `mime` が入り、投稿されたものは `message_id` も入る）。
-  - `attachments/<名前>` への PUT は、同じ名前があればその添付（同じ ID）の中身を差し替え、なければ新しい添付にする。変換（画像は WebP、サムネイル）は通常のアップロードと同じ
-  - 名前の変更（`move`、`attachments/` の中だけ）は ID と中身が同じまま。宛先が同じ名前なら `409 exists`（`overwrite: true` なら、宛先の添付を消して入れる）
-  - 削除（`DELETE`）は誰でもできる（上の「削除された添付」）
-  - `attachments/` と共有フォルダの間の移動は `403`（コピーを使う）。コピーは可（共有 → `attachments/` は新しい添付になる）
-  - フォルダの作成・フォルダの削除・`attachments` そのものの移動は `403`
-  - 同じ名前のフォルダは `attachments/` の中には作れない（中はファイルだけ）
-- 書き込みは一時ファイルに書いてから差し替える（上書きでも既存の実体は書き換えない）
-- シンボリックリンクは辿らず、一覧にも出さない
-- 変更（作成・上書き・移動・コピー・削除）は、WebDAV でも REST でも `files.changed`（`{ path }`、変わった項目の相対パス）を全員に配信する。フォルダの一覧はその親を読み直す
-- 失敗の `code`: `not_found`（404）、`forbidden`（403）、`exists`（409、同名がある）、`parent_missing`（409）、`too_large` / `insufficient_storage`、`deleted`（410、削除された添付）
-- WebDAV の `DELETE /dav/` と `DELETE /dav/attachments` は `403`（フォルダごと消させない）
-
 ### プラグイン・テーマ
 - ファイルは `<data_dir>/plugins/<id>/` に置く。みんなのものは誰でも配布・更新・削除できる
 - 種類（`PluginInfo.type`）は manifest の `type` で決まる: `plugin`（省略時）か `theme`
@@ -196,45 +174,10 @@ WebDAV（`/dav/`）と同じ中身・同じ規則。全員で共有する 1 つ�
 - カードのメッセージ
   - 編集はできない（`400 card_not_editable`）
   - 削除は作成者だけ。削除するとセッションも消える
-  - リアクションはふつうのメッセージと同じ
+  - リアクションは通常のメッセージと同じ
 - だれでも読み書きできる（友達同士の前提。チート対策はしない）
 
 ### プラグインからの通知
 - `user_ids` の各ユーザーに `notify` を送る。自分宛ても送る。存在しないユーザーは無視し、重複は1回にまとめる
 - `title` はプラグインの `name`（配布されていなければ ID）。`body` は 1〜500 文字（`400 invalid_body`）
 - `session_id` を指定すると、そのカードのメッセージの `message_id` を `notify` に入れる。セッションがなければ `404 not_found`
-
-## WebSocket
-
-`ClientEvent` / `ServerEvent` を JSON テキストフレームでやりとりする。
-
-- 接続直後にサーバーが `hello` を送る
-- メッセージの作成・更新・削除、リアクションは**全員に**配信する
-- `message.created` の `client_id` は、送信者本人の接続にだけ入れる
-- `notify` は対象者にだけ送る
-  - メンションされた（`<@user_id>`。タイトルは `{名前} mentioned you`）
-  - メインチャットの投稿は、**投稿者以外の全員**（タイトルは送り主の名前だけ。メンション・返信に当たる人には、それぞれの文言を優先して1回だけ送る）。ボットの投稿（`notify: true`）も同じく全員に送り、タイトルはボットの名前。投稿者本人にもボットの名前で1件だけ送る。この一般の通知は再送（接続し直したときの送り直し）の対象にしない
-  - 自分のメッセージに、他人が返信した（`reply_to`）
-  - `POST /api/notify/sample` で自分に送った（`sample: true`。クライアントは表示中でもシステム通知を出す）
-- `notify` はそのユーザーのすべての接続に送る。Android アプリは WebView とは別に、通知用の常駐サービスからも接続する
-- システム通知を押すと、どの環境でもウィンドウを前面に出してチャットを表示する（Android・Web と同じ動作）。デスクトップ（Tauri の Windows・Linux）は Rust が出し、押すとウィンドウを前面に出してから、フロントに知らせる（アプリが動いているあいだだけ。終了していれば何もしない）。Android は常駐サービスが出す
-- `message.send` の `silent: true`（省略は `false`）は、通知を一切送らない（配信は普通の投稿と同じ）
-- 編集・削除は本人のメッセージだけ
-- 古いクライアントの `message.send` に付いている `thread_id` / `start_thread` は無視し、メインチャットに入れる。`thread.create` は知らない形として `invalid_event` で断る
-- プラグインの配布・更新・削除（`plugin.updated` / `plugin.removed`）と、セッションの更新（`session.updated`）は全員に配信する（自分だけのプラグイン・テーマのイベントは持ち主にだけ）
-- セッションを開いている人（プレゼンス）。メモリだけで持ち、保存しない
-  - `session.open { session_id }` で開く、`session.close { session_id }` で閉じる。接続が切れたときは自動で閉じる。同じ人の複数のデバイスは1人として数える
-  - 開いたら、そのセッションを開いている接続（開いたばかりの接続を含む）全員に `session.presence { session_id, user_ids }` を送る。`user_ids` は開いている人のユーザー ID（重複なし・並びは ID 順）。開いた直後の一覧も同じイベントで返る。閉じた・切れたときも、残っている人の接続に送る（閉じた接続には送らない）
-  - 送り先はそのセッションを開いている接続だけ。`session_id` が存在しなければ `not_found`
-- `session.emit` は保存せず、送信した接続以外の全員（同じユーザーの別の接続を含む）に `session.event` として中継する。`from` は送信者のユーザー ID
-  - セッションがなければ `not_found`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）
-- 通話（みんな共通の1部屋）。参加者はサーバーがメモリ上で持つ（接続ごと。保存しない）
-  - `call.join { peer, status }` で参加する（`peer` は参加者が決める英数字・`-`・`_` の 1〜64 文字、`status` は `muted` `deafened` `device`）。同じ接続で呼び直すと置き換わる。別の接続がすでに使っている `peer` は `peer_in_use`
-  - `call.update { status }`（ミュートなどの更新）、`call.leave`（抜ける。接続が切れても自動で抜ける）
-  - 参加・退出・更新のたびに `call.state { members }` を**全員に**配る。接続した直後も、通話中なら送る
-  - `call.kick { peer }` で参加者を外す（参加者だけが送れる。自分は外せない: `invalid_kick`、いない人: `peer_not_found`）。外された接続に `call.kicked { by }` を送り、一覧から外して `call.state` を配る
-  - `call.emit { name, payload }` は、参加者だけが送れ、ほかの参加者全員（自分以外）に `call.event { peer, from, name, payload }` として中継する（保存しない。`peer` は送った接続の ID でサーバーが付ける）。参加していなければ `not_in_call`。`name` は 1〜64 文字（`invalid_event_name`）、`payload` は JSON にして 64 KB まで（`payload_too_large`）。`audio` は本体の音声（`{ seq, pcm }`。16kHz モノラル Int16 PCM の base64）が使い、それ以外の名前は拡張 API（`disnans.call.emit`）のデータ。送り手ごとに量を制限していて（トークンバケット: 容量 4000・毎秒 3000 回復、1回の重さは `1 + payload の KB`）、超えた分は**エラーを返さずに捨てる**。受け手の送信待ちが 32 件を超えて詰まっているときは、その受け手には切断せずに捨てる（遅れて届くより捨てたほうがよい音声・映像のため）。ただし、符号化したイベントが 1 KB 以下の小さい通知（共有中の知らせや問い合わせなど）は 512 件まで残す。状態通知まで映像と一緒に捨てないためで、こちらも上限を超えれば切断せず間引く
-- `files.changed { path }` は、共有フォルダや `attachments/` の項目が変わったとき（作成・上書き・移動・コピー・削除。WebDAV と REST のどちらでも）全員に送る。`path` は変わった項目の相対パス（`docs/a.txt`、`attachments/<別名>`）。添付がメッセージに付いたとき（`attachments/` に現れる）と、メッセージを消したとき（消える）も送る。
-- `prefs.updated` は、`PUT /api/me/prefs` で設定が変わったとき、そのユーザーのすべての接続にだけ送る
-- `read.updated` は、`PUT /api/me/read` で既読の位置が進んだとき、そのユーザーのすべての接続にだけ送る（`unread_count` はその時点の値）
-- 失敗したら、送信者に `error` を返す

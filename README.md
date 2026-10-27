@@ -137,4 +137,4 @@ loginctl enable-linger $USER   # ログアウトしても動かし続ける
 
 ## 開発
 
-開発・テスト・リリースの手順は [CONTRIBUTING.md](CONTRIBUTING.md) にあります。未対応の項目・既知の問題は [FEEDBACKS.md](FEEDBACKS.md) にまとめています。
+開発・テスト・リリースの手順は [CONTRIBUTING.md](CONTRIBUTING.md)、文書の一覧は [docs/README.md](docs/README.md) にあります。未対応の項目・既知の問題は [FEEDBACKS.md](FEEDBACKS.md) にまとめています。

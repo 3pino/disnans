@@ -13,7 +13,7 @@
  * }
  * ```
  *
- * 詳しい作り方は docs/PLUGINS.md、UI 部品（disnans.ui）は docs/PLUGIN_UI.md を参照。
+ * 詳しい作り方は docs/plugins/README.md、UI 部品（disnans.ui）は docs/plugins/ui.md を参照。
  */
 
 export {};
@@ -41,7 +41,7 @@ declare global {
       minApiVersion: number;
       /**
        * このプラグインを作った（対象の）ホスト API の版。省略すると minApiVersion とみなす。
-       * 本体がこれより新しく、その後に削除・意味を変えた API があると、読み込んだうえで設定の一覧に警告が出る（docs/PLUGINS.md の「互換」）。
+       * 本体がこれより新しく、その後に削除・意味を変えた API があると、読み込んだうえで設定の一覧に警告が出る（docs/plugins/distribution.md の「互換」）。
        */
       apiVersion?: number;
       /** Lucide のアイコン名（例: `dice-5`。英小文字・数字・ハイフン、64 文字まで）。画像にしたいときは `icon.svg` を同梱する */
@@ -73,7 +73,7 @@ declare global {
       readonly Plugin: typeof Plugin;
       /** 本体と同じ見た目の部品 */
       readonly ui: Ui;
-      /** 本体が投げる例外（code 付き。docs/PLUGINS.md の「エラー」）。`instanceof` で見分ける */
+      /** 本体が投げる例外（code 付き。docs/plugins/views.md の「エラー」）。`instanceof` で見分ける */
       readonly PluginError: typeof PluginError;
       /** Session.update が他の人の更新とぶつかったときのエラー（PluginError の一種。`instanceof` で見分ける） */
       readonly VersionConflictError: typeof VersionConflictError;
@@ -777,7 +777,7 @@ declare global {
     }
 
     // ---- UI 部品 ----
-    // 詳しくは docs/PLUGIN_UI.md。見た目は本体のグローバルの CSS クラスで、本体の部品と同じ DOM を作る
+    // 詳しくは docs/plugins/ui.md。見た目は本体のグローバルの CSS クラスで、本体の部品と同じ DOM を作る
 
     type ButtonOptions = {
       /** ghost は枠も背景もなく、ホバーで背景に色を付ける（`.btn.ghost`） */

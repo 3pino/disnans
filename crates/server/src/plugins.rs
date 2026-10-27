@@ -1,4 +1,4 @@
-//! プラグイン・テーマの配布・更新・削除（docs/PLUGINS.md・docs/THEMES.md）。
+//! プラグイン・テーマの配布・更新・削除（docs/plugins/README.md・docs/themes.md）。
 //!
 //! ファイルは `<data_dir>/plugins/<id>/` に置く。サーバーはプラグインのコードを実行せず、
 //! 保存して配るだけ。配布・更新・削除のたびに `plugin.updated` / `plugin.removed` を配信する
@@ -256,7 +256,7 @@ pub fn too_large() -> AppError {
     )
 }
 
-/// manifest.json の中身（docs/PLUGINS.md のパッケージの節）。
+/// manifest.json の中身（docs/plugins/basics.md の manifest.json）。
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawManifest {

@@ -1,12 +1,12 @@
 //! 画面の構造（GUI と TUI が共通に使う宣言的な木）。いまは設定画面とナビゲーションバー。
 //!
 //! - ここは「どのページに、どの節を、どの部品で、どの順に出すか」だけを決める。値は持たない（値は各 UI が prefs から差し込む）。
-//! - GUI は Svelte の部品（`components/ui/`）で、TUI は ratatui で描く。部品の対応は docs/DESIGN.md の表のとおり。
+//! - GUI は Svelte の部品（`components/ui/`）で、TUI は ratatui で描く。部品の対応は docs/design/tui.md の部品の対応のとおり。
 //! - GUI へは `app/src/lib/uiTree.generated.ts` として書き出す（`cargo test -p disnans-client-core` で更新。手で直さない）。
 //!   開発用ブラウザーでも同じ木を使えるように、invoke ではなく生成物で渡す。
 //! - 片方の UI でしか意味のない項目も木には入れ、`Show` で出し分ける（出さない UI は飛ばす）。
 //! - その場の状態で中身が変わるもの（プロフィール・アップデート・機器の一覧など）は `Slot` にして、中身は各 UI が描く。
-//! - 説明は docs/UI_TREE.md。
+//! - 説明は docs/design/ui-tree.md。
 
 use serde::Serialize;
 use serde_json::Value;

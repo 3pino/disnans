@@ -3,7 +3,7 @@
 `disnans.ui` は、本体と**同じ見た目**の部品を DOM 要素として作る関数の集まりです。
 見た目の正は本体のグローバルの CSS クラス（`@3pino/design-system`（`components.css`））で、本体の Svelte の部品（`app/src/components/ui/`）と
 
-作り方の全体は [PLUGINS.md](PLUGINS.md)、型は `packages/plugin-sdk/index.d.ts`（`Disnans.Ui`）を参照してください。
+作り方の全体は [プラグインの作り方](README.md)、型は `packages/plugin-sdk/index.d.ts`（`Disnans.Ui`）を参照してください。
 
 ## 目次
 
@@ -286,4 +286,4 @@ ui.setImmersive(on: boolean): Promise<boolean>
 
 - 位置や余白など、使う場所だけの調整は、**プラグイン ID の接頭辞を付けた自分のクラス**で書きます（`.dice-view .btn { ... }` など）
 - `.btn` などの本体のクラスそのものを書き換えないでください（全員の本体の見た目が変わります）
-- 色は CSS 変数（`--accent` など。[PLUGINS.md の「見た目（CSS）」](PLUGINS.md#見た目css)）を使います
+- 色は CSS 変数（`--accent` など。[「見た目（CSS）」](styles.md#見た目css)）を使います

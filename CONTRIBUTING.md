@@ -37,13 +37,29 @@ node scripts/prepare-cli.mjs          # 本物の CLI を release で作って�
 
 詳しくは [CLI の説明](crates/cli/README.md)、[共通基盤の境界](crates/client-core/README.md) を参照してください。未対応の項目・既知の問題・進行中の作業は [FEEDBACKS.md](FEEDBACKS.md) にまとめています。
 
+## テスト
+
+| 対象 | コマンド |
+|---|---|
+| クライアント(型・Svelte) | `cd app && npm run check` |
+| クライアントの単体テスト | `cd app && npx vitest run` |
+| Rust | `cargo test --workspace` |
+| 実際のブラウザーでのタッチ操作(手動) | `app/scripts/touch-check.mjs`。`npm run dev` を起動し、`CHROME_BIN=<Chromium のパス> DISNANS_URL=http://127.0.0.1:5173 node scripts/touch-check.mjs`(`app` の中で実行。仮のサーバーは自分で立てる)。メニューや「…」が押せるかを 390×844 と 1280×720 で確かめる |
+| 文書のリンク・アンカー | `node scripts/check-docs.mjs` |
+
 ## ドキュメント
 
-| ドキュメント | 内容 |
-|---|---|
-| [FEEDBACKS.md](FEEDBACKS.md) | 未対応の項目・既知の問題・進行中の作業 |
-| [docs/API.md](docs/API.md) | REST / WebSocket の仕様 |
-| [crates/shared](crates/shared) | API の型（`cargo test -p disnans-shared` で TypeScript の型を `app/src/lib/protocol/` に生成） |
+文書の一覧は [docs/README.md](docs/README.md)(目次はここだけ)。未対応の項目・既知の問題・進行中の作業は [FEEDBACKS.md](FEEDBACKS.md)。API の型は [crates/shared](crates/shared)(`cargo test -p disnans-shared` で TypeScript の型を `app/src/lib/protocol/` に生成)。
+
+書き方の決まり:
+
+- 設計・提案の文書は、冒頭に 1 行で状態を書く: `状態: 確定(実装済み)` / `状態: 設計案(未実装)` / `状態: 保留`。確定と案を同じ文書に混ぜない(案は `docs/proposals/`)
+- 「まだ…」「未実装」の一覧は FEEDBACKS.md にだけ置く。版や日付付きの履歴は書かない(git が持つ)
+- 「端末」は使わない。クライアントの機械は「デバイス」、コマンドを打つ画面は「ターミナル」
+- 「ふつう」「かんたん」「ちょっと」など曖昧な言い方は避け、具体的に書く
+- 句読点と括弧は全角(、。（）)で統一する
+- 1 ファイルは 300 行までを目安にする。超えたら分ける
+- 文書を足したら `docs/README.md` の目次に載せ、`node scripts/check-docs.mjs` を通す
 
 ## リリース
 

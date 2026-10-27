@@ -1,4 +1,4 @@
-//! disnans のサーバー。API は `docs/API.md` を参照。
+//! disnans のサーバー。API は `docs/api/rest.md` を参照。
 
 pub mod attachment_names;
 pub mod attachments;

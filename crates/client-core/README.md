@@ -4,11 +4,13 @@ GUI（Tauri）・CLI・TUI が共有するクライアント側の部品。URL �
 
 ## 境界（何がどこにあるか）
 
+分担の考え方は [docs/design/architecture.md](../../docs/design/architecture.md)。
+
 - `crates/shared`: サーバーとの型（ts-rs で TypeScript の型も作る）。
 - `crates/client-core`（このクレート）: 通信・保存・デバイスの方針（`platform`）・表示データ（`view`: 行の並び、同じ人の続き、Markdown の木、メンションの取り出し）。描画・文字の幅・色は持たない。
 - `crates/cli`: CLI と TUI。core を直接使い、TUI は `view` の行をターミナルの幅で描く。
 - `app/src-tauri`: Tauri の薄い橋（invoke の受け口、チャットの橋、共通ファイルの橋、デバイスの情報の注入）。方針は core に置き、橋は呼ぶだけ。
-- `app`（Svelte / TypeScript）: 画面、状態、Android の通知サービス（`notifier` プラグイン）。Tauri（Windows・Linux・Android）のチャットは Rust の接続を使う。ブラウザー開発版は TypeScript の WebSocket のまま。GUI の本文は Rust が作った Markdown の木を描画し、設定の正規化も core を使う。続き・日付の区切りは GUI に判定を残し、fixture で一致を保つ（[共通表示データ](../../docs/DESIGN.md#クライアントと共通表示データ)）。
+- `app`（Svelte / TypeScript）: 画面、状態、Android の通知サービス（`notifier` プラグイン）。Tauri（Windows・Linux・Android）のチャットは Rust の接続を使う。ブラウザー開発版は TypeScript の WebSocket のまま。GUI の本文は Rust が作った Markdown の木を描画し、設定の正規化も core を使う。続き・日付の区切りは GUI に判定を残し、fixture で一致を保つ（[共通表示データ](../../docs/design/architecture.md#クライアントと共通表示データ)）。
 - デバイスごとの方針（`platform::capabilities_for`）は core に一つだけ置く。Tauri・TUI・CLI の値はここから決まる。
 
 ## 通信の基本

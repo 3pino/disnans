@@ -1,5 +1,5 @@
 // 自動生成（crates/client-core/src/view/ui.rs の SETTINGS_PAGES・NAV_ITEMS）。手で編集しない。
-// 更新: cargo test -p disnans-client-core（scripts/check-rust.sh が差分を確かめる）。説明は docs/UI_TREE.md
+// 更新: cargo test -p disnans-client-core（scripts/check-rust.sh が差分を確かめる）。説明は docs/design/ui-tree.md
 
 import type { UiNavItem, UiPage } from './uiTree';
 
