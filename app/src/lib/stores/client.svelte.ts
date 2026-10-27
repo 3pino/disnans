@@ -126,6 +126,7 @@ class Client {
   private setLink(s: SocketStatus): void {
     if (s === 'open') this.linkReason = null;
     if (this.status === s) return;
+    console.info(`[chat] 接続: ${this.status} → ${s}${this.linkReason ? ` (${this.linkReason})` : ''}`);
     this.status = s;
     for (const fn of this.linkListeners) fn(s === 'open');
   }

@@ -53,6 +53,11 @@ export function injectedPlatform(): InjectedPlatform | null {
   return { os: v.os, desktop: v.desktop, android: v.android, capabilities: caps };
 }
 
+/** 診断ログに載せる UA の文字列（判定には使わないこと。判定はこのファイルの関数で行う） */
+export function userAgentForLog(): string {
+  return typeof navigator === 'undefined' ? '' : navigator.userAgent;
+}
+
 /** Tauri の中か（WebView の内部オブジェクトの有無） */
 /** このデバイスの OS の名前（windows・linux・android・ios・other。分からなければ空）。Rust の値が正しければそれ、無ければ UA から */
 export function osName(): string {

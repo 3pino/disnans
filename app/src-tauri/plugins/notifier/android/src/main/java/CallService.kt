@@ -12,7 +12,6 @@ import android.os.Build
 import android.net.Uri
 import android.os.IBinder
 import android.os.PowerManager
-import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -35,7 +34,6 @@ data class CallButton(val id: String, val title: String, val dismiss: Boolean)
 class CallService : Service() {
   companion object {
     private const val CHANNEL_CALL = "call"
-    private const val LOG_TAG = "disnans"
     private const val ONGOING_ID = 2
     private const val EXTRA_TITLE = "title"
     private const val EXTRA_TEXT = "text"
@@ -104,6 +102,12 @@ class CallService : Service() {
     wakeLock = null
   }
 
+  override fun onCreate() {
+    super.onCreate()
+    DiagLog.init(this)
+    DiagLog.i("[call] 通話のサービスを作りました")
+  }
+
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     if (intent?.action == ACTION_BUTTON) {
       onCallButton(intent.getStringExtra(EXTRA_ACTION_ID).orEmpty())
@@ -125,7 +129,7 @@ class CallService : Service() {
       }
     } catch (e: Exception) {
       // 前景にできなかった（マイクの許可の失効・開始できない条件など）。ここで落とすとアプリごと止まるので、記録して常駐なしで続ける
-      Log.w(LOG_TAG, "[call] 前景サービスを始められませんでした: ${e.javaClass.simpleName}: ${e.message}")
+      DiagLog.w("[call] 前景サービスを始められませんでした", e)
       running = false
       try {
         failedSink?.invoke()
@@ -135,6 +139,7 @@ class CallService : Service() {
       stopSelf()
       return START_NOT_STICKY
     }
+    DiagLog.i("[call] 前景サービス: ${if (running) "更新" else "開始"} microphone=$microphone buttons=${list.size}")
     if (!running && microphone) CallAudio.begin(this)
     holdWakeLock()
     running = true
@@ -143,6 +148,7 @@ class CallService : Service() {
   }
 
   private fun onCallButton(id: String) {
+    DiagLog.i("[call] 通知のボタン: $id（running=$running）")
     // 通話が終わったあとのボタン（古い通知）や、サービスが作り直されただけの場合は何もしない
     if (!running || id.isEmpty()) {
       if (!running) stopSelf()
@@ -154,6 +160,7 @@ class CallService : Service() {
       false
     }
     if (delivered) return
+    DiagLog.w("[call] ボタンを JS に届けられませんでした: $id")
     if (pendingActions.size < MAX_PENDING) pendingActions.add(id)
     if (buttons.any { it.id == id && it.dismiss }) {
       stopForeground(STOP_FOREGROUND_REMOVE)
@@ -175,7 +182,14 @@ class CallService : Service() {
     }
   }
 
+  /** 最近使ったアプリの一覧から消された（通話はサービスが続く限り続く） */
+  override fun onTaskRemoved(rootIntent: Intent?) {
+    DiagLog.i("[call] アプリのタスクが消されました（running=$running）")
+    super.onTaskRemoved(rootIntent)
+  }
+
   override fun onDestroy() {
+    DiagLog.i("[call] 通話のサービスを止めます（running=$running）")
     if (running) CallAudio.end(this)
     releaseWakeLock()
     running = false

@@ -84,6 +84,18 @@ class LogCallArgs {
 }
 
 @InvokeArg
+class DiagLogArgs {
+  var level: String = "info"
+  lateinit var message: String
+}
+
+@InvokeArg
+class DiagShareArgs {
+  lateinit var text: String
+  var name: String = "disnans-log.txt"
+}
+
+@InvokeArg
 class VibrateArgs {
   var ms: Long = 12
 }
@@ -119,6 +131,8 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
 
   override fun load(webView: WebView) {
     this.webView = webView
+    DiagLog.init(activity)
+    DiagLog.i("[app] 起動しました（${DiagReport.appVersion(activity)}）")
     NotifyService.createChannels(activity)
     launchTarget = targetOf(activity.intent)
     CallService.actionSink = { id -> deliverCallAction(id) }
@@ -127,6 +141,7 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   override fun onDestroy() {
+    DiagLog.i("[app] アクティビティを閉じます（通話中=${CallService.running}）")
     CallService.actionSink = null
     CallService.failedSink = null
     shareExecutor.shutdown()
@@ -289,6 +304,7 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   // ---- 最近の画像（添付パネル）。権限は初回のパネルで求め、拒否なら空の一覧 ----
 
   private val mediaExecutor by lazy { Executors.newSingleThreadExecutor() }
+  private val diagExecutor by lazy { Executors.newSingleThreadExecutor() }
 
   /** 写真の読み取りの状態。granted / limited（部分的な許可）/ denied */
   private fun photoPermission(): String {
@@ -492,20 +508,26 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
    * 実験用の逃げ道: localStorage 'disnans.keepWebViewResumed'='0' なら JS が keepWebView を false にする。
    */
   override fun onPause() {
-    if (!CallService.running) return
+    if (!CallService.running) {
+      DiagLog.i("[app] 裏に回りました")
+      return
+    }
     if (!keepWebView) {
-      Log.i(LOG_TAG, "[call] onPause: 無効のため WebView を止めたままにします")
+      DiagLog.i("[call] onPause: 無効のため WebView を止めたままにします")
       return
     }
     webView?.onResume()
     webView?.resumeTimers()
-    Log.i(LOG_TAG, "[call] onPause: WebView を動かし続けます")
+    DiagLog.i("[call] onPause: WebView を動かし続けます")
   }
 
-  /** 裏から戻ったときの記録（通話中だけ。WebView の状態は onPause のときに決めている） */
+  /** 裏から戻ったときの記録（WebView の状態は onPause のときに決めている） */
   override fun onResume() {
-    if (!CallService.running) return
-    Log.i(LOG_TAG, "[call] onResume: WebView は${if (keepWebView) "動き続けていました" else "止めたままでした"}")
+    if (!CallService.running) {
+      DiagLog.i("[app] 前面に戻りました")
+      return
+    }
+    DiagLog.i("[call] onResume: WebView は${if (keepWebView) "動き続けていました" else "止めたままでした"}")
   }
 
   /** 通話の参加時に JS から呼ぶ。false なら、裏に回ったとき WebView を止めたままにする（実験用） */
@@ -526,7 +548,7 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     activity.runOnUiThread {
       view.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
-      Log.i(LOG_TAG, "[call] レンダラーの優先度を下げないようにしました")
+      DiagLog.i("[call] レンダラーの優先度を下げないようにしました")
     }
   }
 
@@ -560,12 +582,55 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
-  /** JS の [call] のログを logcat に出す（リリース版では WebView の console が出ないため） */
+  /** 以前の版の JS が送る [call] のログ。いまは diag_log と同じく診断ログに残す */
   @Command
   fun logCall(invoke: Invoke) {
     val args = invoke.parseArgs(LogCallArgs::class.java)
-    Log.i(LOG_TAG, args.message.take(MAX_LOG_CHARS))
+    DiagLog.js("info", args.message.take(MAX_LOG_CHARS))
     invoke.resolve()
+  }
+
+  /** JS の console の行を診断ログに残す（リリース版では WebView の console が見えないため） */
+  @Command
+  fun diagLog(invoke: Invoke) {
+    val args = invoke.parseArgs(DiagLogArgs::class.java)
+    DiagLog.js(args.level, args.message.take(MAX_LOG_CHARS))
+    invoke.resolve()
+  }
+
+  /** 診断ログの全文と、デバイスの状態（通知の許可・電池の制限・プロセスが終わった理由など） */
+  @Command
+  fun diagRead(invoke: Invoke) {
+    diagExecutor.execute {
+      try {
+        val ret = JSObject()
+        ret.put("device", DiagReport.device(activity))
+        ret.put("log", DiagLog.read())
+        activity.runOnUiThread { invoke.resolve(ret) }
+      } catch (ex: Exception) {
+        activity.runOnUiThread { invoke.reject(ex.message ?: "ログを読めませんでした") }
+      }
+    }
+  }
+
+  @Command
+  fun diagClear(invoke: Invoke) {
+    DiagLog.clear()
+    DiagLog.i("[app] 診断ログを消しました")
+    invoke.resolve()
+  }
+
+  /** 書き出したログをテキストファイルにして、共有のシート（メール・チャットなど）を開く */
+  @Command
+  fun diagShare(invoke: Invoke) {
+    val args = invoke.parseArgs(DiagShareArgs::class.java)
+    try {
+      DiagReport.share(activity, args.text, args.name)
+      invoke.resolve()
+    } catch (ex: Exception) {
+      DiagLog.w("[app] ログを共有できませんでした", ex)
+      invoke.reject(ex.message ?: "共有できませんでした")
+    }
   }
 
   /** 通話用のフォアグラウンドサービス（microphone 型）を始める。マイクの許可を得たあと、前面にいるときに呼ぶ */
@@ -577,6 +642,7 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
       CallService.start(activity, args.title, args.text, args.microphone, actions)
       invoke.resolve()
     } catch (ex: Exception) {
+      DiagLog.w("[call] 通話のサービスを始められませんでした", ex)
       invoke.reject(ex.message)
     }
   }
@@ -658,12 +724,14 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
       NotifyService.start(activity)
       invoke.resolve()
     } catch (ex: Exception) {
+      DiagLog.w("[notify] 常駐サービスを始められませんでした", ex)
       invoke.reject(ex.message)
     }
   }
 
   @Command
   fun stop(invoke: Invoke) {
+    DiagLog.i("[notify] 常駐を無効にします")
     prefs.enabled = false
     NotifyService.stop(activity)
     invoke.resolve()

@@ -266,6 +266,14 @@ export const SETTINGS_PAGES: readonly UiPage[] = [
               "gui": "always",
               "tui": true
             }
+          },
+          {
+            "type": "slot",
+            "id": "diagnostics",
+            "show": {
+              "gui": "always",
+              "tui": false
+            }
           }
         ],
         "show": {

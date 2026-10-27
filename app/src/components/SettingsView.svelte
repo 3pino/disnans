@@ -33,6 +33,7 @@
   import PanelBar from './ui/PanelBar.svelte';
   import DeviceKindSettings from './DeviceKindSettings.svelte';
   import DeviceListSettings from './DeviceListSettings.svelte';
+  import DiagnosticsSettings from './DiagnosticsSettings.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { SETTINGS_TOP, settingsPage, type UiSlot } from '../lib/uiTree';
@@ -380,6 +381,8 @@
     <CallDeviceSettings />
   {:else if item.id === 'deviceList'}
     <DeviceListSettings />
+  {:else if item.id === 'diagnostics'}
+    <DiagnosticsSettings />
   {/if}
 {/snippet}
 

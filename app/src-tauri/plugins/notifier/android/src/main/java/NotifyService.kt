@@ -15,7 +15,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import okhttp3.OkHttpClient
@@ -32,7 +31,6 @@ import java.util.concurrent.TimeUnit
  */
 class NotifyService : Service() {
   companion object {
-    private const val TAG = "disnans"
     private const val CHANNEL_MESSAGES = "messages"
     private const val CHANNEL_CONNECTION = "connection"
     private const val ONGOING_ID = 1
@@ -81,7 +79,7 @@ class NotifyService : Service() {
       try {
         context.getSystemService(NotificationManager::class.java).notify(ASK_OPEN_ID, n)
       } catch (ex: SecurityException) {
-        Log.w(TAG, "通知を出せませんでした", ex)
+        DiagLog.w("[notify] 「アプリを開いて」の通知を出せませんでした", ex)
       }
     }
 
@@ -121,6 +119,8 @@ class NotifyService : Service() {
 
   override fun onCreate() {
     super.onCreate()
+    DiagLog.init(this)
+    DiagLog.i("[notify] サービスを作りました")
     createChannels(this)
     startInForeground()
     running = true
@@ -128,7 +128,8 @@ class NotifyService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    // サーバーの URL が変わったときにも呼ばれるので、つなぎ直す
+    // サーバーの URL が変わったときにも呼ばれるので、つなぎ直す。intent が null なら、システムが作り直した（START_STICKY）
+    DiagLog.i("[notify] onStartCommand restarted=${intent == null} flags=$flags")
     stopped = false
     attempt = 0
     socket?.cancel()
@@ -138,6 +139,7 @@ class NotifyService : Service() {
   }
 
   override fun onDestroy() {
+    DiagLog.i("[notify] サービスを止めます（connected=$connected）")
     stopped = true
     running = false
     connected = false
@@ -148,6 +150,12 @@ class NotifyService : Service() {
       getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it)
     }
     super.onDestroy()
+  }
+
+  /** 最近使ったアプリの一覧から消された。サービスはそのまま続く（機種によってはここで止められる） */
+  override fun onTaskRemoved(rootIntent: Intent?) {
+    DiagLog.i("[notify] アプリのタスクが消されました")
+    super.onTaskRemoved(rootIntent)
   }
 
   private fun startInForeground() {
@@ -172,6 +180,7 @@ class NotifyService : Service() {
   private fun setConnected(value: Boolean) {
     if (connected == value) return
     connected = value
+    DiagLog.i("[notify] ${if (value) "接続しました" else "切れました"}")
     if (running) getSystemService(NotificationManager::class.java).notify(ONGOING_ID, ongoingNotification())
   }
 
@@ -182,6 +191,7 @@ class NotifyService : Service() {
   private fun watchNetwork() {
     val cb = object : ConnectivityManager.NetworkCallback() {
       override fun onAvailable(network: Network) {
+        DiagLog.i("[notify] 回線が使えます: $network（いま: $currentNetwork connected=$connected）")
         handler.post {
           if (stopped) return@post
           if (connected && network == currentNetwork) return@post
@@ -193,6 +203,7 @@ class NotifyService : Service() {
       }
 
       override fun onLost(network: Network) {
+        DiagLog.i("[notify] 回線を失いました: $network（いま: $currentNetwork）")
         handler.post {
           if (stopped || network != currentNetwork) return@post
           // この回線はもう使えない。つながっていないことを示し、次の回線が来たら（または backoff で）つなぎ直す
@@ -208,7 +219,7 @@ class NotifyService : Service() {
       getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(cb)
       networkCallback = cb
     } catch (ex: Exception) {
-      Log.w(TAG, "ネットワークの監視を始められませんでした", ex)
+      DiagLog.w("[notify] ネットワークの監視を始められませんでした", ex)
     }
   }
 
@@ -217,6 +228,7 @@ class NotifyService : Service() {
     if (stopped) return
     val base = Prefs(this).serverUrl
     if (base.isNullOrEmpty()) {
+      DiagLog.w("[notify] サーバーの URL が無いので止めます")
       stopSelf()
       return
     }
@@ -225,10 +237,11 @@ class NotifyService : Service() {
     val request = try {
       Request.Builder().url(url).build()
     } catch (ex: IllegalArgumentException) {
-      Log.w(TAG, "サーバーの URL が不正です: $base", ex)
+      DiagLog.w("[notify] サーバーの URL が不正です: $base", ex)
       stopSelf()
       return
     }
+    DiagLog.i("[notify] つなぎます: $url")
     socket = client.newWebSocket(request, Listener())
   }
 
@@ -236,6 +249,7 @@ class NotifyService : Service() {
     if (stopped) return
     val delay = minOf(BACKOFF_MAX_MS, BACKOFF_BASE_MS shl minOf(attempt, 6))
     attempt++
+    DiagLog.i("[notify] ${delay}ms 後につなぎ直します（${attempt} 回目）")
     handler.removeCallbacks(reconnect)
     handler.postDelayed(reconnect, delay)
   }
@@ -254,13 +268,19 @@ class NotifyService : Service() {
         val ev = JSONObject(text)
         if (ev.optString("type") == "notify") handler.post { onNotify(ev) }
       } catch (ex: Exception) {
-        Log.w(TAG, "イベントを読めませんでした", ex)
+        DiagLog.w("[notify] イベントを読めませんでした", ex)
       }
     }
 
-    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = lost(webSocket)
+    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+      DiagLog.i("[notify] サーバーが閉じました: code=$code reason=$reason")
+      lost(webSocket)
+    }
 
-    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = lost(webSocket)
+    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+      DiagLog.w("[notify] 接続に失敗しました（HTTP ${response?.code ?: "-"}）", t)
+      lost(webSocket)
+    }
 
     private fun lost(webSocket: WebSocket) {
       handler.post {
@@ -274,8 +294,12 @@ class NotifyService : Service() {
 
   private fun onNotify(ev: JSONObject) {
     val sample = ev.optBoolean("sample", false)
+    val logId = ev.optNullableString("message_id") ?: if (sample) "sample" else "-"
     // アプリが前面にあるときは、アプリ内の表示に任せる（サンプルは確認用なので必ず出す）
-    if (!sample && isAppInForeground()) return
+    if (!sample && isAppInForeground()) {
+      DiagLog.i("[notify] 受信 $logId: アプリが前面なので出しません")
+      return
+    }
 
     val title = ev.optString("title")
     val body = ev.optString("body")
@@ -285,7 +309,10 @@ class NotifyService : Service() {
     if (messageId != null) {
       val prefs = Prefs(this)
       val shown = prefs.shownMessages
-      if (messageId in shown) return
+      if (messageId in shown) {
+        DiagLog.i("[notify] 受信 $logId: 表示済みなので出しません")
+        return
+      }
       prefs.shownMessages = shown + messageId
     }
     val id = (messageId ?: "sample-${System.currentTimeMillis()}").hashCode()
@@ -301,10 +328,12 @@ class NotifyService : Service() {
       .setContentIntent(openAppIntent(id, threadId))
       .build()
     try {
-      getSystemService(NotificationManager::class.java).notify(id, n)
+      val nm = getSystemService(NotificationManager::class.java)
+      nm.notify(id, n)
+      DiagLog.i("[notify] 受信 $logId: 通知を出しました（許可=${nm.areNotificationsEnabled()}）")
     } catch (ex: SecurityException) {
       // 通知が許可されていない
-      Log.w(TAG, "通知を出せませんでした", ex)
+      DiagLog.w("[notify] 受信 $logId: 通知を出せませんでした", ex)
     }
   }
 

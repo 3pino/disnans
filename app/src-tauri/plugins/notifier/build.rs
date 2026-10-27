@@ -23,6 +23,10 @@ const COMMANDS: &[&str] = &[
     "set_orientation",
     "set_keep_web_view",
     "log_call",
+    "diag_log",
+    "diag_read",
+    "diag_clear",
+    "diag_share",
     "vibrate",
 ];
 

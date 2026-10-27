@@ -350,7 +350,7 @@ pub const SETTINGS_PAGES: &[Page] = &[
                 id: "app",
                 title: "アプリ",
                 show: BOTH,
-                items: &[slot("version", BOTH)],
+                items: &[slot("version", BOTH), slot("diagnostics", GUI_ONLY)],
             },
         ],
     },

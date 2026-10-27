@@ -80,12 +80,14 @@ class Notifications {
     await invokeNotifier('request_permission');
     await invokeNotifier('start', { serverUrl: getServerUrl() });
     await this.refresh();
+    console.info(`[notify] 常駐の状態: ${JSON.stringify(this.android)}`);
   }
 
   private async initDesktop(): Promise<void> {
     await listenSystemOpen('desktop', () => this.openTarget());
     const { isPermissionGranted, requestPermission } = await import('@tauri-apps/plugin-notification');
     this.permission = (await isPermissionGranted()) ? 'granted' : await requestPermission();
+    console.info(`[notify] 通知の許可: ${this.permission}`);
   }
 
   private openTarget(): void {
@@ -139,8 +141,10 @@ class Notifications {
 
   /** サーバーの notify イベントを表示する */
   show(ev: NotifyEvent): void {
-    if (!ev.sample && this.isViewing()) return;
     const visible = document.visibilityState === 'visible';
+    // 本文は残さない
+    console.info(`[notify] アプリが受信: sample=${ev.sample} visible=${visible} focus=${document.hasFocus()} tab=${ui.tab}`);
+    if (!ev.sample && this.isViewing()) return;
 
     if (this.backend === 'android') {
       // 常駐サービスが動いていれば、システム通知はそちらが出す

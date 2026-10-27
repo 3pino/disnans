@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-diag-read"
+description = "Enables the diag_read command without any pre-configured scope."
+commands.allow = ["diag_read"]
+
+[[permission]]
+identifier = "deny-diag-read"
+description = "Denies the diag_read command without any pre-configured scope."
+commands.deny = ["diag_read"]

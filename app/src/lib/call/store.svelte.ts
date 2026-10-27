@@ -4,7 +4,7 @@ import type { ClientEvent } from '../protocol/ClientEvent';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import type { IconRef } from '../icons.svelte';
 import { startCapture, type Capture } from './capture';
-import { installCallLogForwarding, keepWebViewEnabled, setKeepWebViewResumed } from './nativeCall';
+import { keepWebViewEnabled, setKeepWebViewResumed } from './nativeCall';
 import { LATENCY_REPORT_MS, callLatency, clockText, type ClockPoint } from './latency';
 import { isAndroid } from '../platform';
 import {
@@ -656,8 +656,7 @@ export class CallStore {
         }
         return;
       }
-      // 通話の診断（[call] の行）を logcat にも出す。WebView を裏でも動かすかを、常駐の開始の前に決める
-      installCallLogForwarding();
+      // WebView を裏でも動かすかを、常駐の開始の前に決める
       setKeepWebViewResumed(keepWebViewEnabled());
       // マイクの許可を得たあとで常駐を始める（Android 14 以降は許可前だと失敗する）
       try {
