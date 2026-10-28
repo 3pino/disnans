@@ -14,7 +14,7 @@ use crate::attachment_names::key;
 use crate::links;
 use crate::webdav::tree::Item;
 
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
 pub struct FileRow {
     pub id: String,
     pub uploader_id: String,

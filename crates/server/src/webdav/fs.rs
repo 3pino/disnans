@@ -197,6 +197,8 @@ pub fn io_err(e: &std::io::Error) -> FsError {
         ErrorKind::NotFound => FsError::NotFound,
         ErrorKind::AlreadyExists | ErrorKind::DirectoryNotEmpty => FsError::Exists,
         ErrorKind::PermissionDenied => FsError::Forbidden,
+        // 上書きしない移動に対応しない OS・ファイルシステム（安全のため動かさない）
+        ErrorKind::Unsupported => FsError::NotImplemented,
         _ => FsError::GeneralFailure,
     }
 }
@@ -248,7 +250,7 @@ impl SharedFs {
             .map_err(|_| FsError::GeneralFailure)
     }
 
-    fn notify(&self, segs: &[String]) {
+    pub(crate) fn notify(&self, segs: &[String]) {
         self.state
             .hub
             .broadcast(&ServerEvent::FilesChanged { path: rel(segs) });
@@ -256,7 +258,7 @@ impl SharedFs {
 
     /// 実際のファイルの場所。区切りごとに名前を確かめ、リンクがあれば拒否する。
     /// 書き込みなら拒否は 403（`write`）、読み取りなら 404（存在を隠す）。
-    fn real_path(&self, segs: &[String], write: bool) -> FsResult<PathBuf> {
+    pub(crate) fn real_path(&self, segs: &[String], write: bool) -> FsResult<PathBuf> {
         let refuse = if write {
             FsError::Forbidden
         } else {
@@ -569,7 +571,7 @@ impl SharedFs {
                 let m = std::fs::symlink_metadata(&p).map_err(|e| io_err(&e))?;
                 if m.is_dir() {
                     if recursive {
-                        remove_tree(&p)?;
+                        remove_tree_blocking(p.clone()).await?;
                     } else {
                         std::fs::remove_dir(&p).map_err(|e| io_err(&e))?;
                     }
@@ -597,9 +599,28 @@ impl SharedFs {
             }
             (Area::Shared(from), Area::Shared(to)) => {
                 let src = self.real_path(&from, true)?;
-                let (dst, _parent) = self.writable_target(&to)?;
-                check_destination(&dst, overwrite)?;
-                std::fs::rename(&src, &dst).map_err(|e| io_err(&e))?;
+                let src_meta = std::fs::symlink_metadata(&src).map_err(|e| io_err(&e))?;
+                let dst = if src_meta.is_dir() {
+                    // フォルダは上書き・マージしない。自分の中へは動かせない
+                    let (dst, _parent) = self.new_target(&to)?;
+                    if dst.starts_with(&src) {
+                        return Err(FsError::Forbidden);
+                    }
+                    dst
+                } else {
+                    let (dst, _parent) = self.new_target(&to)?;
+                    // 同じ名前のフォルダは、ファイルでも置き換えない（409）
+                    if std::fs::symlink_metadata(&dst).is_ok_and(|m| m.is_dir()) {
+                        return Err(FsError::Exists);
+                    }
+                    dst
+                };
+                // 同名があれば失敗する（上書きは overwrite のファイルだけ）。確かめと移動は一度に行う
+                if src_meta.is_dir() || !overwrite {
+                    crate::noreplace::rename_no_replace(&src, &dst).map_err(|e| io_err(&e))?;
+                } else {
+                    std::fs::rename(&src, &dst).map_err(|e| io_err(&e))?;
+                }
                 self.notify(&from);
                 self.notify(&to);
                 Ok(())
@@ -609,21 +630,64 @@ impl SharedFs {
         }
     }
 
+    /// フォルダを再帰でコピーする（共有フォルダの中どうし）。同名があれば上書き・マージせず 409。
+    /// 一時のフォルダに作ってから名前を付けるので、途中で失敗しても行き先に部分的な結果は残らない。
+    async fn copy_dir(&self, src: &Path, to: &[String]) -> FsResult<()> {
+        let (dst, parent) = self.new_target(to)?;
+        if dst.starts_with(src) {
+            return Err(FsError::Forbidden);
+        }
+        if std::fs::symlink_metadata(&dst).is_ok() {
+            return Err(FsError::Exists);
+        }
+        let tmp = parent.join(format!("{TMP_PREFIX}{}", ulid::Ulid::new()));
+        let (src_owned, tmp_owned) = (src.to_owned(), tmp.clone());
+        tokio::task::spawn_blocking(move || {
+            crate::webdav::usage::copy_tree(&src_owned, &tmp_owned)
+        })
+        .await
+        .map_err(|_| FsError::GeneralFailure)?
+        .map_err(|e| io_err(&e))?;
+        // 名前を付けるまでに同名が現れたら、一時のものを消して 409
+        // 上書きしない移動（同名が今あれば失敗し、一時のものを消す）
+        if let Err(e) = crate::noreplace::rename_no_replace(&tmp, &dst) {
+            let _ = remove_tree_blocking(tmp).await;
+            return Err(io_err(&e));
+        }
+        self.notify(to);
+        Ok(())
+    }
+
     /// コピー。元は共有フォルダのファイル、または添付。先は共有フォルダ、または `attachments/` の中（新しい添付）。
     /// `overwrite` の決まりは `rename` と同じ（添付の中身を差し替える形になる）。
     pub async fn copy(&self, from: &[String], to: &[String], overwrite: bool) -> FsResult<()> {
         match area(to) {
             Area::Shared(to) => {
+                if let Area::Shared(from_segs) = area(from) {
+                    let src = self.real_path(&from_segs, false)?;
+                    let src_meta = std::fs::symlink_metadata(&src).map_err(|e| io_err(&e))?;
+                    if src_meta.is_dir() {
+                        return self.copy_dir(&src, &to).await;
+                    }
+                }
                 let src = self.read_target(from).await?.path;
-                let (dst, parent) = self.writable_target(&to)?;
-                check_destination(&dst, overwrite)?;
+                let (dst, parent) = self.new_target(&to)?;
+                // 同じ名前のフォルダは、ファイルでも置き換えない（409）
+                if std::fs::symlink_metadata(&dst).is_ok_and(|m| m.is_dir()) {
+                    return Err(FsError::Exists);
+                }
                 let tmp = parent.join(format!("{TMP_PREFIX}{}", ulid::Ulid::new()));
                 if let Err(e) = tokio::fs::copy(&src, &tmp).await {
                     let _ = std::fs::remove_file(&tmp);
                     return Err(io_err(&e));
                 }
-                // 一時ファイルを作ってから名前を差し替える
-                tokio::fs::rename(&tmp, &dst).await.map_err(|e| {
+                // 一時ファイルを作ってから名前を付ける（overwrite でなければ、同名があれば失敗する）
+                let placed = if overwrite {
+                    std::fs::rename(&tmp, &dst)
+                } else {
+                    crate::noreplace::rename_no_replace(&tmp, &dst)
+                };
+                placed.map_err(|e| {
                     let _ = std::fs::remove_file(&tmp);
                     io_err(&e)
                 })?;
@@ -652,16 +716,15 @@ impl SharedFs {
     }
 }
 
-/// 移動・コピーの行き先に同名のものがあるときの決まり。ファイルの上書きは `overwrite` のときだけ。
-fn check_destination(dst: &Path, overwrite: bool) -> FsResult<()> {
-    match std::fs::symlink_metadata(dst) {
-        Ok(_) if !overwrite => Err(FsError::Exists),
-        _ => Ok(()),
-    }
+/// フォルダの中身ごと消すのを、非同期の処理の外（blocking の thread）で行う。
+pub(crate) async fn remove_tree_blocking(dir: PathBuf) -> FsResult<()> {
+    tokio::task::spawn_blocking(move || remove_tree(&dir))
+        .await
+        .map_err(|_| FsError::GeneralFailure)?
 }
 
 /// フォルダを中身ごと消す（リンクは辿らず、リンクそのものを消す）。
-fn remove_tree(dir: &Path) -> FsResult<()> {
+pub(crate) fn remove_tree(dir: &Path) -> FsResult<()> {
     for entry in std::fs::read_dir(dir).map_err(|e| io_err(&e))? {
         let entry = entry.map_err(|e| io_err(&e))?;
         let path = entry.path();

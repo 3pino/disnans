@@ -2,7 +2,7 @@
 //!
 //! 置き場所は `<データ>/backup/`。1 回のバックアップは同じ時刻（`YYYYMMDD-HHMMSS-mmm`、UTC）の組:
 //! - `disnans-<時刻>.db`（DB を VACUUM INTO で複製）
-//! - `shared-<時刻>/`（共有フォルダ）、`files-<時刻>/`（添付の実体）、`avatars-<時刻>/`、`plugins-<時刻>/`。どれも**ハードリンク**で作る
+//! - `shared-<時刻>/`（共有フォルダ）、`files-<時刻>/`（添付の実体）、`avatars-<時刻>/`、`plugins-<時刻>/`、`trash-<時刻>/`（ゴミ箱の項目。DB の行と組で戻せる）。どれも**ハードリンク**で作る
 //!
 //! ハードリンクなので、中身はコピーされず、同じ実体を指す。ファイルの中身は書き換えない
 //! （書き込みは必ず一時ファイルを rename する）ので、上書きや削除をしてもバックアップの中身は古いまま残る。
@@ -20,7 +20,7 @@ use crate::webdav::names::is_internal;
 /// 残す世代の数。
 pub const KEEP: usize = 20;
 /// 組に入るフォルダの種類（データ `data/` の下の場所と同じ名前）。
-const FOLDER_KINDS: [&str; 4] = ["shared", "files", "avatars", "plugins"];
+const FOLDER_KINDS: [&str; 5] = ["shared", "files", "avatars", "plugins", "trash"];
 /// 定期のバックアップの間隔。
 pub const INTERVAL: Duration = Duration::from_secs(24 * 3600);
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(120);
@@ -58,6 +58,7 @@ pub async fn run(state: &SharedState) -> Result<String, String> {
         state.config.files_dir(),
         state.config.avatars_dir(),
         state.config.plugins_dir(),
+        state.config.trash_dir(),
     ];
     let set_dir = dir.clone();
     let set_ts = ts.clone();

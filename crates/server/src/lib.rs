@@ -15,6 +15,7 @@ pub mod files;
 pub mod hub;
 pub mod image_proc;
 pub mod links;
+pub mod noreplace;
 pub mod notify;
 pub mod plugins;
 pub mod presence;
@@ -23,6 +24,7 @@ pub mod sessions;
 pub mod state;
 pub mod store;
 pub mod tailscale;
+pub mod trash;
 pub mod update;
 pub mod webdav;
 pub mod ws;
@@ -56,6 +58,9 @@ pub async fn build(
     let state: SharedState = Arc::new(AppState::new(config, pool, hub, notifier));
 
     std::fs::create_dir_all(state.config.shared_dir())?;
+    std::fs::create_dir_all(state.config.trash_dir())?;
+    // 途中で止まったゴミ箱の操作を先に回復する（終わるまで、ルートも周期の処理も始めない）
+    trash::recover(&state).await?;
     files::spawn_cleanup_task(state.clone());
     calls::spawn_sweep_task(state.clone());
     // 内蔵のバックアップ（既定で有効。DISNANS_BACKUP=0 で止める）

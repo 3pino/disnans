@@ -9,6 +9,7 @@ mod plugins;
 mod reads;
 mod sessions;
 mod shared;
+mod shared_trash;
 mod users;
 
 use axum::Router;
@@ -73,6 +74,13 @@ pub fn router(state: SharedState) -> Router {
                 .delete(shared::delete)
                 .layer(DefaultBodyLimit::disable()),
         )
+        .route(
+            "/shared-trash",
+            get(shared_trash::list).post(shared_trash::ops),
+        )
+        .route("/shared-trash/{id}", delete(shared_trash::purge))
+        .route("/shared-size", get(shared::size_root))
+        .route("/shared-size/{*path}", get(shared::size))
         .route("/notify/sample", post(notify::sample))
         // 上限はプラグインの合計サイズに、multipart の見出しの分を足したもの
         .route(

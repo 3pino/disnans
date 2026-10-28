@@ -26,7 +26,7 @@ jobs:
       - name: 生成した TypeScript の型がコミット済みか確認
         run: git diff --exit-code app/src/lib/protocol app/src/lib/emojiNames.generated.ts app/src/lib/uiTree.generated.ts
 
-  # 共通ファイルの排他・置換と CLI のプロセス境界は Windows でも検証する。
+  # 共通ファイルの排他・置換、CLI のプロセス境界、サーバーの上書きしない復元を Windows でも検証する。
   client-windows:
     runs-on: windows-latest
     steps:
@@ -39,6 +39,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/wip' }}
       - run: cargo clippy -p disnans-client-core -p disnans-cli --all-targets --locked -- -D warnings
       - run: cargo test -p disnans-client-core -p disnans-cli --locked
+      - name: サーバーのファイル操作（Windows の no-replace を含む）
+        run: cargo test -p disnans-server --lib --locked
 
   app:
     runs-on: ubuntu-latest

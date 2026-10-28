@@ -75,6 +75,11 @@ impl Config {
         self.data_dir.join("backup")
     }
 
+    /// 共有フォルダのゴミ箱（`trash/<ID>/`）。共有フォルダの外にあるので、一覧・WebDAV・共有の HTTP からは読めない。
+    pub fn trash_dir(&self) -> PathBuf {
+        self.data_dir.join("trash")
+    }
+
     /// アップロード中の一時ファイル。
     pub fn tmp_dir(&self) -> PathBuf {
         self.data_dir.join("tmp")

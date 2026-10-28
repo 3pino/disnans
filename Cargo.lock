@@ -738,6 +738,7 @@ dependencies = [
  "mime",
  "percent-encoding",
  "reqwest",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",
@@ -751,6 +752,7 @@ dependencies = [
  "tracing-subscriber",
  "ulid",
  "webp",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

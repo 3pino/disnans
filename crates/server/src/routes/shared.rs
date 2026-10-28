@@ -15,7 +15,7 @@ use axum::extract::{Path, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use dav_server::fs::{DavFile, FsError, OpenOptions};
-use disnans_shared::{SharedEntry, SharedKind, SharedListing, SharedOp};
+use disnans_shared::{SharedEntry, SharedKind, SharedListing, SharedOp, SharedSize};
 use futures_util::StreamExt;
 
 use super::files;
@@ -23,6 +23,7 @@ use crate::auth::CurrentUser;
 use crate::error::{AppError, AppResult};
 use crate::state::SharedState;
 use crate::webdav::fs::{Listed, SharedFs, rel};
+use crate::webdav::tree::ATTACHMENTS_DIR;
 
 /// 区切りの列（空の要素は捨てる）。
 fn segments(path: &str) -> Vec<String> {
@@ -32,7 +33,7 @@ fn segments(path: &str) -> Vec<String> {
         .collect()
 }
 
-fn entry(path: &str, l: &Listed) -> SharedEntry {
+pub(super) fn entry(path: &str, l: &Listed) -> SharedEntry {
     SharedEntry {
         name: l.name.clone(),
         path: path.to_owned(),
@@ -71,6 +72,11 @@ fn map_err(e: FsError) -> AppError {
         FsError::TooLarge => {
             AppError::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "大きすぎます")
         }
+        FsError::NotImplemented => AppError::new(
+            StatusCode::NOT_IMPLEMENTED,
+            "unsupported",
+            "この環境では上書きしない移動ができないので、動かしません",
+        ),
         FsError::InsufficientStorage => AppError::new(
             StatusCode::INSUFFICIENT_STORAGE,
             "insufficient_storage",
@@ -210,4 +216,88 @@ pub async fn ops(
     };
     let found = fs.stat(&to).await.map_err(map_err)?;
     Ok(Json(entry(&rel(&to), &found)))
+}
+
+/// 大きさ（ルート）。仮想の `attachments/` は、DB の添付を 1 回だけ数える。
+pub async fn size_root(
+    State(state): State<SharedState>,
+    CurrentUser(_user): CurrentUser,
+) -> AppResult<Json<SharedSize>> {
+    Ok(Json(size_of(&state, &[]).await?))
+}
+
+/// フォルダ・ファイル・添付の大きさ。
+pub async fn size(
+    State(state): State<SharedState>,
+    CurrentUser(_user): CurrentUser,
+    Path(path): Path<String>,
+) -> AppResult<Json<SharedSize>> {
+    Ok(Json(size_of(&state, &segments(&path)).await?))
+}
+
+/// 大きさの集計。ルート・添付・実際のファイルとフォルダを区別する（リンクは辿らない）。
+async fn size_of(state: &SharedState, segs: &[String]) -> AppResult<SharedSize> {
+    use crate::webdav::usage::{Usage, usage};
+    match segs.first().map(String::as_str) {
+        // ルート: 実際のフォルダ（attachments は除く）＋ 仮想の attachments（1 フォルダ・DB の添付）
+        None => {
+            let shared_dir = state.config.shared_dir();
+            let real = tokio::task::spawn_blocking(move || usage(&shared_dir, &[ATTACHMENTS_DIR]))
+                .await
+                .map_err(AppError::internal)?
+                .map_err(|_| map_err(FsError::GeneralFailure))?;
+            let mut total = real;
+            total.add(attachments_usage(state).await?);
+            total.dirs += 1; // 仮想の attachments
+            Ok(to_size(total))
+        }
+        Some(ATTACHMENTS_DIR) if segs.len() == 1 => {
+            let mut total = attachments_usage(state).await?;
+            total.dirs = 0; // 要求先（attachments）自身は含めない
+            Ok(to_size(total))
+        }
+        Some(ATTACHMENTS_DIR) => {
+            // attachments/<名前> は 1 ファイル（添付）
+            if segs.len() != 2 {
+                return Err(AppError::not_found("見つかりません"));
+            }
+            let item = crate::store::files::attachment_items(&state.pool)
+                .await?
+                .into_iter()
+                .find(|i| i.name.to_lowercase() == segs[1].to_lowercase())
+                .ok_or_else(|| AppError::not_found("見つかりません"))?;
+            Ok(to_size(Usage {
+                size: item.size,
+                files: 1,
+                dirs: 0,
+            }))
+        }
+        Some(_) => {
+            let fs = SharedFs::new(state, "");
+            let p = fs.real_path(segs, false).map_err(map_err)?;
+            let u = tokio::task::spawn_blocking(move || usage(&p, &[]))
+                .await
+                .map_err(AppError::internal)?
+                .map_err(|_| AppError::not_found("見つかりません"))?;
+            Ok(to_size(u))
+        }
+    }
+}
+
+/// 添付の合計（件数はファイル数。フォルダの数は 0。呼び出し側で足す）。
+async fn attachments_usage(state: &SharedState) -> AppResult<crate::webdav::usage::Usage> {
+    let items = crate::store::files::attachment_items(&state.pool).await?;
+    Ok(crate::webdav::usage::Usage {
+        size: items.iter().map(|i| i.size).sum(),
+        files: items.len() as u64,
+        dirs: 0,
+    })
+}
+
+fn to_size(u: crate::webdav::usage::Usage) -> SharedSize {
+    SharedSize {
+        size: u.size,
+        files: u.files,
+        dirs: u.dirs,
+    }
 }

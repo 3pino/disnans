@@ -85,6 +85,49 @@ pub enum SharedOp {
     },
 }
 
+/// ゴミ箱の 1 つの項目（`GET /api/shared-trash`）。`id` は ULID（呼ぶ側は中身を解釈しない不透明な文字列）。
+/// 添付も入る（復元すると添付の ID はそのまま戻る）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SharedTrashEntry {
+    pub id: Id,
+    /// 削除されたときの共有フォルダからの相対パス（`docs/a.txt`。添付は `attachments/<file_id>` の形）。
+    pub original_path: String,
+    pub kind: SharedKind,
+    /// ファイルの大きさ（バイト）。フォルダは配下の合計（表示用）。
+    pub size: u64,
+    /// ゴミ箱へ入れた時刻（ミリ秒、UNIX 時間）。
+    pub deleted_at: Timestamp,
+}
+
+/// ゴミ箱の一覧（`GET /api/shared-trash`）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SharedTrashListing {
+    pub entries: Vec<SharedTrashEntry>,
+}
+
+/// ゴミ箱の操作（`POST /api/shared-trash`）。
+/// `Trash` は項目をゴミ箱へ入れる（共有フォルダの項目と添付）。`Restore` は元の場所へ戻す（同名があれば 409 `exists`、親が無ければ 409 `parent_missing`。上書きはしない）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "op", rename_all = "lowercase")]
+#[ts(export)]
+pub enum SharedTrashOp {
+    Trash { path: String },
+    Restore { id: Id },
+}
+
+/// フォルダ（またはファイル）の大きさ（`GET /api/shared-size/{path}`、ルートは `/api/shared-size`）。
+/// `size` は配下のファイルの合計（バイト）、`files` は配下のファイル数、`dirs` は配下のフォルダ数（要求先のフォルダ自身は含まない）。
+/// ファイルを指したら files 1・dirs 0。ルートの仮想の `attachments/` は 1 回だけ数える。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SharedSize {
+    pub size: u64,
+    pub files: u64,
+    pub dirs: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Attachment {

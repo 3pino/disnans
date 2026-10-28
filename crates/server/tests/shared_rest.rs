@@ -420,12 +420,12 @@ async fn folders_are_never_overwritten_even_with_overwrite() {
         json!({"op": "copy", "from": "f.txt", "to": "dir", "overwrite": true}),
     )
     .await;
-    assert_eq!(res.status(), 403);
+    assert_eq!(res.status(), 409);
     let res = op(
         &server,
         json!({"op": "move", "from": "f.txt", "to": "dir", "overwrite": true}),
     )
     .await;
-    assert_eq!(res.status(), 403);
+    assert_eq!(res.status(), 409);
     assert_eq!(listing(&server, "/api/shared/dir").await.entries.len(), 0);
 }

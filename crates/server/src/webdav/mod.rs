@@ -7,6 +7,7 @@ pub mod fs;
 pub mod identity;
 pub mod names;
 pub mod tree;
+pub mod usage;
 
 use axum::Router;
 use axum::extract::Request;
