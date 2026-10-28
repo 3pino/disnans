@@ -111,7 +111,8 @@ fn release(state: &OsDropState, id: u64) {
 pub fn record(window: &tauri::Window, paths: &[PathBuf], position: Option<PhysicalPoint>) {
     let window = window.clone();
     let paths = paths.to_vec();
-    let _ = tauri::async_runtime::spawn_blocking(move || {
+    // ハンドルを明示的に手放しても作業は継続する。GUI のイベントでは完了を待たない。
+    drop(tauri::async_runtime::spawn_blocking(move || {
         let app = window.app_handle().clone();
         let state = app.state::<OsDropState>();
         let (id, payload) = match register(&state, &paths) {
@@ -145,7 +146,7 @@ pub fn record(window: &tauri::Window, paths: &[PathBuf], position: Option<Physic
         if let (Some(id), Err(_)) = (id, sent) {
             release(&state, id);
         }
-    });
+    }));
 }
 
 /// 指定の ID のドロップの根（違う ID や終わったドロップは拒む）。使われたことを記録する
