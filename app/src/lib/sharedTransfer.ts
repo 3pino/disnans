@@ -1,7 +1,7 @@
 // 共有フォルダの項目の移動・コピー（「…」の移動・切り取り・コピー、貼り付け）の決まり。見た目は持たない。
 // サーバーの決まり（docs/api/shared-folder.md）に合わせて先に判定する。最後の判定はサーバー。
 // - 共有フォルダと attachments/ の間は移動できない（コピーは可）。attachments/ の中の移動は名前の変更だけ（ファイルのみ）
-// - フォルダはコピーできない。フォルダを自分の中へ移せない
+// - フォルダを自分の中へは移動・コピーできない
 // - 同名があれば上書き（必ず確認する）。同名のフォルダがあれば止める（sharedOps の共通規則）
 
 import type { SharedEntry } from './protocol/SharedEntry';
@@ -23,14 +23,13 @@ const fail = (message: string): Check => ({ ok: false, message });
 /** 項目を、移動先のフォルダへ move / copy できるか（サーバーの決まりと同じ） */
 export function checkTransfer(op: TransferOp, item: TransferItem, destDir: string): Check {
   if (item.path === ATTACHMENTS_DIR) return fail(RESERVED_REASON);
+  // フォルダを自分自身・子孫へは移動もコピーもできない
+  if (item.kind === 'dir' && (destDir === item.path || destDir.startsWith(item.path + '/'))) {
+    return op === 'move' ? fail('フォルダを自分の中へは移せません') : fail('フォルダを自分の中へはコピーできません');
+  }
   if (op === 'move') {
     if (inAttachments(item.path) !== inAttachments(destDir)) return fail('共有フォルダと添付の間は移動できません（コピーしてください）');
-    if (item.kind === 'dir' && (destDir === item.path || destDir.startsWith(item.path + '/'))) {
-      return fail('フォルダを自分の中へは移せません');
-    }
-    return ok;
   }
-  if (item.kind === 'dir') return fail('フォルダはコピーできません');
   return ok;
 }
 

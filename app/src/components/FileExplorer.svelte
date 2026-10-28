@@ -14,15 +14,18 @@
   import Copy from '@lucide/svelte/icons/copy';
   import Scissors from '@lucide/svelte/icons/scissors';
   import Trash from '@lucide/svelte/icons/trash';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
   import IconButton from './ui/IconButton.svelte';
   import PanelBar from './ui/PanelBar.svelte';
   import Button from './ui/Button.svelte';
   import Modal from './ui/Modal.svelte';
   import TextInput from './ui/TextInput.svelte';
   import SharedEntryActions from './SharedEntryActions.svelte';
+  import TrashView from './TrashView.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { fileExplorer } from '../lib/stores/fileExplorer.svelte';
   import { sharedIndex } from '../lib/stores/sharedIndex.svelte';
+  import { explorerTrash } from '../lib/stores/explorerTrash.svelte';
   import { breadcrumbs, entryAction, kindLabel, sortEntries } from '../lib/fileExplorer';
   import { explorerView, type ViewMode } from '../lib/stores/explorerView.svelte';
   import { baseName, parentOf } from '../lib/sharedPath';
@@ -31,8 +34,8 @@
   import Menu from './ui/Menu.svelte';
   import MenuItem from './ui/MenuItem.svelte';
   import { attachmentActionText } from '../lib/fileLink';
-  import { childPath, deleteManyConfirm, inAttachments, nameError, overwriteConfirm, planUpload, renameAllowed, renameTarget } from '../lib/sharedOps';
-  import { checkTransfer, runTransfer, transferFailure, type TransferItem } from '../lib/sharedTransfer';
+  import { childPath, inAttachments, nameError, overwriteConfirm, planUpload, renameAllowed, renameTarget, sameNameEntry, trashManyConfirm, ATTACHMENTS_DIR } from '../lib/sharedOps';
+  import { checkTransfer, runTransfer, transferFailure, type TransferItem, type TransferOp } from '../lib/sharedTransfer';
   import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
   import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
   import { LONG_PRESS_MS } from '../lib/sortable';
@@ -41,8 +44,9 @@
   import { readClipboardImage, readNativeClipboardImage } from '../lib/clipboardImage';
   import { clipboardTextName, peekClipboard, readClipboardText, type ClipboardPeek } from '../lib/clipboardPaste';
   import { isLinuxDesktop } from '../lib/platform';
-  import { sharedApi, uploadShared } from '../lib/transport/shared';
-  import { sharedFileUrl, fileUrl } from '../lib/config';
+  import { listenNativeDrop, listenOsDrop, osDropEntries, osDropRelease, dropRootsOf, entriesFromDropRoots, type OsDropEntry } from '../lib/dropFiles';
+  import { sharedApi, uploadShared, type SharedApi } from '../lib/transport/shared';
+  import { sharedFileUrl, fileUrl, getServerUrl, onServerChange } from '../lib/config';
   import { isImage, isPdf } from '../lib/fileLink';
   import { viewerKind } from '../lib/viewers';
   import type { LightboxItem } from '../lib/lightbox';
@@ -151,20 +155,105 @@
     uploads = uploads.filter((x) => x.key !== key);
   }
 
+  // ---- 送る・移す・消す・戻すの範囲（サーバー） ----
+  // 操作を始めたときのサーバーを覚える。確認や応答を待つあいだにサーバーが変わったら、新しいサーバーへは書かない。
+  // 変わったあとは、新しいサーバーの一覧の写し・選択には触らない（前のサーバーの結果は、その分だけ扱う）。
+
+  /** サーバーが変わったときの文（操作を止めた理由） */
+  const SERVER_CHANGED = 'サーバーが変わったため、ここで止めました';
+
+  type Scope = { url: string; alive: () => boolean };
+
+  /** 今のサーバーを覚える。alive() は、覚えたサーバーのままかを返す */
+  function beginScope(): Scope {
+    const url = getServerUrl();
+    return { url, alive: () => getServerUrl() === url };
+  }
+
+  /** 範囲の外になっていたら投げる（書込の直前と応答のあとに置く。呼ぶ側の失敗として扱われる） */
+  class ServerChangedError extends Error {
+    constructor() {
+      super(SERVER_CHANGED);
+      this.name = 'ServerChangedError';
+    }
+  }
+
+  function assertScope(scope: Scope): void {
+    if (!scope.alive()) throw new ServerChangedError();
+  }
+
+  /** 移動・コピーの API。範囲のあいだだけ呼べる（呼ぶ前と、応答のあとに確かめる） */
+  function scopedTransfer(scope: Scope): Pick<SharedApi, 'move' | 'copy'> {
+    return {
+      move: async (from, to, overwrite) => {
+        assertScope(scope);
+        const r = await sharedApi.move(from, to, overwrite);
+        assertScope(scope);
+        return r;
+      },
+      copy: async (from, to, overwrite) => {
+        assertScope(scope);
+        const r = await sharedApi.copy(from, to, overwrite);
+        assertScope(scope);
+        return r;
+      },
+    };
+  }
+
+  /** 送る 1 回分（複数件）の宛先。一覧は最初に 1 回だけ取る。成功したものは写しに足して、後続の同名の確認に使う */
+  type Batch = { dir: string; scope: Scope; entries: Map<string, SharedEntry> };
+
+  /** 宛先の一覧を用意する（未読なら取り直す）。範囲は今のサーバー。取れない・サーバーが変わったら null */
+  async function beginBatch(dir: string): Promise<Batch | null> {
+    const scope = beginScope();
+    const entries = await fetchDestEntries(dir);
+    if (!scope.alive()) {
+      ui.toast(SERVER_CHANGED, 'error');
+      return null;
+    }
+    if (!entries) return null; // エラーは fetchDestEntries がトーストで通知済み
+    return { dir, scope, entries: new Map(entries) };
+  }
+
   async function onPicked(e: Event): Promise<void> {
     const input = e.currentTarget as HTMLInputElement;
     const picked = [...(input.files ?? [])];
     input.value = '';
+    if (picked.length === 0) return;
     // 開いたフォルダに送る（途中でフォルダを移っても、最初のフォルダへ送る）
-    const dir = fileExplorer.dir;
-    for (const file of picked) await sendOne(dir, file);
+    const batch = await beginBatch(fileExplorer.dir);
+    if (batch) await sendAll(batch, picked);
   }
 
-  /** 1 件を送る。同名があれば確認してから上書きする（確認なしには上書きしない）。送れたらそのパス、送らなかった・失敗は null */
-  async function sendOne(dir: string, file: File): Promise<string | null> {
+  /** 並んだ件を順に送る。範囲（サーバー）が変わったら、残りは送らない（変わったことは sendOne が知らせる） */
+  async function sendAll(batch: Batch, files: File[]): Promise<(string | null)[]> {
+    const sent: (string | null)[] = [];
+    for (const file of files) {
+      if (!batch.scope.alive()) break;
+      sent.push(await sendOne(batch.dir, file, batch));
+    }
+    return sent;
+  }
+
+  /**
+   * 1 件を送る。同名があれば確認してから上書きする（確認なしには上書きしない）。送れたらそのパス、送らなかった・失敗は null。
+   * batch が無いときは、宛先の一覧を取り直してから同名を確かめる（クリップボードの 1 件など）。
+   */
+  async function sendOne(dir: string, file: File, batch?: Batch): Promise<string | null> {
     uploads.push({ key: ++uploadSeq, name: file.name, ratio: 0, error: null, abort: null });
     const row = uploads[uploads.length - 1];
-    const plan = planUpload(dir, file.name, sharedIndex.state(dir) ?? { kind: 'loading' });
+    const scope = batch?.scope ?? beginScope();
+    const entries = batch ? batch.entries : await fetchDestEntries(dir);
+    if (!scope.alive()) {
+      dropUpload(row.key);
+      ui.toast(SERVER_CHANGED, 'error');
+      return null;
+    }
+    if (!entries) {
+      dropUpload(row.key);
+      return null;
+    }
+    const plan = planUpload(dir, file.name, { kind: 'ok', entries });
     if (plan.kind === 'blocked') {
       row.error = plan.message;
       return null;
@@ -173,12 +262,27 @@
       dropUpload(row.key);
       return null;
     }
+    // 確認を待つあいだにサーバーが変わっていたら、送らない
+    if (!scope.alive()) {
+      dropUpload(row.key);
+      ui.toast(SERVER_CHANGED, 'error');
+      return null;
+    }
     const h = uploadShared(plan.path, file, (r) => (row.ratio = r));
     row.abort = h.abort;
     try {
       await h.promise;
       dropUpload(row.key);
+      if (!scope.alive()) {
+        // 送ったのは前のサーバー。新しいサーバーの一覧の写しには触らない
+        ui.toast(SERVER_CHANGED, 'error');
+        return null;
+      }
       sharedIndex.invalidate(plan.path);
+      if (batch) {
+        const name = baseName(plan.path);
+        batch.entries.set(name, { name, path: plan.path, kind: 'file', size: file.size, modified: Date.now(), mime: file.type || null, message_id: null, file_id: null });
+      }
       return plan.path;
     } catch (err) {
       // 中止（×で消した）は、失敗として出さない
@@ -198,29 +302,9 @@
   async function paste(): Promise<void> {
     const mode = explorerBuffer.mode;
     if (pasting || !mode || explorerBuffer.empty) return;
-    const dest = fileExplorer.dir;
-    const st = sharedIndex.state(dest);
-    if (st?.kind !== 'ok') {
-      sharedIndex.ensure(dest);
-      ui.toast('フォルダの中身を読み終えてから、もう一度貼り付けてください', 'error');
-      return;
-    }
     pasting = true;
     try {
-      const result = await runTransfer({
-        op: mode,
-        items: [...explorerBuffer.items],
-        destDir: dest,
-        destEntries: st.entries,
-        confirm: (c) => ui.confirm(c),
-        api: sharedApi,
-        invalidate: (p) => sharedIndex.invalidate(p),
-      });
-      // 切り取りは、移動したもの（と同じ場所で何もしなかったもの）をバッファから外す。
-      // 上書きを取り消したもの・失敗したものは残す。コピーは残す
-      if (mode === 'move') explorerBuffer.remove([...result.done, ...result.skipped].map((i) => i.path));
-      const msg = transferFailure(result);
-      if (msg) ui.toast(msg, 'error');
+      await transferInScope(mode, [...explorerBuffer.items], fileExplorer.dir);
     } finally {
       pasting = false;
     }
@@ -240,6 +324,8 @@
   onMount(() => {
     // 戻るの履歴は、パネルを開いたところから数える
     fileExplorer.forgetHistory();
+    // サーバーが変わったら、開いているゴミ箱を閉じる（古いゴミ箱・完全削除の確認を、新しいサーバーの上で押させない）
+    const unsubServer = onServerChange(() => closeTrash());
     void refreshClip();
     const onFocus = () => void refreshClip();
     const onVisible = () => {
@@ -248,10 +334,86 @@
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisible);
     document.addEventListener('paste', onPasteEvent);
+    // Linux デスクトップ（Tauri/WebKitGTK）では HTML5 の dragover/drop でファイルが届かないので、
+    // Tauri のネイティブイベントを使う:
+    //   - listenNativeDrop: hover の enter/over/leave で externalDragOver を更新（ハイライト用）
+    //     ハイライトは最前面要素が .file-explorer に属し trashOpen でないときだけ。position=null は fail closed
+    //   - listenOsDrop: 実際のドロップ（os-drop カスタムイベント）。position + elementFromPoint で対象判定
+    //     宛先は data-drop-dir 属性（フォルダ行・パンくず）またはカレントフォルダ
+    //     他の view への drop は release せずそのまま（別の view がclaim/releaseする）
+    // async 登録の失敗はトーストで通知。destroy 後に登録完了した場合は即 unlisten（リーク防止）
+    let destroyed = false;
+    let unlistenHover: (() => void) | undefined;
+    let unlistenOsDropFn: (() => void) | undefined;
+    if (isLinuxDesktop()) {
+      // ホバーハイライト（position + elementFromPoint で最前面確認）
+      listenNativeDrop((ev) => {
+        if (ev.type === 'enter' || ev.type === 'over') {
+          // position=null は fail closed（ハイライトしない）
+          if (!ev.position) { externalDragOver = false; return; }
+          const el = document.elementFromPoint(ev.position.x, ev.position.y);
+          const inExplorer = !!el?.closest('.file-explorer') && !trashOpen;
+          externalDragDepth = inExplorer ? 1 : 0;
+          externalDragOver = inExplorer;
+        } else if (ev.type === 'leave' || ev.type === 'drop') {
+          externalDragDepth = 0;
+          externalDragOver = false;
+        }
+      }).then((u) => {
+        if (destroyed) u(); // destroy 後に登録完了 → 即 unlisten
+        else unlistenHover = u;
+      }).catch((e) => {
+        if (!destroyed) ui.toast(`ホバーイベントを受け取れませんでした: ${attachmentActionText(e)}`, 'error');
+      });
+
+      // 実際のドロップ（階層ごとアップロード）
+      listenOsDrop(async (ev) => {
+        externalDragOver = false;
+        externalDragDepth = 0;
+        if (ev.id === null) {
+          if (ev.error) ui.toast(`ドロップを受け取れませんでした: ${ev.error}`, 'error');
+          return;
+        }
+        // position=null は fail closed（どこへの drop か分からない → 受けない）
+        const pos = ev.position;
+        if (!pos) return;
+        // 最前面の要素がこの .file-explorer に属するか確認。trash/modal 前面も拒否
+        const target = document.elementFromPoint(pos.x, pos.y);
+        if (!target?.closest('.file-explorer') || trashOpen) return;
+        // await 前に destDir・serverUrl をキャプチャ
+        const dirEl = target.closest<HTMLElement>('[data-drop-dir]');
+        const destDir = dirEl?.dataset.dropDir ?? fileExplorer.dir;
+        const serverUrl = getServerUrl();
+        const id = ev.id;
+        try {
+          const { entries, skipped } = await osDropEntries(id);
+          if (getServerUrl() !== serverUrl) {
+            ui.toast('サーバーが変わったためアップロードを中止しました', 'error');
+            return;
+          }
+          if (skipped.length > 0) ui.toast(`読み込めなかった項目があります（${skipped[0]}${skipped.length > 1 ? ' ほか' : ''}）`, 'error');
+          await uploadOsDropEntries(entries, destDir, serverUrl);
+        } catch (err) {
+          ui.toast(`ドロップを処理できませんでした: ${attachmentActionText(err)}`, 'error');
+        } finally {
+          // release は必ず呼ぶ（他 view のIDは触らない: このハンドラで受けたIDのみ）
+          await osDropRelease(id).catch((e) => { ui.toast(`ドロップのリリースに失敗しました: ${attachmentActionText(e)}`, 'error'); });
+        }
+      }).then((u) => {
+        if (destroyed) u();
+        else unlistenOsDropFn = u;
+      }).catch((e) => {
+        if (!destroyed) ui.toast(`OS ドロップのリスナーを登録できませんでした: ${attachmentActionText(e)}`, 'error');
+      });
+    }
     return () => {
+      destroyed = true;
+      unsubServer();
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisible);
       document.removeEventListener('paste', onPasteEvent);
+      unlistenHover?.();
+      unlistenOsDropFn?.();
     };
   });
 
@@ -280,8 +442,9 @@
    */
   async function pasteWith(dir: string, text: string | null, files: File[], image: () => Promise<File | null>): Promise<void> {
     if (files.length > 0) {
-      const sent: (string | null)[] = [];
-      for (const f of files) sent.push(await sendOne(dir, f));
+      const batch = await beginBatch(dir);
+      if (!batch) return;
+      const sent = await sendAll(batch, files);
       if (sent.length === 1) renameAfterPaste(dir, sent[0]);
       return;
     }
@@ -392,9 +555,9 @@
   /** 選んだ項目をコピー・切り取りする（できたことは、貼り付けが押せるようになることで分かるので通知は出さない） */
   function copySelected(): void {
     const items = selectedItems;
-    // フォルダはコピーできない（除く。除いたことだけ知らせる）
-    const allowed = items.filter((i) => checkTransfer('copy', i, fileExplorer.dir).ok);
-    if (allowed.length < items.length) ui.toast(`フォルダはコピーできないので、${items.length - allowed.length} 件を除きました`);
+    // attachments/ そのものは動かせないので除く（フォルダのコピーは可）
+    const allowed = items.filter((i) => i.path !== ATTACHMENTS_DIR);
+    if (allowed.length < items.length) ui.toast('添付のフォルダは動かせないので除きました');
     if (allowed.length === 0) return;
     explorerBuffer.set('copy', allowed);
     syncToClipboard();
@@ -412,18 +575,66 @@
   async function deleteSelected(): Promise<void> {
     const items = selectedItems;
     if (items.length === 0 || deleteBlocked) return;
-    if (!(await ui.confirm(deleteManyConfirm(items)))) return;
+    // 範囲（サーバー）は、選んで押したときのもの。確認を待つあいだに変わったら、何も移さない
+    const scope = beginScope();
+    if (!(await ui.confirm(trashManyConfirm(items)))) return;
+    if (!scope.alive()) {
+      ui.toast(SERVER_CHANGED, 'error');
+      return;
+    }
     const failed: string[] = [];
+    const succeeded: { id: string; path: string }[] = [];
     for (const i of items) {
+      // 次の項目を移す前に、サーバーが変わっていないか確かめる（変わったら残りは移さない）
+      if (!scope.alive()) break;
       try {
-        await sharedApi.remove(i.path);
-        sharedIndex.invalidate(i.path);
+        const trashed = await sharedApi.trash(i.path);
+        succeeded.push({ id: trashed.id, path: i.path });
+        if (scope.alive()) sharedIndex.invalidate(i.path);
       } catch (err) {
-        failed.push(`${i.path}: ${attachmentActionText(err)}`);
+        failed.push(`${baseName(i.path)}: ${attachmentActionText(err)}`);
       }
     }
-    explorerSelection.clear();
-    if (failed.length > 0) ui.toast(`${failed.length} 件を削除できませんでした（${failed[0]}）`, 'error');
+    const changed = !scope.alive();
+    // 新しいサーバーの選択には触らない
+    if (!changed) explorerSelection.clear();
+    if (succeeded.length > 0) {
+      // ゴミ箱に移した項目をバッファからも除去（cut済み→trash→pasteでnot_foundにならないよう）
+      if (!changed) explorerBuffer.remove(succeeded.map((s) => s.path));
+      // 成功したIDの不変スナップショット（この一括操作だけが対象、過去/他ユーザーの削除はundoしない）
+      const ids = succeeded.map((s) => s.id);
+      // 取り消しは、削除したサーバーへだけ送る（restoreBatch が確かめる）
+      const trashServerUrl = scope.url;
+      ui.toast(`${ids.length} 件をゴミ箱に移しました`, 'info', {
+        label: '取り消す',
+        run: () => void restoreBatch(ids, trashServerUrl).catch((e) => ui.toast(attachmentActionText(e), 'error')),
+      });
+    }
+    if (changed) ui.toast(`${SERVER_CHANGED}。残りは移していません`, 'error');
+    if (failed.length > 0) ui.toast(`${failed.length} 件をゴミ箱に移せませんでした（${failed[0]}）`, 'error');
+  }
+
+  /**
+   * ゴミ箱の取り消し（削除直後のトーストから呼ぶ）。
+   * - このセッションで成功した ID だけを対象にする（スナップショット）
+   * - 戻す直前と応答のあとに、削除したサーバーのままかを確かめる。変わったら、以後は戻さず投げる
+   * - 失敗した項目の ID は undo の対象に入れていないため、失敗は維持される
+   */
+  async function restoreBatch(ids: string[], serverUrl: string): Promise<void> {
+    const scope: Scope = { url: serverUrl, alive: () => getServerUrl() === serverUrl };
+    const failed: string[] = [];
+    for (const id of ids) {
+      assertScope(scope);
+      try {
+        const restored = await sharedApi.restore(id);
+        assertScope(scope);
+        sharedIndex.invalidate(restored.path);
+      } catch (err) {
+        if (err instanceof ServerChangedError) throw err;
+        failed.push(attachmentActionText(err));
+      }
+    }
+    if (failed.length > 0) throw new Error(`${failed.length} 件を元に戻せませんでした（${failed[0]}）`);
   }
 
   // ---- 行の操作: 長押しで選択モードに入る。選択モードの中では、行を押すと開かずに選び直す ----
@@ -610,6 +821,361 @@
   let mkdirError = $state<string | null>(null);
   let mkdirBusy = $state(false);
 
+  // ---- ゴミ箱の表示 ----
+  let trashOpen = $state(false);
+
+  function openTrash(): void {
+    menuOpen = false;
+    explorerSelection.clear();
+    explorerTrash.reset();
+    explorerTrash.open = true;
+    trashOpen = true;
+  }
+
+  // ゴミ箱を閉じたら open フラグを戻す（invalidate 時の即再取得を止める）
+  function closeTrash(): void {
+    explorerTrash.open = false;
+    trashOpen = false;
+  }
+
+  // Android 戻る / Alt+← でゴミ箱を閉じる（フォルダ履歴やパネルを閉じない）
+  // untrack: addPluginBack の内部読み書きをこの effect に追跡させない（無限ループ防止）
+  $effect(() => {
+    if (!trashOpen) return;
+    return untrack(() => ui.addPluginBack(() => closeTrash()));
+  });
+
+  // ---- 内部 DnD（項目をフォルダ・パンくず・空きスペースへドラッグ＆ドロップ） ----
+  // ドラッグ中の項目（null なら DnD していない）。タッチの長押しと競合しないよう、HTML5 Drag API のみ
+  let dragItems = $state<TransferItem[] | null>(null);
+  /** ハイライト中のドロップ先（フォルダのパス・'' で現在フォルダ・null でハイライト無し） */
+  let dragTarget = $state<string | null>(null);
+
+  function startItemDrag(ev: DragEvent, e: SharedEntry): void {
+    if (renamingPath === e.path) { ev.preventDefault(); return; }
+    const item: TransferItem = { path: e.path, kind: e.kind === 'dir' ? 'dir' : 'file' };
+    // 選択中にドラッグしたら選択中の全項目を、そうでなければその 1 件だけ
+    const items = explorerSelection.active && explorerSelection.has(e.path) ? selectedItems : [item];
+    dragItems = items;
+    ev.dataTransfer!.effectAllowed = 'copyMove';
+    ev.dataTransfer!.setData('application/x-disnans-explorer', items.map((i) => i.path).join('|'));
+  }
+
+  function endItemDrag(): void {
+    dragItems = null;
+    dragTarget = null;
+  }
+
+  function isInternalDrag(ev: DragEvent): boolean {
+    return !!ev.dataTransfer?.types.includes('application/x-disnans-explorer');
+  }
+
+  /** フォルダ項目の上（ドロップ先にできるか確認してハイライト） */
+  /** フォルダ項目の上（内部 DnD と外部 OS ファイルの両方を受ける） */
+  function folderDragOver(ev: DragEvent, folderPath: string): void {
+    const internal = isInternalDrag(ev);
+    const external = isExternalFileDrag(ev);
+    if (!internal && !external) return;
+    if (trashOpen) return;
+    if (internal) {
+      if (!dragItems) return;
+      if (dragItems.some((i) => i.path === folderPath || (i.kind === 'dir' && folderPath.startsWith(i.path + '/')))) return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.dataTransfer!.dropEffect = external ? 'copy' : ev.ctrlKey ? 'copy' : 'move';
+    dragTarget = folderPath;
+  }
+
+  function folderDragLeave(folderPath: string): void {
+    if (dragTarget === folderPath) dragTarget = null;
+  }
+
+  async function folderDrop(ev: DragEvent, folderPath: string): Promise<void> {
+    const items = dragItems;
+    dragItems = null;
+    dragTarget = null;
+
+    if (isInternalDrag(ev)) {
+      if (!items || trashOpen) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const op: TransferOp = ev.ctrlKey ? 'copy' : 'move';
+      await performInternalTransfer(op, items, folderPath);
+      return;
+    }
+
+    if (isExternalFileDrag(ev) && !trashOpen) {
+      // 外部 OS ファイル → そのフォルダを宛先としてアップロード
+      await bodyExternalDrop(ev, folderPath);
+    }
+  }
+
+  /** パンくずへのドラッグ（内部 DnD と外部 OS ファイルの両方） */
+  function crumbDragOver(ev: DragEvent, dirPath: string): void {
+    const internal = isInternalDrag(ev);
+    const external = isExternalFileDrag(ev);
+    if (!internal && !external) return;
+    if (trashOpen) return;
+    if (internal) {
+      if (!dragItems) return;
+      if (dragItems.some((i) => i.path === dirPath || (i.kind === 'dir' && dirPath.startsWith(i.path + '/')))) return;
+    }
+    ev.preventDefault();
+    ev.dataTransfer!.dropEffect = external ? 'copy' : ev.ctrlKey ? 'copy' : 'move';
+    dragTarget = '__crumb__' + dirPath;
+  }
+
+  function crumbDragLeave(dirPath: string): void {
+    if (dragTarget === '__crumb__' + dirPath) dragTarget = null;
+  }
+
+  async function crumbDrop(ev: DragEvent, dirPath: string): Promise<void> {
+    const items = dragItems;
+    dragItems = null;
+    dragTarget = null;
+
+    if (isInternalDrag(ev)) {
+      if (!items || trashOpen) return;
+      ev.preventDefault();
+      const op: TransferOp = ev.ctrlKey ? 'copy' : 'move';
+      await performInternalTransfer(op, items, dirPath);
+      return;
+    }
+
+    if (isExternalFileDrag(ev) && !trashOpen) {
+      await bodyExternalDrop(ev, dirPath);
+    }
+  }
+
+  /** 内部 DnD の実行（移動・コピー）。貼り付けと同じ（宛先の一覧を取り、範囲のあいだだけ書く） */
+  async function performInternalTransfer(op: TransferOp, items: TransferItem[], destDir: string): Promise<void> {
+    await transferInScope(op, items, destDir);
+  }
+
+  /**
+   * 移動・コピーを 1 回で行う（貼り付け・ドラッグ）。宛先の一覧は未読なら取り直す。
+   * 上書きの確認や応答を待つあいだにサーバーが変わったら、新しいサーバーへは何も送らない（残りは移さず、知らせる）。
+   */
+  async function transferInScope(op: TransferOp, items: TransferItem[], destDir: string): Promise<void> {
+    const scope = beginScope();
+    const fetched = await fetchDestEntries(destDir);
+    if (!scope.alive()) {
+      ui.toast(SERVER_CHANGED, 'error');
+      return;
+    }
+    if (!fetched) return; // エラーは fetchDestEntries がトーストで通知済み
+    const result = await runTransfer({
+      op,
+      items,
+      destDir,
+      destEntries: new Map(fetched),
+      confirm: (c) => ui.confirm(c),
+      api: scopedTransfer(scope),
+      invalidate: (p) => {
+        if (scope.alive()) sharedIndex.invalidate(p);
+      },
+    });
+    if (!scope.alive()) {
+      ui.toast(SERVER_CHANGED, 'error');
+      return;
+    }
+    // 切り取りで移動したものを外す。接続先が変わった場合は、新しいバッファには触らない。
+    if (op === 'move') explorerBuffer.remove([...result.done, ...result.skipped].map((i) => i.path));
+    const msg = transferFailure(result);
+    if (msg) ui.toast(msg, 'error');
+  }
+
+  /**
+   * 宛先フォルダの一覧を取得して返す共通ヘルパー。
+   * キャッシュがあればそのまま、なければ sharedApi.list で明示取得。
+   * 失敗時は ui.toast でエラーを通知して null を返す（書込なし保証）。
+   */
+  async function fetchDestEntries(destDir: string): Promise<ReadonlyMap<string, import('../lib/protocol/SharedEntry').SharedEntry> | null> {
+    const cached = sharedIndex.state(destDir);
+    if (cached?.kind === 'ok') return cached.entries;
+    try {
+      const listed = await sharedApi.list(destDir);
+      return new Map(listed.map((e) => [e.name, e]));
+    } catch (err) {
+      ui.toast(`宛先の一覧を取得できませんでした: ${attachmentActionText(err)}`, 'error');
+      return null;
+    }
+  }
+
+  // ---- 外部 OS ファイルのドロップ（アップロード）。内部 DnD と分けてカウンタで入退場を管理 ----
+  let externalDragOver = $state(false);
+  let externalDragDepth = 0;
+
+  function isExternalFileDrag(ev: DragEvent): boolean {
+    return !!ev.dataTransfer?.types.includes('Files') && !isInternalDrag(ev);
+  }
+
+  function explorerDragEnter(ev: DragEvent): void {
+    if (!isExternalFileDrag(ev)) return;
+    externalDragDepth++;
+    externalDragOver = true;
+  }
+
+  function explorerDragLeave(ev: DragEvent): void {
+    if (!isExternalFileDrag(ev)) return;
+    externalDragDepth = Math.max(0, externalDragDepth - 1);
+    if (externalDragDepth === 0) externalDragOver = false;
+  }
+
+  async function bodyExternalDrop(ev: DragEvent, overrideDir?: string): Promise<void> {
+    externalDragOver = false;
+    externalDragDepth = 0;
+    // ゴミ箱が前面に出ているときは背後のフォルダへアップロードしない
+    if (trashOpen) return;
+    if (!ev.dataTransfer) return;
+    // Windows: dropRootsOf は必ずドロップイベントの中で同期的に呼ぶ（後からは取れない）
+    const roots = dropRootsOf(ev.dataTransfer);
+    if (roots.length === 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    // destDir と serverUrl は await 前にキャプチャ（ユーザーが await 中にフォルダ/サーバーを変えても意図した先へ）
+    const destDir = overrideDir ?? fileExplorer.dir;
+    const serverUrl = getServerUrl();
+    const entries = await entriesFromDropRoots(roots);
+    await uploadOsDropEntries(entries, destDir, serverUrl);
+  }
+
+  /**
+   * OsDropEntry の逐次アップロード（Windows HTML5 ドロップ・Linux ネイティブドロップ共通）。
+   * 根レベルの同名フォルダはマージせず止める（同名ファイルは確認して上書き）。
+   * 空フォルダも保持（mkdir のみ）。OS 原本は変更しない。
+   */
+  /**
+   * OS ドロップ（Windows HTML5 / Linux ネイティブ）の階層アップロード共通処理。
+   * destDir と serverUrl は呼び出し元が await 前に捕捉して渡す（ユーザーが途中でフォルダ移動・サーバー切替しても意図した先へ送る）。
+   * 安全方針:
+   *  - 宛先一覧が未読・loading・error なら明示取得。失敗なら書込不可
+   *  - 根レベルの同名（クロスタイプ含む）・名前エラーは中止
+   *  - 根ファイルの上書きは確認
+   *  - mkdir はいかなるエラーでも中止（409 exists も「マージ禁止」なので再開しない）
+   *  - 各 write 前にサーバースコープを確認
+   */
+  async function uploadOsDropEntries(entries: OsDropEntry[], destDir: string, serverUrl: string): Promise<void> {
+    if (entries.length === 0) return;
+
+    // 宛先一覧を取得（fetchDestEntries で キャッシュ / 明示取得を共通化）
+    if (getServerUrl() !== serverUrl) {
+      ui.toast('サーバーが変わったためアップロードを中止しました', 'error');
+      return;
+    }
+    const fetchedEntries = await fetchDestEntries(destDir);
+    if (getServerUrl() !== serverUrl) {
+      ui.toast('サーバーが変わったためアップロードを中止しました', 'error');
+      return;
+    }
+    if (!fetchedEntries) return; // エラーは fetchDestEntries がトースト通知済み
+    const destEntries = fetchedEntries;
+
+    // 上書きを取り消した根のファイル（その 1 件だけ送らない。ほかは続ける）
+    const declined = new Set<string>();
+    // 根レベル（rel に '/' を含まない）の事前確認
+    const rootEntries = entries.filter((e) => !e.rel.includes('/'));
+    for (const e of rootEntries) {
+      const nameErr = nameError(destDir, e.rel);
+      if (nameErr) { ui.toast(nameErr, 'error'); return; }
+      const inAttach = inAttachments(destDir);
+      if (inAttach && e.dir) { ui.toast('添付フォルダ内にフォルダは作れません', 'error'); return; }
+      const same = sameNameEntry(destEntries, destDir, e.rel);
+      if (same) {
+        if (e.dir) {
+          // フォルダ→同名あり: クロスタイプ問わずマージ禁止
+          ui.toast(`「${e.rel}」と同じ名前の${same.kind === 'dir' ? 'フォルダ' : 'ファイル'}があります。中止しました`, 'error');
+          return;
+        } else {
+          // ファイル→同名フォルダ: 中止
+          if (same.kind === 'dir') {
+            ui.toast(`「${e.rel}」と同じ名前のフォルダがあります。中止しました`, 'error');
+            return;
+          }
+          // ファイル→同名ファイル: 上書き確認
+          if (!(await ui.confirm(overwriteConfirm(childPath(destDir, same.name))))) {
+            declined.add(e.rel);
+            continue;
+          }
+          if (getServerUrl() !== serverUrl) {
+            ui.toast('サーバーが変わったためアップロードを中止しました', 'error');
+            return;
+          }
+        }
+      }
+    }
+
+    if (declined.size > 0) ui.toast(`上書きを取り消した ${declined.size} 件は送っていません`);
+    // 逐次処理（OsDropEntry は親先の順に並んでいる）
+    for (const e of entries) {
+      if (declined.has(e.rel)) continue;
+      if (getServerUrl() !== serverUrl) {
+        ui.toast('サーバーが変わったためアップロードを中止しました', 'error');
+        return;
+      }
+      const path = childPath(destDir, e.rel);
+      if (e.dir) {
+        try {
+          await sharedApi.mkdir(path);
+          sharedIndex.invalidate(path);
+        } catch (err) {
+          // 409 exists を含むすべてのエラーで中断（マージ禁止・再開禁止）
+          ui.toast(`フォルダ「${e.rel}」を作れませんでした: ${attachmentActionText(err)}`, 'error');
+          return;
+        }
+      } else {
+        try {
+          const blob = await e.read();
+          if (getServerUrl() !== serverUrl) {
+            ui.toast('サーバーが変わったためアップロードを中止しました', 'error');
+            return;
+          }
+          await sharedApi.write(path, blob);
+          sharedIndex.invalidate(path);
+        } catch (err) {
+          ui.toast(`「${e.rel}」を送れませんでした: ${attachmentActionText(err)}`, 'error');
+          // ファイルの失敗は続ける（並行他ファイルへの影響なし）
+        }
+      }
+    }
+  }
+
+  function bodyDragOver(ev: DragEvent): void {
+    if (isInternalDrag(ev) && dragItems) {
+      ev.preventDefault();
+      ev.dataTransfer!.dropEffect = ev.ctrlKey ? 'copy' : 'move';
+      dragTarget = '';
+      return;
+    }
+    if (isExternalFileDrag(ev)) {
+      ev.preventDefault();
+      ev.dataTransfer!.dropEffect = 'copy';
+    }
+  }
+
+  function bodyDragLeave(ev: DragEvent): void {
+    // body から出たとき（フォルダ項目経由の dragLeave は stopPropagation で届かない）
+    if (dragTarget === '') dragTarget = null;
+  }
+
+  async function bodyDrop(ev: DragEvent): Promise<void> {
+    if (isInternalDrag(ev)) {
+      const items = dragItems;
+      dragItems = null;
+      dragTarget = null;
+      if (!items || trashOpen) return; // ゴミ箱前面中は内部 DnD も背後のフォルダへ移動しない
+      ev.preventDefault();
+      ev.stopPropagation();
+      const op: TransferOp = ev.ctrlKey ? 'copy' : 'move';
+      await performInternalTransfer(op, items, fileExplorer.dir);
+      return;
+    }
+    if (isExternalFileDrag(ev)) {
+      await bodyExternalDrop(ev);
+    }
+  }
+
   function openMkdir(): void {
     mkdirName = '';
     mkdirError = null;
@@ -640,7 +1206,10 @@
   }
 </script>
 
-<div class="file-explorer">
+<div class="file-explorer" role="region" aria-label="ファイルエクスプローラー"
+  ondragenter={explorerDragEnter}
+  ondragleave={explorerDragLeave}
+>
   <!-- 上端は常に同じ（選択のバー + ≡）。選んでいないときは件数（フォルダ内の項目数）を出し、操作は選ぶまで押せない -->
   <PanelBar class="file-explorer-bar">
     <div class="file-explorer-selection" role="toolbar" aria-label="選んだ項目の操作">
@@ -661,6 +1230,7 @@
       <IconButton label="メニュー" title="メニュー" active={menuOpen} onclick={() => (menuOpen = !menuOpen)}><MenuIcon size={18} /></IconButton>
       {#if menuOpen}
         <Menu class="file-explorer-popup-menu file-explorer-menu" label="共有フォルダの操作" onclose={() => (menuOpen = false)}>
+          <MenuItem icon={Trash2} onclick={openTrash}>ゴミ箱</MenuItem>
           {#if canCreateFolder}
             <MenuItem icon={FolderPlus} onclick={() => run(openMkdir)}>新しいフォルダ</MenuItem>
           {/if}
@@ -683,10 +1253,19 @@
   </PanelBar>
   <!-- パンくず: 上端の下の行。場所を示すだけ（押すと、その場所へ） -->
   <nav class="file-explorer-crumbs" aria-label="場所">
-    <button type="button" class="file-explorer-crumb" onclick={() => fileExplorer.open('')}>共有フォルダ</button>
+    <!-- パンくずもドロップ先（内部 DnD でそのフォルダへ移動・コピー） -->
+    <button type="button" class="file-explorer-crumb" data-drop-dir="" class:file-explorer-crumb-drag-over={dragTarget === '__crumb__'}
+      onclick={() => fileExplorer.open('')}
+      ondragover={(ev) => crumbDragOver(ev, '')}
+      ondragleave={() => crumbDragLeave('')}
+      ondrop={(ev) => void crumbDrop(ev, '')}>共有フォルダ</button>
     {#each crumbs as c (c.path)}
       <ChevronRight size={12} />
-      <button type="button" class="file-explorer-crumb" onclick={() => fileExplorer.open(c.path)}>{c.name}</button>
+      <button type="button" class="file-explorer-crumb" data-drop-dir={c.path} class:file-explorer-crumb-drag-over={dragTarget === '__crumb__' + c.path}
+        onclick={() => fileExplorer.open(c.path)}
+        ondragover={(ev) => crumbDragOver(ev, c.path)}
+        ondragleave={() => crumbDragLeave(c.path)}
+        ondrop={(ev) => void crumbDrop(ev, c.path)}>{c.name}</button>
     {/each}
   </nav>
 
@@ -711,6 +1290,8 @@
   <div
     class="scroll file-explorer-body"
     class:file-explorer-body-details={dirView.view === 'details'}
+    class:file-explorer-body-drag-target={dragTarget === ''}
+    class:file-explorer-body-external-drop={externalDragOver}
     role="presentation"
     onclick={onbodyclick}
     onpointerdown={bodyPressStart}
@@ -719,6 +1300,9 @@
     onpointercancel={bodyPressEnd}
     ontouchend={bodyTouchEnd}
     oncontextmenu={bodyContextMenu}
+    ondragover={bodyDragOver}
+    ondragleave={bodyDragLeave}
+    ondrop={(ev) => void bodyDrop(ev)}
   >
     {#if listing === undefined || listing.kind === 'loading'}
       <p class="file-explorer-status muted">読み込み中…</p>
@@ -751,12 +1335,19 @@
             class="file-explorer-item"
             class:file-explorer-item-cut={explorerBuffer.isCut(e.path)}
             class:file-explorer-item-selected={explorerSelection.has(e.path)}
+            class:file-explorer-item-drag-target={e.kind === 'dir' && dragTarget === e.path}
+            draggable={!renamingPath || renamingPath !== e.path}
             onpointerdown={(ev) => pressStart(ev, e.path)}
             onpointermove={pressMove}
             onpointerup={() => pressEnd('pointerup')}
             onpointerleave={() => pressEnd('pointerleave')}
             onpointercancel={() => pressEnd('pointercancel')}
             oncontextmenu={(ev) => rowContextMenu(ev, e.path)}
+            ondragstart={(ev) => startItemDrag(ev, e)}
+            ondragend={endItemDrag}
+            ondragover={e.kind === 'dir' ? (ev) => folderDragOver(ev, e.path) : undefined}
+            ondragleave={e.kind === 'dir' ? () => folderDragLeave(e.path) : undefined}
+            ondrop={e.kind === 'dir' ? (ev) => void folderDrop(ev, e.path) : undefined}
           >
             {#snippet name()}
               {#if renaming}
@@ -815,7 +1406,7 @@
             {:else if explorerSelection.active}
               <button type="button" class="file-explorer-row" aria-pressed={explorerSelection.has(e.path)} onclick={(ev) => rowClick(ev, e, () => {})}>{@render row()}</button>
             {:else if action === 'enter'}
-              <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e, () => fileExplorer.open(e.path))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
+              <button type="button" class="file-explorer-row" data-drop-dir={e.path} onclick={(ev) => rowClick(ev, e, () => fileExplorer.open(e.path))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
             {:else if action !== 'file'}
               <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e, () => openViewer(e))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
             {:else}
@@ -828,6 +1419,10 @@
       </ul>
     {/if}
   </div>
+  <!-- ゴミ箱画面（file-explorer を覆う絶対位置） -->
+  {#if trashOpen}
+    <div class="file-explorer-trash-overlay"><TrashView onclose={closeTrash} /></div>
+  {/if}
 </div>
 
 <!-- 空きスペースの長押し・右クリックのメニュー（押したところに出す） -->
@@ -1256,5 +1851,39 @@
     .file-explorer-row:hover {
       background: var(--hover);
     }
+  }
+  /* 内部ドラッグ: フォルダ・パンくずのドロップターゲット（青い輪郭） */
+  .file-explorer-item-drag-target {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+    border-radius: var(--radius-sm);
+  }
+  .file-explorer-crumb.file-explorer-crumb-drag-over {
+    background: color-mix(in oklch, var(--accent) 20%, var(--bg));
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+  /* 現在フォルダ（body）がドロップ先のとき */
+  .file-explorer-body.file-explorer-body-drag-target {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: var(--radius-sm);
+  }
+  /* 外部ファイルドロップ中のオーバーレイ（ドロップ可能を示す枠） */
+  .file-explorer-body.file-explorer-body-external-drop {
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
+    border-radius: var(--radius-sm);
+  }
+  /* ゴミ箱画面: file-explorer の中に絶対位置で全体を覆う */
+  .file-explorer-trash-overlay {
+    position: absolute;
+    inset: 0;
+    /* 背後の sticky 見出しと項目メニューより前、確認ダイアログより後ろ */
+    z-index: calc(var(--z-menu) + 1);
+    background: var(--bg);
+  }
+  .file-explorer {
+    position: relative;
   }
 </style>

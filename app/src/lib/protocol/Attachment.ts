@@ -10,6 +10,7 @@ width: number | null, height: number | null,
  */
 has_thumb: boolean, 
 /**
- * 削除された添付（`attachments/` から消された。本体はない。`file_name` は消される直前の別名）。
+ * 削除された添付（`attachments/` から消され、本体は配信しない。ゴミ箱にあれば復元できる）。
+ * `file_name` は消される直前の別名。
  */
 deleted: boolean, };

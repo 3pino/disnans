@@ -33,7 +33,8 @@
 <style>
   .toasts {
     position: fixed;
-    top: calc(env(safe-area-inset-top) + 12px);
+    /* 操作ボタンが上端のバーを塞がないよう、その下に置く */
+    top: calc(env(safe-area-inset-top) + 56px);
     left: 50%;
     transform: translateX(-50%);
     z-index: 90;

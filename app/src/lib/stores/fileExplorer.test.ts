@@ -5,6 +5,8 @@ vi.mock('../transport/shared', () => ({ sharedApi: { list: (p: string) => list(p
 
 import { fileExplorer } from './fileExplorer.svelte';
 import { sharedIndex } from './sharedIndex.svelte';
+import { explorerBuffer } from './explorerBuffer.svelte';
+import { explorerSelection } from './explorerSelection.svelte';
 
 const entry = (name: string) => ({ name, path: name, kind: 'file', size: 1, modified: 0, mime: null, message_id: null, file_id: null });
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -68,9 +70,15 @@ describe('接続先の切り替え', () => {
     list.mockResolvedValue([]);
     fileExplorer.open('docs');
     await flush();
+    explorerBuffer.set('move', [{ path: 'docs/a.txt', kind: 'file' }]);
+    explorerBuffer.clipText = 'docs/a.txt';
+    explorerSelection.start('docs/a.txt');
     setServerUrl('http://b.example');
     expect(fileExplorer.dir).toBe('');
     expect(sharedIndex.state('docs')).toBeUndefined();
+    expect(explorerBuffer.empty).toBe(true);
+    expect(explorerBuffer.clipText).toBeNull();
+    expect(explorerSelection.count).toBe(0);
     setServerUrl(null);
   });
 });

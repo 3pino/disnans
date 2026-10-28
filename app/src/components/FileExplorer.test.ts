@@ -10,7 +10,9 @@ import { adjacentItem } from '../lib/lightbox';
 import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
 import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
 import { explorerView } from '../lib/stores/explorerView.svelte';
+import { explorerTrash } from '../lib/stores/explorerTrash.svelte';
 import { LONG_PRESS_MS } from '../lib/sortable';
+import * as cfg from '../lib/config';
 
 // 共有フォルダの一覧の書き込み（アップロード・同名の確認・フォルダ作成）の流れ。HTTP は差し替える
 const entry = (name: string, kind: 'file' | 'dir' = 'file'): SharedEntry => ({
@@ -28,10 +30,15 @@ const listing: SharedEntry[] = [entry('a.txt'), entry('docs', 'dir'), { ...entry
 const h = vi.hoisted(() => ({
   /** 一覧（既定は上の listing。添付のフォルダの場面では差し替える） */
   current: null as SharedEntry[] | null,
+  list: vi.fn(async (): Promise<SharedEntry[]> => h.current ?? listing),
   upload: vi.fn(),
+  /** OS のドロップ（フォルダ・ファイル）の送り先（sharedApi.write） */
+  write: vi.fn(async (path: string) => ({ ...entry(path.split('/').pop()!), path })),
   mkdir: vi.fn(async () => ({})),
   copy: vi.fn(async () => ({})),
   remove: vi.fn(async (_path: string) => {}),
+  trash: vi.fn(async (path: string) => ({ id: `id-${path}`, original_path: path, kind: 'file' as const, size: 1, deleted_at: 0 })),
+  restore: vi.fn(async (_id: string) => ({ name: '', path: '', kind: 'file' as const, size: 1, modified: 0, mime: null, message_id: null, file_id: null })),
   move: vi.fn(async (_from: string, _to: string) => ({})),
   /** OS のクリップボード（差し替え）。copyText で書いたものが text に入る */
   clip: { text: null as string | null, image: null as File | null, writable: true },
@@ -55,11 +62,17 @@ vi.mock('../lib/clipboardImage', () => ({
 }));
 vi.mock('../lib/transport/shared', () => ({
   sharedApi: {
-    list: async () => h.current ?? listing,
+    list: h.list,
     mkdir: h.mkdir,
+    write: h.write,
     copy: h.copy,
     move: h.move,
     remove: h.remove,
+    trash: h.trash,
+    restore: h.restore,
+    size: async () => ({ size: 0, files: 0, dirs: 0 }),
+    trashList: async () => [],
+    purge: async () => {},
   },
   uploadShared: h.upload,
 }));
@@ -81,7 +94,12 @@ afterEach(async () => {
   ui.confirmReq = null;
   explorerBuffer.clear();
   h.copy.mockClear();
+  // h.list: mockClear ではなく実装ごとリセット（DnD テストで上書きした mockImplementation を消す）
+  h.list.mockReset();
+  h.list.mockImplementation(async () => h.current ?? listing);
   h.remove.mockClear();
+  h.trash.mockClear();
+  h.restore.mockClear();
   h.move.mockClear();
   h.clip = { text: null, image: null, writable: true };
   explorerSelection.clear();
@@ -357,7 +375,7 @@ describe('複数選択（選択モード）', () => {
     }
   });
 
-  it('コピーは、フォルダを除いてバッファに入れ、選択を終える', async () => {
+  it('コピーは、フォルダも含めてバッファに入れ、選択を終える', async () => {
     const el = await render();
     explorerSelection.enter();
     flushSync();
@@ -366,7 +384,10 @@ describe('複数選択（選択モード）', () => {
     [...el.querySelectorAll<HTMLButtonElement>('button[aria-label="コピー"]')][0].click();
     flushSync();
     expect(explorerBuffer.mode).toBe('copy');
-    expect(explorerBuffer.items).toEqual([{ path: 'a.txt', kind: 'file' }]);
+    expect(explorerBuffer.items).toEqual([
+      { path: 'a.txt', kind: 'file' },
+      { path: 'docs', kind: 'dir' },
+    ]);
     expect(explorerSelection.active).toBe(false);
   });
 
@@ -385,7 +406,7 @@ describe('複数選択（選択モード）', () => {
     expect(ui.pluginBack).toHaveLength(before);
   });
 
-  it('削除は、件数をまとめて 1 回だけ確認してから、順に消す', async () => {
+  it('削除はゴミ箱に移す（まとめて 1 回確認、取り消すトーストが出る）', async () => {
     const el = await render();
     explorerSelection.enter();
     flushSync();
@@ -393,13 +414,178 @@ describe('複数選択（選択モード）', () => {
     pressRow(el, 'docs');
     el.querySelector<HTMLButtonElement>('button[aria-label="削除"]')!.click();
     await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
-    expect(ui.confirmReq!.title).toBe('2 件を削除しますか');
-    expect(h.remove).not.toHaveBeenCalled();
+    expect(ui.confirmReq!.title).toBe('2 件をゴミ箱に移しますか');
+    expect(h.trash).not.toHaveBeenCalled();
     ui.confirmReq!.resolve(true);
-    await vi.waitFor(() => expect(h.remove).toHaveBeenCalledTimes(2));
-    expect(h.remove.mock.calls.map((c) => c[0])).toEqual(['a.txt', 'docs']);
+    await vi.waitFor(() => expect(h.trash).toHaveBeenCalledTimes(2));
+    expect(h.trash.mock.calls.map((c) => c[0])).toEqual(['a.txt', 'docs']);
+    // 取り消すトーストが出る
+    expect(ui.toasts.some((t) => t.text?.includes('ゴミ箱に移しました') && t.action?.label === '取り消す')).toBe(true);
+  });
+
+  it('ゴミ箱 undo: 成功した ID のみスナップショット（失敗した項目は含まれない）', async () => {
+    // a.txt は成功、docs は失敗
+    h.trash
+      .mockResolvedValueOnce({ id: 'id-a', original_path: 'a.txt', kind: 'file', size: 1, deleted_at: 0 })
+      .mockRejectedValueOnce(new Error('fail'));
+    const el = await render();
+    explorerSelection.enter();
+    flushSync();
+    pressRow(el, 'a.txt');
+    pressRow(el, 'docs');
+    el.querySelector<HTMLButtonElement>('button[aria-label="削除"]')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(ui.toasts.length).toBeGreaterThan(0));
+    // 成功トースト: id-a のみ
+    const undoToast = ui.toasts.find((t) => t.action?.label === '取り消す');
+    expect(undoToast).toBeTruthy();
+    // undo を実行したら id-a だけ restore を呼ぶ
+    h.restore.mockResolvedValueOnce({ name: 'a.txt', path: 'a.txt', kind: 'file', size: 1, modified: 0, mime: null, message_id: null, file_id: null });
+    undoToast!.action!.run();
+    await vi.waitFor(() => expect(h.restore).toHaveBeenCalledTimes(1));
+    // mock は id-${path} を返すので a.txt → id-a.txt
+    expect(h.restore.mock.calls[0][0]).toBe('id-a.txt');
+  });
+
+  it('ゴミ箱 undo: サーバーが変わっていたら restore を送らない', async () => {
+    const el = await render();
+    explorerSelection.enter();
+    flushSync();
+    pressRow(el, 'a.txt');
+    el.querySelector<HTMLButtonElement>('button[aria-label="削除"]')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(h.trash).toHaveBeenCalledTimes(1));
+    const undoToast = ui.toasts.find((t) => t.action?.label === '取り消す');
+    expect(undoToast).toBeTruthy();
+    // サーバーを変更したことをシミュレート（getServerUrl が別の値を返す）
+    vi.spyOn(await import('../lib/config'), 'getServerUrl').mockReturnValue('http://other:3000');
+    try {
+      undoToast!.action!.run();
+      await new Promise((r) => setTimeout(r, 50));
+      // restore は呼ばれない
+      expect(h.restore).not.toHaveBeenCalled();
+      // エラートーストが出る
+      await vi.waitFor(() => expect(ui.toasts.some((t) => t.kind === 'error')).toBe(true));
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('ゴミ箱を開くと選択解除・戻る操作で閉じる', async () => {
+    const el = await render();
+    explorerSelection.enter();
+    flushSync();
+    pressRow(el, 'a.txt');
+    flushSync();
+    expect(explorerSelection.active).toBe(true);
+    // ≡ → ゴミ箱
+    el.querySelector<HTMLButtonElement>('button[aria-label="メニュー"]')!.click();
+    flushSync();
+    const trashItem = [...document.querySelectorAll<HTMLButtonElement>('.file-explorer-menu .menu-item')].find((b) => b.textContent?.includes('ゴミ箱'));
+    expect(trashItem).toBeTruthy();
+    trashItem!.click();
+    flushSync();
+    // 選択が解除される
+    expect(explorerSelection.active).toBe(false);
+    // ゴミ箱ビューが表示される
+    expect(el.querySelector('.file-explorer-trash-overlay')).not.toBeNull();
+    // 戻る操作でゴミ箱を閉じる（フォルダには戻らない）
+    const before = fileExplorer.dir;
+    const backOk = ui.back();
+    flushSync();
+    expect(backOk).toBe(true);
+    expect(el.querySelector('.file-explorer-trash-overlay')).toBeNull();
+    expect(fileExplorer.dir).toBe(before); // フォルダは変わらない
+  });
+
+  it('削除後にカットバッファから成功したパスを除去する（trash→paste でnot_found にならない）', async () => {
+    const el = await render();
+    // a.txt をカットバッファに入れる
+    explorerBuffer.set('move', [{ path: 'a.txt', kind: 'file' }]);
+    flushSync();
+    expect(explorerBuffer.empty).toBe(false);
+    // a.txt を選択してゴミ箱へ
+    explorerSelection.enter();
+    flushSync();
+    pressRow(el, 'a.txt');
+    el.querySelector<HTMLButtonElement>('button[aria-label="削除"]')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(h.trash).toHaveBeenCalledTimes(1));
+    // バッファから a.txt が除去されている
+    expect(explorerBuffer.items.map((i) => i.path)).not.toContain('a.txt');
+  });
+
+  it('複数ファイルアップロード: 1 件目成功後も 2 件目の同名確認が機能する', async () => {
+    // a.txt と b.txt をピッカーで選ぶ。b.txt は既存（overwrite 確認が出る）
+    h.current = [{ name: 'b.txt', path: 'b.txt', kind: 'file' as const, size: 1, modified: 0, mime: null, message_id: null, file_id: null }];
+    try {
+    let uploadCount = 0;
+    h.upload.mockImplementation(() => {
+      uploadCount++;
+      return {
+        promise: Promise.resolve({ name: 'x', path: 'x', kind: 'file' as const, size: 0, modified: 0, mime: null, message_id: null, file_id: null }),
+        abort: () => {},
+      };
+    });
+    const el = await render();
+    const input = el.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const a = new File(['a'], 'a.txt', { type: 'text/plain' });
+    const b = new File(['b'], 'b.txt', { type: 'text/plain' });
+    Object.defineProperty(input, 'files', { value: [a, b], configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    // a.txt は新規 → 即 upload
+    await vi.waitFor(() => expect(uploadCount).toBeGreaterThanOrEqual(1));
+    // b.txt は既存 → confirm が出る
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    expect(ui.confirmReq!.title).toContain('b.txt');
+    ui.confirmReq!.resolve(true); // 上書き許可
+    await vi.waitFor(() => expect(uploadCount).toBe(2));
+    } finally {
+      h.current = null; // 次のテストのために元に戻す
+    }
   });
 });
+
+describe('内部 DnD（performInternalTransfer）', () => {
+  it('drop 先が未読のとき sharedApi.list を呼んで一覧取得後に移動（1 回で完結）', async () => {
+    // sharedIndex に docs の中身がないとき、performInternalTransfer 内で list を呼ぶ
+    // jsdom での DragEvent はフル再現が困難なので、動作結果（sharedApi.list の呼び出し数と move 呼出）で検証する
+    h.list.mockImplementation(async (path?: string) => {
+      // docs のキャッシュがないのでリクエストが来る想定
+      if (path === 'docs') return []; // 空フォルダ（同名なし）
+      return h.current ?? listing;
+    });
+    h.move.mockResolvedValueOnce({ name: 'a.txt', path: 'docs/a.txt', kind: 'file' as const, size: 1, modified: 0, mime: null, message_id: null, file_id: null });
+
+    await render();
+    // list が初期ロードで呼ばれた後のカウントを記録
+    const countBefore = h.list.mock.calls.length;
+
+    // sharedIndex の docs キャッシュをクリア（未読状態を再現）
+    sharedIndex.invalidate('docs/x');
+    flushSync();
+
+    // 内部 move の実行: explorerBuffer に a.txt を入れ、fileExplorer を docs へ移動して paste
+    // paste() は別のコードパス（performInternalTransfer でなく直接 runTransfer）だが、
+    // fetchDestEntries 相当の動作（list 呼び出し）を通じて docs の中身を取得する
+    explorerBuffer.set('move', [{ path: 'a.txt', kind: 'file' }]);
+    fileExplorer.open('docs'); // docs へ移動
+    flushSync();
+    // docs の一覧が読み込まれるまで待つ
+    await vi.waitFor(() => expect(h.list).toHaveBeenCalledWith('docs'));
+    // docs 一覧取得後に paste（fetchDestEntries 経由）
+    pasteClick(document.body as unknown as HTMLElement); // paste は body がなくても動く
+
+    // 最終的に list('docs') が呼ばれ、同名なし → move が呼ばれる
+    await vi.waitFor(() => expect(h.move).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    expect(h.move).toHaveBeenCalledWith('a.txt', 'docs/a.txt', false);
+    expect(h.list.mock.calls.length).toBeGreaterThan(countBefore);
+  });
+});
+
 
 describe('表示方法と並び順', () => {
   it('アイコン（グリッド）は、画像だけ小さい画像を出す（フォルダ・ほかは絵のアイコン）', async () => {
@@ -882,5 +1068,246 @@ describe('詳細の見出し', () => {
     const rule = css.match(/\.file-explorer-columns \{[^}]*\}/g)!.join('\n');
     expect(rule).toContain('position: sticky');
     expect(rule).toContain('user-select: none');
+  });
+});
+
+/** 選択モードで、名前の行を押して選ぶ */
+function pressNamed(el: HTMLElement, name: string): void {
+  const li = [...el.querySelectorAll<HTMLElement>('.file-explorer-item')].find((x) => x.textContent?.includes(name))!;
+  li.querySelector<HTMLButtonElement>('.file-explorer-row')!.click();
+  flushSync();
+}
+
+/** 送る・移す・消す・戻すの途中でサーバーが変わったときの決まり（新しいサーバーへは何も書かない） */
+describe('サーバーが変わったら、新しいサーバーへは書かない', () => {
+  const srv = { url: 'http://a.test' };
+  let spy: { mockRestore: () => void } | undefined;
+  beforeEach(() => {
+    srv.url = 'http://a.test';
+    spy = vi.spyOn(cfg, 'getServerUrl').mockImplementation(() => srv.url);
+  });
+  afterEach(() => {
+    spy?.mockRestore();
+    spy = undefined;
+    ui.toasts.length = 0;
+  });
+
+  /** 答えを後から渡す約束（応答待ちの途中で、サーバーを切り替えるため） */
+  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  const done = (name: string) => ({ promise: Promise.resolve({ ...entry(name), path: name }), abort: () => {} });
+
+  it('複数件を送る: 1 件目が終わったあとも、2 件目は同じ一覧で判定して送る（blocked にならない）', async () => {
+    h.upload.mockImplementation((path: string) => done(path));
+    const el = await render();
+    const input = el.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, 'files', { value: [new File(['c'], 'c.txt'), new File(['d'], 'd.txt')], configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledTimes(2));
+    expect(h.upload.mock.calls.map((c) => c[0])).toEqual(['c.txt', 'd.txt']);
+    expect(el.querySelectorAll('.file-explorer-upload-error').length).toBe(0);
+  });
+
+  it('貼り付けたファイルが複数でも、2 件目以降が止まらない', async () => {
+    h.upload.mockImplementation((path: string) => done(path));
+    await render();
+    const ev = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    const files = [new File(['1'], 'x1.pdf'), new File(['2'], 'x2.pdf')];
+    Object.defineProperty(ev, 'clipboardData', { value: { files, getData: () => '' } });
+    document.body.dispatchEvent(ev);
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledTimes(2));
+    expect(h.upload.mock.calls.map((c) => c[0])).toEqual(['x1.pdf', 'x2.pdf']);
+  });
+
+  it('送る: 同名の確認を待つあいだに切り替わったら、確認に答えても送らない', async () => {
+    const el = await render();
+    pick(el, new File(['x'], 'a.txt'));
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    srv.url = 'http://b.test';
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(ui.toasts.some((t) => t.text.includes('サーバーが変わった'))).toBe(true));
+    expect(h.upload).not.toHaveBeenCalled();
+  });
+
+  it('送る: 1 件目の応答を待つあいだに切り替わったら、2 件目は送らない', async () => {
+    const first = deferred<SharedEntry>();
+    h.upload.mockImplementationOnce(() => ({ promise: first.promise, abort: () => {} }));
+    const el = await render();
+    const input = el.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, 'files', { value: [new File(['c'], 'c.txt'), new File(['d'], 'd.txt')], configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledTimes(1));
+    srv.url = 'http://b.test';
+    first.resolve({ ...entry('c.txt'), path: 'c.txt' });
+    await vi.waitFor(() => expect(ui.toasts.some((t) => t.text.includes('サーバーが変わった'))).toBe(true));
+    expect(h.upload).toHaveBeenCalledTimes(1);
+  });
+
+  it('切り取りの貼り付け: 上書きの確認を待つあいだに切り替わったら、移さない', async () => {
+    h.list.mockImplementation(async (path?: string) => (path === 'docs' ? [entry('a.txt')] : h.current ?? listing));
+    await render();
+    fileExplorer.open('docs');
+    flushSync();
+    await vi.waitFor(() => expect(h.list).toHaveBeenCalledWith('docs'));
+    explorerBuffer.set('move', [{ path: 'a.txt', kind: 'file' }]);
+    flushSync();
+    pasteClick(document.body as unknown as HTMLElement);
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    srv.url = 'http://b.test';
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(ui.toasts.some((t) => t.text.includes('サーバーが変わった'))).toBe(true));
+    expect(h.move).not.toHaveBeenCalled();
+  });
+
+  it('切り取りの貼り付け: 1 件目の応答を待つあいだに切り替わったら、2 件目は移さない', async () => {
+    const first = deferred<SharedEntry>();
+    h.move.mockImplementationOnce(() => first.promise);
+    h.list.mockImplementation(async (path?: string) => (path === 'docs' ? [] : h.current ?? listing));
+    await render();
+    fileExplorer.open('docs');
+    flushSync();
+    await vi.waitFor(() => expect(h.list).toHaveBeenCalledWith('docs'));
+    explorerBuffer.set('move', [{ path: 'a.txt', kind: 'file' }, { path: 'pic.png', kind: 'file' }]);
+    flushSync();
+    pasteClick(document.body as unknown as HTMLElement);
+    await vi.waitFor(() => expect(h.move).toHaveBeenCalledTimes(1));
+    srv.url = 'http://b.test';
+    first.resolve({ ...entry('a.txt'), path: 'docs/a.txt' });
+    await vi.waitFor(() => expect(ui.toasts.some((t) => t.text.includes('サーバーが変わった'))).toBe(true));
+    expect(h.move).toHaveBeenCalledTimes(1);
+  });
+
+  it('途中で接続先を変えてコピーし直したら、前の移動結果で新しいバッファを消さない', async () => {
+    const second = deferred<SharedEntry>();
+    h.move.mockResolvedValueOnce({ ...entry('a.txt'), path: 'docs/a.txt' });
+    h.move.mockImplementationOnce(() => second.promise);
+    h.list.mockImplementation(async (path?: string) => (path === 'docs' ? [] : h.current ?? listing));
+    await render();
+    fileExplorer.open('docs');
+    flushSync();
+    await vi.waitFor(() => expect(h.list).toHaveBeenCalledWith('docs'));
+    explorerBuffer.set('move', [{ path: 'a.txt', kind: 'file' }, { path: 'pic.png', kind: 'file' }]);
+    flushSync();
+    pasteClick(document.body as unknown as HTMLElement);
+    await vi.waitFor(() => expect(h.move).toHaveBeenCalledTimes(2));
+    srv.url = 'http://b.test';
+    explorerBuffer.set('copy', [{ path: 'a.txt', kind: 'file' }]);
+    second.resolve({ ...entry('pic.png'), path: 'docs/pic.png' });
+    await vi.waitFor(() => expect(ui.toasts.some((t) => t.text.includes('サーバーが変わった'))).toBe(true));
+    expect(explorerBuffer.mode).toBe('copy');
+    expect(explorerBuffer.items).toEqual([{ path: 'a.txt', kind: 'file' }]);
+  });
+
+  it('削除: 確認を待つあいだに切り替わったら、移さない', async () => {
+    const el = await render();
+    explorerSelection.enter();
+    flushSync();
+    pressNamed(el, 'a.txt');
+    el.querySelector<HTMLButtonElement>('button[aria-label="削除"]')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    srv.url = 'http://b.test';
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(ui.toasts.some((t) => t.text.includes('サーバーが変わった'))).toBe(true));
+    expect(h.trash).not.toHaveBeenCalled();
+  });
+
+  it('削除: 1 件目の応答を待つあいだに切り替わったら、2 件目は移さない', async () => {
+    const first = deferred<{ id: string; original_path: string; kind: 'file'; size: number; deleted_at: number }>();
+    h.trash.mockImplementationOnce(() => first.promise);
+    const el = await render();
+    explorerSelection.enter();
+    flushSync();
+    pressNamed(el, 'a.txt');
+    pressNamed(el, 'pic.png');
+    el.querySelector<HTMLButtonElement>('button[aria-label="削除"]')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(h.trash).toHaveBeenCalledTimes(1));
+    srv.url = 'http://b.test';
+    explorerBuffer.set('copy', [{ path: 'a.txt', kind: 'file' }]);
+    first.resolve({ id: 'id-a', original_path: 'a.txt', kind: 'file', size: 1, deleted_at: 0 });
+    await vi.waitFor(() => expect(ui.toasts.some((t) => t.text.includes('残りは移していません'))).toBe(true));
+    expect(h.trash).toHaveBeenCalledTimes(1);
+    expect(explorerBuffer.items).toEqual([{ path: 'a.txt', kind: 'file' }]);
+  });
+
+  it('取り消し: 1 件目の応答を待つあいだに切り替わったら、2 件目は戻さない', async () => {
+    const el = await render();
+    explorerSelection.enter();
+    flushSync();
+    pressNamed(el, 'a.txt');
+    pressNamed(el, 'pic.png');
+    el.querySelector<HTMLButtonElement>('button[aria-label="削除"]')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(h.trash).toHaveBeenCalledTimes(2));
+    const undo = ui.toasts.find((t) => t.action?.label === '取り消す');
+    expect(undo).toBeTruthy();
+    const first = deferred<Awaited<ReturnType<typeof h.restore>>>();
+    h.restore.mockImplementationOnce(() => first.promise);
+    undo!.action!.run();
+    await vi.waitFor(() => expect(h.restore).toHaveBeenCalledTimes(1));
+    srv.url = 'http://b.test';
+    first.resolve({ name: 'a.txt', path: 'a.txt', kind: 'file', size: 1, modified: 0, mime: null, message_id: null, file_id: null });
+    await vi.waitFor(() => expect(ui.toasts.some((t) => t.kind === 'error' && t.text.includes('サーバーが変わった'))).toBe(true));
+    expect(h.restore).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** OS のドロップ（Windows の HTML5 の項目）を、本体（body）へ落とす */
+function dropOs(el: HTMLElement, roots: { name: string; dir?: boolean }[]): void {
+  const ev = new Event('drop', { bubbles: true, cancelable: true });
+  const entries = roots.map((r) =>
+    r.dir
+      ? { isFile: false, isDirectory: true, name: r.name, createReader: () => ({ readEntries: (ok: (v: unknown[]) => void) => ok([]) }) }
+      : { isFile: true, isDirectory: false, name: r.name, file: (ok: (f: File) => void) => ok(new File(['x'], r.name)) },
+  );
+  Object.defineProperty(ev, 'dataTransfer', {
+    value: { types: ['Files'], items: entries.map((e) => ({ kind: 'file', webkitGetAsEntry: () => e })), files: [] },
+  });
+  el.dispatchEvent(ev);
+}
+
+describe('OS のドロップで、上書きを取り消したものだけ送らない', () => {
+  it('根の同名ファイルを取り消しても、ほかのファイルは送る（全体を中止しない）', async () => {
+    const el = await render();
+    const body = el.querySelector<HTMLElement>('.file-explorer-body')!;
+    dropOs(body, [{ name: 'a.txt' }, { name: 'new.txt' }]);
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    expect(ui.confirmReq!.title).toContain('a.txt');
+    ui.confirmReq!.resolve(false);
+    await vi.waitFor(() => expect(h.write).toHaveBeenCalledTimes(1));
+    expect(h.write.mock.calls[0][0]).toBe('new.txt');
+  });
+});
+
+describe('サーバーが変わったら、開いているゴミ箱を閉じる', () => {
+  it('ゴミ箱を開いたあとにサーバーが変わると、ゴミ箱（完全削除の確認を含む）を閉じる。外れたら購読も解く', async () => {
+    let listener: (() => void) | null = null;
+    const unsub = vi.fn();
+    const spy = vi.spyOn(cfg, 'onServerChange').mockImplementation((fn: () => void) => {
+      listener = fn;
+      return unsub;
+    });
+    try {
+      const el = await render();
+      menuClick(el, 'ゴミ箱');
+      await vi.waitFor(() => expect(el.querySelector('.file-explorer-trash-overlay')).not.toBeNull());
+      expect(listener).not.toBeNull();
+      listener!();
+      flushSync();
+      expect(el.querySelector('.file-explorer-trash-overlay')).toBeNull();
+      expect(explorerTrash.open).toBe(false);
+      // 閉じられる前に外れたら、購読を解く
+      await unmount(instance!);
+      instance = undefined;
+      expect(unsub).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

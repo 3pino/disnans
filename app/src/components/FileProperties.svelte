@@ -1,6 +1,7 @@
 <script lang="ts">
   import Copy from '@lucide/svelte/icons/copy';
   import Search from '@lucide/svelte/icons/search';
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Modal from './ui/Modal.svelte';
   import Button from './ui/Button.svelte';
   import { formatFull, formatSize } from '../lib/format';
@@ -8,13 +9,47 @@
   import { copyText } from '../lib/clipboard';
   import { ui } from '../lib/stores/ui.svelte';
   import { messageSearch } from '../lib/stores/search.svelte';
+  import { sharedApi } from '../lib/transport/shared';
+  import { attachmentActionText } from '../lib/fileLink';
   import type { SharedEntry } from '../lib/protocol/SharedEntry';
+  import type { SharedSize } from '../lib/protocol/SharedSize';
 
   // 項目のプロパティ（読むだけ）。作成日時はサーバーが持たないので出さない（更新日時だけ）。
   // 名前とパスは押すとコピーする。ファイルは「メッセージを検索」で、このファイルの名前でメッセージを探せる
-  // （リンクしたファイルは、今の名前で検索に当たる）。見た目は仮
+  // （リンクしたファイルは、今の名前で検索に当たる）。フォルダはサイズを非同期で取得する。見た目は仮
   let { entry, onclose }: { entry: SharedEntry; onclose: () => void } = $props();
   const isFile = $derived(entry.kind === 'file');
+
+  // フォルダのサイズ（entry.kind === 'dir' のとき非同期で取得する）。
+  // 単調な世代カウンタ（sizeGen）で A→B→A のような完了順逆転でもstale結果を捨てる。
+  // entry 変更・unmount（$effect の cleanup）でも世代を進め、飛んでいるリクエストを失効させる。
+  type FolderSizeState = { kind: 'loading' } | { kind: 'ok'; result: SharedSize } | { kind: 'error'; message: string };
+  let folderSize = $state<FolderSizeState | null>(null);
+  /** 単調増加の世代カウンタ（reactive state ではない：世代の比較に使うだけ） */
+  let sizeGen = 0;
+
+  async function loadFolderSize(): Promise<void> {
+    if (entry.kind !== 'dir') return;
+    const myGen = ++sizeGen;
+    folderSize = { kind: 'loading' };
+    try {
+      const result = await sharedApi.size(entry.path);
+      if (myGen !== sizeGen) return; // entry 変更・unmount で世代が進んでいたら捨てる
+      folderSize = { kind: 'ok', result };
+    } catch (e) {
+      if (myGen !== sizeGen) return;
+      folderSize = { kind: 'error', message: attachmentActionText(e) };
+    }
+  }
+
+  // entry が変わったら（別の項目を開いたとき）再取得する。cleanup（unmount・再実行）でも世代を進める
+  $effect(() => {
+    void entry.path;
+    if (entry.kind === 'dir') void loadFolderSize();
+    else { sizeGen++; folderSize = null; }
+    // cleanup: entry 変更・unmount 時に世代を進め、飛んでいるリクエストを失効させる
+    return () => { sizeGen++; };
+  });
 
   async function copy(text: string, what: string): Promise<void> {
     if (await copyText(text)) ui.toast(`${what}をコピーしました`);
@@ -37,7 +72,18 @@
     <dt>種類</dt>
     <dd>{kindLabel(entry)}{#if entry.mime} <span class="muted">（{entry.mime}）</span>{/if}</dd>
     <dt>サイズ</dt>
-    <dd>{isFile ? `${formatSize(entry.size)}（${entry.size.toLocaleString('ja-JP')} バイト）` : 'フォルダ'}</dd>
+    <dd>
+      {#if isFile}
+        {formatSize(entry.size)}（{entry.size.toLocaleString('ja-JP')} バイト）
+      {:else if folderSize === null || folderSize.kind === 'loading'}
+        <span class="muted">計算中…</span>
+      {:else if folderSize.kind === 'error'}
+        <span class="file-properties-size-error">{folderSize.message}</span>
+        <button type="button" class="file-properties-retry" title="再試行" onclick={() => void loadFolderSize()}><RefreshCw size={12} /></button>
+      {:else}
+        {formatSize(folderSize.result.size)}（{folderSize.result.size.toLocaleString('ja-JP')} バイト）・{folderSize.result.files} ファイル・{folderSize.result.dirs} フォルダ
+      {/if}
+    </dd>
     <dt>更新日時</dt>
     <dd>{entry.modified > 0 ? formatFull(entry.modified) : '—'}</dd>
   </dl>
@@ -85,5 +131,21 @@
   }
   .file-properties-path {
     overflow-wrap: anywhere;
+  }
+  .file-properties-size-error {
+    color: var(--danger);
+    font-size: var(--fs-xs);
+  }
+  .file-properties-retry {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    vertical-align: -2px;
+    margin-left: var(--space-1);
+  }
+  .file-properties-retry:hover {
+    color: var(--text);
   }
 </style>

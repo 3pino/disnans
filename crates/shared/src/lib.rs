@@ -67,7 +67,8 @@ pub struct SharedListing {
 pub enum SharedOp {
     /// フォルダを作る。
     Mkdir { path: String },
-    /// 移動（名前の変更も）。添付は動かせない。`overwrite` が false（既定）で同名があれば 409 `exists`。
+    /// 移動（名前の変更も）。共有と添付の間は移動不可。添付の中では名前を変更できる。
+    /// `overwrite` が false（既定）で同名があれば 409 `exists`。同名フォルダは常に拒否する。
     Move {
         from: String,
         to: String,
@@ -75,7 +76,8 @@ pub enum SharedOp {
         #[ts(optional)]
         overwrite: Option<bool>,
     },
-    /// コピー。元は共有フォルダのファイル、または添付。`overwrite` の決まりは `Move` と同じ。
+    /// コピー。共有フォルダのファイル・フォルダ、または添付が元になる。フォルダは共有内への再帰コピーのみ。
+    /// `overwrite` の決まりは `Move` と同じ。
     Copy {
         from: String,
         to: String,
@@ -140,7 +142,8 @@ pub struct Attachment {
     pub height: Option<u32>,
     /// サムネイル（`/api/files/{id}/thumb`）があるか。
     pub has_thumb: bool,
-    /// 削除された添付（`attachments/` から消された。本体はない。`file_name` は消される直前の別名）。
+    /// 削除された添付（`attachments/` から消され、本体は配信しない。ゴミ箱にあれば復元できる）。
+    /// `file_name` は消される直前の別名。
     #[serde(default)]
     pub deleted: bool,
 }

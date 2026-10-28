@@ -22,6 +22,7 @@ import { resumeReconnect } from './chatResume';
 import { EV_AUDIO } from '../call/pure';
 import { AUDIO_MAX_IN_FLIGHT, callLatency } from '../call/latency';
 import { sharedIndex } from './sharedIndex.svelte';
+import { explorerTrash } from './explorerTrash.svelte';
 import { viewTexts } from '../viewTexts';
 
 type Listener = (ev: ServerEvent) => void;
@@ -655,6 +656,7 @@ class Client {
       case 'files.changed':
         // 共有フォルダの一覧（本文のファイルリンクが引く）を捨て、添付の名前・削除を表示に反映する
         sharedIndex.invalidate(ev.path);
+        explorerTrash.invalidate();
         if (ev.path === 'attachments' || ev.path.startsWith('attachments/')) this.scheduleAttachmentRefresh();
         break;
       case 'plugin.updated':

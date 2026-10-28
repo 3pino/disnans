@@ -29,6 +29,39 @@
 | DELETE | `/api/shared/{パス}` | 削除（フォルダは中身ごと）。`204` |
 | POST | `/api/shared` | フォルダの作成・移動・コピー。body は `SharedOp`: `{ op: "mkdir", path }` / `{ op: "move", from, to, overwrite? }` / `{ op: "copy", from, to, overwrite? }`（`overwrite` は省略で `false`）。結果は `SharedEntry` |
 
+### フォルダのコピー・移動
+
+- `copy` はフォルダを中身ごと再帰してコピーする。宛先に同名のフォルダがあれば、`overwrite: true` でも常に `409 exists`（マージも削除もしない）。ファイルの上書きは `overwrite: true` でできる
+- 再帰コピーが `403` で失敗したとき、途中までのコピー先は残さない。シンボリックリンクはコピーしない
+- 自分自身や子孫のフォルダへの `move` と `copy` は拒否する（`403`）
+- `move` でも、宛先に同名のフォルダがあれば `overwrite: true` でも `409 exists`
+- `attachments/` の中はフォルダを持てないので、フォルダのコピーの宛先にできない（`403`）
+
+### ゴミ箱（`/api/shared-trash`）
+
+アプリのエクスプローラーの「削除」はゴミ箱へ移す。`DELETE /api/shared/{パス}` と WebDAV の `DELETE` は、従来どおり**完全に削除**する（ゴミ箱を通らない）。
+
+| メソッド | パス | 内容 |
+|---|---|---|
+| GET | `/api/shared-trash` | ゴミ箱の一覧。`SharedTrashListing`: `{ entries: SharedTrashEntry[] }` |
+| POST | `/api/shared-trash` | `SharedTrashOp`。`{ op: "trash", path }` は共有のパスをゴミ箱へ移し、`{ id, original_path, kind, size, deleted_at }`（`SharedTrashEntry`）を返す。`{ op: "restore", id }` は元のパスへ戻し、`SharedEntry` を返す |
+| DELETE | `/api/shared-trash/{id}` | その項目を完全に削除（purge）。`204` |
+
+- `id` は ULID の文字列で、中身には意味がない（そのまま渡す）
+- 復元先に同名があれば `409 exists`、親のフォルダがなければ `409 parent_missing`（親を自動で作らない）
+- 添付（`attachments/` の中）もゴミ箱へ移せ、復元できる。復元しても添付の ID は変わらず、投稿が残っていれば本文のリンクが再び使える。削除されたメッセージは復活しない。ゴミ箱にある間に元の投稿が削除されたときは、復元は元の ID のライブラリの添付として戻り、投稿は作り直さない
+- 保存先は `data/trash/` と DB のメタデータ。バックアップの対象に入る。保持期間と自動の削除（TTL）はなく、purge するまで残る
+- `trash`・`restore`・`purge` も `files.changed` を配信する（元の項目の親を読み直す）
+
+### フォルダのサイズ（`/api/shared-size`）
+
+`GET /api/shared-size`（ルート）と `GET /api/shared-size/{パス}` は `{ size, files, dirs }` を返す（バイト数・ファイルの数・フォルダの数）。
+
+- 数えるのは、要求したフォルダの**配下**のファイルとフォルダ。要求したフォルダ自身は `dirs` に入れない。ファイルを指定すると `files: 1`・`dirs: 0`
+- ルートは、`attachments/`（仮想フォルダ）の中身を 1 回だけ合計に入れる
+- シンボリックリンクは辿らず、数えない
+- 一覧（`SharedEntry`）のフォルダの `size` は、従来どおり 0 のまま
+
 ## WebDAV（`/dav/`）
 
 - 許可するメソッド: OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY, LOCK, UNLOCK。PROPPATCH は 405

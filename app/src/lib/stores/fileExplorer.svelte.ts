@@ -1,6 +1,8 @@
 import { parentOf } from '../sharedPath';
 import { onServerChange } from '../config';
 import { sharedIndex, type DirState } from './sharedIndex.svelte';
+import { explorerBuffer } from './explorerBuffer.svelte';
+import { explorerSelection } from './explorerSelection.svelte';
 
 /**
  * 共有フォルダを見る画面の、いま開いているフォルダ。中身は sharedIndex（files.changed で読み直される）から引く。
@@ -57,4 +59,6 @@ export const fileExplorer = new FileExplorerState();
 onServerChange(() => {
   fileExplorer.dir = '';
   fileExplorer.forgetHistory();
+  explorerBuffer.clear();
+  explorerSelection.clear();
 });

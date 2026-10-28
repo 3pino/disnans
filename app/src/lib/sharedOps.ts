@@ -81,6 +81,32 @@ export function deleteManyConfirm(items: readonly { path: string; kind: 'file' |
   return { title: `${n} 件を削除しますか`, body: notes.join('。'), okLabel: '削除', danger: true };
 }
 
+/** 1 件をゴミ箱に移す確認の文 */
+export function trashConfirm(path: string, dir: boolean): { title: string; body: string; okLabel: string; danger: true } {
+  const name = baseName(path);
+  if (inAttachments(path)) {
+    return {
+      title: `「${name}」をゴミ箱に移しますか`,
+      body: '本文のリンクは「削除されたファイル」になります。ゴミ箱から元に戻せます',
+      okLabel: 'ゴミ箱に移す',
+      danger: true,
+    };
+  }
+  if (dir) {
+    return { title: `フォルダ「${name}」をゴミ箱に移しますか`, body: '中身もすべて移ります。ゴミ箱から元に戻せます', okLabel: 'ゴミ箱に移す', danger: true };
+  }
+  return { title: `「${name}」をゴミ箱に移しますか`, body: 'ゴミ箱から元に戻せます', okLabel: 'ゴミ箱に移す', danger: true };
+}
+
+/** 複数の項目をゴミ箱に移す確認の文 */
+export function trashManyConfirm(items: readonly { path: string; kind: 'file' | 'dir' }[]): { title: string; body: string; okLabel: string; danger: true } {
+  const n = items.length;
+  const notes: string[] = [];
+  if (items.some((i) => inAttachments(i.path))) notes.push('添付のものは、本文のリンクが「削除されたファイル」になります');
+  notes.push('ゴミ箱から元に戻せます');
+  return { title: `${n} 件をゴミ箱に移しますか`, body: notes.join('。'), okLabel: 'ゴミ箱に移す', danger: true };
+}
+
 /** 同名のファイルを上書きする確認の文（必ず確認する）。attachments/ の中は、本文の表示も新しい中身になる */
 export function overwriteConfirm(path: string): { title: string; body: string; okLabel: string; danger: true } {
   const name = baseName(path);

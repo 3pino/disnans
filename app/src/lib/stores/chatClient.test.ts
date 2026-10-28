@@ -138,6 +138,19 @@ describe('chat over Rust: receiving', () => {
     expect(seen).toEqual(['prefs.updated', 'user.updated']);
   });
 
+  it('files.changed はフォルダとゴミ箱の一覧を無効にする（古い接続の通知は無視する）', async () => {
+    const { explorerTrash } = await import('./explorerTrash.svelte');
+    const { sharedIndex } = await import('./sharedIndex.svelte');
+    const trash = vi.spyOn(explorerTrash, 'invalidate');
+    const listing = vi.spyOn(sharedIndex, 'invalidate');
+    const event: ServerEvent = { type: 'files.changed', path: 'docs' };
+    chat.push({ kind: 'event', generation: 0, event });
+    expect(trash).not.toHaveBeenCalled();
+    chat.push({ kind: 'event', generation: 1, event });
+    expect(trash).toHaveBeenCalledTimes(1);
+    expect(listing).toHaveBeenCalledWith('docs');
+  });
+
   it('drops items from an older generation', () => {
     chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME] });
     const seen: string[] = [];

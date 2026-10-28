@@ -36,14 +36,14 @@
   });
 
   // Linux では WebKitGTK の HTML5 のドロップで File が届かないため、Tauri のドロップ（パス）で受ける。
-  // ドロップした位置がこのチャット領域の中のときだけ受ける
+  // ドロップした位置がこのチャット領域の中のときだけ受ける（overChat）
   $effect(() => {
     if (!isLinuxDesktop()) return;
     let stop: (() => void) | null = null;
     let alive = true;
     void listenNativeDrop((ev) => {
       if (!section) return;
-      const inside = ev.position !== null && pointInRect(ev.position, section.getBoundingClientRect());
+      const inside = ev.position !== null && overChat(ev.position, section);
       if (ev.type === 'leave') {
         nativeOver = false;
       } else if (ev.type === 'drop') {
@@ -64,14 +64,26 @@
     };
   });
 
+  /**
+   * 点がこのチャットの一番手前にあるか。矩形だけでは、前に出ているエクスプローラーや画面の下にあるチャットも当たるため、
+   * 点の位置で一番手前の要素がこのチャットの中にあるかも確かめる（前に出ているものへ落としたら、チャットへ添付しない）
+   */
+  function overChat(p: { x: number; y: number }, el: HTMLElement): boolean {
+    if (!pointInRect(p, el.getBoundingClientRect())) return false;
+    const top = document.elementFromPoint(p.x, p.y);
+    return !!top && top.closest('.chat-view') === el;
+  }
+
   async function addDroppedPaths(paths: string[]) {
     const { files, failed } = await readDroppedFiles(paths);
     if (files.length) composer?.addFiles(files);
     for (const f of failed) ui.toast(`読み込めませんでした: ${f}`, 'error');
   }
 
+  /** Files が含まれ、かつエクスプローラーの内部 DnD でない（内部 DnD は Files 型を持たないが念のため） */
   function hasFiles(e: DragEvent) {
-    return [...(e.dataTransfer?.types ?? [])].includes('Files');
+    const types = [...(e.dataTransfer?.types ?? [])];
+    return types.includes('Files') && !types.includes('application/x-disnans-explorer');
   }
 </script>
 

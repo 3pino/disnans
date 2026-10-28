@@ -28,15 +28,20 @@ describe('checkTransfer（サーバーの決まりと同じ）', () => {
     expect(checkTransfer('copy', f('a.txt'), 'attachments').ok).toBe(true);
     expect(checkTransfer('copy', f('attachments/x.png'), 'docs').ok).toBe(true);
   });
-  it('フォルダはコピーできない（理由つき）', () => {
-    const c = checkTransfer('copy', d('docs'), 'other');
-    expect(c).toMatchObject({ ok: false });
-    if (!c.ok) expect(c.message).toContain('フォルダはコピーできません');
+  it('フォルダをコピーできる（他の場所へ）', () => {
+    expect(checkTransfer('copy', d('docs'), 'other').ok).toBe(true);
+    expect(checkTransfer('copy', d('docs'), '').ok).toBe(true);
+    expect(checkTransfer('copy', d('docs/sub'), 'other').ok).toBe(true);
   });
   it('フォルダを自分の中へ移せない', () => {
     expect(checkTransfer('move', d('docs'), 'docs')).toMatchObject({ ok: false });
     expect(checkTransfer('move', d('docs'), 'docs/sub')).toMatchObject({ ok: false });
     expect(checkTransfer('move', d('docs'), 'docsx').ok).toBe(true);
+  });
+  it('フォルダを自分の中へコピーできない', () => {
+    expect(checkTransfer('copy', d('docs'), 'docs')).toMatchObject({ ok: false });
+    expect(checkTransfer('copy', d('docs'), 'docs/sub')).toMatchObject({ ok: false });
+    expect(checkTransfer('copy', d('docs'), 'docsx').ok).toBe(true);
   });
   it('attachments/ そのものは動かせない', () => {
     expect(checkTransfer('move', d('attachments'), 'docs')).toMatchObject({ ok: false });
