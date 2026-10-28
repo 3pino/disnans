@@ -4,10 +4,12 @@
   import Copy from '@lucide/svelte/icons/copy';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Button from './ui/Button.svelte';
+  import IconButton from './ui/IconButton.svelte';
+  import SettingRow from './ui/SettingRow.svelte';
   import { buildDiagReport, clearDiagLog, exportDiagReport } from '../lib/diagLog';
   import { copyText } from '../lib/clipboard';
   import { getServerUrl } from '../lib/config';
-  import { capabilities, isAndroid, isTauri } from '../lib/platform';
+  import { capabilities, isAndroid } from '../lib/platform';
   import { client } from '../lib/stores/client.svelte';
   import { notifications } from '../lib/stores/notifications.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -16,7 +18,7 @@
   // 設定の「アプリ」の診断ログ（設定の木の Slot `diagnostics`）。
   // 記録は lib/diagLog.ts（Android はネイティブのファイル）。ここでは書き出して送る・コピー・消去だけをする
 
-  const android = isTauri() && isAndroid();
+  const android = isAndroid();
   let busy = $state(false);
 
   /** 先頭に載せる、このアプリの状態。メッセージの本文は入れない */
@@ -24,7 +26,7 @@
     return [
       ['版', updater.version ? `v${updater.version}` : updater.supported ? '?' : '開発版'],
       ['ユーザー', client.me?.login_name ?? '（未ログイン）'],
-      ['サーバー', getServerUrl() || '（同じオリジン）'],
+      ['サーバー', getServerUrl() || '（未設定）'],
       ['チャットの接続', `${client.status}${client.linkReason ? ` (${client.linkReason})` : ''}`],
       ['通知', `${notifications.backend} 許可=${notifications.permission}${notifications.android ? ` 常駐=${JSON.stringify(notifications.android)}` : ''}`],
       ['方針', JSON.stringify(capabilities())],
@@ -73,35 +75,26 @@
   }
 </script>
 
-<div class="diagnostics-settings">
-  <p class="muted diagnostics-text">
-    「通知が来ない」「通話が切れる」などが起きたら、そのあとでログを書き出して開発者に送ってください。接続や通知・通話の状態を記録しています（メッセージの本文は含みません。サーバーのアドレスとユーザー名は含みます）。
-  </p>
-  <div class="diagnostics-actions">
-    <Button class="diagnostics-send" variant="primary" disabled={busy} onclick={send}>
-      {#if android}<Share2 size={15} />ログを送る{:else}<Download size={15} />ログを保存{/if}
-    </Button>
-    <Button class="diagnostics-copy" disabled={busy} onclick={copy}>
-      <Copy size={15} />コピー
-    </Button>
-    <Button class="diagnostics-clear" variant="ghost" disabled={busy} onclick={() => void clear()}>
-      <Trash2 size={15} />消去
-    </Button>
-  </div>
-</div>
+<SettingRow name="ログ">
+  {#snippet control()}
+    <div class="diagnostics-actions">
+      <Button class="diagnostics-send" variant="primary" disabled={busy} onclick={send}>
+        {#if android}<Share2 size={15} />送る{:else}<Download size={15} />保存{/if}
+      </Button>
+      <Button class="diagnostics-copy" disabled={busy} onclick={copy}>
+        <Copy size={15} />コピー
+      </Button>
+      <IconButton class="diagnostics-clear" label="ログを消去" disabled={busy} onclick={() => void clear()}>
+        <Trash2 size={15} />
+      </IconButton>
+    </div>
+  {/snippet}
+</SettingRow>
 
 <style>
-  .diagnostics-settings {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-5);
-  }
-  .diagnostics-text {
-    margin: 0;
-    font-size: var(--fs-sm);
-  }
   .diagnostics-actions {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
     gap: var(--space-4);
   }
