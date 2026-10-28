@@ -69,16 +69,25 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
     row.reply_to = req.reply_to.clone();
 
     let mut tx = state.pool.begin().await?;
-    messages::insert(&mut tx, &row).await?;
-    claim_or_fail(
-        &mut tx,
-        &body,
-        &attachment_ids,
-        &row.id,
-        &actor.user.id,
-        row.created_at,
-    )
-    .await?;
+    let written = match messages::insert(&mut tx, &row).await {
+        Ok(()) => {
+            claim_or_fail(
+                &mut tx,
+                &body,
+                &attachment_ids,
+                &row.id,
+                &actor.user.id,
+                row.created_at,
+            )
+            .await
+        }
+        Err(err) => Err(err.into()),
+    };
+    if let Err(err) = written {
+        // drop の rollback は後で実行されるため、次の投稿と競合しないよう完了を待つ。
+        tx.rollback().await?;
+        return Err(err);
+    }
     tx.commit().await?;
     // 投稿された添付は `attachments/` に現れる（新しく紐付いたもの）
     for file_id in &attachment_ids {
