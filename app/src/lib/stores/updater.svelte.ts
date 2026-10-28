@@ -1,4 +1,4 @@
-import { capabilities } from '../platform';
+import { capabilities, isTauri } from '../platform';
 import { isNewer } from '../semver';
 
 const REPO = '3pino/disnans';
@@ -23,8 +23,8 @@ function errorMessage(e: unknown): string {
 export class Updater {
   version = $state<string | null>(null);
   state = $state<UpdateState>({ kind: 'idle' });
-  /** Tauri 版だけがアップデートできる */
-  readonly supported = capabilities().updater !== null;
+  /** Tauri 版（Windows・Linux・Android）だけがアップデートできる */
+  readonly supported = isTauri();
   private apply: (() => Promise<void>) | null = null;
   private busy = false;
 

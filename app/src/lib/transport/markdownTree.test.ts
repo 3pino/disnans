@@ -15,7 +15,7 @@ function fakeInvoke(result: () => Promise<unknown>) {
 }
 
 describe('markdownTreeOf（送信・編集の仮表示の木）', () => {
-  it('ブラウザー（開発）では呼ばず、null（プレーンのまま）', async () => {
+  it('Tauri の外（想定外の環境）では呼ばず、null（プレーンのまま）', async () => {
     const f = fakeInvoke(async () => tree);
     expect(await markdownTreeOf('a', { tauri: false, invoke: f.invoke })).toBeNull();
     expect(f.calls).toEqual([]);

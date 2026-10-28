@@ -36,7 +36,7 @@ export function canonicalServerUrl(input: string): string {
 }
 
 /**
- * サーバーの URL。空文字は同一オリジン（ブラウザでの開発時、Vite のプロキシ経由）。
+ * サーバーの URL（Tauri では設定の必須。空文字は未設定を表す）。
  */
 export function getServerUrl(): string {
   return serverUrlOverride !== undefined ? serverUrlOverride : getItem(SERVER_KEY) ?? '';
@@ -121,18 +121,6 @@ export function apiUrl(path: string): string {
 
 export function authHeaders(): Record<string, string> {
   return devUser ? { 'X-Dev-User': devUser } : {};
-}
-
-export function wsUrl(): string {
-  const base = getServerUrl();
-  let url: string;
-  if (base) {
-    url = base.replace(/^http/i, 'ws') + '/api/ws';
-  } else {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    url = `${proto}//${window.location.host}/api/ws`;
-  }
-  return withDevQuery(url);
 }
 
 /**

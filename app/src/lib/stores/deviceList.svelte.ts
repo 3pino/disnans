@@ -1,4 +1,3 @@
-import { isTauri } from '../platform';
 import { devUser, getServerUrl } from '../config';
 import { createDeviceApi, type DeviceApi, type DeviceInfo } from '../transport/device';
 import { tauriInvoke } from '../transport/tauri';
@@ -17,7 +16,7 @@ import { deviceSettings } from './deviceSettings.svelte';
 
 export type DeviceListDeps = {
   /** Tauri のときだけ（ブラウザ版は一覧を持たない） */
-  api: DeviceApi | null;
+  api: DeviceApi;
   /** このデバイス自身の名前を変える（ローカルの名前も一緒に直す必要があるので、deviceSettings に任せる） */
   renameSelf: (name: string) => Promise<void>;
   /** 接続先の識別（サーバーの URL と開発ユーザー）。値は呼ぶたびに読む（動的に変わりうる） */
@@ -40,11 +39,6 @@ export class DeviceList {
   private loadSeq = 0;
 
   constructor(private deps: DeviceListDeps) {}
-
-  /** Tauri のときだけ使える */
-  get available(): boolean {
-    return this.deps.api !== null;
-  }
 
   isSelf(id: string): boolean {
     return this.selfId !== null && id === this.selfId;
@@ -72,7 +66,6 @@ export class DeviceList {
   /** 一覧を読む（設定は読まず、書かない）。古い読み込みの結果は捨てる。接続先が変わっていたら、結果を入れる前に古い一覧を消す */
   async load(): Promise<void> {
     const api = this.deps.api;
-    if (!api) return;
     if (this.busy !== null) return;
     const seq = ++this.loadSeq;
     const scope = this.deps.scope();
@@ -97,7 +90,6 @@ export class DeviceList {
   /** 名前を変える（空欄は受けない）。このデバイスは既存の名前変更（ローカルも直す）、ほかは名前だけ送る */
   async rename(id: string, name: string): Promise<boolean> {
     const api = this.deps.api;
-    if (!api) return false;
     const trimmed = name.trim();
     if (trimmed === '') {
       this.error = 'デバイスの名前を入れてください';
@@ -131,7 +123,6 @@ export class DeviceList {
   /** デバイスとその設定を消す。このデバイス自身は消さない（拒否する）。確認は呼び出し側で済ませておく */
   async remove(id: string): Promise<boolean> {
     const api = this.deps.api;
-    if (!api) return false;
     const why = this.refusal();
     if (why) {
       this.error = why;
@@ -171,7 +162,7 @@ function errorText(e: unknown): string {
 
 function realDeps(): DeviceListDeps {
   return {
-    api: isTauri() ? createDeviceApi(tauriInvoke, { server: () => getServerUrl(), devUser }) : null,
+    api: createDeviceApi(tauriInvoke, { server: () => getServerUrl(), devUser }),
     renameSelf: (name) => deviceSettings.renameDevice(name),
     scope: () => `${getServerUrl()}\u0000${devUser ?? ''}`,
   };

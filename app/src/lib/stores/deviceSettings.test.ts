@@ -32,10 +32,10 @@ function fakeApi(opts: { saved?: boolean; prefs?: Record<string, unknown>; failW
   return { api, peek: () => server };
 }
 
-function deps(over: Partial<DeviceDeps> & { api?: DeviceApi | null; local?: ReturnType<typeof memory> } = {}) {
+function deps(over: Partial<DeviceDeps> & { api?: DeviceApi; local?: ReturnType<typeof memory> } = {}) {
   const local = over.local ?? memory();
   const d: DeviceDeps = {
-    api: over.api === undefined ? null : over.api,
+    api: over.api ?? fakeApi().api,
     get: local.get,
     set: local.set,
     defaultName: () => 'Linux',
@@ -53,7 +53,7 @@ describe('defaultDeviceName', () => {
   });
 });
 
-describe('DeviceSettings（ブラウザ版: localStorage だけ）', () => {
+describe('DeviceSettings（手元の値: キャッシュと取り込み。起動の前・オフラインでも値が出る）', () => {
   it('以前の localStorage の値を、キャッシュが無いときに一度取り込む', () => {
     const local = memory({ 'disnans.hideNavigationBar': '1', 'disnans.deviceKind': 'tablet' });
     const { d } = deps({ local });
@@ -69,12 +69,6 @@ describe('DeviceSettings（ブラウザ版: localStorage だけ）', () => {
     expect(s.orientation).toBe('portrait');
     expect(JSON.parse(local.m.get(DEVICE_CACHE_KEY) ?? '{}')).toMatchObject({ orientation: 'portrait' });
     expect(new DeviceSettings(deps({ local }).d).orientation).toBe('portrait');
-  });
-
-  it('start はデバイスを使わずに ready になる', async () => {
-    const s = new DeviceSettings(deps().d);
-    await s.start();
-    expect(s.ready).toBe(true);
   });
 
   it('変わったときに購読者へ知らせる（解除したあとは届かない）', () => {

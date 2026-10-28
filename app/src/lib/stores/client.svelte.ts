@@ -6,8 +6,6 @@ import type { ClientEvent } from '../protocol/ClientEvent';
 import type { Message } from '../protocol/Message';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import type { User } from '../protocol/User';
-import { Socket, type SocketStatus } from '../ws';
-import { wsUrl } from '../config';
 import { isAndroid, isTauri } from '../platform';
 import { Timeline, type PendingMessage } from './timeline.svelte';
 import { ui, type ToastAvatar } from './ui.svelte';
@@ -28,10 +26,13 @@ import { viewTexts } from '../viewTexts';
 
 type Listener = (ev: ServerEvent) => void;
 
+/** チャットの接続の状態（画面の接続バナーと、通話の判断に使う） */
+export type LinkStatus = 'connecting' | 'open' | 'closed';
+
 /** 添付の変更を読み直すまでの待ち（ms） */
 const ATTACHMENT_REFRESH_MS = 300;
 
-/** 接続できないとき、チャットを再試行する間隔（JS Socket の再接続の上限と同じ） */
+/** 接続できないとき、チャットを再試行する間隔 */
 const CHAT_RETRY_MS = 30_000;
 
 /** 通話の音声（call.emit の audio）か */
@@ -54,7 +55,7 @@ const SILENT_EMIT_FAILURES: ReadonlySet<string> = new Set(['call.emit', 'call.al
 class Client {
   me = $state<User | null>(null);
   users = $state<Record<string, User>>({});
-  status = $state<SocketStatus>('connecting');
+  status = $state<LinkStatus>('connecting');
   /** つながらない原因の 1 行（接続バナーの診断用）。つながったら消す */
   linkReason = $state<string | null>(null);
   /** 最初の hello を受け取ったか */
@@ -62,13 +63,13 @@ class Client {
   /** 何度目の接続か（再接続の判定用） */
   generation = $state(0);
 
-  private socket: Socket | null = null;
   /** メインチャットの履歴 */
   private readonly main = new Timeline();
   private listeners = new Set<Listener>();
   private seq = 0;
-  /** チャットの Rust 経路（null なら従来の JS 経路）。start() で1回だけ決める */
+  /** チャットの Rust 経路。null のときは、この環境ではチャットを使えない。start() で1回だけ決める */
   private chat: ChatTransport | null = null;
+  private started = false;
   private chatState: 'idle' | 'starting' | 'started' | 'failed' = 'idle';
   /** Rust 経路で、いま有効な接続の世代（古い項目は捨てる） */
   private chatGeneration = 0;
@@ -86,35 +87,25 @@ class Client {
     return Object.values(this.users).sort((a, b) => a.display_name.localeCompare(b.display_name, 'ja'));
   }
 
-  /** 起動時に1回呼ぶ。chat を渡すと、チャットは Rust 経路。Tauri の Windows・Linux・Android は必ず渡す（S7）。JS Socket はブラウザーだけ */
+  /** 起動時に1回呼ぶ。chat は Rust 経路（Tauri の Windows・Linux・Android）。null なら、この環境ではチャットを使えない */
   start(chat: ChatTransport | null = bootChatTransport()): void {
-    if (this.socket || this.chat) return;
+    if (this.started) return;
+    this.started = true;
     page.init();
-    // Rust 経路（Windows・Linux・Android）では JS Socket を作らない。接続・ping・再接続・通話の送受信はすべて chat 側
-    if (chat) {
-      this.chat = chat;
-      void this.startChat();
-      // Android（rust チャット。既定）: ネットワークが変わったら、接続を作り直す。背景から戻ったときは、
-      // 背景が長かったか・接続が切れていたときだけ作り直す（resumeReconnect。S2）。
-      // chat_reconnect は接続中に何もしないので、chat_start（強制の作り直し）を使う。新しい接続の hello で履歴も読み直す
-      if (isTauri() && isAndroid() && typeof window !== 'undefined') {
-        window.addEventListener('online', () => this.restartChat());
-        document.addEventListener('visibilitychange', () => this.onVisibilityChanged());
-      }
+    if (!chat) {
+      this.linkReason = 'この環境ではチャットを使えません';
+      this.setLink('closed');
       return;
     }
-    this.socket = new Socket({
-      url: wsUrl,
-      onEvent: (ev) => this.dispatch(ev),
-      onStatus: (s) => {
-        this.setLink(s);
-        if (s === 'closed') {
-          this.linkReason = 'WebSocket が応答しません（接続できない・切れた）';
-          this.main.markSentUnknown();
-        }
-      },
-    });
-    this.socket.start();
+    this.chat = chat;
+    void this.startChat();
+    // Android（rust チャット。既定）: ネットワークが変わったら、接続を作り直す。背景から戻ったときは、
+    // 背景が長かったか・接続が切れていたときだけ作り直す（resumeReconnect。S2）。
+    // chat_reconnect は接続中に何もしないので、chat_start（強制の作り直し）を使う。新しい接続の hello で履歴も読み直す
+    if (isTauri() && isAndroid() && typeof window !== 'undefined') {
+      window.addEventListener('online', () => this.restartChat());
+      document.addEventListener('visibilitychange', () => this.onVisibilityChanged());
+    }
   }
 
   /** 接続の状態（バナーなど）。open / 切れた の変化を購読者（通話など）へ知らせる */
@@ -123,7 +114,7 @@ class Client {
     return () => this.linkListeners.delete(fn);
   }
 
-  private setLink(s: SocketStatus): void {
+  private setLink(s: LinkStatus): void {
     if (s === 'open') this.linkReason = null;
     if (this.status === s) return;
     console.info(`[chat] 接続: ${this.status} → ${s}${this.linkReason ? ` (${this.linkReason})` : ''}`);
@@ -132,7 +123,6 @@ class Client {
   }
 
   reconnect(): void {
-    this.socket?.reconnectNow();
     if (!this.chat) return;
     if (this.chatState === 'started') void this.chat.reconnect().catch((e) => this.chatFailed(e));
     else if (this.chatState !== 'starting') {
@@ -173,8 +163,8 @@ class Client {
       }
       return true;
     }
-    if (!this.socket) return false;
-    return this.socket.send(ev);
+    // チャットを使えない環境では送らない（キューには積まない）
+    return false;
   }
 
   /**
@@ -216,14 +206,9 @@ class Client {
     }
   }
 
-  /**
-   * まだ送り出せていないバイト数（通話の映像の間引きに使う）。
-   * Rust 経路（デスクトップ・Android）では、送信中の chat_emit のバイト数だけ（JS Socket を使わない。S5）。
-   * ブラウザーの開発用 Socket のときは、その bufferedAmount を足す
-   */
+  /** まだ送り出せていないバイト数（通話の映像の間引きに使う）。Rust 経路の chat_emit のバイト数（S5） */
   get sendBuffered(): number {
-    if (this.chat) return this.chatEmitBytes;
-    return (this.socket?.bufferedAmount ?? 0) + this.chatEmitBytes;
+    return this.chatEmitBytes;
   }
 
   timeline(): Timeline {

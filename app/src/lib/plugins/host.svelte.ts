@@ -15,7 +15,7 @@ import type { ServerEvent } from '../protocol/ServerEvent';
 import { client } from '../stores/client.svelte';
 import { ui } from '../stores/ui.svelte';
 import { devFolderSupported, readDevPlugin, scanDevFolder } from './dev';
-import { manifestOf, parsePackageManifest, permissionsOf, PLUGIN_FILES } from './manifest';
+import { manifestOf, parsePackageManifest, permissionsOf } from './manifest';
 import { sharedApi } from '../transport/shared';
 import { THEME_STYLE_SELECTOR, themeHost } from './themes.svelte';
 import { PluginBase, PluginRuntime, type ViewHandle } from './runtime';
@@ -717,21 +717,6 @@ class PluginHost {
     }
     const digest = await globalThis.crypto.subtle.digest('SHA-256', all);
     return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  /** 選んだファイルを配布する（ブラウザー版）。プラグインかテーマかは manifest でサーバーが見分ける */
-  async publishFiles(list: File[], visibility: PluginVisibility): Promise<PluginInfo> {
-    const names = new Set<string>(PLUGIN_FILES);
-    const files: { name: string; data: Blob }[] = [];
-    for (const f of list) {
-      if (!names.has(f.name)) throw new Error(`配布できないファイルです（${f.name}）。${PLUGIN_FILES.join(' / ')} だけです`);
-      files.push({ name: f.name, data: f });
-    }
-    const has = (name: string) => files.some((f) => f.name === name);
-    if (!has('manifest.json') || !(has('main.js') || has('theme.css'))) {
-      throw new Error('manifest.json と main.js（テーマなら theme.css）を選んでください');
-    }
-    return this.publish(files, visibility);
   }
 
   private async publish(files: { name: string; data: Blob }[], visibility: PluginVisibility): Promise<PluginInfo> {

@@ -1,7 +1,7 @@
 // デバイスの判定（ステップ7）。
 // Tauri では Rust が `window.__DISNANS_PLATFORM__`（app/src-tauri/src/platform.rs）にデバイスの事実と方針（capabilities）を入れる。
 // 値が正しい形で有れば、それを使う（UA 文字列を見ない）。無い・壊れている項目は、従来どおり UA などから推測する（安全側）。
-// ブラウザー（Tauri でない）は Rust が無いので、常に推測する。
+// Tauri の注入が無いとき（想定外の失敗）は、UA から推測する。
 // ここに判定を集める。呼び出し側は capabilities() か、個別の関数（isTauri など）を使う。
 
 /** Rust が入れるデバイスの事実（JSON は camelCase。platform.rs の PlatformInfo と揃える） */
@@ -22,14 +22,12 @@ export type Capabilities = {
   sharedStorage: boolean;
   /** 読取・書込・添付を Rust 経路で行う（既定で on。localStorage の "0" で off） */
   rustApi: boolean;
-  /** チャットの経路。"default" は Rust（S7 で逃げ道を廃止）、"off" は JS Socket（ブラウザー） */
-  rustChat: 'default' | 'off';
   /** 本体の渡し方（Android の WebView は base64） */
   bodyMode: 'raw' | 'base64';
-  /** 通知の出し方（web はブラウザー） */
-  notifyBackend: 'android' | 'desktop' | 'web';
-  /** アップデートの経路（null は対象外） */
-  updater: 'desktop' | 'android' | null;
+  /** 通知の出し方（Android は常駐サービス、デスクトップはネイティブ通知） */
+  notifyBackend: 'android' | 'desktop';
+  /** アップデートの経路 */
+  updater: 'desktop' | 'android';
   /** 通話の音声出力の切り替えを Kotlin で行う（Android） */
   nativeAudioOutput: boolean;
   /** 画面を切っても動く常駐（Android の前景サービス） */
@@ -75,7 +73,7 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
-/** Android か（Tauri でもブラウザーでも）。Rust の値があればそれ、無ければ UA */
+/** Android か。Rust の値があればそれ、無ければ UA */
 export function isAndroid(): boolean {
   const info = injectedPlatform();
   if (info) return info.android;
@@ -96,7 +94,7 @@ export function supportsDesktopStoragePlatform(userAgent: string, platform = '')
   return /windows|linux/i.test(agent) && !/android/i.test(agent);
 }
 
-/** shared-file storage を使えるか（Windows か Linux の Tauri 版。ブラウザーは使わない）。Rust の値を優先し、無ければ UA */
+/** shared-file storage を使えるか（Windows か Linux の Tauri 版）。Rust の値を優先し、無ければ UA */
 export function isSharedStorageOs(): boolean {
   if (!isTauri() || isAndroid()) return false;
   const info = injectedPlatform();
@@ -106,7 +104,7 @@ export function isSharedStorageOs(): boolean {
 
 /**
  * Rust が入れた方針の値（形が正しいものだけ）。無い・形が違うなら fallback を返す。
- * null を許す項目（updater・nativeScreen）は、null も正しい値として扱う。
+ * null を許す項目（nativeScreen）は、null も正しい値として扱う。
  */
 function fromRust<T>(raw: Record<string, unknown> | null, key: keyof Capabilities, valid: (v: unknown) => boolean, fallback: T): T {
   if (raw && key in raw && valid(raw[key])) return raw[key] as T;
@@ -128,10 +126,9 @@ function inferred(): Capabilities {
     // Android は設定と下書きも Rust に寄せた（step6 の (3)）
     sharedStorage: shared || android,
     rustApi: shared || android,
-    rustChat: shared || android ? 'default' : 'off',
     bodyMode: android ? 'base64' : 'raw',
-    notifyBackend: !tauri ? 'web' : isAndroid() ? 'android' : 'desktop',
-    updater: !tauri ? null : isAndroid() ? 'android' : 'desktop',
+    notifyBackend: isAndroid() ? 'android' : 'desktop',
+    updater: isAndroid() ? 'android' : 'desktop',
     nativeAudioOutput: android,
     backgroundService: android,
     nativeScreen: android ? 'android' : isLinuxDesktop() ? 'linux' : null,
@@ -149,10 +146,9 @@ export function capabilities(): Capabilities {
   return {
     sharedStorage: fromRust(raw, 'sharedStorage', isBool, guess.sharedStorage),
     rustApi: fromRust(raw, 'rustApi', isBool, guess.rustApi),
-    rustChat: fromRust(raw, 'rustChat', oneOf('default', 'off'), guess.rustChat) as Capabilities['rustChat'],
     bodyMode: fromRust(raw, 'bodyMode', oneOf('raw', 'base64'), guess.bodyMode) as Capabilities['bodyMode'],
     notifyBackend: fromRust(raw, 'notifyBackend', oneOf('android', 'desktop'), guess.notifyBackend) as Capabilities['notifyBackend'],
-    updater: fromRust(raw, 'updater', oneOf('desktop', 'android', null), guess.updater) as Capabilities['updater'],
+    updater: fromRust(raw, 'updater', oneOf('desktop', 'android'), guess.updater) as Capabilities['updater'],
     nativeAudioOutput: fromRust(raw, 'nativeAudioOutput', isBool, guess.nativeAudioOutput),
     backgroundService: fromRust(raw, 'backgroundService', isBool, guess.backgroundService),
     nativeScreen: fromRust(raw, 'nativeScreen', oneOf('android', 'linux', null), guess.nativeScreen) as Capabilities['nativeScreen'],

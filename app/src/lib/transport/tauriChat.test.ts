@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { commandError, createTauriChatTransport, type ChannelLike } from './tauriChat';
 import type { ChatItem, MessageDraft } from './chat';
-import { selectChatMode } from './select';
+import { bootChatTransport } from './boot';
 import { HttpError } from './http';
 
 const ctx = { server: () => 'http://127.0.0.1:8080', devUser: 'alice' };
@@ -90,41 +90,24 @@ describe('chat over Tauri', () => {
   });
 });
 
-describe('chat mode selection (S7: Tauri always rust; the flag is ignored)', () => {
-  it('Tauri desktop (Windows/Linux) is rust whatever the flag says; browser stays js', () => {
-    expect(selectChatMode({ flag: null, desktop: true })).toBe('rust');
-    expect(selectChatMode({ flag: '1', desktop: true })).toBe('rust');
-    expect(selectChatMode({ flag: '0', desktop: true })).toBe('rust');
-    expect(selectChatMode({ flag: null, desktop: false })).toBe('js');
-    expect(selectChatMode({ flag: '1', desktop: false })).toBe('js');
+describe('chat transport selection (boot)', () => {
+  const recorderInvoke = () => vi.fn().mockResolvedValue(null);
+
+  it('a Rust-capable environment (Windows, Linux, Android Tauri) gets the Rust chat', () => {
+    expect(bootChatTransport({ enabled: true, invoke: recorderInvoke() as never, context: ctx })).not.toBeNull();
   });
 
-  it('Android is rust whatever the flag says (the "0" escape hatch is gone)', () => {
-    expect(selectChatMode({ flag: null, desktop: false, android: true })).toBe('rust');
-    expect(selectChatMode({ flag: '0', desktop: false, android: true })).toBe('rust');
-    expect(selectChatMode({ flag: '1', desktop: false, android: true })).toBe('rust');
-    expect(selectChatMode({ flag: 'yes', desktop: false, android: true })).toBe('rust');
+  it('an environment without a Rust API (another OS) has no chat at all, and no JS fallback exists', () => {
+    const logs: string[] = [];
+    const t = bootChatTransport({ enabled: false, invoke: recorderInvoke() as never, context: ctx, log: (m) => logs.push(m) });
+    expect(t).toBeNull();
+    expect(logs).toEqual(['[disnans] chat transport: none']);
   });
 
-  it('the capability wins when present: "off" is js, "default" is rust', () => {
-    expect(selectChatMode({ desktop: true, rustChat: 'off' })).toBe('js');
-    expect(selectChatMode({ desktop: false, android: false, rustChat: 'default' })).toBe('rust');
-  });
-
-  it('the full matrix', () => {
-    const rows: [string | null, boolean, boolean, 'rust' | 'js'][] = [
-      // flag, desktop, android, expected
-      [null, true, false, 'rust'],
-      ['1', true, false, 'rust'],
-      ['0', true, false, 'rust'],
-      [null, false, true, 'rust'],
-      ['0', false, true, 'rust'],
-      ['1', false, false, 'js'],
-      [null, false, false, 'js'],
-    ];
-    for (const [flag, desktop, android, want] of rows) {
-      expect(selectChatMode({ flag, desktop, android })).toBe(want);
-    }
+  it('logs rust when the chat is Rust', () => {
+    const logs: string[] = [];
+    bootChatTransport({ enabled: true, invoke: recorderInvoke() as never, context: ctx, log: (m) => logs.push(m) });
+    expect(logs).toEqual(['[disnans] chat transport: rust']);
   });
 });
 

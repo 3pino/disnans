@@ -6,85 +6,51 @@ import type { BridgeContext, Invoke, ReadApi } from './types';
 import type { BodyMode } from './body';
 
 /**
- * 読取の Rust 経路の切り替え（localStorage キー）。Windows/Linux の Tauri では既定で on。
- * 値が "0" のときだけ off（従来の TS 経路に戻す逃げ道）。未設定・"1" は on。
+ * 開発用の逃げ道（localStorage）。値が "0" のときだけ、読取・書込・添付を HTTP にする（Rust 経路を使わない）。
+ * 未設定・"1" は、その環境に Rust 経路があれば Rust。
  */
 export const RUST_API_FLAG = 'disnans.rustApi';
 
-/**
- * 旧: チャットの Rust 経路の切り替え（localStorage キー）。S7 で廃止した。Tauri では見ない（常に rust）。
- * 読取の RUST_API_FLAG は従来どおり（逃げ道は残す）。
- */
-export const CHAT_RUST_FLAG = 'disnans.rustChat';
-
-/** Rust 経路を使うか。デスクトップ（Windows/Linux の Tauri）で、フラグが "0" でないとき */
-export function rustEnabled(flag: string | null, desktop: boolean): boolean {
-  return desktop && flag !== '0';
-}
-
-/**
- * 読取・書込・添付の Rust 経路。デスクトップ（Windows/Linux）と Android の Tauri で、フラグが "0" でないとき。
- * チャットは含まない（chat_* は Android に未登録。rustEnabled のまま）。
- */
-export function rustApiEnabled(flag: string | null, env: { desktop: boolean; android?: boolean; rustApi?: boolean }): boolean {
-  const allowed = env.rustApi ?? (env.desktop || !!env.android);
-  return allowed && flag !== '0';
-}
-
-export type ReadApiChoice = { kind: 'http' | 'tauri'; api: ReadApi };
-
-export type ReadApiEnv = {
+/** 経路を決める入力（起動の時に 1 回だけ作る） */
+export type ApiEnv = {
   /** localStorage[RUST_API_FLAG] の値 */
   flag: string | null;
-  /** Windows/Linux の Tauri かどうか（それ以外では Rust 経路を使わない。チャットもこれで決まる） */
-  desktop: boolean;
-  /** Android の Tauri かどうか（読取・書込・添付だけ Rust。本体は base64 で渡す） */
-  android?: boolean;
-  /** 方針の値（capabilities.rustApi）。無いときは desktop と android から決める */
-  rustApi?: boolean;
-  /** 本体の渡し方（capabilities.bodyMode）。無いときは android から決める */
-  bodyMode?: BodyMode;
+  /** この環境に Rust 経路があるか（Windows・Linux・Android の Tauri。それ以外の OS は HTTP のまま） */
+  rustApi: boolean;
+  /** 本体の渡し方（Android の WebView は base64） */
+  bodyMode: BodyMode;
   invoke: Invoke;
   context: BridgeContext;
   log?: (message: string) => void;
 };
 
-/**
- * 読取の経路を決める。呼び出し側はモジュールの読み込み時に1回だけ呼ぶ（boot 時固定）。
- * 方針（rustApi）が off のとき（ブラウザ・Windows と Linux と Android 以外の Tauri）と、フラグ "0" のときは HTTP のまま。
- */
-export function selectReadApi(env: ReadApiEnv): ReadApiChoice {
-  const choice: ReadApiChoice =
-    rustApiEnabled(env.flag, env)
-      ? { kind: 'tauri', api: createTauriReadApi(env.invoke, env.context) }
-      : { kind: 'http', api: createHttpReadApi() };
+/** 読取・書込・添付に Rust 経路を使うか */
+export function useRustApi(env: Pick<ApiEnv, 'flag' | 'rustApi'>): boolean {
+  return env.rustApi && env.flag !== '0';
+}
+
+export type ReadApiChoice = { kind: 'http' | 'tauri'; api: ReadApi };
+
+/** 読取の経路を決める。呼び出し側はモジュールの読み込み時に1回だけ呼ぶ（boot 時固定） */
+export function selectReadApi(env: ApiEnv): ReadApiChoice {
+  const choice: ReadApiChoice = useRustApi(env)
+    ? { kind: 'tauri', api: createTauriReadApi(env.invoke, env.context) }
+    : { kind: 'http', api: createHttpReadApi() };
   env.log?.(`[disnans] api read transport: ${choice.kind}`);
   return choice;
 }
 
 export type WriteApiChoice = { kind: 'http' | 'tauri'; write: WriteApi; upload: UploadApi };
 
-/**
- * 書込（と添付のアップロード）の経路。読取と同じ判定（rustEnabled）。boot 時に1回だけ決める。
- * 読取と書込は別々に決めるが、同じ localStorage の値と同じ実行環境から決まるので常に揃う。
- */
-export function selectWriteApi(env: ReadApiEnv): WriteApiChoice {
-  const mode: BodyMode = env.bodyMode ?? (env.android ? 'base64' : 'raw');
-  const choice: WriteApiChoice = rustApiEnabled(env.flag, env)
-    ? { kind: 'tauri', write: createTauriWriteApi(env.invoke, env.context, mode), upload: createTauriUploadApi(env.invoke, env.context, undefined, mode) }
+/** 書込（と添付のアップロード）の経路。読取と同じ判定。boot 時に1回だけ決める */
+export function selectWriteApi(env: ApiEnv): WriteApiChoice {
+  const choice: WriteApiChoice = useRustApi(env)
+    ? {
+        kind: 'tauri',
+        write: createTauriWriteApi(env.invoke, env.context, env.bodyMode),
+        upload: createTauriUploadApi(env.invoke, env.context, undefined, env.bodyMode),
+      }
     : { kind: 'http', write: createHttpWriteApi(), upload: createHttpUploadApi() };
   env.log?.(`[disnans] api write transport: ${choice.kind}`);
   return choice;
-}
-
-/**
- * チャットの経路（契約 §8.1。S7）。
- * - Tauri の Windows・Linux と Android: 常に rust。JS Socket は作らない。逃げ道（"disnans.rustChat" の "0"）は廃止。
- * - ブラウザー（開発用）は js（Socket を残す）。
- * 方針の値（capabilities.rustChat）があれば、それに従う。無いときは desktop と android から決める。
- * flag は互換のために受け取るだけで、見ない。
- */
-export function selectChatMode(env: { flag?: string | null; desktop: boolean; android?: boolean; rustChat?: 'default' | 'off' }): 'rust' | 'js' {
-  if (env.rustChat !== undefined) return env.rustChat === 'default' ? 'rust' : 'js';
-  return env.desktop || env.android ? 'rust' : 'js';
 }

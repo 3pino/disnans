@@ -42,7 +42,7 @@ function plainLine(line: string): Inline[] {
 }
 
 /**
- * 木が無いときの表示（送信中の本文・ブラウザー版の開発表示）。書式は解釈せず、改行と `<@id>` だけを保つ。
+ * 木が無いときの表示（送信中の本文・Rust の木が無いとき・Rust の解析の失敗）。書式は解釈せず、改行と `<@id>` だけを保つ。
  * 空の本文は木が空（何も出さない）。
  */
 export function plainTree(body: string): Block[] {
@@ -52,7 +52,7 @@ export function plainTree(body: string): Block[] {
 
 /**
  * 表示に使う構文木。Tauri の Rust 経路は、本文の木を `markdown`（Rust の core が作った木）として付けて送る。
- * 無いとき（送信中の仮表示・ブラウザー版の開発表示）は、プレーンの木にする。
+ * 無いとき（送信中の仮表示・Rust の木が無いとき・Rust の解析の失敗）は、プレーンの木にする。
  */
 export function treeOf(body: string, markdown?: unknown): Block[] {
   return Array.isArray(markdown) ? (markdown as Block[]) : plainTree(body);

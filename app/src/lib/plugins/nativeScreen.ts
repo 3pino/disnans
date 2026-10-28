@@ -1,4 +1,4 @@
-import { capabilities, isAndroid, isTauri } from '../platform';
+import { capabilities, isAndroid } from '../platform';
 import { PluginError } from './errors';
 
 /**
@@ -240,7 +240,6 @@ async function snapshotAndroid(): Promise<Disnans.ScreenSnapshot> {
 
 /** 静止画を 1 枚撮る。選択や許可のダイアログは出さない */
 async function snapshot(): Promise<Disnans.ScreenSnapshot> {
-  if (!isTauri()) throw new PluginError('unsupported', 'この環境では画面を撮れません');
   return isAndroid() ? snapshotAndroid() : snapshotDesktop();
 }
 

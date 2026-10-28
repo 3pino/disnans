@@ -178,12 +178,13 @@ describe('Android chat: resume and network change restart the chat (chat_start, 
     expect(chat.starts).toBe(1);
   });
 
-  it('an Android browser (not Tauri): no restart, and the JS socket is created as before', async () => {
+  it('Android UA outside Tauri (no Rust chat): nothing is started and no restart happens; the chat stays closed', async () => {
     const e = env(ANDROID_UA, false);
     ({ client } = await import('./client.svelte'));
     client.start(null);
     e.fireWindow('online');
     e.fireDoc('visibilitychange');
-    expect(FakeSocket.instances).toBe(1);
+    expect(FakeSocket.instances).toBe(0);
+    expect(client.status).toBe('closed');
   });
 });

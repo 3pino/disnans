@@ -1,7 +1,7 @@
 // 添付パネルの「最新の画像」。出どころ（Android は写真アプリの最新、デスクトップはピクチャのフォルダ）は差し替えられる形にしてある。
 // 既定の出どころは Tauri の上でだけ使う（ブラウザでは空）。テストは setRecentImageSource で差し替える。
 
-import { isAndroid, isTauri } from './platform';
+import { isAndroid } from './platform';
 import { nativeRecentImageSource } from './recentImagesNative';
 
 /** 写真へのアクセスの許可。limited は Android 14 以降の「選んだ写真だけ」 */
@@ -60,11 +60,6 @@ export function recentGridFit(o: {
   return { cols, tile, rows, capacity: Math.min(limit, cols * rows) };
 }
 
-const NONE: RecentImageSource = {
-  list: async () => ({ permission: 'granted', images: [] }),
-  requestPermission: async () => 'granted',
-};
-
 let override: RecentImageSource | null = null;
 
 /** 出どころを差し替える（null で既定に戻す） */
@@ -72,10 +67,9 @@ export function setRecentImageSource(s: RecentImageSource | null): void {
   override = s;
 }
 
-/** いまの出どころ: 差し替えたもの、なければ Tauri の出どころ（Android かデスクトップか）、ブラウザは空 */
+/** いまの出どころ: 差し替えたもの、なければ Tauri の出どころ（Android かデスクトップか） */
 function current(): RecentImageSource {
   if (override) return override;
-  if (!isTauri()) return NONE;
   return nativeRecentImageSource(isAndroid() ? 'android' : 'desktop');
 }
 

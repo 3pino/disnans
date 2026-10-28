@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readClipboardImage, readNativeClipboardImage } from './clipboardImage';
 
 const invoke = vi.fn<(cmd: string, args?: unknown) => Promise<unknown>>();
@@ -11,9 +11,9 @@ function asDesktop(): void {
   vi.stubGlobal('window', { __TAURI_INTERNALS__: {}, __DISNANS_PLATFORM__: { os: 'linux', desktop: true, android: false, capabilities: null } });
 }
 
-/** Tauri の中（Android）のふりをする。false なら素のブラウザ */
-function asAndroid(on: boolean): void {
-  vi.stubGlobal('window', on ? { __TAURI_INTERNALS__: {}, __DISNANS_PLATFORM__: { os: 'android', desktop: false, android: true, capabilities: null } } : {});
+/** Tauri の Android のふりをする（notifier の clipboard_image が先に読まれる） */
+function asAndroid(): void {
+  vi.stubGlobal('window', { __TAURI_INTERNALS__: {}, __DISNANS_PLATFORM__: { os: 'android', desktop: false, android: true, capabilities: null } });
 }
 
 /** navigator.clipboard を差し替える（テストの中だけ） */
@@ -39,27 +39,29 @@ function item(types: Record<string, string>) {
   };
 }
 
-describe('readClipboardImage（Web の経路）', () => {
+describe('readClipboardImage（Android の WebView の Clipboard API。native が失敗したときだけ）', () => {
+  // native（clipboard_image）が失敗したときの fallback。Tauri の WebView の navigator.clipboard を使う
+  beforeEach(() => {
+    asAndroid();
+    invoke.mockRejectedValue(new Error('not found'));
+  });
+
   it('Clipboard API が無ければ null', async () => {
-    asAndroid(false);
     setClipboard(undefined);
     expect(await readClipboardImage()).toBeNull();
   });
 
   it('読めない（許可が無い）なら null', async () => {
-    asAndroid(false);
     setClipboard({ read: async () => Promise.reject(new Error('NotAllowedError')) });
     expect(await readClipboardImage()).toBeNull();
   });
 
   it('画像が無い（テキストだけ）なら null', async () => {
-    asAndroid(false);
     setClipboard({ read: async () => [item({ 'text/plain': 'x' })] });
     expect(await readClipboardImage()).toBeNull();
   });
 
   it('画像があれば File にする（png を優先し、拡張子と型をつける）', async () => {
-    asAndroid(false);
     setClipboard({ read: async () => [item({ 'text/html': '<b>x</b>', 'image/png': 'PNG', 'image/jpeg': 'JPG' })] });
     const f = await readClipboardImage();
     expect(f).not.toBeNull();
@@ -69,7 +71,6 @@ describe('readClipboardImage（Web の経路）', () => {
   });
 
   it('jpeg の拡張子は jpg', async () => {
-    asAndroid(false);
     setClipboard({ read: async () => [item({ 'image/jpeg': 'JPG' })] });
     const f = await readClipboardImage();
     expect(f!.name).toMatch(/\.jpg$/);
@@ -77,8 +78,8 @@ describe('readClipboardImage（Web の経路）', () => {
 });
 
 describe('readNativeClipboardImage（貼り付けの経路）', () => {
-  it('Linux の Tauri 以外では null（Web の経路は使わない）', async () => {
-    asAndroid(false);
+  it('Linux の Tauri 以外（Android）では null（Web の経路は使わない）', async () => {
+    asAndroid();
     setClipboard({ read: async () => [item({ 'image/png': 'PNG' })] });
     expect(await readNativeClipboardImage()).toBeNull();
   });
@@ -86,7 +87,7 @@ describe('readNativeClipboardImage（貼り付けの経路）', () => {
 
 describe('readClipboardImage（Android の経路）', () => {
   it('notifier の clipboard_image の結果を File にする（Web より先）', async () => {
-    asAndroid(true);
+    asAndroid();
     invoke.mockResolvedValue({ name: 'shot.png', mime: 'image/png', data: btoa('PNG') });
     setClipboard({ read: async () => [item({ 'image/jpeg': 'JPG' })] });
     const f = await readClipboardImage();
@@ -97,7 +98,7 @@ describe('readClipboardImage（Android の経路）', () => {
   });
 
   it('画像が無い（null）なら null。Web の経路（許可の表示が出うる）は使わない', async () => {
-    asAndroid(true);
+    asAndroid();
     invoke.mockResolvedValue(null);
     const read = vi.fn(async () => [item({ 'image/png': 'WEB' })]);
     setClipboard({ read });
@@ -106,14 +107,14 @@ describe('readClipboardImage（Android の経路）', () => {
   });
 
   it('コマンドが無い・失敗したときだけ Web の経路、どちらも無ければ null', async () => {
-    asAndroid(true);
+    asAndroid();
     invoke.mockRejectedValue(new Error('not found'));
     setClipboard(undefined);
     expect(await readClipboardImage()).toBeNull();
   });
 
   it('コマンドが失敗したら、Web の経路で読める', async () => {
-    asAndroid(true);
+    asAndroid();
     invoke.mockRejectedValue(new Error('not found'));
     setClipboard({ read: async () => [item({ 'image/png': 'WEB' })] });
     const f = await readClipboardImage();

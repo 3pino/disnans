@@ -39,7 +39,6 @@
   import { SETTINGS_TOP, settingsPage, type UiSlot } from '../lib/uiTree';
   import { updater } from '../lib/stores/updater.svelte';
   import { applyServerUrl, devUser, getServerUrl, isCustomAvatar } from '../lib/config';
-  import { isTauri } from '../lib/platform';
   import { saveServerUrl } from '../lib/desktopStorage';
   import { notifications } from '../lib/stores/notifications.svelte';
   import { deviceSettings } from '../lib/stores/deviceSettings.svelte';
@@ -184,7 +183,7 @@
   async function changeServer() {
     const ok = await ui.confirm({
       title: 'サーバーを変更しますか？',
-      body: `現在: ${getServerUrl() || '（同じオリジン）'}\nアプリを再読み込みして、接続先の設定画面に戻ります。`,
+      body: `現在: ${getServerUrl() || '未設定'}\nアプリを再読み込みして、接続先の設定画面に戻ります。`,
       okLabel: '変更する',
     });
     if (!ok) return;
@@ -283,10 +282,8 @@
           <BatteryCharging size={15} />電池の最適化を解除
         </Button>
       {/if}
-    {:else if perm === 'unsupported'}
-      <p class="muted settings-small-text">この環境ではシステム通知を使えません。アプリ内に表示します。</p>
     {:else if perm === 'denied'}
-      <p class="muted settings-small-text">通知はブロックされています。{isTauri() ? 'OS' : 'ブラウザー'}の設定から許可できます。</p>
+      <p class="muted settings-small-text">通知はブロックされています。OS の設定から許可できます。</p>
     {:else if perm === 'default'}
       <Button onclick={() => notifications.requestPermission()}>
         <Bell size={15} />通知を許可する
@@ -301,11 +298,9 @@
     <div class="settings-server">
       <p class="muted settings-small-text settings-server-line">
         <Server size={13} />
-        <span class="settings-server-url">{getServerUrl() || '同じオリジン（開発用プロキシ）'}</span>
+        <span class="settings-server-url">{getServerUrl() || '未設定'}</span>
       </p>
-      {#if isTauri()}
-        <Button class="settings-change-server" onclick={changeServer}>サーバーを変更</Button>
-      {/if}
+      <Button class="settings-change-server" onclick={changeServer}>サーバーを変更</Button>
     </div>
     {#if devUser}<p class="muted settings-small-text">開発ユーザー: {devUser}</p>{/if}
   {:else if item.id === 'version'}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createHttpReadApi, HttpError } from './http';
 import { createTauriReadApi, toBridgeError } from './tauri';
-import { selectChatMode, selectReadApi, selectWriteApi } from './select';
+import { selectReadApi, selectWriteApi } from './select';
 import type { Invoke } from './types';
 
 type Call = { command: string; args?: Record<string, unknown> | Uint8Array | string; options?: unknown };
@@ -20,24 +20,24 @@ function recorder(reply: (command: string) => unknown = () => null) {
 const ctx = { server: () => 'http://127.0.0.1:8080', devUser: 'alice' as string | null };
 
 describe('read transport selection', () => {
-  const base = { desktop: true, invoke: recorder().invoke, context: ctx };
+  const base = { flag: null as string | null, rustApi: true, bodyMode: 'raw' as const, invoke: recorder().invoke, context: ctx };
 
-  it('uses Rust only for flag "1" on desktop', () => {
+  it('uses Rust with flag "1" where the environment has a Rust API', () => {
     expect(selectReadApi({ ...base, flag: '1' }).kind).toBe('tauri');
   });
 
-  it('uses Rust by default on desktop; "0" turns it off; other values are not "0", so still on', () => {
+  it('uses Rust by default; "0" turns it off; other values are not "0", so still on', () => {
     expect(selectReadApi({ ...base, flag: null }).kind).toBe('tauri');
     expect(selectReadApi({ ...base, flag: '1' }).kind).toBe('tauri');
     expect(selectReadApi({ ...base, flag: '0' }).kind).toBe('http');
   });
 
-  it('keeps HTTP outside Windows/Linux desktop even when the flag is on', () => {
-    expect(selectReadApi({ ...base, flag: '1', desktop: false }).kind).toBe('http');
+  it('keeps HTTP where there is no Rust API (another OS), even when the flag is on', () => {
+    expect(selectReadApi({ ...base, flag: '1', rustApi: false }).kind).toBe('http');
   });
 
   it('uses Rust for reads, writes and uploads on Android too (flag "0" still turns it off)', () => {
-    const android = { ...base, desktop: false, android: true };
+    const android = { ...base, bodyMode: 'base64' as const };
     expect(selectReadApi({ ...android, flag: null }).kind).toBe('tauri');
     expect(selectReadApi({ ...android, flag: '0' }).kind).toBe('http');
     expect(selectWriteApi({ ...android, flag: null }).kind).toBe('tauri');
@@ -46,23 +46,19 @@ describe('read transport selection', () => {
 
   it('Android sends base64 bodies; desktop keeps raw bytes', async () => {
     const r = recorder();
-    const a = selectWriteApi({ ...base, flag: null, desktop: false, android: true, invoke: r.invoke });
+    const a = selectWriteApi({ ...base, bodyMode: 'base64', invoke: r.invoke });
     if (a.kind !== 'tauri') throw new Error('expected tauri');
     await a.write.setAvatar(new Blob([new Uint8Array([1, 2, 3])]), 'a.png');
     expect(r.calls[0].args).toBe('AQID');
-    const d = selectWriteApi({ ...base, flag: null, invoke: r.invoke });
+    const d = selectWriteApi({ ...base, invoke: r.invoke });
     if (d.kind !== 'tauri') throw new Error('expected tauri');
     await d.write.setAvatar(new Blob([new Uint8Array([1, 2, 3])]), 'a.png');
     expect(r.calls[1].args).toBeInstanceOf(Uint8Array);
   });
 
-  it('a plain browser on Android (not Tauri) stays HTTP', () => {
-    expect(selectReadApi({ ...base, desktop: false, android: false, flag: null }).kind).toBe('http');
-    expect(selectWriteApi({ ...base, desktop: false, android: false, flag: null }).kind).toBe('http');
-  });
-
-  it('chat stays JS outside Tauri (neither desktop nor Android)', () => {
-    expect(selectChatMode({ flag: null, desktop: false })).toBe('js');
+  it('where there is no Rust API (no injected capability), reads and writes stay HTTP', () => {
+    expect(selectReadApi({ ...base, rustApi: false }).kind).toBe('http');
+    expect(selectWriteApi({ ...base, rustApi: false }).kind).toBe('http');
   });
 
   it('logs the selected transport once per selection', () => {

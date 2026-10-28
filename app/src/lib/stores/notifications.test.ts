@@ -7,7 +7,7 @@ const h = vi.hoisted(() => ({
   isPermissionGranted: vi.fn(),
   requestPermission: vi.fn(),
   showMain: vi.fn(),
-  backend: 'desktop' as 'desktop' | 'android' | 'web',
+  backend: 'desktop' as 'desktop' | 'android',
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({ listen: h.listen }));

@@ -2,12 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  platform: 'desktop' as 'desktop' | 'android' | null,
+  platform: 'desktop' as 'desktop' | 'android',
+  tauri: true,
   check: vi.fn(),
   invoke: vi.fn(),
   relaunch: vi.fn(),
 }));
-vi.mock('../platform', () => ({ capabilities: () => ({ updater: mocks.platform }) }));
+vi.mock('../platform', () => ({ capabilities: () => ({ updater: mocks.platform }), isTauri: () => mocks.tauri }));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.0' }));
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: mocks.check }));
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: mocks.relaunch }));
@@ -30,6 +31,7 @@ beforeEach(() => {
   mocks.check.mockReset();
   mocks.invoke.mockReset();
   mocks.platform = 'desktop';
+  mocks.tauri = true;
   vi.useFakeTimers();
 });
 afterEach(() => {
@@ -123,5 +125,22 @@ describe('最新版を確認し直してから更新する', () => {
     expect(mocks.check).toHaveBeenCalledTimes(2);
     expect(latest.downloadAndInstall).toHaveBeenCalledOnce();
     expect(u.state).toEqual({ kind: 'installing' });
+  });
+});
+
+describe('Tauri の外（想定外の環境）では、確認も更新もしない', () => {
+  it('supported は false。確認しても Tauri の更新の API を呼ばない', async () => {
+    mocks.tauri = false;
+    const u = new Updater();
+    expect(u.supported).toBe(false);
+    await u.check();
+    await u.install();
+    expect(mocks.check).not.toHaveBeenCalled();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(u.state).toEqual({ kind: 'idle' });
+  });
+
+  it('Tauri では supported は true', () => {
+    expect(new Updater().supported).toBe(true);
   });
 });

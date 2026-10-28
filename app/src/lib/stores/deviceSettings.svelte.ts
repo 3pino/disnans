@@ -1,4 +1,4 @@
-import { isTauri, osName } from '../platform';
+import { osName } from '../platform';
 import { getItem, setItem } from '../storage';
 import { devUser, getServerUrl } from '../config';
 import { createDeviceApi, type DeviceApi } from '../transport/device';
@@ -29,8 +29,8 @@ export function defaultDeviceName(os: string): string {
 }
 
 export type DeviceDeps = {
-  /** Tauri のときだけ（ブラウザ版は localStorage だけで動く） */
-  api: DeviceApi | null;
+  /** デバイスの API（Tauri のデバイス。Windows・Linux・Android） */
+  api: DeviceApi;
   get: (key: string) => string | null;
   set: (key: string, value: string | null) => void;
   defaultName: () => string;
@@ -47,7 +47,7 @@ export type DeviceDeps = {
 export class DeviceSettings {
   /** 表示と保存に使う設定（Rust が正規化したもの。キャッシュ → サーバーの順に置き換わる。書き込みは全体を送り、Rust が正規化する） */
   raw = $state.raw<Raw>({ ...DEVICE_DEFAULTS });
-  /** 起動時の読み込みが済んだか（サーバーを使わない環境では、すぐ true） */
+  /** 起動時の読み込みが済んだか（失敗しても true。手元の値で動く） */
   ready = $state(false);
 
   private id: string | null = null;
@@ -120,7 +120,7 @@ export class DeviceSettings {
     const trimmed = name.trim();
     // 失敗を呼び出し側へ返す。先にローカル名を変えると、失敗しても
     // 次の起動の登録でその名前を再送してしまうため、成功してから保存する。
-    if (this.deps.api && this.id) {
+    if (this.id) {
       await this.deps.api.register(this.id, trimmed || this.deps.defaultName());
     }
     this.deps.set(DEVICE_NAME_KEY, trimmed === '' ? null : trimmed);
@@ -133,10 +133,6 @@ export class DeviceSettings {
     if (this.started) return;
     this.started = true;
     const api = this.deps.api;
-    if (!api) {
-      this.ready = true;
-      return;
-    }
     try {
       const id = await api.id();
       this.id = id;
@@ -158,7 +154,7 @@ export class DeviceSettings {
    */
   async refresh(opts: { quiet?: boolean } = {}): Promise<void> {
     const api = this.deps.api;
-    if (!api || !this.id || this.pending > 0) return;
+    if (!this.id || this.pending > 0) return;
     if (!this.gate.allow()) return;
     try {
       const view = await api.read(this.id);
@@ -181,14 +177,14 @@ export class DeviceSettings {
     this.raw = next;
     this.deps.set(DEVICE_CACHE_KEY, JSON.stringify(next));
     this.notify();
-    if (this.deps.api && this.id) this.push(next);
+    if (this.id) this.push(next);
   }
 
   /** 書き込みを順番に送る。送っている間に、さらに変えていなければ、サーバーの返事に合わせる */
   private push(body: Raw): void {
     const api = this.deps.api;
     const id = this.id;
-    if (!api || !id) return;
+    if (!id) return;
     this.pending++;
     this.queue = this.queue.then(async () => {
       try {
@@ -219,7 +215,7 @@ function errorText(e: unknown): string {
 
 function realDeps(): DeviceDeps {
   return {
-    api: isTauri() ? createDeviceApi(tauriInvoke, { server: () => getServerUrl(), devUser }) : null,
+    api: createDeviceApi(tauriInvoke, { server: () => getServerUrl(), devUser }),
     get: (key) => getItem(key),
     set: (key, value) => setItem(key, value),
     defaultName: () => defaultDeviceName(osName()),

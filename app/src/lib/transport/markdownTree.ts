@@ -5,7 +5,7 @@ import { tauriInvoke } from './tauri';
 
 /**
  * 本文の構文木を Rust（core）に作らせる。送信・編集の仮表示に使う（1 回の invoke）。
- * ブラウザー（開発）は null（仮表示はプレーンのまま）。呼び出し・形の失敗も null（プレーンのまま）。
+ * Tauri の外（想定外の環境）は呼ばず null（仮表示はプレーンのまま）。呼び出し・形の失敗も null（プレーンのまま）。
  */
 export async function markdownTreeOf(body: string, deps: { tauri?: boolean; invoke?: Invoke } = {}): Promise<Block[] | null> {
   const tauri = deps.tauri ?? isTauri();

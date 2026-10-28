@@ -16,12 +16,12 @@
 
 ## クライアントと共通表示データ
 
-- 製品の GUI は Tauri（Windows・Linux・Android）。チャットは Rust の接続を使う。「開発用ブラウザー」は `vite dev` をブラウザーで開く経路を指し、デスクトップ GUI とは別。開発用の JS WebSocket は残すが、製品としてのブラウザー対応はしない。
+- 製品の GUI は Tauri（Windows・Linux・Android）。チャットは Rust の接続を使う。製品としてのブラウザー対応はしない。`vite dev` は Tauri の接続先と、テスト（vitest・`app/scripts/touch-check.mjs` の Chromium）のためにあり、通常のブラウザーから実サーバーへつなぐ経路は持たない。
 - GUI と CLI/TUI は同じバージョンで配布する前提。共通表示データの版ずれを吸収する契約は設けない。
 - `crates/client-core/src/view/` は「何を出すか」を決める。HTML、文字幅、折り返し、色などの描画は持たない。GUI は Svelte、TUI は ratatui で描画する。
 - 本文の Markdown の木は Rust で作り、履歴・検索・チャットイベントの応答に付ける。一覧の各メッセージについて別々に invoke しない。Android の受け渡しは JSON の base64 なので、追加するデータ量に注意する。
 - 送信中・編集の仮表示は `api_markdown_tree(body)` を操作ごとに 1 回だけ呼ぶ。返るまでは改行・メンションだけのプレーン表示。古い本文の木は使わず、結果が返った時点で本文が一致するときだけ付ける。失敗しても送信を再試行しない。
-- 開発用ブラウザーは Rust を呼べないためプレーン表示。製品用の解析を TypeScript に二重に持たない。
+- Rust を呼べない環境（テストなど）ではプレーン表示。製品用の解析を TypeScript に二重に持たない。
 - 続けての投稿（同じ人・5 分）と日付の区切りは GUI に判定を残し、core への一本化はしない（決定）。未読の線で続きを切ることや送信中の末尾追加は GUI だけの規則で、ローカルの時刻帯や履歴のページの継ぎ目も GUI が扱う。計算は 5000 件でも約 1ms（Node での計測）で、invoke にすると更新のたびに IPC が増え、WASM にするには view の別クレート化が要る。続きの判定は Rust と共通の fixture で一致を保つ。続きの判定にスレッドの条件は含めない。
 - メンションの表示名は GUI の users マップから差し込む。通知文言はサーバーが作る。「不明なユーザー」は Rust・TS それぞれ 1 つの定数にまとめ、fixture で照合する。
 - 入力欄の補完（`@`・`:`・行頭の `/`）の規則は、core の `view/suggest.rs` と GUI の `app/src/lib/suggest/` が持ち、`fixtures/suggest/` で一致を確かめる。絵文字の表は core の `view/emoji.rs` が正で、GUI へは生成物（`emojiNames.generated.ts`）として出す。

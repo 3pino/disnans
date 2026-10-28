@@ -3,18 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fake = vi.hoisted(() => ({
   linux: true,
   android: false,
-  tauri: true,
   invoke: vi.fn(async (_command: string, _args?: unknown): Promise<unknown> => undefined),
   events: new Map<string, (event: { payload: unknown }) => void>(),
   offs: [] as ReturnType<typeof vi.fn>[],
   listen: vi.fn(),
 }));
 vi.mock('../platform', () => ({
-  isTauri: () => fake.tauri,
   isAndroid: () => fake.android,
-  // 方針（Rust の capabilities と同じ規則）: Android の Tauri なら android、Linux の Tauri なら linux
+  // 方針（Rust の capabilities と同じ規則）: Android なら android、Linux なら linux（Tauri 版だけ。ブラウザー版は無い）
   capabilities: () => ({
-    nativeScreen: fake.tauri && fake.android ? 'android' : fake.tauri && fake.linux && !fake.android ? 'linux' : null,
+    nativeScreen: fake.android ? 'android' : fake.linux ? 'linux' : null,
   }),
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: fake.invoke }));
@@ -25,7 +23,6 @@ import { pipApi, screenCaptureApi } from './nativeScreen';
 beforeEach(() => {
   fake.linux = true;
   fake.android = false;
-  fake.tauri = true;
   fake.events.clear();
   fake.offs = [];
   fake.invoke.mockReset().mockResolvedValue(undefined);
@@ -48,12 +45,9 @@ const captureId = () => {
 };
 
 describe('Linux のネイティブ画面取得', () => {
-  it('Linux のアプリで対応し、Linux の PiP やブラウザー版には対応を誤って広げない', () => {
+  it('Linux のアプリで対応し、Linux の PiP には対応を広げない', () => {
     expect(screenCaptureApi.supported).toBe(true);
     expect(pipApi.supported).toBe(false);
-    fake.tauri = false;
-    expect(screenCaptureApi.supported).toBe(false);
-    fake.tauri = true;
     fake.linux = false;
     expect(screenCaptureApi.supported).toBe(false);
   });

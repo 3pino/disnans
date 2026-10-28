@@ -53,7 +53,7 @@ plugins/core/explorer/
   resolveId: id => id === 'svelte' || id.startsWith('svelte/') ? '\0host:' + id : null,
   load: id => id.startsWith('\0host:') ? `export const { mount, unmount, ... } = disnans.runtime.svelte[${JSON.stringify(id.slice(6))}];` : null,
   ```
-- 別案: ブラウザーの import map で `svelte` を本体の URL に向ける。Blob URL のモジュールにも文書の import map が効くが、WebView(Android・WebKitGTK・WKWebView)での挙動を確かめる必要がある。
+- 別案: ブラウザーの import map で `svelte` を本体の URL に向ける。Blob URL のモジュールにも文書の import map が効くが、WebView(Android・WebKitGTK・WebView2)での挙動を確かめる必要がある。
 - 制約: 内部 API(`svelte/internal/client`)は版が変わると壊れる。コアは本体と同じロックファイルの同じ Svelte でビルドするので安全。サードパーティには使わせない(使わせるなら ABI の取り決めが要る)。
 
 ### `disnans` の受け渡しとスタイル
@@ -102,7 +102,7 @@ plugins/core/explorer/
 ## 未決
 
 - 同梱を `public/` の静的ファイルにするか、`main.js` を本体のバンドルに文字列として埋めるか(`fetch` が要らなくなる)。
-- 開発用ブラウザー(Rust を呼べない)での読み込み方。
+- Rust を呼べないテストの環境(vitest・Chromium の fixture)での読み込み方。
 - コアのバージョンは常に本体と同じでよいか。
 - サードパーティの権限をユーザーが確認する仕組みは今は無い。先に作るか。
 - `disnans` のホスト実装を別パッケージ(`@disnans/runtime`)に分けるのを、いつ始めるか。

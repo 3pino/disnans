@@ -39,7 +39,7 @@ this.register(call.onEvent('screen', ({ user, payload }) => { /* <img> に paylo
 
 実例は **画面共有**（[`examples/screenshare/`](../../examples/screenshare/)、v12）です。通話の全画面のボタンから画面を取り、縮小した画像（JPEG / WebP / PNG）にして `call.emit` で送ります。上部の通話バーの全画面ボタンでこの画面を開けます。 カメラを共有中に、前後のカメラが 2 つ以上あるデバイスでは、通話の画面の領域に出る自分の映像の右上の [カメラを切り替え] で前と後ろを切り替えます（開けなければ、いまのカメラのまま続けます）。配信する人も見る人も、同じ大きさの舞台に映像を出します。通話の画面では、参加者の一覧を上に、プラグインの領域（画面共有の舞台）を下に置き、舞台の高さは画面の高さの 38% まで（最大 420px）です。
 
-- 取る側: `disnans.screenCapture` が対応していれば優先します（Android の MediaProjection、Linux の portal / PipeWire → GStreamer。v12）。Linux は WebKitGTK の `<video>` の描画を通さず、OS のダイアログで選んだ画面を取得します。Windows / ブラウザーは `getDisplayMedia` を使います。どちらも無ければ共有ボタンを出さず、見るだけです
+- 取る側: `disnans.screenCapture` が対応していれば優先します（Android の MediaProjection、Linux の portal / PipeWire → GStreamer。v12）。Linux は WebKitGTK の `<video>` の描画を通さず、OS のダイアログで選んだ画面を取得します。Windows は WebView2 の `getDisplayMedia` を使います。どちらも無ければ共有ボタンを出さず、見るだけです
 - カメラ: [カメラを共有]（アイコン `video`）を押すと、`getUserMedia` で開いたカメラの映像を画面と同じ流れで送ります。画面とカメラは同時には送らず、押したほうに切り替わります。共有の知らせ（`screen.state`）に `source: 'camera'` を付けるので、見る側は「○○のカメラを見る」と出します（`source` の無い前の版は画面として扱う）。送信中は通話の画面の領域に「自分のカメラ（送信中）」を出し、同じ映像を確認できます（音は再生しない・新しい取得はしない）
 - 送る側: 1 回の payload の上限（64 KB）を超えるフレームは分割して送り（`{ f: フレーム番号, i, n, d: base64 の一部 }`）、受け手が組み立てます（欠けたフレームは捨てる）。画像の形式は先頭のバイトから見分けるので、送り手は JPEG・WebP・PNG のどれでも送れます。サーバーの流量制限（容量 4000・毎秒 3000 回復・1 回の重さ = 1 + payload の KB）に収まるよう、映像の予算を毎秒 2400 KB（重さ）にして、直前のフレームの大きさから次の間隔を決め、大きすぎれば画質→解像度の順に下げ、画面が変わらなければ送りません（変化は 64×36 に縮めた画像の平均の差と、1 画素の最大の差で見るので、文字の入力のような小さな変化も送る）。送信待ち（`call.bufferedAmount`）が 192 KB を超えているあいだは次のフレームを作らずに待ちます（回線が細いときに古いフレームを溜めない）
 - 参加: 通話に入った人（とプラグインを読み込み直した人）は `screen.query` を送り、共有中の人は `screen.state` とフレームをすぐに送り直します。新しい参加者が来たときも、共有中の人はハートビートを待たずに知らせます。問い合わせは 1 秒ごとに 2 回だけ再送します。ネイティブの最初のフレームが開始応答より先に届いても保持して送ります
@@ -48,7 +48,7 @@ this.register(call.onEvent('screen', ({ user, payload }) => { /* <img> に paylo
 - 見る側: プラグインが `document.body` に全画面のオーバーレイを足して表示します（ダイアログ・トーストより下、Esc でも閉じる）。通話の画面にも `call.addPanel` で配信を出し、「大きく見る」でオーバーレイを開きます。共有者が複数ならタブで切り替えます。既定は画面全体が収まる表示（縦長のスマホの画面も切れない）。ピンチ・Ctrl+ホイール（トラックパッドのピンチ）でカーソルの位置を中心に拡大縮小、拡大中はドラッグ・ホイールで移動（Shift+ホイールで横）、等倍のときにホイールを上へ回すと拡大、ダブルタップ（ダブルクリック）で拡大／元に戻す、`+` / `-` / `0` キーでも拡大・縮小・元に戻す。全画面は `ui.setImmersive`（Android）か Fullscreen API、戻るジェスチャーは `ui.onBack` で全画面の解除→閲覧を閉じる、の順。PiP は Android なら `disnans.pip`、デスクトップなら受け取った画像を `<canvas>` に描いて `captureStream()` した `<video>` の `requestPictureInPicture()`
 
 本体の通話のしくみ（参加者の管理と kick はサーバー、音声とデータもサーバー経由）は、サーバーの経路と合わせて [`API.md`](../api/rest.md) の通話の節と WebSocket を参照してください。
-マイクを使うには**アプリ版（Tauri）が必要**です（WebView の `getUserMedia` は安全なコンテキストでしか動かないため、`http://` で開いたブラウザー版では使えません）。
+マイクを使うには**アプリ版（Tauri）が必要**です（本体は Tauri 版だけを製品として配るので、通常のブラウザーで開く使い方はありません）。
 
 ---
 
@@ -81,7 +81,7 @@ try {
   const { dataUrl, width, height, source } = await screenCapture.snapshot(); // source: 'screen'（画面全体）| 'app'（disnans 自身）
   img.src = dataUrl;
 } catch {
-  // ブラウザー版などでは撮れない
+  // 撮れない環境（対象外のデバイスなど）
 }
 
 // Android: Activity の PiP（小窓）。小窓の間はアプリの画面がそのまま小さく出るので、onChange で表示を切り替える
@@ -94,6 +94,6 @@ if (pip.supported) {
 - `screenCapture.start` は、断られたら例外です。ユーザーが許可のダイアログでキャンセルしたときの例外は `name` が `AbortError` です（v10。知らせずに終えてください）。フレームは、画面が変わったときと、変わらなくても `keepaliveMs`（既定 5 秒）ごとに 1 枚届きます。`color` が `c256` / `gray` のときは、減色したうえで可逆の WebP（Android 11 以降。それ以前は PNG）と lossy の WebP を比べて小さいほうを渡します
 - Linux の `start` は OS の画面・ウィンドウ選択を使い、選んだソースだけを共有します（主モニターや disnans の静止画に勝手に置き換えません）。GStreamer の行の詰め物を考慮して RGBx を読み、縮小・減色・変化の検出を行い JPEG にします（Linux では `format: 'jpeg'` のみ）。`update({ quality, scale })` は静止した画面にも効きます。最初の実際のフレームが取れなければ開始を失敗として片付けます。AppImage は GStreamer / PipeWire プラグインを同梱し、deb は GStreamer・PipeWire プラグインと portal を依存に含めます。OS 側にはデスクトップに合った portal バックエンドが必要です
 - `onEnd` は、通知欄の「停止」やシステム側の操作で止められたときに呼ばれます（`stop()` では呼ばれません）
-- `screenCapture.snapshot()`（v11）は、設定のプレビューのような「いまの画面を 1 枚だけ見たい」用途向けです。`getDisplayMedia` や `start` と違って、どの画面を共有するかの選択も許可のダイアログも出しません。撮れるものは環境で違い、`source` で分かります: Windows は主モニター全体（GDI）、Linux は X11 なら主モニター全体（ルートウィンドウ）で Wayland などでは disnans 自身の画面（WebKitGTK のスナップショット）、Android は disnans 自身の画面（PixelCopy。MediaProjection は使わない）。長辺 1920 以下に縮めた JPEG の data URL を返します。ブラウザー版では例外です
+- `screenCapture.snapshot()`（v11）は、設定のプレビューのような「いまの画面を 1 枚だけ見たい」用途向けです。`getDisplayMedia` や `start` と違って、どの画面を共有するかの選択も許可のダイアログも出しません。撮れるものは環境で違い、`source` で分かります: Windows は主モニター全体（GDI）、Linux は X11 なら主モニター全体（ルートウィンドウ）で Wayland などでは disnans 自身の画面（WebKitGTK のスナップショット）、Android は disnans 自身の画面（PixelCopy。MediaProjection は使わない）。長辺 1920 以下に縮めた JPEG の data URL を返します。対象外のデバイスでは例外です
 - `screenCapture.supported` は Android / Linux のアプリ版で `true`、それ以外は `false` です。`pip.supported` は Android だけ `true` です。デスクトップの PiP は `<video>` の `requestPictureInPicture()` を使ってください
 - 通話中にアプリを裏に回しても共有が続くのは、通話のフォアグラウンドサービス（マイク）と、画面のキャプチャのフォアグラウンドサービス（`mediaProjection`）が動いているためです

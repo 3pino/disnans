@@ -7,7 +7,7 @@ GUI（Svelte）と TUI（ratatui）で、同じ画面の構造（どのページ
 
 - 正: `crates/client-core/src/view/ui.rs`（`SETTINGS_PAGES`・`NAV_ITEMS`）
 - GUI へは生成物 `app/src/lib/uiTree.generated.ts`（`cargo test -p disnans-client-core` で書き出す。手で直さない。CI と `scripts/check-rust.sh` が差分を確かめる）。
-  開発用ブラウザーは Rust を呼べないので、invoke ではなく生成物で渡す
+  テストの環境（vitest・Chromium）は Rust を呼べないので、invoke ではなく生成物で渡す
 - 木は**値を持たない**。値は各 UI が prefs から差し込む
 
 ## 木の形

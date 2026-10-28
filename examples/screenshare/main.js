@@ -7,7 +7,7 @@
  * できること:
  * 1. 通話の全画面の [画面を共有] を押すと画面を選び、縮小した画像（JPEG / WebP / PNG）を一定間隔で call.emit（サーバー中継）に流す。
  *    もう一度押すと止まる。OS 側で止めた・通話から抜けたときも止まる。
- *    取得は、本体のネイティブ（Android の MediaProjection、Linux の portal / PipeWire）を優先し、無ければ getDisplayMedia（Windows / ブラウザー）
+ *    取得は、本体のネイティブ（Android の MediaProjection、Linux の portal / PipeWire）を優先し、無ければ getDisplayMedia（Windows）
  *    [カメラを共有] を押すと、画面の代わりにカメラの映像（getUserMedia）を同じ流れで送る。画面とカメラは同時には送らない（押したほうに切り替わる）。
  *    カメラが前後に2つ以上ある端末では、カメラの共有中に [カメラを切り替え] で前と後ろを切り替える
  * 2. 誰かが共有を始めると、ステータス欄に [○○の画面を見る]（カメラなら [○○のカメラを見る]）が出る。押すと全画面の表示が開き、共有者が複数なら上のタブで切り替えられる。
@@ -446,7 +446,7 @@ export function isCancelError(e) {
  */
 export function cameraFailureText(e) {
   const name = typeof e === 'object' && e !== null && 'name' in e ? String(/** @type {{ name: unknown }} */ (e).name) : '';
-  if (name === 'NotAllowedError' || name === 'SecurityError') return 'カメラの使用が許可されていません。端末かブラウザーの設定で許可してください';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'カメラの使用が許可されていません。アプリの権限設定で許可してください';
   if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'カメラが見つかりません';
   if (name === 'NotReadableError') return 'カメラを開けません（ほかのアプリが使っているかもしれません）';
   return `カメラを取得できませんでした（${describeError(e)}）`;

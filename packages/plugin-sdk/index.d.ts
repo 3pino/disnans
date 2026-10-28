@@ -148,7 +148,7 @@ declare global {
        * 静止画を 1 枚だけ撮る（API v11）。どの画面を共有するかの選択や、許可のダイアログを出さない（設定のプレビューなど向け）。
        * `supported` に関係なく、本体のアプリ（Tauri）で使える。撮れるもの: Windows は主モニター全体、
        * Linux は X11 なら主モニター全体・Wayland などでは disnans 自身の画面、Android は disnans 自身の画面（`source` で分かる）。
-       * 長辺は 1920 以下に縮める。ブラウザなど撮れない環境では例外
+       * 長辺は 1920 以下に縮める。撮れない環境（Tauri の対応外）では例外
        */
       snapshot(): Promise<ScreenSnapshot>;
     }
@@ -295,7 +295,7 @@ declare global {
     /**
      * 音の入出力の選択（API v5）。使えない環境では一覧が空になる。
      * - Android: 出力先はデバイス全体（通話中のみ）。受話口・スピーカー・有線イヤホン・Bluetooth から選べる。入力は選べない（空）
-     * - デスクトップ・ブラウザー: `setSinkId` が使えれば、`attach` した要素の出力先を切り替える。入力は `getUserMedia({ audio: { deviceId } })` に渡す
+     * - デスクトップ（Windows・Linux）: `setSinkId` が使えれば、`attach` した要素の出力先を切り替える。入力は `getUserMedia({ audio: { deviceId } })` に渡す
      */
     interface Audio {
       /** 選べる出力先。Android では通話中（`holdBackground` の `microphone`）に呼ぶ */
@@ -866,7 +866,7 @@ declare global {
       /**
        * 没入モード（API v9）。Android でステータスバーとナビゲーションバーを隠す（端からスワイプすると一時的に出る）。
        * Android の WebView には Fullscreen API が無いので、全画面の表示に使う。
-       * ネイティブで切り替えたら true。それ以外の環境（デスクトップ・ブラウザー）では何もせず false なので、`requestFullscreen` を使う
+       * ネイティブで切り替えたら true。それ以外の環境（デスクトップ）では何もせず false なので、`requestFullscreen` を使う
        */
       setImmersive(on: boolean): Promise<boolean>;
       /** トースト */

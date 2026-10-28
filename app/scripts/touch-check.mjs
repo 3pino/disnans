@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // 実物の画面で、共有フォルダの「≡」メニューと項目の「…」メニューが、タッチで押せるかを確かめる（batch11）。
 // vitest の外で動く（Chromium が要る）。使い方:
-//   1) 別の端末で `npm run dev`（例: http://127.0.0.1:5173）
+//   1) 別のターミナルで `npm run dev`（例: http://127.0.0.1:5173。vite の開発サーバーだけでよい）
 //   2) CHROME_BIN=<chromium か headless_shell のパス> DISNANS_URL=http://127.0.0.1:5173 node scripts/touch-check.mjs
-// 共有フォルダの一覧は、このスクリプトが立てる仮のサーバーから読む（本物のサーバーは要らない）。
+// Tauri の IPC は scripts/touch-fixture.mjs が読み込み前に差し込む（本体に test mode は無い）。共有フォルダの一覧は、このスクリプトが立てる仮のサーバーから読む（本物のサーバー・Tauri は要らない）。
 // 起動したプロセス（Chromium と仮のサーバー）だけを止める。終了コードは 0（全部押せた）か 1。
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fixtureScript } from './touch-fixture.mjs';
 
 const CHROME = process.env.CHROME_BIN;
 const APP = process.env.DISNANS_URL;
@@ -102,12 +103,11 @@ await S('Page.enable');
 await S('Runtime.enable');
 await S('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
 await S('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-// 仮のサーバーへ向け、本人の名前を入れて、設定の画面を飛ばす
-await S('Page.navigate', { url: APP + '/robots.txt' });
-await sleep(800);
-await evalJs(`localStorage.setItem('disnans.server', ${JSON.stringify(FAKE)}); localStorage.removeItem('disnans.explorer.view'); localStorage.removeItem('disnans.explorer.sort'); localStorage.removeItem('disnans.explorer.dirs'); sessionStorage.setItem('disnans.devUser', 'touch-check'); 1`);
+// Tauri の IPC 境界だけを fixture で差し込む（本体へは test mode を入れない）。サーバーは仮のサーバー
+await S('Page.addScriptToEvaluateOnNewDocument', { source: fixtureScript({ server: FAKE }) });
 await S('Page.navigate', { url: APP + '/' });
 await sleep(2500);
+if (process.env.TOUCH_DEBUG) console.log('unknown IPC:', await evalJs('JSON.stringify(window.__ipcUnknown)'), (await evalJs('document.body.innerText')).slice(0, 200));
 
 // 共有フォルダを、コマンドパレット（F2）から開く
 await S('Input.dispatchKeyEvent', { type: 'keyDown', key: 'F2', code: 'F2', windowsVirtualKeyCode: 113 });
@@ -314,6 +314,10 @@ expect('空きスペースで選択が解除される（件数に戻る）', (aw
 expect('選んでいないとき、コピーは押せない', (await evalJs(`document.querySelector('button[aria-label="コピー"]')?.disabled === true`)) === true);
 expect('パンくずは上端の下の行にある', (await evalJs(`document.querySelector('.panel-bar')?.nextElementSibling?.classList.contains('file-explorer-crumbs') === true`)) === true);
 expect('上端に「閉じる」は無い', (await evalJs(`!document.querySelector('.file-explorer-bar button[aria-label="閉じる"]')`)) === true);
+
+// 未対応の IPC があれば失敗（本体の機能追加で起動時に呼ぶ IPC が増えた退行を、null で隠さない）
+const unknownIpc = JSON.parse(await evalJs('JSON.stringify(window.__ipcUnknown)'));
+expect('fixture に無い IPC を本体が呼んでいない' + (unknownIpc.length ? `（${unknownIpc.join(', ')}）` : ''), unknownIpc.length === 0);
 
 await S('Target.closeTarget', { targetId }).catch(() => {});
 ws.close();

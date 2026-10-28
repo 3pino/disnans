@@ -169,8 +169,7 @@
   });
 
   onMount(() => {
-    // Tauri では外部リンクを既定のブラウザーで開く
-    if (!isTauri()) return;
+    // 外部リンクは既定のブラウザー（OS）で開く
     // 押した場所の処理が既定の動作を止めた（preventDefault）リンクは開かない（lib/externalLink.ts）
     const onClick = (e: MouseEvent) => {
       const href = externalLinkHref(e, location.origin);

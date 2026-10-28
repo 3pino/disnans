@@ -10,7 +10,7 @@ const OTHER = 'Mozilla/5.0 (OtherOS; x86_64)';
 
 type Env = { flag?: string; ua: string; tauri: boolean; server?: string };
 
-function stubBrowser(env: Env) {
+function stubEnvironment(env: Env) {
   const store = new Map<string, string>();
   if (env.server) store.set('disnans.server', env.server);
   if (env.flag !== undefined) store.set('disnans.rustApi', env.flag);
@@ -43,7 +43,7 @@ afterEach(() => {
 
 /** 起動時の環境から経路を決める（Tauri 側の invoke だけ差し替える） */
 function boot(env: Env) {
-  stubBrowser(env);
+  stubEnvironment(env);
   return bootReadApi({ ...currentBootEnv(), invoke: invoke as never });
 }
 
@@ -79,16 +79,8 @@ describe('boot-time read transport choice', () => {
     expect(boot({ flag: '1', ua: OTHER, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
   });
 
-  it('no flag in a browser (no Tauri): HTTP', () => {
-    expect(boot({ ua: LINUX, tauri: false, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
-  });
-
-  it('flag on in a browser (no Tauri): HTTP', () => {
-    expect(boot({ flag: '1', ua: LINUX, tauri: false, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
-  });
-
   it('the HTTP implementation still fetches the same URL', async () => {
-    stubBrowser({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
+    stubEnvironment({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
     await createHttpReadApi().me();
     expect(fetchCalls).toEqual(['http://127.0.0.1:8080/api/me']);
   });
@@ -96,7 +88,7 @@ describe('boot-time read transport choice', () => {
 
 describe('boot-time write transport choice (follows the same rule as reads)', () => {
   function bootWrite(env: Env) {
-    stubBrowser(env);
+    stubEnvironment(env);
     return bootWriteApi({ ...currentBootEnv(), invoke: invoke as never });
   }
 
@@ -106,9 +98,9 @@ describe('boot-time write transport choice (follows the same rule as reads)', ()
     expect(bootWrite({ flag: '0', ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
   });
 
-  it('another OS and the browser keep HTTP, even with a flag of "1"', () => {
+  it('another OS keeps HTTP, even with a flag of "1"', () => {
     expect(bootWrite({ ua: OTHER, tauri: true }).kind).toBe('http');
-    expect(bootWrite({ flag: '1', ua: LINUX, tauri: false }).kind).toBe('http');
+    expect(bootWrite({ flag: '1', ua: OTHER, tauri: true }).kind).toBe('http');
   });
 
   it('the Rust write goes through invoke, and the HTTP write does not', async () => {

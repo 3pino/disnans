@@ -5,9 +5,6 @@ import type { Manifest } from './types';
 /** プラグイン ID: 英小文字・数字・ハイフン（2〜32文字） */
 export const PLUGIN_ID_RE = /^[a-z0-9-]{2,32}$/;
 
-/** 配布できるファイル（プラグインは manifest.json / main.js / styles.css / icon.svg、テーマは manifest.json / theme.css / icon.svg） */
-export const PLUGIN_FILES = ['manifest.json', 'main.js', 'styles.css', 'theme.css', 'icon.svg'] as const;
-
 /** manifest の icon（Lucide のアイコン名）: 英小文字・数字・ハイフン */
 export const MANIFEST_ICON_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 

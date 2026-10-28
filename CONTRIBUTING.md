@@ -6,16 +6,16 @@ disnans の開発・リリースの手順です。利用・運用の説明は [R
 
 ```sh
 DISNANS_DEV=1 cargo run -p disnans-server   # サーバー（開発モード）
-cd app && npm install && npm run dev        # クライアント
+cd app && npm install && npm run tauri:dev # クライアント（Tauri のウィンドウ。vite dev は自動で起動する）
 ```
 
-ブラウザで `http://localhost:5173/?dev_user=alice` と `?dev_user=bob` を別々のタブで開くと、2人での会話を試せます。
+製品として動くのは Tauri 版（Windows・Linux・Android）だけです。`vite dev` を通常のブラウザーで開いて使う経路は、製品としては対応しません（`npm run dev` は Tauri の接続先と、テストの Chromium から読むためのものです）。Linux で `tauri dev` を動かすには WebKitGTK・GStreamer などの開発用パッケージが要ります（一覧は `.github/workflows/ci.yml` の apt の行）。
 
 デスクトップ版では、配布版でも `Ctrl+Shift+I` で開発者ツールを開けます。
 
 ## CLI
 
-Rust の共通クライアント基盤と、読み取り用 CLI を追加しています。旧設定・下書きは読戻し確認後に移行し、移行や保存の失敗は通知します。GUI の通信、Android・ブラウザー開発版の保存先は従来のままです。Windows の `.exe` と Linux の `.deb` には CLI を同梱しています（インストールの説明は上の「アプリを入れる」を参照）。
+Rust の共通クライアント基盤と、読み取り用 CLI を追加しています。旧設定・下書きは読戻し確認後に移行し、移行や保存の失敗は通知します。GUI の通信と Android の保存先は従来のままです。Windows の `.exe` と Linux の `.deb` には CLI を同梱しています（インストールの説明は上の「アプリを入れる」を参照）。
 
 別ターミナルで開発サーバーを起動したうえで、次を実行します。
 
@@ -44,7 +44,7 @@ node scripts/prepare-cli.mjs          # 本物の CLI を release で作って�
 | クライアント(型・Svelte) | `cd app && npm run check` |
 | クライアントの単体テスト | `cd app && npx vitest run` |
 | Rust | `cargo test --workspace` |
-| 実際のブラウザーでのタッチ操作(手動) | `app/scripts/touch-check.mjs`。`npm run dev` を起動し、`CHROME_BIN=<Chromium のパス> DISNANS_URL=http://127.0.0.1:5173 node scripts/touch-check.mjs`(`app` の中で実行。仮のサーバーは自分で立てる)。メニューや「…」が押せるかを 390×844 と 1280×720 で確かめる |
+| Chromium での DOM 測定・タッチ操作(手動) | `app/scripts/touch-check.mjs`。`npm run dev` で vite を起動し(既定は 5173)、`CHROME_BIN=<Chromium か headless_shell のパス> DISNANS_URL=http://127.0.0.1:5173 node scripts/touch-check.mjs`(`app` の中で実行)。Tauri の IPC(`window.__TAURI_INTERNALS__` と `__DISNANS_PLATFORM__`)を `scripts/touch-fixture.mjs` が CDP で読み込み前に差し込み、共有フォルダの一覧は仮のサーバーから返す。サーバー・Tauri は要らない。ソースを編集中の `npm run dev` は再読み込みされて不安定になるので、固定して測るときは `npx vite build --outDir /tmp/tc-dist` のあと `npx vite preview --outDir /tmp/tc-dist --port 5198` を `DISNANS_URL` に使う。最後に、fixture に無い IPC を本体が呼んでいないことも確かめる。メニューや「…」の位置・タップ・長押しを矩形とイベントで確かめる(見た目は目で確かめる)。fixture に無い IPC を本体が呼ぶようになったら、`touch-fixture.mjs` の `handlers` に足す(`TOUCH_DEBUG=1` で未対応のコマンドを表示) |
 | 文書のリンク・アンカー | `node scripts/check-docs.mjs` |
 
 ## ドキュメント

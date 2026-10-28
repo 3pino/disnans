@@ -8,12 +8,11 @@ import { ui, type ToastAvatar } from './ui.svelte';
  * 通知の出し方は環境ごとに違う。
  * - android: 常駐サービス（自前の notifier プラグイン）がサーバーにつなぎ、アプリが裏にあるときに出す
  * - desktop: Rust（desktop_notify）が出す。ウィンドウにフォーカスがないときに出す
- * - web: ブラウザーの Notification API（開発用）
  *
  * どの環境でも、アプリを見ているときは、見ている場所以外の通知をアプリ内のトーストで出す。
  * 送ることと押したときの動作（チャットを表示する）は lib/systemNotify.ts にまとめている。
  */
-export type Backend = 'android' | 'desktop' | 'web';
+export type Backend = 'android' | 'desktop';
 
 export type Permission = NotificationPermission | 'unsupported';
 
@@ -49,7 +48,7 @@ function errorMessage(e: unknown): string {
 
 class Notifications {
   readonly backend: Backend = detectBackend();
-  /** システム通知の許可（desktop / web） */
+  /** システム通知の許可（desktop） */
   permission = $state<Permission>('default');
   /** Android の常駐サービスの状態 */
   android = $state<AndroidStatus | null>(null);
@@ -63,8 +62,7 @@ class Notifications {
     this.started = true;
     try {
       if (this.backend === 'android') await this.initAndroid();
-      else if (this.backend === 'desktop') await this.initDesktop();
-      else this.permission = 'Notification' in window ? Notification.permission : 'unsupported';
+      else await this.initDesktop();
     } catch (e) {
       console.warn('通知の準備に失敗しました', e);
     }
@@ -108,11 +106,9 @@ class Notifications {
     try {
       if (this.backend === 'android') {
         this.android = await invokeNotifier<AndroidStatus>('request_permission');
-      } else if (this.backend === 'desktop') {
+      } else {
         const { requestPermission } = await import('@tauri-apps/plugin-notification');
         this.permission = await requestPermission();
-      } else if (this.permission !== 'unsupported') {
-        this.permission = await Notification.requestPermission();
       }
     } catch (e) {
       ui.toast(`通知の許可を求められませんでした: ${errorMessage(e)}`, 'error');
@@ -170,7 +166,7 @@ class Notifications {
   }
 
   private showSystem(ev: NotifyEvent): boolean {
-    return sendSystemNote(this.backend, ev, () => this.openTarget());
+    return sendSystemNote(this.backend, ev);
   }
 
   private toast(ev: NotifyEvent): void {

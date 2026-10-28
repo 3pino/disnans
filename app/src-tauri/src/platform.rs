@@ -81,7 +81,7 @@ mod tests {
         assert!(script.ends_with("};"), "{script}");
         assert!(script.contains(r#""os":"linux""#), "{script}");
         assert!(script.contains(r#""surface":"tauri""#), "{script}");
-        assert!(script.contains(r#""rustChat":"default""#), "{script}");
+        assert!(script.contains(r#""rustApi":true"#), "{script}");
         assert!(script.contains(r#""nativeScreen":"linux""#), "{script}");
     }
 }

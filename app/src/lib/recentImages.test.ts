@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   listRecentImages,
   permissionNotice,
@@ -11,7 +11,13 @@ import {
 } from './recentImages';
 import { base64ToBytes, nativeRecentImageSource, toRecentImage, type RecentImageInfo } from './recentImagesNative';
 
-afterEach(() => setRecentImageSource(null));
+const h = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: h.invoke }));
+
+afterEach(() => {
+  setRecentImageSource(null);
+  h.invoke.mockReset();
+});
 
 const info = (id: string, over: Partial<RecentImageInfo> = {}): RecentImageInfo => ({
   id,
@@ -25,9 +31,14 @@ const info = (id: string, over: Partial<RecentImageInfo> = {}): RecentImageInfo 
 });
 
 describe('最近の画像（出どころ）', () => {
-  it('既定（テスト中の Tauri 外）は空で granted', async () => {
+  it('既定（Tauri の Android）は notifier の recent_images と、その許可を使う', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {}, __DISNANS_PLATFORM__: { os: 'android', desktop: false, android: true, capabilities: null } });
+    h.invoke.mockResolvedValueOnce({ permission: 'granted', images: [] }).mockResolvedValueOnce({ permission: 'limited' });
     expect(await listRecentImages()).toEqual({ permission: 'granted', images: [] });
-    expect(await requestRecentImagesPermission()).toBe('granted');
+    expect(h.invoke).toHaveBeenNthCalledWith(1, 'plugin:notifier|recent_images', expect.anything());
+    expect(await requestRecentImagesPermission()).toBe('limited');
+    expect(h.invoke.mock.calls[1][0]).toBe('plugin:notifier|request_recent_images_permission');
+    vi.unstubAllGlobals();
   });
 
   it('差し替えると、その出どころの一覧を件数の上限つきで返す', async () => {

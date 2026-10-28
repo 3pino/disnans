@@ -1,45 +1,14 @@
-// ステップ7 P0: デバイス分岐の特徴付けテスト。
-// いまの判定（UA・Tauri の有無）の結果を、環境の組み合わせごとに固定する。
-// この表が P1・P2 の前後で変わらないことが、挙動を変えていないことの確認になる（変えるなら表を直す前に理由を書く）。
+// ステップ7 P0: デバイス分岐の特徴付けテスト（Tauri だけ。ブラウザー版は持たない）。
+// いまの判定（UA・Tauri の注入）の結果を、環境ごとに固定する。
+// この表が変わるなら、表を直す前に理由を書く。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { needsServerSetup } from './config';
 import { isAndroid, isLinuxDesktop, isTauri } from './platform';
 import { isDesktopStorageSupported } from './desktopStorage';
 import { devFolderSupported } from './plugins/dev';
 import { guessDeviceKind } from './deviceKind.svelte';
-import { bootChatTransport, bootReadApi, bootWriteApi, currentBootEnv } from './transport/boot';
-import type { ReadApiEnv } from './transport/select';
-
-type Env = { name: string; tauri: boolean; userAgent: string; platform: string };
-
-const UA = {
-  windows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-  linux: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) WebKitGTK/2.44',
-  other: 'Mozilla/5.0 (OtherOS; x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)',
-  android: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36',
-};
-
-const ENVS: Env[] = [
-  { name: 'windows Tauri', tauri: true, userAgent: UA.windows, platform: 'Win32' },
-  { name: 'linux Tauri', tauri: true, userAgent: UA.linux, platform: 'Linux x86_64' },
-  { name: 'other Tauri', tauri: true, userAgent: UA.other, platform: 'Other' },
-  { name: 'android Tauri', tauri: true, userAgent: UA.android, platform: 'Linux armv8l' },
-  { name: 'windows browser', tauri: false, userAgent: UA.windows, platform: 'Win32' },
-  { name: 'linux browser', tauri: false, userAgent: UA.linux, platform: 'Linux x86_64' },
-  { name: 'android browser', tauri: false, userAgent: UA.android, platform: 'Linux armv8l' },
-];
-
-/** 環境を差し替える（server と localStorage は空。sessionStorage も無い）。inject は Rust が入れる値（__DISNANS_PLATFORM__） */
-function stubEnv(env: Env, inject?: unknown): void {
-  vi.stubGlobal('navigator', { userAgent: env.userAgent, platform: env.platform });
-  const window: Record<string, unknown> = {
-    location: { search: '' },
-    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
-  };
-  if (env.tauri) window.__TAURI_INTERNALS__ = {};
-  if (inject !== undefined) window.__DISNANS_PLATFORM__ = inject;
-  vi.stubGlobal('window', window);
-}
+import { bootChatTransport, bootReadApi, bootWriteApi, currentBootEnv, currentChatBootEnv } from './transport/boot';
+import { injectedPlatform, stubTauri, type TauriOs } from './testing/tauriEnv';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -48,8 +17,7 @@ afterEach(() => {
 
 /** 期待値の表: 環境ごとの 1 行。列は下の見出しの順 */
 type Row = {
-  env: string;
-  isTauri: boolean;
+  os: TauriOs;
   isAndroid: boolean;
   isLinuxDesktop: boolean;
   sharedStorage: boolean; // isDesktopStorageSupported（Windows・Linux 以外の Tauri は false のまま。Android は true（step6 の (3)））
@@ -58,65 +26,45 @@ type Row = {
   readApi: 'tauri' | 'http';
   writeApi: 'tauri' | 'http';
   writeMode: 'raw' | 'base64' | 'none';
-  chat: 'rust' | 'js';
+  chat: 'rust' | 'none';
   deviceKindGuess: 'smartphone' | 'laptop';
 };
 
-// 現在の挙動（P0 時点）。Windows・Linux・Android 以外の Tauri は shared storage と Rust の API（読取・書込）は使わない（Q1 の判断: 変えない）
+// 現在の挙動。Windows・Linux・Android 以外の Tauri は shared storage と Rust の API（読取・書込）を使わず、チャットも無い（Q1 の判断）
 const EXPECTED: Row[] = [
-  { env: 'windows Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: false, sharedStorage: true, devFolder: true, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
-  { env: 'linux Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: true, sharedStorage: true, devFolder: true, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
-  { env: 'other Tauri', isTauri: true, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: true, needsServerSetup: true, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
-  { env: 'android Tauri', isTauri: true, isAndroid: true, isLinuxDesktop: false, sharedStorage: true, devFolder: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'base64', chat: 'rust', deviceKindGuess: 'smartphone' },
-  { env: 'windows browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
-  { env: 'linux browser', isTauri: false, isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'laptop' },
-  { env: 'android browser', isTauri: false, isAndroid: true, isLinuxDesktop: false, sharedStorage: false, devFolder: false, needsServerSetup: false, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'js', deviceKindGuess: 'smartphone' },
+  { os: 'windows', isAndroid: false, isLinuxDesktop: false, sharedStorage: true, devFolder: true, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
+  { os: 'linux', isAndroid: false, isLinuxDesktop: true, sharedStorage: true, devFolder: true, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'raw', chat: 'rust', deviceKindGuess: 'laptop' },
+  { os: 'other', isAndroid: false, isLinuxDesktop: false, sharedStorage: false, devFolder: true, needsServerSetup: true, readApi: 'http', writeApi: 'http', writeMode: 'none', chat: 'none', deviceKindGuess: 'laptop' },
+  { os: 'android', isAndroid: true, isLinuxDesktop: false, sharedStorage: true, devFolder: false, needsServerSetup: true, readApi: 'tauri', writeApi: 'tauri', writeMode: 'base64', chat: 'rust', deviceKindGuess: 'smartphone' },
 ];
 
-/** Rust の値（platform.rs と同じ形）。Tauri の行だけ作る */
-function injectedFor(env: Env): unknown {
-  const os = env.name.startsWith('windows') ? 'windows' : env.name.startsWith('linux') ? 'linux' : env.name.startsWith('other') ? 'other' : 'android';
-  return { os, desktop: os !== 'android', android: os === 'android' };
-}
+function assertRow(row: Row): void {
+  expect(isTauri()).toBe(true);
+  expect(isAndroid()).toBe(row.isAndroid);
+  expect(isLinuxDesktop()).toBe(row.isLinuxDesktop);
+  expect(isDesktopStorageSupported()).toBe(row.sharedStorage);
+  expect(devFolderSupported()).toBe(row.devFolder);
+  expect(needsServerSetup()).toBe(row.needsServerSetup);
+  expect(guessDeviceKind(navigator.userAgent)).toBe(row.deviceKindGuess);
 
-function assertRow(env: Env, row: Row): void {
-
-    expect(isTauri()).toBe(row.isTauri);
-    expect(isAndroid()).toBe(row.isAndroid);
-    expect(isLinuxDesktop()).toBe(row.isLinuxDesktop);
-    expect(isDesktopStorageSupported()).toBe(row.sharedStorage);
-    expect(devFolderSupported()).toBe(row.devFolder);
-    expect(needsServerSetup()).toBe(row.needsServerSetup);
-    expect(guessDeviceKind(env.userAgent)).toBe(row.deviceKindGuess);
-
-    // 起動時の経路（boot.ts）。ログで経路名を取る
-    const logs: string[] = [];
-    const base: ReadApiEnv = { ...currentBootEnv(), log: (m) => logs.push(m) };
-    expect(bootReadApi(base).kind).toBe(row.readApi);
-    expect(bootWriteApi(base).kind).toBe(row.writeApi);
-    const chatT = bootChatTransport({
-      flag: null,
-      desktop: base.desktop,
-      android: base.android,
-      invoke: base.invoke,
-      context: base.context,
-      log: (m) => logs.push(m),
-    });
-    expect(chatT !== null ? 'rust' : 'js').toBe(row.chat);
+  // 起動時の経路（boot.ts）。ログで経路名を取る
+  const logs: string[] = [];
+  const base = { ...currentBootEnv(), log: (m: string) => logs.push(m) };
+  expect(bootReadApi(base).kind).toBe(row.readApi);
+  expect(bootWriteApi(base).kind).toBe(row.writeApi);
+  const chat = bootChatTransport({ ...currentChatBootEnv(), log: (m) => logs.push(m) });
+  expect(chat !== null ? 'rust' : 'none').toBe(row.chat);
 }
 
 describe('デバイス判定の特徴付け（現在の挙動を固定）', () => {
-  it.each(EXPECTED.map((row) => [row.env, row] as const))('UA のみ（Rust の値なし）: %s', (name, row) => {
-    const env = ENVS.find((e) => e.name === name);
-    if (!env) throw new Error(`環境が無い: ${name}`);
-    stubEnv(env);
-    assertRow(env, row);
+  it.each(EXPECTED.map((row) => [row.os, row] as const))('UA のみ（Rust の値なし）: %s', (os, row) => {
+    stubTauri({ os });
+    assertRow(row);
   });
 
-  it.each(EXPECTED.filter((r) => r.isTauri).map((row) => [row.env, row] as const))('Rust の値あり（同じ表になる）: %s', (name, row) => {
-    const env = ENVS.find((e) => e.name === name)!;
-    stubEnv(env, injectedFor(env));
-    assertRow(env, row);
+  it.each(EXPECTED.map((row) => [row.os, row] as const))('Rust の値あり（同じ表になる）: %s', (os, row) => {
+    stubTauri({ os, inject: injectedPlatform(os) });
+    assertRow(row);
   });
 
   it.each([
@@ -126,77 +74,81 @@ describe('デバイス判定の特徴付け（現在の挙動を固定）', () =
     ['os だけ', { os: 'linux' }],
     ['型が違う', { os: 1, desktop: true, android: false }],
   ] as const)('Rust の値が壊れている（%s）ときは UA に戻る', (_label, bad) => {
-    for (const row of EXPECTED.filter((r) => r.isTauri)) {
-      const env = ENVS.find((e) => e.name === row.env)!;
-      stubEnv(env, bad);
-      assertRow(env, row);
+    for (const row of EXPECTED) {
+      stubTauri({ os: row.os, inject: bad });
+      assertRow(row);
     }
   });
 
   it('Rust の値は UA より優先する（矛盾するとき）', () => {
     // UA は Linux だが、Rust は Windows と言っている → shared storage は Windows として扱う
-    stubEnv({ name: 'x', tauri: true, userAgent: UA.linux, platform: 'Linux x86_64' }, { os: 'windows', desktop: true, android: false });
+    stubTauri({ os: 'linux', inject: { os: 'windows', desktop: true, android: false } });
     expect(isLinuxDesktop()).toBe(false);
     expect(isDesktopStorageSupported()).toBe(true);
   });
 
   it('書込の本体の形（base64 か raw）は Android の Tauri だけ base64', () => {
     for (const row of EXPECTED) {
-      const env = ENVS.find((e) => e.name === row.env)!;
-      stubEnv(env);
+      stubTauri({ os: row.os });
       const base = currentBootEnv();
       const choice = bootWriteApi({ ...base, log: undefined });
       if (row.writeMode === 'none') expect(choice.kind).toBe('http');
-      else expect(choice.kind === 'tauri' && (row.writeMode === 'base64') === !!base.android).toBe(true);
+      else expect(choice.kind === 'tauri' && (row.writeMode === 'base64') === (base.bodyMode === 'base64')).toBe(true);
     }
+  });
+
+  it('Tauri の外（想定外の環境）は、読取・書込は HTTP、チャットは無い（案内の前の挙動）', () => {
+    stubTauri({ os: 'linux' });
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    expect(isTauri()).toBe(false);
+    expect(bootReadApi({ ...currentBootEnv(), log: undefined }).kind).toBe('http');
+    expect(bootWriteApi({ ...currentBootEnv(), log: undefined }).kind).toBe('http');
+    expect(bootChatTransport(currentChatBootEnv())).toBeNull();
   });
 });
 
 describe('フラグ（localStorage）による上書き', () => {
-  it('disnans.rustApi が "0" なら読取・書込は http（desktop・android とも）', () => {
-    for (const name of ['windows Tauri', 'linux Tauri', 'android Tauri']) {
-      stubEnv(ENVS.find((e) => e.name === name)!);
-      const env = { ...currentBootEnv(), flag: '0' };
+  it('disnans.rustApi が "0" なら読取・書込は http（Windows・Linux・Android とも）', () => {
+    for (const os of ['windows', 'linux', 'android'] as const) {
+      stubTauri({ os, storage: { 'disnans.rustApi': '0' } });
+      const env = currentBootEnv();
       expect(bootReadApi({ ...env, log: undefined }).kind).toBe('http');
       expect(bootWriteApi({ ...env, log: undefined }).kind).toBe('http');
     }
   });
 
-  it('chat: Tauri の Windows・Linux と Android は flag によらず rust（S7）', () => {
-    const chat = (name: string, flag: string | null) => {
-      stubEnv(ENVS.find((e) => e.name === name)!);
-      const base = currentBootEnv();
-      return bootChatTransport({ flag, desktop: base.desktop, android: base.android, invoke: base.invoke, context: base.context, log: undefined }) !== null ? 'rust' : 'js';
-    };
-    expect(chat('windows Tauri', '0')).toBe('rust');
-    expect(chat('windows Tauri', null)).toBe('rust');
-    expect(chat('android Tauri', '1')).toBe('rust');
-    expect(chat('android Tauri', null)).toBe('rust');
-    expect(chat('android Tauri', '0')).toBe('rust');
+  it('chat: Tauri の Windows・Linux と Android は flag によらず rust（S7。flag は見ない）', () => {
+    for (const [os, flag] of [
+      ['windows', '0'],
+      ['windows', null],
+      ['android', '1'],
+      ['android', null],
+      ['android', '0'],
+    ] as const) {
+      stubTauri({ os, storage: flag === null ? {} : { 'disnans.rustChat': flag } });
+      expect(bootChatTransport(currentChatBootEnv())).not.toBeNull();
+    }
   });
 });
 
 describe('通知とアップデートの経路（モジュールの読込時に決まる値）', () => {
   it.each([
-    ['windows Tauri', 'desktop'],
-    ['linux Tauri', 'desktop'],
-    ['other Tauri', 'desktop'],
-    ['android Tauri', 'android'],
-    ['windows browser', 'web'],
-    ['android browser', 'web'],
-  ] as const)('通知の backend（%s → %s）', async (name, backend) => {
-    stubEnv(ENVS.find((e) => e.name === name)!);
+    ['windows', 'desktop'],
+    ['linux', 'desktop'],
+    ['other', 'desktop'],
+    ['android', 'android'],
+  ] as const)('通知の backend（%s → %s）', async (os, backend) => {
+    stubTauri({ os });
     vi.resetModules();
     const { notifications } = await import('./stores/notifications.svelte');
     expect(notifications.backend).toBe(backend);
   });
 
   it.each([
-    ['windows Tauri', true],
-    ['android Tauri', true],
-    ['windows browser', false],
-  ] as const)('アップデートの対象（%s → %s）', async (name, supported) => {
-    stubEnv(ENVS.find((e) => e.name === name)!);
+    ['windows', true],
+    ['android', true],
+  ] as const)('アップデートの経路がある（%s → %s）', async (os, supported) => {
+    stubTauri({ os });
     vi.resetModules();
     const { updater } = await import('./stores/updater.svelte');
     expect(updater.supported).toBe(supported);

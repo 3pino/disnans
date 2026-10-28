@@ -7,7 +7,6 @@
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import Button from './ui/Button.svelte';
   import IconButton from './ui/IconButton.svelte';
-  import PublishButton from './PublishButton.svelte';
   import SettingRow from './ui/SettingRow.svelte';
   import StatusLine from './ui/StatusLine.svelte';
   import TextInput from './ui/TextInput.svelte';
@@ -16,18 +15,14 @@
   import { devFolderSupported } from '../lib/plugins/dev';
   import { localHashes, updatePlugin } from '../lib/plugins/deliver';
   import { hasPluginUpdate, pluginUpdateText } from '../lib/plugins/update';
-  import { isTauri } from '../lib/platform';
   import { ui } from '../lib/stores/ui.svelte';
-  import type { PluginVisibility } from '../lib/protocol/PluginVisibility';
 
-  // 設定の「プラグイン」セクション: 配布済み・開発中の一覧、開発用フォルダ（PC 版）、ファイルを選んで配布（ブラウザー版）
-  // テーマの一覧は「外観」（ThemeSettings）。開発用フォルダとファイルを選んでの配布は、テーマにも使う。
+  // 設定の「プラグイン」セクション: 配布済み・開発中の一覧、開発用フォルダ（PC 版）
+  // テーマの一覧は「外観」（ThemeSettings）。開発用フォルダは、テーマにも使う。
   // 一覧の各行の右側は「アップデート（あるときだけ）・有効/無効・設定（歯車）」。歯車から開く、プラグインごとの画面（PluginSettingsPage）に、設定タブと「配布と削除」を置く
 
   const entries = $derived(pluginHost.entries);
   const devSupported = devFolderSupported();
-  /** ブラウザー版（開発用）は、開発用フォルダの代わりにファイルを選んで配布する */
-  const browser = !isTauri();
 
   /** 開発中のものの中身のハッシュ（ID ごと）。配布済みと中身が同じか比べる。一覧が変わるたびに計算し直す */
   let hashes = $state<Record<string, string | null>>({});
@@ -44,39 +39,17 @@
 
   // svelte-ignore state_referenced_locally
   let devDir = $state(pluginHost.devDir);
-  /** ファイルを選んで配布の最中か */
+  /** 配布の最中か（行の操作の名前） */
   let busy = $state<string | null>(null);
   /** 設定画面を開いたときの、一覧のスクロール位置と歯車のボタン（戻ったときに元へ戻す） */
   let returnTo: { scroller: Element | null; top: number; button: HTMLElement } | null = null;
-  let fileInput: HTMLInputElement | undefined = $state();
-  /** ファイルを選んで配布するときの範囲（選ぶ前にメニューで決める） */
-  let pickVisibility: PluginVisibility = 'public';
 
   function nameOf(e: PluginEntry): string {
     return e.manifest?.name ?? e.id;
   }
 
-  function publishedText(name: string, version: string, visibility: PluginVisibility): string {
-    return `「${name}」v${version} を${visibility === 'private' ? '自分だけに' : 'みんなに'}配布しました`;
-  }
-
   function message(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
-  }
-
-  async function publishPicked() {
-    const files = [...(fileInput?.files ?? [])];
-    if (fileInput) fileInput.value = '';
-    if (files.length === 0) return;
-    busy = '__files__';
-    try {
-      const info = await pluginHost.publishFiles(files, pickVisibility);
-      ui.toast(publishedText(info.name, info.version, pickVisibility));
-    } catch (err) {
-      ui.toast(`配布できませんでした: ${message(err)}`, 'error');
-    } finally {
-      busy = null;
-    }
   }
 
   /** 行の右のアップデートボタン。配布の最中は他の操作を止める */
@@ -87,11 +60,6 @@
     } finally {
       busy = null;
     }
-  }
-
-  function pickFiles(visibility: PluginVisibility) {
-    pickVisibility = visibility;
-    fileInput?.click();
   }
 
   function openSettings(e: PluginEntry, ev: MouseEvent) {
@@ -211,16 +179,6 @@
   </form>
 {/if}
 
-{#if browser}
-  <div class="plugin-settings-upload">
-    <span class="field-label">ファイルを選んで配布</span>
-    <p class="muted plugin-settings-small">
-      manifest.json と main.js（と styles.css・icon.svg）をまとめて選びます。テーマなら manifest.json と theme.css です。
-    </p>
-    <input bind:this={fileInput} class="sr-only" type="file" multiple accept=".json,.js,.css,.svg" onchange={publishPicked} />
-    <PublishButton label="ファイルを選んで配布" disabled={busy !== null} onpublish={pickFiles} />
-  </div>
-{/if}
 
 <style>
   .plugin-settings-empty,
@@ -284,13 +242,11 @@
     align-items: center;
     gap: var(--space-2);
   }
-  .plugin-settings-dev,
-  .plugin-settings-upload {
+  .plugin-settings-dev {
     padding-top: var(--space-6);
     border-top: 1px solid var(--border);
   }
-  .plugin-settings-dev > * + *,
-  .plugin-settings-upload > * + * {
+  .plugin-settings-dev > * + * {
     margin-top: var(--space-3);
   }
   .plugin-settings-dev-row {

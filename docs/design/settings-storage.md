@@ -14,7 +14,7 @@
 - 各項目の保存先・型・既定値・正規化の正本は `client-core/src/view/settings.rs` の `DEFINITIONS`。サーバーは prefs を JSON オブジェクトとして保存し、クライアントの core が表示用に正規化する。未知のキーは残す。
 - ユーザーとデバイスの値はサーバーで合成しない。クライアントが両方を読み、デバイスの指定を優先する。
 - Tauri の `api_prefs` / `api_set_prefs` は `{ raw, view }` を返す。`raw` は保存の下地、`view` は正規化した表示用。変更した項目だけを raw に加えて書き戻し、表示のために補った既定値を保存しない。デバイス設定は `api_device_prefs_read/write` が正規化した値を返す。
-- 既定値の TS の写しは `defaults.json` と照合する。開発用ブラウザーはその写しで欠けたキーだけを補う。`api_settings_definitions` は登録済みだが、GUI の設定画面を定義から生成する仕組みではない。
+- 既定値の TS の写しは `defaults.json` と照合する。Rust を呼べないテストの環境は、その写しで欠けたキーだけを補う。`api_settings_definitions` は登録済みだが、GUI の設定画面を定義から生成する仕組みではない。
 - 旧 localStorage は、サーバーに無い項目だけ取り込み、既存の値を上書きしない。元のキーは消さない。取り込みの値は raw に入れ、保存の応答を Rust が正規化する。＋メニューの版付き移行は TS に残す。
 - デバイス ID はクライアント発行の ULID。`LocalStore::device_id(Surface)` が surface ごとに保存し、再利用する。ID は認証情報ではない。名前は既定で OS 名。デバイス一覧と prefs は別に保存する。
 - **デバイス台数の上限は設けない**。ユーザーごとの ID の分離、名前・設定サイズの検査は維持する。API は [api/rest.md](../api/rest.md) を参照。

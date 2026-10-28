@@ -1,4 +1,4 @@
-import { isAndroid, isLinuxDesktop, isTauri } from './platform';
+import { isAndroid, isLinuxDesktop } from './platform';
 import { base64ToBytes } from './recentImagesNative';
 
 /** Web の Clipboard API で読む画像の形式（この順で探す） */
@@ -16,24 +16,20 @@ export async function readNativeClipboardImage(): Promise<File | null> {
 
 /**
  * 「ファイルを追加」パネルの「クリップボードの画像」。画像が無ければ null。
- * 開くたびに 1 回読む。Tauri（Android・デスクトップ）では、画像が無い（null）ことが答えで、Web の経路には落とさない
+ * 開くたびに 1 回読む。画像が無い（null）ことが答えで、Web の経路には落とさない
  * （WebView の navigator.clipboard.read は許可の表示を出しうるため、開くたびに出ないように）。
- * - Android: notifier の clipboard_image。コマンドが無い・失敗したときだけ Web の経路
+ * - Android: notifier の clipboard_image。コマンドが無い・失敗したときだけ Web の経路（WebView の navigator.clipboard）
  * - デスクトップ（Windows・Linux）: Rust のクリップボード（プラグイン）。失敗は null
- * - ブラウザ: navigator.clipboard.read()（許されなければ null）
  */
 export async function readClipboardImage(): Promise<File | null> {
-  if (isTauri()) {
-    if (isAndroid()) {
-      try {
-        return await readAndroidClipboardImage();
-      } catch {
-        return readWebClipboardImage();
-      }
+  if (isAndroid()) {
+    try {
+      return await readAndroidClipboardImage();
+    } catch {
+      return readWebClipboardImage();
     }
-    return readRustClipboardImage().catch(() => null);
   }
-  return readWebClipboardImage();
+  return readRustClipboardImage().catch(() => null);
 }
 
 /** Android のクリップボードの画像（notifier の clipboard_image → {name, mime, data}、無ければ null） */

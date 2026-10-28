@@ -42,8 +42,6 @@ pub struct Capabilities {
     pub shared_storage: bool,
     /// 読取・書込・添付を Rust 経路で行う
     pub rust_api: bool,
-    /// チャットの経路: "default"（Rust）・"off"（JS Socket。ブラウザーと、"other" の OS）
-    pub rust_chat: &'static str,
     /// 本体の渡し方: "raw"（バイト列）・"base64"（Android の WebView）
     pub body_mode: &'static str,
     /// 通知の出し方: "android"（常駐サービス）・"desktop"（公式の通知）・"bell"（TUI。ターミナルのベル＋画面内表示）・"none"（CLI）
@@ -109,8 +107,6 @@ fn tauri_capabilities(os: &str, desktop: bool, android: bool) -> Capabilities {
     Capabilities {
         shared_storage,
         rust_api: shared_storage,
-        // Android は既定で Rust（S1）。JS Socket と同じ uid で動くので、背景の条件は同じ
-        rust_chat: if shared_storage { "default" } else { "off" },
         body_mode: if android { "base64" } else { "raw" },
         notify_backend: if android { "android" } else { "desktop" },
         updater: Some(if android { "android" } else { "desktop" }),
@@ -133,7 +129,6 @@ fn terminal_capabilities(tui: bool) -> Capabilities {
     Capabilities {
         shared_storage: true,
         rust_api: true,
-        rust_chat: "default",
         body_mode: "raw",
         notify_backend: if tui { "bell" } else { "none" },
         updater: Some("cli"),
@@ -173,7 +168,6 @@ mod tests {
                 "nativeScreen",
                 "notifyBackend",
                 "rustApi",
-                "rustChat",
                 "sharedStorage",
                 "tui",
                 "updater",
@@ -194,31 +188,23 @@ mod tests {
     fn tauri_rows_match_the_previous_table() {
         let win = capabilities_for(Surface::Tauri, "windows", true, false);
         assert!(win.shared_storage && win.rust_api && win.dev_folder);
-        assert_eq!(
-            (win.rust_chat, win.body_mode, win.native_screen),
-            ("default", "raw", None)
-        );
+        assert_eq!((win.body_mode, win.native_screen), ("raw", None));
         assert_eq!(win.updater, Some("desktop"));
         assert!(!win.tui);
 
         let linux = capabilities_for(Surface::Tauri, "linux", true, false);
         assert!(linux.shared_storage && linux.rust_api);
         assert_eq!(linux.native_screen, Some("linux"));
-        assert_eq!(linux.rust_chat, "default");
 
         // 対象外の OS（"other"）は、従来どおり共有の保存と Rust の API を使わない（JS Socket・フォルダの開発用は使える）
         let other = capabilities_for(Surface::Tauri, "other", true, false);
         assert!(!other.shared_storage && !other.rust_api);
-        assert_eq!(other.rust_chat, "off");
         assert!(other.dev_folder);
         assert_eq!(other.native_screen, None);
 
         let android = capabilities_for(Surface::Tauri, "android", false, true);
         assert!(android.rust_api && android.shared_storage && !android.dev_folder);
-        assert_eq!(
-            (android.rust_chat, android.body_mode),
-            ("default", "base64")
-        );
+        assert_eq!(android.body_mode, "base64");
         assert_eq!(android.updater, Some("android"));
         assert_eq!(android.native_screen, Some("android"));
         assert!(android.native_audio_output && android.background_service);
@@ -231,7 +217,7 @@ mod tests {
             let tui = capabilities_for(Surface::Tui, os, true, false);
             assert!(tui.tui, "{os}");
             assert!(tui.shared_storage && tui.rust_api, "{os}");
-            assert_eq!((tui.rust_chat, tui.body_mode), ("default", "raw"), "{os}");
+            assert_eq!(tui.body_mode, "raw", "{os}");
             assert_eq!(tui.notify_backend, "bell", "{os}");
             assert_eq!(tui.updater, Some("cli"), "{os}");
             assert_eq!(tui.native_screen, None, "{os}");

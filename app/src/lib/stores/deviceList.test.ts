@@ -44,7 +44,7 @@ function fakeApi(init: DeviceInfo[] = [device(SELF, '自宅'), device(OTHER, '�
   return { api: api as unknown as DeviceApi, raw: api, calls };
 }
 
-function make(over: Partial<DeviceListDeps> & { api?: DeviceApi | null } = {}) {
+function make(over: Partial<DeviceListDeps> & { api?: DeviceApi } = {}) {
   const f = over.api === undefined ? fakeApi() : { api: over.api, raw: null, calls: [] as string[] };
   const renameSelf = over.renameSelf ?? vi.fn(async () => {});
   const scope = { value: 'https://a.example\u0000alice' };
@@ -102,15 +102,6 @@ describe('DeviceList（一覧・名前変更・削除）', () => {
     release();
     await first;
     expect(list.items.map((d) => d.device_id)).toEqual([OTHER]);
-  });
-
-  it('ブラウザー版（API なし）は何もしない', async () => {
-    const { list } = make({ api: null });
-    expect(list.available).toBe(false);
-    await list.load();
-    expect(list.items).toEqual([]);
-    expect(await list.remove(OTHER)).toBe(false);
-    expect(await list.rename(OTHER, '名前')).toBe(false);
   });
 
   describe('削除', () => {
