@@ -289,11 +289,10 @@ mod tests {
 
         assert!(!dst.join(".disnans-tmp-1").exists());
         assert_eq!(std::fs::read(dst.join("sub/b.txt")).unwrap(), b"b");
-        // 同じ実体（ハードリンク）
-        use std::os::unix::fs::MetadataExt;
-        let live = std::fs::metadata(src.join("a.txt")).unwrap();
-        let snap = std::fs::metadata(dst.join("a.txt")).unwrap();
-        assert_eq!(live.ino(), snap.ino());
+        // テスト内で直接書き換え、両方に反映されることで同じ実体（ハードリンク）と確かめる。
+        std::fs::write(src.join("a.txt"), b"linked").unwrap();
+        assert_eq!(std::fs::read(dst.join("a.txt")).unwrap(), b"linked");
+        std::fs::write(src.join("a.txt"), b"old").unwrap();
 
         // 上書きは一時ファイルを rename するので、バックアップの中身は古いまま
         let tmp = src.join(".disnans-tmp-2");
