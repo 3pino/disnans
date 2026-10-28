@@ -906,6 +906,7 @@ dependencies = [
  "gstreamer-video",
  "image",
  "jpeg-encoder",
+ "libc",
  "notify-rust",
  "serde",
  "serde_json",

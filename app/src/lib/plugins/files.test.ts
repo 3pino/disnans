@@ -52,6 +52,16 @@ function fakeApi(entries: SharedEntry[] = []) {
       calls.push(['copy', from, to, overwrite]);
       return entry(to);
     }),
+    // ゴミ箱・大きさ（この試験では呼ばない）
+    trash: vi.fn(async () => {
+      throw new Error('not used');
+    }),
+    trashList: vi.fn(async () => []),
+    restore: vi.fn(async () => {
+      throw new Error('not used');
+    }),
+    purge: vi.fn(async () => {}),
+    size: vi.fn(async () => ({ size: 0, files: 0, dirs: 0 })),
   };
   return { api, calls };
 }

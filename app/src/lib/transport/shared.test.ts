@@ -5,7 +5,7 @@ vi.mock('../config', () => ({
   authHeaders: () => ({ Authorization: 'Bearer t' }),
 }));
 
-const { sharedApi, sharedUrl } = await import('./shared');
+const { sharedApi, sharedUrl, sharedSizePath } = await import('./shared');
 const { sharedPath } = await import('../sharedPath');
 const { HttpError } = await import('./http');
 
@@ -98,5 +98,74 @@ describe('sharedApi（HTTP）', () => {
     expect(err).toBeInstanceOf(HttpError);
     expect((err as InstanceType<typeof HttpError>).code).toBe('parent_missing');
     expect((err as InstanceType<typeof HttpError>).status).toBe(409);
+  });
+});
+
+describe('sharedApi（ゴミ箱・大きさ）', () => {
+  const trashed = { id: '01HZX0000000000000000000AB', original_path: 'docs/a.txt', kind: 'file', size: 3, deleted_at: 9 };
+
+  it('trash は POST /api/shared-trash に {op:"trash",path} を送り、入った項目を返す', async () => {
+    reply = () => new Response(JSON.stringify(trashed), { status: 200 });
+    const e = await sharedApi.trash('docs/a.txt');
+    expect(e.id).toBe(trashed.id);
+    expect(calls[0]!.init.method).toBe('POST');
+    expect(calls[0]!.url).toBe('https://srv/api/shared-trash');
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ op: 'trash', path: 'docs/a.txt' });
+  });
+
+  it('添付も同じ口で入れられる（パスは attachments/<file_id> の形のまま送る）', async () => {
+    reply = () => new Response(JSON.stringify({ ...trashed, original_path: 'attachments/F1' }), { status: 200 });
+    await sharedApi.trash('attachments/F1');
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ op: 'trash', path: 'attachments/F1' });
+  });
+
+  it('trashList は GET /api/shared-trash の entries を返す（読取の時間の打ち切りあり）', async () => {
+    reply = () => new Response(JSON.stringify({ entries: [trashed] }), { status: 200 });
+    expect(await sharedApi.trashList()).toEqual([trashed]);
+    expect(calls[0]!.init.method).toBe('GET');
+    expect(calls[0]!.url).toBe('https://srv/api/shared-trash');
+  });
+
+  it('restore は {op:"restore",id}。戻った項目を返す。同名は 409 exists（上書きしない）', async () => {
+    reply = () => new Response(JSON.stringify({ name: 'a.txt', path: 'docs/a.txt', kind: 'file', size: 3, modified: 0, mime: null, message_id: null }), { status: 200 });
+    const e = await sharedApi.restore(trashed.id);
+    expect(e.path).toBe('docs/a.txt');
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ op: 'restore', id: trashed.id });
+    reply = () => new Response(JSON.stringify({ code: 'exists', message: '同じ名前があります' }), { status: 409 });
+    const err = await sharedApi.restore(trashed.id).catch((x: unknown) => x);
+    expect((err as InstanceType<typeof HttpError>).code).toBe('exists');
+  });
+
+  it('restore の親が無いときは 409 parent_missing', async () => {
+    reply = () => new Response(JSON.stringify({ code: 'parent_missing', message: '親がない' }), { status: 409 });
+    const err = await sharedApi.restore(trashed.id).catch((x: unknown) => x);
+    expect((err as InstanceType<typeof HttpError>).code).toBe('parent_missing');
+  });
+
+  it('purge は DELETE /api/shared-trash/{id}（ID は URL にする）', async () => {
+    reply = () => new Response(null, { status: 204 });
+    await sharedApi.purge('A/B');
+    expect(calls[0]!.init.method).toBe('DELETE');
+    expect(calls[0]!.url).toBe('https://srv/api/shared-trash/A%2FB');
+  });
+
+  it('size は GET /api/shared-size/{path}。ルートは /api/shared-size（添付を含む大きさ）', async () => {
+    reply = () => new Response(JSON.stringify({ size: 10, files: 2, dirs: 1 }), { status: 200 });
+    expect(await sharedApi.size('docs')).toEqual({ size: 10, files: 2, dirs: 1 });
+    expect(calls[0]!.url).toBe('https://srv/api/shared-size/docs');
+    await sharedApi.size('');
+    expect(calls[1]!.url).toBe('https://srv/api/shared-size');
+    expect(calls[1]!.init.method).toBe('GET');
+  });
+
+  it('sharedSizePath は区切りごとに URL の形にする', () => {
+    expect(sharedSizePath('')).toBe('/api/shared-size');
+    expect(sharedSizePath('docs/a b')).toBe('/api/shared-size/docs/a%20b');
+  });
+
+  it('既存の remove は永久削除（DELETE /api/shared/…）のまま。ゴミ箱は通らない', async () => {
+    reply = () => new Response(null, { status: 204 });
+    await sharedApi.remove('x.txt');
+    expect(calls[0]!.url).toBe('https://srv/api/shared/x.txt');
   });
 });

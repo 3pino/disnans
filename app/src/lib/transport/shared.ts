@@ -1,6 +1,10 @@
 import type { SharedEntry } from '../protocol/SharedEntry';
 import type { SharedListing } from '../protocol/SharedListing';
 import type { SharedOp } from '../protocol/SharedOp';
+import type { SharedTrashEntry } from '../protocol/SharedTrashEntry';
+import type { SharedTrashListing } from '../protocol/SharedTrashListing';
+import type { SharedTrashOp } from '../protocol/SharedTrashOp';
+import type { SharedSize } from '../protocol/SharedSize';
 import type { ApiError } from '../protocol/ApiError';
 import { apiUrl, authHeaders } from '../config';
 import { HttpError, READ, request, toError } from './http';
@@ -23,7 +27,18 @@ export interface SharedApi {
   /** 作成・上書き（親のフォルダがなければ 409 parent_missing） */
   write(path: string, body: Blob | ArrayBuffer | string): Promise<SharedEntry>;
   mkdir(path: string): Promise<SharedEntry>;
+  /** 永久に削除する（既存の口。エクスプローラーはゴミ箱を使う） */
   remove(path: string): Promise<void>;
+  /** ゴミ箱へ入れる（フォルダ・ファイル・添付）。入った項目を返す */
+  trash(path: string): Promise<SharedTrashEntry>;
+  /** ゴミ箱の一覧（新しい順はサーバーの決め。呼ぶ側で並べ替えてよい） */
+  trashList(): Promise<SharedTrashEntry[]>;
+  /** ゴミ箱から元の場所へ戻す。同名があれば 409 exists、親が無ければ 409 parent_missing（上書きはしない）。戻った項目を返す */
+  restore(id: string): Promise<SharedEntry>;
+  /** ゴミ箱の項目を完全に消す */
+  purge(id: string): Promise<void>;
+  /** 大きさ（size・配下のファイル数 files・フォルダ数 dirs）。path が空ならルート（添付を 1 回だけ数える） */
+  size(path: string): Promise<SharedSize>;
   /** 移動・名前の変更。overwrite が真なら同名のファイルを上書きする（既定は同名があれば exists） */
   move(from: string, to: string, overwrite?: boolean): Promise<SharedEntry>;
   /** コピー。overwrite の決まりは move と同じ */
@@ -50,6 +65,11 @@ export const sharedApi: SharedApi = {
   },
   mkdir: (path) => op({ op: 'mkdir', path }),
   remove: (path) => request<void>('DELETE', sharedPath(path)),
+  trash: (path) => request<SharedTrashEntry>('POST', '/api/shared-trash', { op: 'trash', path } satisfies SharedTrashOp),
+  trashList: async () => (await request<SharedTrashListing>('GET', '/api/shared-trash', undefined, undefined, READ)).entries,
+  restore: (id) => request<SharedEntry>('POST', '/api/shared-trash', { op: 'restore', id } satisfies SharedTrashOp),
+  purge: (id) => request<void>('DELETE', `/api/shared-trash/${encodeURIComponent(id)}`),
+  size: (path) => request<SharedSize>('GET', sharedSizePath(path), undefined, undefined, READ),
   move: (from, to, overwrite) => op(withOverwrite({ op: 'move', from, to }, overwrite)),
   copy: (from, to, overwrite) => op(withOverwrite({ op: 'copy', from, to }, overwrite)),
 };
@@ -61,6 +81,11 @@ function withOverwrite(body: MoveCopyOp, overwrite: boolean | undefined): MoveCo
 
 function op(body: SharedOp | MoveCopyOp): Promise<SharedEntry> {
   return request<SharedEntry>('POST', '/api/shared', body);
+}
+
+/** 大きさの URL。空は `/api/shared-size`（ルート）。区切りごとに URL の形にする（sharedPath と同じ決まり） */
+export function sharedSizePath(path: string): string {
+  return path === '' ? '/api/shared-size' : `/api/shared-size/${path.split('/').map((s) => encodeURIComponent(s)).join('/')}`;
 }
 
 /**

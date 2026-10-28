@@ -41,6 +41,14 @@ mod snapshot;
 #[cfg(desktop)]
 mod desktop_notify;
 
+// OS からのドロップ（ドロップされたファイル・フォルダだけを読む。任意のパスは読まない）
+#[cfg(desktop)]
+mod os_drop;
+#[cfg(desktop)]
+mod os_drop_sessions;
+#[cfg(desktop)]
+mod os_drop_walk;
+
 // Linux の画面共有: portal / PipeWire。静止画のプレビューとは別の取得経路
 #[cfg(target_os = "linux")]
 mod linux_capture;
@@ -208,6 +216,9 @@ pub fn run() {
                 open_devtools,
                 desktop_notify::desktop_notify,
                 recent_images::recent_images,
+                os_drop::os_drop_list,
+                os_drop::os_drop_read,
+                os_drop::os_drop_release,
                 dev_plugins::dev_plugins_scan,
                 dev_plugins::dev_plugin_read,
                 snapshot::screen_snapshot,
@@ -259,6 +270,9 @@ pub fn run() {
                     open_devtools,
                     desktop_notify::desktop_notify,
                     recent_images::recent_images,
+                    os_drop::os_drop_list,
+                    os_drop::os_drop_read,
+                    os_drop::os_drop_release,
                     dev_plugins::dev_plugins_scan,
                     dev_plugins::dev_plugin_read,
                     snapshot::screen_snapshot,
@@ -377,11 +391,23 @@ pub fn run() {
     // 終了はトレイのメニューから。トレイのアイコンも setup で作る
     #[cfg(desktop)]
     {
-        builder = builder.on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        builder = builder.manage(os_drop::OsDropState::default());
+        builder = builder.on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // Linux のネイティブのドロップ（dragDropEnabled）。ドロップされたパスを覚え、JS へ根だけを知らせる
+            tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop {
+                paths, position, ..
+            }) => {
+                let at = os_drop::PhysicalPoint {
+                    x: position.x,
+                    y: position.y,
+                };
+                os_drop::record(window, paths, Some(at));
+            }
+            _ => {}
         });
         builder = builder.setup(|app| {
             setup_tray(app)?;

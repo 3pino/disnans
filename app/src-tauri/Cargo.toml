@@ -51,6 +51,8 @@ tauri-plugin-fs = "2"
 tauri-plugin-clipboard-manager = "2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# ドロップされたファイルの読み取りでシンボリックリンクを辿らない
+libc = "0.2"
 # getUserMedia / WebRTC を有効にする設定（tauri が使うものと同じ版）
 webkit2gtk = { version = "2", features = ["v2_40"] }
 # 画面の静止画（screen_snapshot）: X11 のルートウィンドウを撮る（tauri が使うものと同じ版。新しいクレートは増えない）
