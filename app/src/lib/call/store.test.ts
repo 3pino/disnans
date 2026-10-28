@@ -20,8 +20,27 @@ let seq = 0;
 class FakeTrack {
   id = `t${++seq}`;
   enabled = true;
+  readyState = 'live';
+  muted = false;
+  private handlers = new Map<string, Set<() => void>>();
   constructor(public kind: 'audio' | 'video') {}
   stop() {}
+  addEventListener(type: string, fn: () => void) {
+    if (!this.handlers.has(type)) this.handlers.set(type, new Set());
+    this.handlers.get(type)!.add(fn);
+  }
+  removeEventListener(type: string, fn: () => void) {
+    this.handlers.get(type)?.delete(fn);
+  }
+  /** テストから状態変化を起こす */
+  fire(type: string) {
+    for (const f of [...(this.handlers.get(type) ?? [])]) f();
+  }
+  listenerCount() {
+    let n = 0;
+    for (const set of this.handlers.values()) n += set.size;
+    return n;
+  }
 }
 
 class FakeStream {
@@ -1206,5 +1225,134 @@ describe('拡張 API', () => {
     await flush();
     expect(seen).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ display_name: 'Alice' }), payload: 'hello' }));
     expect(err).toHaveBeenCalled();
+  });
+});
+
+describe('音声の診断（要約・即時・マイクの状態・送受信の数）', () => {
+  const diagOf = (c: Client) => (c.store as unknown as { diag: { get(k: string): number } }).diag;
+  const micOf = (c: Client) => (c.store as unknown as { localStream: FakeStream }).localStream.getAudioTracks()[0];
+
+  it('相手がいなくても、5 秒ごとの要約を出す（相手の数と取り込みの有無つき）', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const a = makeClient('u1');
+    await a.store.join();
+    now.mockReturnValue(1000 + 5000);
+    a.store.tick();
+    const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[call] 診断 要約'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('相手=0');
+    expect(lines[0]).toContain('取込=off');
+    expect(lines[0]).toContain('前回から=5');
+    now.mockRestore();
+    info.mockRestore();
+  });
+
+  it('マイクの状態変化は 1 回ずつ記録し、抜けたあとは外す（参加と退出を繰り返しても残らない）', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const a = makeClient('u1');
+    for (let i = 0; i < 2; i++) {
+      await a.store.join();
+      const track = micOf(a);
+      track.fire('mute');
+      track.fire('unmute');
+      const lines = info.mock.calls.map((c) => String(c[0]));
+      expect(lines.filter((l) => l.startsWith('[call] マイク: mute'))).toHaveLength(i + 1);
+      expect(track.listenerCount()).toBe(3);
+      a.store.leave();
+      expect(track.listenerCount()).toBe(0);
+    }
+    info.mockRestore();
+  });
+
+  it('マイクが途中で止まった（ended）ときは警告と通知を出す', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const a = makeClient('u1');
+    await a.store.join();
+    micOf(a).fire('ended');
+    expect(warn).toHaveBeenCalledWith('[call] マイクが止まりました');
+    expect(a.toast).toHaveBeenCalledWith('マイクが止まりました。通話し直してください', 'error');
+    a.store.leave();
+    warn.mockRestore();
+  });
+
+  it('背景・表示に切り替わると、その時点の 1 行を出す', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const a = makeClient('u1');
+    await a.store.join();
+    let state = 'hidden';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+    document.dispatchEvent(new Event('visibilitychange'));
+    state = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    const lines = info.mock.calls.map((c) => String(c[0]));
+    expect(lines.some((l) => l.startsWith('[call] 診断 背景:'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('[call] 診断 表示:'))).toBe(true);
+    delete (document as unknown as Record<string, unknown>).visibilityState;
+    a.store.leave();
+    info.mockRestore();
+  });
+
+  it('退出の行は、状態をクリアする前に出す（参加中の累計が見える）', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const a = makeClient('u1');
+    await a.store.join();
+    a.store.leave(true, 'user');
+    const lines = info.mock.calls.map((c) => String(c[0]));
+    const exit = lines.findIndex((l) => l.startsWith('[call] 診断 退出: user'));
+    const left = lines.findIndex((l) => l.startsWith('[call] 通話から抜けます'));
+    expect(exit).toBeGreaterThan(-1);
+    expect(exit).toBeLessThan(left);
+    info.mockRestore();
+  });
+
+  it('送った数と、受けて鳴らした数・捨てた理由を数える', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const a = makeClient('u1');
+    const b = makeClient('u2');
+    await a.store.join();
+    await b.store.join();
+    await flush();
+    expect(speak(a).length).toBeGreaterThan(0);
+    await flush();
+    expect(diagOf(a).get('sendTry')).toBeGreaterThan(0);
+    expect(diagOf(a).get('capCb')).toBeGreaterThan(0);
+    expect(diagOf(b).get('recv')).toBeGreaterThan(0);
+    expect(diagOf(b).get('play')).toBeGreaterThan(0);
+    // 聞かない（deafen）のあいだに届いた音は、捨てた理由（muted）として数える
+    b.store.toggleDeafen();
+    const before = diagOf(b).get('recvDrop.muted');
+    speak(a);
+    await flush();
+    expect(diagOf(b).get('recvDrop.muted')).toBeGreaterThan(before);
+    a.store.leave();
+    b.store.leave();
+    info.mockRestore();
+  });
+});
+
+describe('診断用 API が例外を投げても、参加と退出は通る', () => {
+  it('getOutputTimestamp が throw しても、参加・tick・退出が成功し、出力時刻は - になる', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    class Throwing extends FakeAudioContext {
+      getOutputTimestamp() {
+        throw new Error('診断 API が使えない');
+      }
+    }
+    vi.stubGlobal('AudioContext', Throwing);
+    const a = makeClient('u1');
+    await a.store.join();
+    expect(a.store.joined).toBe(true);
+    now.mockReturnValue(1000 + 5000);
+    a.store.tick();
+    a.store.leave();
+    expect(a.store.joined).toBe(false);
+    const lines = info.mock.calls.map((c) => String(c[0]));
+    expect(lines.some((l) => l.startsWith('[call] 診断 参加:') && l.includes('出力時刻=-'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('[call] 診断 要約:') && l.includes('出力時刻=-'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('[call] 診断 退出: user'))).toBe(true);
+    now.mockRestore();
+    info.mockRestore();
   });
 });

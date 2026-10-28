@@ -6,6 +6,7 @@ import type { IconRef } from '../icons.svelte';
 import { startCapture, type Capture } from './capture';
 import { keepWebViewEnabled, setKeepWebViewResumed } from './nativeCall';
 import { LATENCY_REPORT_MS, callLatency, clockText, type ClockPoint } from './latency';
+import { AudioDiag, describeTrack, type DiagState } from './audioDiag';
 import { isAndroid } from '../platform';
 import {
   EV_AUDIO,
@@ -222,9 +223,13 @@ export class CallStore {
   private outputsBusy = false;
   private outputsTick = 0;
   private ctx: AudioContext | null = null;
+  /** 音声経路の診断（数の集計）。参加ごとに数え直す */
+  private diag = new AudioDiag();
+  /** マイクの track に付けたリスナ（解除のため） */
+  private micWatch: { track: MediaStreamTrack; type: 'mute' | 'unmute' | 'ended'; fn: () => void }[] = [];
   /** 通話中、画面が戻ったときに AudioContext を動かし直す（別のアプリを開いたあとに止まっていることがある） */
   private readonly onVisible = (): void => {
-    this.logAudio('visibility');
+    this.diagNow(document.visibilityState === 'visible' ? '表示' : '背景');
     if (document.visibilityState === 'visible') this.keepContextRunning();
   };
   private ctxDetach: (() => void) | null = null;
@@ -500,6 +505,8 @@ export class CallStore {
     const stream = this.localStream;
     if (!this.joined || !stream) return;
     console.warn(`[call] 音の経路を作り直します: ${reason}`);
+    this.diag.add('rebuild');
+    this.diagNow('音の再構築');
     this.stopCapture();
     this.captureSrc = null;
     this.micGain = null;
@@ -552,11 +559,16 @@ export class CallStore {
   }
 
   private onCallEvent(peer: string, name: string, payload: unknown): void {
-    if (!this.joined) return;
     if (name === EV_AUDIO) {
+      this.diag.add('recv');
+      if (!this.joined) {
+        this.diag.add('recvDrop.notJoined');
+        return;
+      }
       this.onRelayAudio(peer, payload);
       return;
     }
+    if (!this.joined) return;
     const e = this.entries.get(peer);
     const set = this.eventListeners.get(name);
     if (!e || !set) return;
@@ -703,6 +715,7 @@ export class CallStore {
         this.deafened = false;
         this.muteByDeafen = false;
         this.applyMute();
+        this.diag.reset(this.deps.now());
         this.joined = true;
         this.listed = false;
         console.info(`[call] join を送ります: peer=${this.peerId}`);
@@ -713,6 +726,7 @@ export class CallStore {
         void this.restoreOutput();
         this.startWorker();
         this.reconcile();
+        this.diagNow('参加');
       } catch (e) {
         // マイクを開いたあとの失敗（AudioContext など）。握りつぶさず原因を出し、開いたマイクも閉じる
         console.error('[call] 通話に参加できませんでした', e);
@@ -729,6 +743,7 @@ export class CallStore {
   /** 抜ける。sendLeave が false なのは、サーバーに外されたとき */
   leave(sendLeave = true, reason = 'user'): void {
     if (!this.joined && !this.localStream) return;
+    this.diagNow(`退出: ${reason}`);
     console.info(`[call] 通話から抜けます: reason=${reason} sendLeave=${sendLeave}`);
     this.dropEmits();
     this.micOpenAt = null;
@@ -746,6 +761,7 @@ export class CallStore {
     this.peerView = {};
     this.selfSpeaking = false;
     this.peerId = '';
+    this.detachMicWatch();
     this.localStream?.getTracks().forEach((t) => t.stop());
     this.localStream = null;
     document.removeEventListener('visibilitychange', this.onVisible);
@@ -808,14 +824,59 @@ export class CallStore {
     this.keepContextRunning();
   }
 
-  /** マイクが途中で止まった（OS やほかのアプリに取られた）ことを知らせる。stop() では発火しない */
+  /** マイクの状態変化（mute / unmute / ended）を 1 回ずつ記録する。ended は途中で止まった（OS やほかのアプリに取られた）ことで、stop() では発火しない */
   private watchMicTracks(stream: MediaStream): void {
+    this.detachMicWatch();
     for (const track of stream.getAudioTracks()) {
-      track.onended = () => {
-        console.warn('[call] マイクが止まりました');
-        if (this.joined) this.deps.toast('マイクが止まりました。通話し直してください', 'error');
-      };
+      for (const type of ['mute', 'unmute', 'ended'] as const) {
+        const fn = () => this.onMicEvent(track, type);
+        track.addEventListener(type, fn);
+        this.micWatch.push({ track, type, fn });
+      }
     }
+  }
+
+  private onMicEvent(track: MediaStreamTrack, type: 'mute' | 'unmute' | 'ended'): void {
+    this.diag.add(`micEvent.${type}`);
+    console.info(`[call] マイク: ${type} ${describeTrack(track)}`);
+    if (type !== 'ended') return;
+    console.warn('[call] マイクが止まりました');
+    if (this.joined) this.deps.toast('マイクが止まりました。通話し直してください', 'error');
+  }
+
+  private detachMicWatch(): void {
+    for (const w of this.micWatch) w.track.removeEventListener(w.type, w.fn);
+    this.micWatch = [];
+  }
+
+  /** 診断: 参加中の状態を即時に 1 行（参加・背景・表示・退出・音の再構築）。参加していなければ何もしない */
+  private diagNow(label: string): void {
+    if (!this.joined) return;
+    console.info(this.diag.immediate(this.deps.now(), label, this.diagState()));
+  }
+
+  private diagState(): DiagState {
+    const ctx: AudioContext | null = this.ctx;
+    let outTime: number | null = null;
+    try {
+      outTime = ctx?.getOutputTimestamp?.()?.contextTime ?? null;
+    } catch {
+      // 診断のための値。取れなくても参加・退出・再生は止めない
+      outTime = null;
+    }
+    return {
+      joined: this.joined,
+      listed: this.listed,
+      others: this.others.length,
+      muted: this.muted,
+      deafened: this.deafened,
+      ctxState: ctx?.state ?? '-',
+      ctxTime: ctx ? ctx.currentTime : null,
+      outTime,
+      capture: this.capture !== null,
+      track: describeTrack(this.localStream?.getAudioTracks()[0]),
+      entries: this.entries.size,
+    };
   }
 
   /** マイクを開く。選んだ機器が使えなければ既定の機器で開き直す */
@@ -1051,6 +1112,7 @@ export class CallStore {
     if (this.listed && now - this.aliveAt >= ALIVE_MS) {
       this.aliveAt = now;
       this.sendCall({ type: 'call.alive' });
+      this.diag.add('alive');
     }
     this.checkOutputStall(now);
     if (++this.outputsTick >= OUTPUTS_REFRESH_TICKS) {
@@ -1058,6 +1120,7 @@ export class CallStore {
       void this.refreshOutputs();
     }
     if (this.entries.size > 0) this.ensureCapture();
+    if (this.diag.due(now)) console.info(this.diag.summary(now, this.diagState()));
     const report = callLatency.report(now);
     if (report) console.info(`[call] latency ${report}`);
     this.reportClock(now);
@@ -1131,25 +1194,38 @@ export class CallStore {
   /** マイクの音（AudioContext の周波数）を 16kHz に直して送る */
   private onCapture(chunk: Float32Array, at?: number): void {
     this.captureFrames += chunk.length;
+    this.diag.add('capCb');
+    this.diag.add('capSamples', chunk.length);
     // 診断: マイクの塊が取れた時刻（ctx の時計）から、ここ（メインスレッド）に来るまでの遅れ
     if (at !== undefined && this.ctx) {
       const lag = this.ctx.currentTime - at - chunk.length / this.ctx.sampleRate;
       callLatency.add('取り出し後の待ち', Math.max(0, lag) * 1000);
     }
     // サーバーの一覧に自分が載るまで送らない（call.emit は制御のチェーンの外。先に着くと not_in_call になる）
-    if (!this.listed || !this.resampler || this.entries.size === 0) return;
+    if (!this.listed || !this.resampler || this.entries.size === 0) {
+      this.diag.add(!this.listed ? 'capSkip.notListed' : !this.resampler ? 'capSkip.noResampler' : 'capSkip.noPeers');
+      return;
+    }
     const out = this.resampler.push(chunk);
     for (const frame of this.framer.push(out)) this.sendFrame(frame);
   }
 
   /** 1 フレーム（16kHz・800 サンプル）を送る。ミュート・音量・無音の抑え方は、経路によらずここで揃える */
   private sendFrame(frame: Float32Array): void {
-    if (this.muted) return;
+    if (this.muted) {
+      this.diag.add('sendMuted');
+      return;
+    }
     const volume = this.micGain ? 1 : this.settings.micVolume;
     if (volume !== 1) for (let i = 0; i < frame.length; i++) frame[i] *= volume;
     const now = this.deps.now();
     if (rms(frame) > RELAY_SILENCE) this.relayLoudAt = now;
-    else if (now - this.relayLoudAt > RELAY_HOLD_MS) return;
+    else if (now - this.relayLoudAt > RELAY_HOLD_MS) {
+      this.diag.add('sendSilent');
+      return;
+    }
+    // 送ろうとした数（ネットワークへ届いたかは、ここでは分からない）
+    this.diag.add('sendTry');
     this.sendCall({ type: 'call.emit', name: EV_AUDIO, payload: { seq: this.relaySeq++, pcm: pcmToBase64(floatToInt16(frame)) } });
   }
 
@@ -1178,9 +1254,12 @@ export class CallStore {
     const p = payload as { pcm?: unknown } | null;
     const ctx = this.ctx;
     const e = this.entries.get(peer);
-    if (!ctx || !p || !e || e.status.muted || e.localMuted || this.deafened) return;
+    if (!ctx) return this.dropRecv('noCtx');
+    if (!p) return this.dropRecv('badPayload');
+    if (!e) return this.dropRecv('noPeer');
+    if (e.status.muted || e.localMuted || this.deafened) return this.dropRecv('muted');
     const pcm = base64ToPcm(p.pcm);
-    if (!pcm) return;
+    if (!pcm) return this.dropRecv('badPcm');
     try {
       const db = this.limitDb();
       const out = this.receiveOut(ctx, db);
@@ -1205,14 +1284,23 @@ export class CallStore {
       const buf = ctx.createBuffer(1, samples.length, RELAY_RATE);
       buf.getChannelData(0).set(samples);
       const at = scheduleFrame(e.relay.st, ctx.currentTime, pcm.length / RELAY_RATE);
-      if (at === null) return;
+      if (at === null) {
+        this.diag.add('playDrop.late');
+        return;
+      }
       const node = ctx.createBufferSource();
       node.buffer = buf;
       node.connect(e.relay.gain);
       node.start(at);
+      this.diag.add('play');
     } catch (err) {
+      this.dropRecv('error');
       console.warn('[call] リレーの音を鳴らせません', err);
     }
+  }
+
+  private dropRecv(reason: string): void {
+    this.diag.add(`recvDrop.${reason}`);
   }
 
   // ---- 拡張 API（プラグインから: disnans.call） ----
