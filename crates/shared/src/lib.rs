@@ -50,6 +50,23 @@ pub struct SharedEntry {
     pub message_id: Option<String>,
     /// 添付の ID（`attachments/` の項目だけ。`disnans:file/<ID>` で参照する）。
     pub file_id: Option<String>,
+    /// ゴミ箱の仮想の名前空間（`.trash/`）の中の項目だけ。通常の項目には無い（JSON では省略する）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub trash: Option<SharedTrashNode>,
+}
+
+/// ゴミ箱の仮想の名前空間（`.trash/`）の中での位置。`kind` で種類を決める。
+/// - `root`: `.trash/` そのもの
+/// - `item`: ゴミ箱の 1 件（`entry` に、その行の内容）。`.trash/<別名>` の直下の項目
+/// - `descendant`: 1 件の中のフォルダの中身（`id` はその件の ID）
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export)]
+pub enum SharedTrashNode {
+    Root,
+    Item { entry: SharedTrashEntry },
+    Descendant { id: Id },
 }
 
 /// フォルダの中身（`GET /api/shared/...` がフォルダのとき）。
@@ -89,7 +106,7 @@ pub enum SharedOp {
 
 /// ゴミ箱の 1 つの項目（`GET /api/shared-trash`）。`id` は ULID（呼ぶ側は中身を解釈しない不透明な文字列）。
 /// 添付も入る（復元すると添付の ID はそのまま戻る）。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct SharedTrashEntry {
     pub id: Id,
@@ -100,6 +117,11 @@ pub struct SharedTrashEntry {
     pub size: u64,
     /// ゴミ箱へ入れた時刻（ミリ秒、UNIX 時間）。
     pub deleted_at: Timestamp,
+    /// フォルダ（`.trash/`）の中の別名（`<ID>--<元の名前>`）。仮想の名前空間が有効なときだけ入る（JSON では省略する）。
+    /// 既存の実ファイル `shared/.trash` と衝突するときは入らない。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub trash_path: Option<String>,
 }
 
 /// ゴミ箱の一覧（`GET /api/shared-trash`）。
@@ -607,4 +629,95 @@ pub enum ServerEvent {
     },
     #[serde(rename = "pong")]
     Pong,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plain_entry() -> SharedEntry {
+        SharedEntry {
+            name: "a.txt".into(),
+            path: "a.txt".into(),
+            kind: SharedKind::File,
+            size: 3,
+            modified: 1,
+            mime: None,
+            message_id: None,
+            file_id: None,
+            trash: None,
+        }
+    }
+
+    fn trash_row() -> SharedTrashEntry {
+        SharedTrashEntry {
+            id: "01HZZZZZZZZZZZZZZZZZZZZZZZ".into(),
+            original_path: "docs/a.txt".into(),
+            kind: SharedKind::File,
+            size: 3,
+            deleted_at: 9,
+            trash_path: None,
+        }
+    }
+
+    #[test]
+    fn normal_entries_omit_the_trash_field() {
+        let v = serde_json::to_value(plain_entry()).unwrap();
+        assert!(v.get("trash").is_none(), "{v}");
+    }
+
+    #[test]
+    fn old_entry_json_without_trash_still_deserializes() {
+        let old = r#"{"name":"a.txt","path":"a.txt","kind":"file","size":3,"modified":1,
+            "mime":null,"message_id":null,"file_id":null}"#;
+        let e: SharedEntry = serde_json::from_str(old).unwrap();
+        assert!(e.trash.is_none());
+    }
+
+    #[test]
+    fn trash_nodes_use_snake_case_kind_discriminants() {
+        let root = serde_json::to_value(SharedTrashNode::Root).unwrap();
+        assert_eq!(root, serde_json::json!({ "kind": "root" }));
+        let item = serde_json::to_value(SharedTrashNode::Item { entry: trash_row() }).unwrap();
+        assert_eq!(item["kind"], "item");
+        assert_eq!(item["entry"]["id"], "01HZZZZZZZZZZZZZZZZZZZZZZZ");
+        let desc = serde_json::to_value(SharedTrashNode::Descendant { id: "X".into() }).unwrap();
+        assert_eq!(desc, serde_json::json!({ "kind": "descendant", "id": "X" }));
+    }
+
+    #[test]
+    fn trash_nodes_round_trip_on_an_entry() {
+        for node in [
+            SharedTrashNode::Root,
+            SharedTrashNode::Item { entry: trash_row() },
+            SharedTrashNode::Descendant { id: "X".into() },
+        ] {
+            let e = SharedEntry {
+                trash: Some(node.clone()),
+                ..plain_entry()
+            };
+            let back: SharedEntry =
+                serde_json::from_value(serde_json::to_value(&e).unwrap()).unwrap();
+            assert_eq!(back.trash.unwrap(), node);
+        }
+    }
+
+    #[test]
+    fn trash_path_is_omitted_when_absent_and_present_when_set() {
+        let v = serde_json::to_value(trash_row()).unwrap();
+        assert!(v.get("trash_path").is_none(), "{v}");
+        let with = SharedTrashEntry {
+            trash_path: Some("01HZ--a.txt".into()),
+            ..trash_row()
+        };
+        let v = serde_json::to_value(&with).unwrap();
+        assert_eq!(v["trash_path"], "01HZ--a.txt");
+    }
+
+    #[test]
+    fn old_trash_entry_json_without_trash_path_still_deserializes() {
+        let old = r#"{"id":"X","original_path":"a.txt","kind":"file","size":1,"deleted_at":2}"#;
+        let e: SharedTrashEntry = serde_json::from_str(old).unwrap();
+        assert!(e.trash_path.is_none());
+    }
 }

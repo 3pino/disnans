@@ -17,4 +17,9 @@ size: number,
 /**
  * ゴミ箱へ入れた時刻（ミリ秒、UNIX 時間）。
  */
-deleted_at: number, };
+deleted_at: number, 
+/**
+ * フォルダ（`.trash/`）の中の別名（`<ID>--<元の名前>`）。仮想の名前空間が有効なときだけ入る（JSON では省略する）。
+ * 既存の実ファイル `shared/.trash` と衝突するときは入らない。
+ */
+trash_path?: string, };

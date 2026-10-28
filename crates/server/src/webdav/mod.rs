@@ -11,13 +11,15 @@ pub mod usage;
 
 use axum::Router;
 use axum::extract::Request;
+use axum::http::StatusCode;
 use axum::middleware::from_fn_with_state;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use dav_server::{DavHandler, DavMethodSet, memls::MemLs};
 
 use crate::auth::{self, CurrentUser};
 use crate::state::SharedState;
+use crate::trash;
 
 /// dav-server に許可するメソッド。PROPPATCH は入れない（405）。書き込みは fs.rs の決まりで守る。
 const METHODS: &[&str] = &[
@@ -58,21 +60,143 @@ fn deletes_a_reserved_folder(req: &Request) -> bool {
     }
 }
 
+fn forbidden_response() -> Response {
+    (StatusCode::FORBIDDEN, "この場所は変えられません").into_response()
+}
+
+/// dav-server の失敗を、HTTP の状態にする（ゴミ箱の直接の処理で使う）。
+fn fs_status(e: dav_server::fs::FsError) -> StatusCode {
+    use dav_server::fs::FsError;
+    match e {
+        FsError::NotFound => StatusCode::NOT_FOUND,
+        FsError::Forbidden => StatusCode::FORBIDDEN,
+        FsError::Exists => StatusCode::CONFLICT,
+        FsError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+        FsError::InsufficientStorage => StatusCode::INSUFFICIENT_STORAGE,
+        FsError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+/// パスを、正規の区切りの列にする（パーセントを戻し、`.` を捨て、`..` は一つ前に戻す）。
+/// dav-server が実際に使うパスと同じになるように、デコードは一度だけ行う。
+fn canonical_segments(raw: &str) -> Vec<String> {
+    let decoded = percent_encoding::percent_decode_str(raw).decode_utf8_lossy();
+    let mut out: Vec<String> = Vec::new();
+    for part in decoded.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                out.pop();
+            }
+            other => out.push(other.to_owned()),
+        }
+    }
+    out
+}
+
+/// `Destination` ヘッダー（絶対の URL か、パス）の、パスの部分。
+fn destination_path(value: &str) -> &str {
+    let rest = value
+        .strip_prefix("https://")
+        .or_else(|| value.strip_prefix("http://"));
+    match rest {
+        // 絶対の URL: 最初の `/` より後ろがパス（無ければルート）
+        Some(after) => after.find('/').map_or("/", |i| &after[i..]),
+        None => value,
+    }
+}
+
+/// マウントの接頭辞（`/dav`）の後ろの区切り。`/dav` の外のものは None。
+fn mount_relative(segs: &[String]) -> Option<&[String]> {
+    match segs.split_first() {
+        Some((first, rest)) if first == "dav" => Some(rest),
+        _ => None,
+    }
+}
+
+/// 有効な仮想のゴミ箱の中のパスか（実際の `.trash` は普通の項目なので対象外）。
+async fn in_active_trash(state: &SharedState, rel: &[String]) -> bool {
+    rel.first()
+        .is_some_and(|f| f.eq_ignore_ascii_case(trash::NAMESPACE))
+        && trash::namespace_active(state).await
+}
+
+/// ゴミ箱（仮想の `.trash`）に関わる要求の決まり。
+enum TrashRequest {
+    /// 普通に処理する
+    Normal,
+    /// ゴミ箱の項目を完全に消す（直下の一つだけ）。中身を一つずつ消させない
+    Purge(String),
+    /// ゴミ箱の中の変更（直下そのもの・中身の削除）は拒否
+    Forbidden,
+}
+
+/// DELETE の決まり（ゴミ箱の中のものだけ）。`rel` は `/dav` の後ろ。
+async fn trash_delete(state: &SharedState, rel: &[String]) -> TrashRequest {
+    if !in_active_trash(state, rel).await {
+        return TrashRequest::Normal;
+    }
+    match rel {
+        [_, alias] => TrashRequest::Purge(alias.clone()),
+        _ => TrashRequest::Forbidden,
+    }
+}
+
 /// `/dav` 以下のルーター。ほかの `/api` と同じく、利用者を特定してから通す。
 pub fn router(state: SharedState) -> Router<SharedState> {
     // ロックの表は全員で共有する（MemLs は複製しても中身は同じ表を指す）
     let locks = *MemLs::new();
     let state_for_auth = state.clone();
-    let serve = move |CurrentUser(user): CurrentUser, req: Request| {
+    let serve = move |CurrentUser(user): CurrentUser, mut req: Request| {
         let dav = handler(&state, &user.id, locks.clone());
+        let state = state.clone();
         async move {
             // フォルダの DELETE は、dav-server が中身を先に一つずつ消す。共有フォルダの直下と
             // `attachments/` は、中身ごと消させない（403）
             if deletes_a_reserved_folder(&req) {
-                return axum::response::IntoResponse::into_response((
-                    axum::http::StatusCode::FORBIDDEN,
-                    "この場所は消せません",
-                ));
+                return forbidden_response();
+            }
+            let segs = canonical_segments(req.uri().path());
+            if let Some(rel) = mount_relative(&segs) {
+                match req.method().as_str() {
+                    "DELETE" => match trash_delete(&state, rel).await {
+                        TrashRequest::Forbidden => return forbidden_response(),
+                        TrashRequest::Purge(alias) => {
+                            // ゴミ箱の項目を完全に消す（dav-server の再帰は通さない）
+                            let fs = fs::SharedFs::new(&state, &user.id);
+                            let path = [trash::NAMESPACE.to_owned(), alias];
+                            return match fs.remove(&path, true).await {
+                                Ok(()) => axum::http::StatusCode::NO_CONTENT.into_response(),
+                                Err(e) => fs_status(e).into_response(),
+                            };
+                        }
+                        TrashRequest::Normal => {}
+                    },
+                    "MOVE" | "COPY" => {
+                        // dav-server は Overwrite: T のとき、宛先を先に消してから動かす（中身ごと）。
+                        // ゴミ箱の中が元でも先でも、その先消しを許さない: Overwrite を F にして、
+                        // 同名があれば 412 で止める（宛先の中身は消えない）。実際の `.trash` は普通の項目
+                        let dest = req
+                            .headers()
+                            .get("destination")
+                            .and_then(|v| v.to_str().ok())
+                            .map(|v| canonical_segments(destination_path(v)))
+                            .unwrap_or_default();
+                        let mut touches = false;
+                        if let Some(r) = mount_relative(&segs) {
+                            touches = in_active_trash(&state, r).await;
+                        }
+                        if !touches && let Some(r) = mount_relative(&dest) {
+                            touches = in_active_trash(&state, r).await;
+                        }
+                        if touches {
+                            req.headers_mut()
+                                .insert("overwrite", axum::http::HeaderValue::from_static("F"));
+                        }
+                    }
+                    _ => {}
+                }
             }
             let res: Response<dav_server::body::Body> = dav.handle(req).await;
             res.map(axum::body::Body::new)

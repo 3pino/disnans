@@ -24,7 +24,7 @@ use dav_server::fs::{
     DavDirEntry, DavFile, DavFileSystem, DavMetaData, FsError, FsFuture, FsResult, FsStream,
     OpenOptions, ReadDirMeta,
 };
-use disnans_shared::ServerEvent;
+use disnans_shared::{ServerEvent, SharedTrashNode};
 use futures_util::stream;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
@@ -32,6 +32,7 @@ use crate::attachments::{self, Put};
 use crate::db;
 use crate::state::SharedState;
 use crate::store::files as store_files;
+use crate::trash;
 use crate::webdav::names::{TMP_PREFIX, is_internal, valid_name};
 use crate::webdav::tree::{self, ATTACHMENTS_DIR, Entry, Item};
 
@@ -73,7 +74,7 @@ impl Meta {
         }
     }
 
-    fn of_std(m: &std::fs::Metadata) -> Self {
+    pub(crate) fn of_std(m: &std::fs::Metadata) -> Self {
         let modified = m.modified().unwrap_or(UNIX_EPOCH);
         Meta {
             dir: m.is_dir(),
@@ -119,9 +120,29 @@ pub struct Listed {
     pub message_id: Option<String>,
     /// 添付のときだけ（種類）。
     pub mime: Option<String>,
+    /// ゴミ箱の仮想の名前空間の中の位置（ゴミ箱の中のものだけ）。
+    pub trash: Option<SharedTrashNode>,
 }
 
 impl Listed {
+    /// ゴミ箱（仮想の `.trash` の直下）の一覧の 1 件。
+    pub(crate) fn for_trash(
+        name: String,
+        meta: Meta,
+        mime: Option<String>,
+        trash: SharedTrashNode,
+    ) -> Self {
+        // 削除された添付の ID・投稿は、ゴミ箱の一覧では出さない（ID で読ませないため）
+        Listed {
+            name,
+            meta,
+            file_id: None,
+            message_id: None,
+            mime,
+            trash: Some(trash),
+        }
+    }
+
     fn dir(name: &str) -> Self {
         Listed {
             name: name.to_owned(),
@@ -129,6 +150,7 @@ impl Listed {
             file_id: None,
             message_id: None,
             mime: None,
+            trash: None,
         }
     }
 }
@@ -154,6 +176,8 @@ enum Area {
     Attachments(Vec<String>),
     /// 実際のファイルの場所（区切りの列。空でない）
     Shared(Vec<String>),
+    /// 仮想のゴミ箱（`.trash` の中の区切りの列。空ならゴミ箱の直下）
+    Trash(Vec<String>),
 }
 
 fn area(segs: &[String]) -> Area {
@@ -237,6 +261,19 @@ pub fn guess_mime(name: &str) -> String {
 }
 
 impl SharedFs {
+    /// パスの区域。`.trash` は、仮想のゴミ箱が使えるときだけゴミ箱になる（使えなければ実際の項目）。
+    async fn area_of(&self, segs: &[String]) -> Area {
+        match segs.first() {
+            Some(first)
+                if first.eq_ignore_ascii_case(trash::NAMESPACE)
+                    && trash::namespace_active(&self.state).await =>
+            {
+                Area::Trash(segs[1..].to_vec())
+            }
+            _ => area(segs),
+        }
+    }
+
     pub fn new(state: &SharedState, user_id: &str) -> Self {
         SharedFs {
             state: state.clone(),
@@ -330,6 +367,7 @@ impl SharedFs {
                 file_id: None,
                 message_id: None,
                 mime: None,
+                trash: None,
             });
         }
         Ok(out)
@@ -346,9 +384,16 @@ impl SharedFs {
 
     /// 項目の一覧（フォルダの中身）。フォルダでなければ NotFound。
     pub async fn list(&self, segs: &[String]) -> FsResult<Vec<Listed>> {
-        match area(segs) {
+        match self.area_of(segs).await {
+            Area::Trash(rest) => self.list_trash(&rest).await,
             Area::Root => {
                 let mut out = vec![Listed::dir(ATTACHMENTS_DIR)];
+                if trash::namespace_active(&self.state).await {
+                    out.push(Listed {
+                        trash: Some(SharedTrashNode::Root),
+                        ..Listed::dir(trash::NAMESPACE)
+                    });
+                }
                 // 直下の実際の名前のうち、予約の `attachments` は見せない
                 for e in self.shared_entries(&self.state.config.shared_dir())? {
                     if e.name != ATTACHMENTS_DIR {
@@ -379,6 +424,7 @@ impl SharedFs {
                             file_id,
                             message_id,
                             mime,
+                            trash: None,
                         }
                     })
                     .collect())
@@ -394,8 +440,51 @@ impl SharedFs {
         }
     }
 
+    /// ゴミ箱の中の一覧: 直下は完了した項目（名前は決まりの名前）。項目の中は、フォルダの中身。
+    async fn list_trash(&self, rest: &[String]) -> FsResult<Vec<Listed>> {
+        match rest.split_first() {
+            None => Ok(trash::ready_rows(&self.state)
+                .await
+                .map_err(trash::vfs_err)?
+                .iter()
+                .filter_map(|r| trash::top_listing(&self.state, r, true))
+                .collect()),
+            Some((alias, inner)) => {
+                let row = trash::by_alias(&self.state, alias)
+                    .await
+                    .map_err(trash::vfs_err)?
+                    .ok_or(FsError::NotFound)?;
+                let dir = trash::real_of(&self.state, &row, inner)?;
+                let m = std::fs::symlink_metadata(&dir).map_err(|e| io_err(&e))?;
+                if !m.is_dir() {
+                    return Err(FsError::NotFound);
+                }
+                // 中身はすべて、同じ項目の子孫
+                let node = SharedTrashNode::Descendant { id: row.id.clone() };
+                Ok(self
+                    .shared_entries(&dir)?
+                    .into_iter()
+                    .map(|l| Listed {
+                        trash: Some(node.clone()),
+                        ..l
+                    })
+                    .collect())
+            }
+        }
+    }
+
     /// 1 つの項目の情報。区切りが空なら共有フォルダそのもの。
     pub async fn stat(&self, segs: &[String]) -> FsResult<Listed> {
+        // ゴミ箱の直下の一つだけは、名前から直接引く（全部の一覧を読まない）
+        if let Area::Trash(rest) = self.area_of(segs).await
+            && let [alias] = rest.as_slice()
+        {
+            let row = trash::by_alias(&self.state, alias)
+                .await
+                .map_err(trash::vfs_err)?
+                .ok_or(FsError::NotFound)?;
+            return trash::top_listing(&self.state, &row, true).ok_or(FsError::NotFound);
+        }
         let Some((name, parent)) = segs.split_last() else {
             return Ok(Listed::dir(""));
         };
@@ -409,7 +498,24 @@ impl SharedFs {
 
     /// ファイルの中身の場所（フォルダや無いものは NotFound・Forbidden）。
     pub async fn read_target(&self, segs: &[String]) -> FsResult<ReadTarget> {
-        match area(segs) {
+        match self.area_of(segs).await {
+            Area::Trash(rest) if rest.is_empty() => Err(FsError::Forbidden),
+            Area::Trash(rest) => {
+                let (alias, inner) = rest.split_first().ok_or(FsError::Forbidden)?;
+                let row = trash::by_alias(&self.state, alias)
+                    .await
+                    .map_err(trash::vfs_err)?
+                    .ok_or(FsError::NotFound)?;
+                let path = trash::real_of(&self.state, &row, inner)?;
+                let m = std::fs::symlink_metadata(&path).map_err(|e| io_err(&e))?;
+                if m.is_dir() {
+                    return Err(FsError::Forbidden);
+                }
+                Ok(ReadTarget {
+                    path,
+                    mime: trash::attachment_mime(&row),
+                })
+            }
             Area::Root => Err(FsError::Forbidden),
             Area::Attachments(segs) => {
                 let name = attachment_name(&segs).ok_or(FsError::NotFound)?;
@@ -435,8 +541,8 @@ impl SharedFs {
 
     /// フォルダを作る（既にあれば Exists）。`attachments` の中には作れない。
     pub async fn make_dir(&self, segs: &[String]) -> FsResult<()> {
-        match area(segs) {
-            Area::Root | Area::Attachments(_) => Err(FsError::Forbidden),
+        match self.area_of(segs).await {
+            Area::Root | Area::Attachments(_) | Area::Trash(_) => Err(FsError::Forbidden),
             Area::Shared(segs) => {
                 let (target, _parent) = self.new_target(&segs)?;
                 std::fs::create_dir(&target).map_err(|e| io_err(&e))?;
@@ -454,7 +560,8 @@ impl SharedFs {
         segs: &[String],
         options: OpenOptions,
     ) -> FsResult<Box<dyn DavFile>> {
-        match area(segs) {
+        match self.area_of(segs).await {
+            Area::Trash(_) => Err(FsError::Forbidden),
             Area::Shared(segs) => self.write_shared(&segs, options).await,
             Area::Attachments(segs) => {
                 let name = attachment_name(&segs).ok_or(FsError::Forbidden)?.to_owned();
@@ -557,8 +664,21 @@ impl SharedFs {
     /// 削除。フォルダは `recursive` のときだけ中身ごと消す（そうでなければ空のときだけ）。
     /// `attachments/<名前>` は添付を消す（投稿されていれば「削除された」になる）。
     pub async fn remove(&self, segs: &[String], recursive: bool) -> FsResult<()> {
-        match area(segs) {
+        match self.area_of(segs).await {
             Area::Root => Err(FsError::Forbidden),
+            // ゴミ箱の項目（直下だけ）を完全に消す。中のものは消せない
+            Area::Trash(rest) => {
+                let [alias] = rest.as_slice() else {
+                    return Err(FsError::Forbidden);
+                };
+                let row = trash::by_alias(&self.state, alias)
+                    .await
+                    .map_err(trash::vfs_err)?
+                    .ok_or(FsError::NotFound)?;
+                trash::purge(&self.state, &row.id)
+                    .await
+                    .map_err(trash::vfs_err)
+            }
             Area::Attachments(segs) => {
                 let name = attachment_name(&segs).ok_or(FsError::Forbidden)?;
                 let item = self.attachment(name).await?.ok_or(FsError::NotFound)?;
@@ -588,7 +708,11 @@ impl SharedFs {
     /// `attachments/` と共有フォルダの間は動かせない（コピーする）。
     /// `overwrite` が false で同名のものがあれば `Exists`。
     pub async fn rename(&self, from: &[String], to: &[String], overwrite: bool) -> FsResult<()> {
-        match (area(from), area(to)) {
+        // ゴミ箱の項目は、元の場所へだけ戻せる（ほかの場所への移動は拒否）
+        if let Area::Trash(rest) = self.area_of(from).await {
+            return self.restore_from_trash(&rest, to).await;
+        }
+        match (self.area_of(from).await, self.area_of(to).await) {
             (Area::Attachments(from), Area::Attachments(to)) => {
                 let from_name = attachment_name(&from).ok_or(FsError::Forbidden)?;
                 let to_name = attachment_name(&to).ok_or(FsError::Forbidden)?;
@@ -630,6 +754,24 @@ impl SharedFs {
         }
     }
 
+    /// ゴミ箱の項目を、元の場所（`original_path`）へ戻す。ほかの場所は 403。
+    async fn restore_from_trash(&self, rest: &[String], to: &[String]) -> FsResult<()> {
+        let [alias] = rest else {
+            return Err(FsError::Forbidden);
+        };
+        let row = trash::by_alias(&self.state, alias)
+            .await
+            .map_err(trash::vfs_err)?
+            .ok_or(FsError::NotFound)?;
+        if to != trash::original_segs(&row).as_slice() {
+            return Err(FsError::Forbidden);
+        }
+        trash::restore(&self.state, &row.id)
+            .await
+            .map(|_| ())
+            .map_err(trash::vfs_err)
+    }
+
     /// フォルダを再帰でコピーする（共有フォルダの中どうし）。同名があれば上書き・マージせず 409。
     /// 一時のフォルダに作ってから名前を付けるので、途中で失敗しても行き先に部分的な結果は残らない。
     async fn copy_dir(&self, src: &Path, to: &[String]) -> FsResult<()> {
@@ -661,14 +803,28 @@ impl SharedFs {
     /// コピー。元は共有フォルダのファイル、または添付。先は共有フォルダ、または `attachments/` の中（新しい添付）。
     /// `overwrite` の決まりは `rename` と同じ（添付の中身を差し替える形になる）。
     pub async fn copy(&self, from: &[String], to: &[String], overwrite: bool) -> FsResult<()> {
-        match area(to) {
+        match self.area_of(to).await {
             Area::Shared(to) => {
-                if let Area::Shared(from_segs) = area(from) {
-                    let src = self.real_path(&from_segs, false)?;
-                    let src_meta = std::fs::symlink_metadata(&src).map_err(|e| io_err(&e))?;
-                    if src_meta.is_dir() {
-                        return self.copy_dir(&src, &to).await;
+                // 元がフォルダなら、中身ごと（共有フォルダの中、またはゴミ箱の中のフォルダ）
+                let src_dir = match self.area_of(from).await {
+                    Area::Shared(from_segs) => {
+                        let src = self.real_path(&from_segs, false)?;
+                        let src_meta = std::fs::symlink_metadata(&src).map_err(|e| io_err(&e))?;
+                        src_meta.is_dir().then_some(src)
                     }
+                    Area::Trash(rest) if !rest.is_empty() => {
+                        let row = trash::by_alias(&self.state, &rest[0])
+                            .await
+                            .map_err(trash::vfs_err)?
+                            .ok_or(FsError::NotFound)?;
+                        let src = trash::real_of(&self.state, &row, &rest[1..])?;
+                        let src_meta = std::fs::symlink_metadata(&src).map_err(|e| io_err(&e))?;
+                        src_meta.is_dir().then_some(src)
+                    }
+                    _ => None,
+                };
+                if let Some(src) = src_dir {
+                    return self.copy_dir(&src, &to).await;
                 }
                 let src = self.read_target(from).await?.path;
                 let (dst, parent) = self.new_target(&to)?;
@@ -711,7 +867,7 @@ impl SharedFs {
                     .map_err(app_err)?;
                 Ok(())
             }
-            Area::Root => Err(FsError::Forbidden),
+            Area::Root | Area::Trash(_) => Err(FsError::Forbidden),
         }
     }
 }
@@ -970,7 +1126,7 @@ impl DavFileSystem for SharedFs {
     fn remove_file<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
             let segs = segments(path).ok_or(FsError::Forbidden)?;
-            if let Area::Shared(s) = area(&segs) {
+            if let Area::Shared(s) = self.area_of(&segs).await {
                 let p = self.real_path(&s, true)?;
                 if std::fs::symlink_metadata(&p)
                     .map_err(|e| io_err(&e))?

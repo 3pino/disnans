@@ -85,7 +85,8 @@ async fn root_lists_attachments_and_nothing_else_at_first() {
     let root = listing(&server, "/api/shared").await;
     assert_eq!(root.path, "");
     let names: Vec<&str> = root.entries.iter().map(|e| e.name.as_str()).collect();
-    assert_eq!(names, vec!["attachments"]);
+    // 仮想のゴミ箱（`.trash`）は、ルートの直下に見える（実際の項目は無い）
+    assert_eq!(names, vec!["attachments", ".trash"]);
     assert_eq!(root.entries[0].kind, disnans_shared::SharedKind::Dir);
 }
 
@@ -316,7 +317,7 @@ async fn names_and_paths_are_checked() {
     let root = listing(&server, "/api/shared").await;
     assert_eq!(
         root.entries.len(),
-        1,
+        2,
         "{:?}",
         root.entries.iter().map(|e| &e.name).collect::<Vec<_>>()
     );

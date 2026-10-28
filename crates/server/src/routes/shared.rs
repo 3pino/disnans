@@ -47,6 +47,7 @@ pub(super) fn entry(path: &str, l: &Listed) -> SharedEntry {
         mime: l.mime.clone(),
         message_id: l.message_id.clone(),
         file_id: l.file_id.clone(),
+        trash: l.trash.clone(),
     }
 }
 
@@ -271,6 +272,13 @@ async fn size_of(state: &SharedState, segs: &[String]) -> AppResult<SharedSize> 
                 files: 1,
                 dirs: 0,
             }))
+        }
+        // 仮想のゴミ箱（使えるとき）: 完了した中身だけを、一つずつ一度だけ数える
+        Some(first)
+            if first.eq_ignore_ascii_case(crate::trash::NAMESPACE)
+                && crate::trash::namespace_active(state).await =>
+        {
+            Ok(to_size(crate::trash::size_of(state, &segs[1..]).await?))
         }
         Some(_) => {
             let fs = SharedFs::new(state, "");

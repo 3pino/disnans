@@ -22,9 +22,12 @@
 //! 添付の復元で元の投稿が消えていたら、投稿は作り直さず、ライブラリの添付として同じ ID で戻す。
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use dav_server::fs::{FsError, FsResult};
 
 use axum::http::StatusCode;
-use disnans_shared::{ServerEvent, SharedKind, SharedTrashEntry};
+use disnans_shared::{ServerEvent, SharedKind, SharedTrashEntry, SharedTrashNode};
 use sqlx::SqlitePool;
 
 use crate::attachment_names::key;
@@ -35,6 +38,7 @@ use crate::state::SharedState;
 use crate::store::files::{self as store, FileRow};
 use crate::webdav::fs::{SharedFs, rel};
 use crate::webdav::tree::ATTACHMENTS_DIR;
+use crate::webdav::usage::{Usage, usage};
 
 const PENDING: &str = "pending";
 const READY: &str = "ready";
@@ -101,6 +105,14 @@ fn notify_path(row: &Row) -> String {
     row.original_path.clone()
 }
 
+/// 変更の通知: 元の項目の path と、仮想の `.trash`（そのなかの項目は子孫として無効になる）。
+fn announce(state: &SharedState, path: String) {
+    state.hub.broadcast(&ServerEvent::FilesChanged { path });
+    state.hub.broadcast(&ServerEvent::FilesChanged {
+        path: NAMESPACE.to_owned(),
+    });
+}
+
 fn kind_of(row: &Row) -> SharedKind {
     if row.kind == KIND_DIR {
         SharedKind::Dir
@@ -109,13 +121,15 @@ fn kind_of(row: &Row) -> SharedKind {
     }
 }
 
-fn entry_of(row: &Row) -> SharedTrashEntry {
+/// ゴミ箱の一覧の 1 件。`active` は、要求で一度だけ調べた結果（行ごとに調べ直さない）。
+fn entry_of(active: bool, row: &Row) -> SharedTrashEntry {
     SharedTrashEntry {
         id: row.id.clone(),
         original_path: row.original_path.clone(),
         kind: kind_of(row),
         size: row.size.max(0) as u64,
         deleted_at: row.deleted_at,
+        trash_path: trash_path_for(active, row),
     }
 }
 
@@ -174,10 +188,8 @@ async fn has_unfinished(pool: &SqlitePool) -> sqlx::Result<bool> {
     Ok(n > 0)
 }
 
-/// 一覧（完了したものだけ）。途中の行があれば、ロックの中で一度だけ回復してから読む。
-/// 途中の操作（ロックを持つ）とは競わない。DB が戻っていれば、再起動なしで ready になる。
-/// 途中のものと broken は出さない。
-pub async fn list(state: &SharedState) -> AppResult<Vec<SharedTrashEntry>> {
+/// 途中の行があれば、ロックの中で一度だけ回復する（途中の操作とは競わない。DB が戻っていれば再起動なしで ready になる）。
+async fn settle(state: &SharedState) -> AppResult<()> {
     if has_unfinished(&state.pool).await? {
         let _guard = state.write_lock().await;
         // ロックを待つ間に、別の操作が終わっているかもしれないので、改めて確かめる
@@ -185,13 +197,30 @@ pub async fn list(state: &SharedState) -> AppResult<Vec<SharedTrashEntry>> {
             reconcile(state).await?;
         }
     }
+    Ok(())
+}
+
+/// 一覧（完了したものだけ）。途中のものと broken は出さない。
+pub async fn list(state: &SharedState) -> AppResult<Vec<SharedTrashEntry>> {
+    // 要求の中で一度だけ調べる（行ごとに、共有フォルダの一覧を読み直さない）
+    let active = namespace_active(state).await;
+    Ok(ready_rows(state)
+        .await?
+        .iter()
+        .map(|r| entry_of(active, r))
+        .collect())
+}
+
+/// 完了した行（ready）だけ。読む前に途中の行を回復する。
+pub async fn ready_rows(state: &SharedState) -> AppResult<Vec<Row>> {
+    settle(state).await?;
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT id, kind, state, original_path, size, deleted_at, file_id, payload
          FROM shared_trash WHERE state = 'ready' ORDER BY deleted_at DESC, id DESC",
     )
     .fetch_all(&state.pool)
     .await?;
-    Ok(rows.iter().map(entry_of).collect())
+    Ok(rows)
 }
 
 /// 操作の対象の行。無ければ 404、途中・壊れたものは 409（消さずに止める）。
@@ -222,6 +251,10 @@ pub async fn trash_shared(
     segs: &[String],
 ) -> AppResult<SharedTrashEntry> {
     if segs.is_empty() || segs[0] == ATTACHMENTS_DIR {
+        return Err(AppError::forbidden("この場所はゴミ箱へ入れられません"));
+    }
+    // 仮想の `.trash` は、ゴミ箱そのもの（入れられない）
+    if segs[0].eq_ignore_ascii_case(NAMESPACE) && namespace_active(state).await {
         return Err(AppError::forbidden("この場所はゴミ箱へ入れられません"));
     }
     let fs = SharedFs::new(state, user_id);
@@ -262,13 +295,15 @@ pub async fn trash_shared(
         return Err(io_app(e));
     }
     set_state(&state.pool, &row.id, READY).await?;
-    state.hub.broadcast(&ServerEvent::FilesChanged {
-        path: notify_path(&row),
-    });
-    Ok(entry_of(&Row {
-        state: READY.to_owned(),
-        ..row
-    }))
+    announce(state, notify_path(&row));
+    let active = namespace_active(state).await;
+    Ok(entry_of(
+        active,
+        &Row {
+            state: READY.to_owned(),
+            ..row
+        },
+    ))
 }
 
 // ---- 添付をゴミ箱へ ----
@@ -330,13 +365,15 @@ pub async fn trash_attachment(state: &SharedState, file_id: &str) -> AppResult<S
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    state.hub.broadcast(&ServerEvent::FilesChanged {
-        path: trash_row.original_path.clone(),
-    });
-    Ok(entry_of(&Row {
-        state: READY.to_owned(),
-        ..trash_row
-    }))
+    announce(state, trash_row.original_path.clone());
+    let active = namespace_active(state).await;
+    Ok(entry_of(
+        active,
+        &Row {
+            state: READY.to_owned(),
+            ..trash_row
+        },
+    ))
 }
 
 // ---- 復元 ----
@@ -382,9 +419,7 @@ pub async fn restore(state: &SharedState, id: &str) -> AppResult<String> {
     }
     delete_row(&state.pool, &row.id).await?;
     let _ = std::fs::remove_dir(&dir);
-    state.hub.broadcast(&ServerEvent::FilesChanged {
-        path: notify_path(&row),
-    });
+    announce(state, notify_path(&row));
     Ok(row.original_path)
 }
 
@@ -431,9 +466,7 @@ async fn restore_attachment(state: &SharedState, row: Row) -> AppResult<String> 
         return Err(io_app(e));
     }
     finish_attachment_restore(state, &row, &payload).await?;
-    state.hub.broadcast(&ServerEvent::FilesChanged {
-        path: row.original_path.clone(),
-    });
+    announce(state, row.original_path.clone());
     Ok(row.original_path)
 }
 
@@ -496,9 +529,7 @@ pub async fn purge(state: &SharedState, id: &str) -> AppResult<()> {
     let row = ready_row(state, id).await?;
     set_state(&state.pool, &row.id, PURGING).await?;
     finish_purge(state, &row).await?;
-    state.hub.broadcast(&ServerEvent::FilesChanged {
-        path: notify_path(&row),
-    });
+    announce(state, notify_path(&row));
     Ok(())
 }
 
@@ -581,9 +612,7 @@ async fn reconcile(state: &SharedState) -> sqlx::Result<()> {
         };
         match result {
             Ok(()) => {
-                state.hub.broadcast(&ServerEvent::FilesChanged {
-                    path: notify_path(&row),
-                });
+                announce(state, notify_path(&row));
             }
             Err(RecoverError::Db(e)) => return Err(e),
             Err(RecoverError::Stuck(msg)) => {
@@ -748,4 +777,266 @@ async fn recover_attachment(state: &SharedState, row: &Row) -> Result<(), Recove
         }
     }
     Ok(())
+}
+
+// ---- 仮想の `.trash`（共有フォルダのルートから見える、ゴミ箱の中身） ----
+//
+// 名前は `<ULID 26 文字>--<元の名前>`（同じ名前が複数あっても、ID で区別できる。ID は時刻で始まる部分が
+// 同じことが多いので、先頭の数文字は使わない）。名前が 255 バイトを超えるときは、元の名前を切り詰めるが、
+// 拡張子（16 バイト以下）は残す。どの行の名前かは、先頭の ID で行を引き、名前が一致するかを確かめて決める。
+
+/// 仮想の名前（共有フォルダのルート直下）。
+pub const NAMESPACE: &str = ".trash";
+const ID_LEN: usize = 26;
+const SEP: &str = "--";
+const MAX_NAME: usize = 255;
+const MAX_EXT: usize = 16;
+
+static CONFLICT_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// 仮想の `.trash` が使えるか（要求ごとに一度だけ調べる。ブロックする読み取りは blocking の thread で行う）。
+/// 実際のルート直下に同じ名前（ASCII の大文字小文字を区別せず。ファイル・リンクも含む）があれば使えない。
+/// その場合は実際の項目をそのまま見せ、何も隠さず・動かさず・消さない。
+/// 読めない項目が一つでもあれば、安全側（使えない）にする。警告は状態が変わったときだけ出す。
+pub async fn namespace_active(state: &SharedState) -> bool {
+    let dir = state.config.shared_dir();
+    let conflict = tokio::task::spawn_blocking(move || {
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            return true;
+        };
+        rd.into_iter().any(|entry| match entry {
+            Err(_) => true,
+            Ok(e) => e
+                .file_name()
+                .to_str()
+                .is_none_or(|n| n.eq_ignore_ascii_case(NAMESPACE)),
+        })
+    })
+    .await
+    .unwrap_or(true);
+    if conflict {
+        if !CONFLICT_WARNED.swap(true, Ordering::Relaxed) {
+            tracing::warn!(
+                "共有フォルダに実際の `.trash` があるため、仮想のゴミ箱の名前は使いません（中身はそのまま）"
+            );
+        }
+    } else {
+        CONFLICT_WARNED.store(false, Ordering::Relaxed);
+    }
+    !conflict
+}
+
+/// 元の名前（区切りの最後）。
+fn leaf(original_path: &str) -> &str {
+    original_path.rsplit('/').next().unwrap_or(original_path)
+}
+
+/// 行の仮想の名前（決まり）。
+pub fn alias_of(id: &str, original_path: &str) -> String {
+    let budget = MAX_NAME - id.len() - SEP.len();
+    format!("{id}{SEP}{}", shorten(leaf(original_path), budget))
+}
+
+/// 名前を `budget` バイト以下にする（文字の途中で切らない。拡張子は残す）。
+fn shorten(name: &str, budget: usize) -> String {
+    if name.len() <= budget {
+        return name.to_owned();
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 && name.len() - i <= MAX_EXT && name.len() - i < budget => {
+            (&name[..i], &name[i..])
+        }
+        _ => (name, ""),
+    };
+    let mut end = budget - ext.len();
+    while !stem.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{ext}", &stem[..end])
+}
+
+/// 元のパスの区切りの列（復元の先の確認に使う）。
+pub fn original_segs(row: &Row) -> Vec<String> {
+    row.original_path
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// 添付の種類（添付のときだけ）。
+pub fn attachment_mime(row: &Row) -> Option<String> {
+    if row.kind != KIND_ATTACHMENT {
+        return None;
+    }
+    let payload: FileRow = serde_json::from_str(row.payload.as_deref()?).ok()?;
+    Some(payload.mime)
+}
+
+/// 仮想のゴミ箱の中の正規の path（`.trash/<名前>`）。`active` は、要求の最初に調べた結果。
+pub fn trash_path_for(active: bool, row: &Row) -> Option<String> {
+    active.then(|| format!("{NAMESPACE}/{}", alias_of(&row.id, &row.original_path)))
+}
+
+/// 仮想の名前から、完了した行を引く。先頭の ID（26 文字、UTF-8 の境界で取る）で行を探し、
+/// 決まりの名前と完全に一致したものだけ。一致しない・無い・短すぎる名前は None（404）。
+/// 一致したが途中（pending・restoring・purging）または壊れている（broken）は 403（直接の要求）。
+/// 一覧には出さない（[`ready_rows`] は完了したものだけ）。
+pub async fn by_alias(state: &SharedState, alias: &str) -> AppResult<Option<Row>> {
+    let Some(id) = alias.get(..ID_LEN) else {
+        return Ok(None);
+    };
+    settle(state).await?;
+    let Some(row) = get_row(&state.pool, id).await? else {
+        return Ok(None);
+    };
+    if alias_of(&row.id, &row.original_path) != alias {
+        return Ok(None);
+    }
+    match row.state.as_str() {
+        READY => Ok(Some(row)),
+        BROKEN => Err(AppError::new(
+            StatusCode::FORBIDDEN,
+            "trash_broken",
+            "中身が合わないため、ここからは操作できません",
+        )),
+        _ => Err(AppError::new(
+            StatusCode::FORBIDDEN,
+            "trash_busy",
+            "処理の途中です。しばらくして再度試してください",
+        )),
+    }
+}
+
+/// `path` が、リンクでないこと（無い・リンクならどちらも NotFound。リンクは辿らない）。
+fn no_link(path: &Path) -> FsResult<()> {
+    match std::fs::symlink_metadata(path) {
+        // リンクは、無いものとして隠す（外のものの存在も、中身も見せない）
+        Ok(m) if m.file_type().is_symlink() => Err(FsError::NotFound),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(FsError::NotFound),
+        Err(_) => Err(FsError::GeneralFailure),
+    }
+}
+
+/// 行の中の実体（`rest` は項目の中の区切りの列）。安全のため、ID のフォルダ・項目（blob／item）・
+/// 中の各区切りの、どれかがリンクなら拒否する（外のものは読めない）。添付は blob だけで、中には入れない。
+pub fn real_of(state: &SharedState, row: &Row, rest: &[String]) -> FsResult<PathBuf> {
+    let dir = entry_dir(state, &row.id);
+    no_link(&dir)?;
+    if row.kind == KIND_ATTACHMENT {
+        let blob = dir.join("blob");
+        no_link(&blob)?;
+        return if rest.is_empty() {
+            Ok(blob)
+        } else {
+            Err(FsError::NotFound)
+        };
+    }
+    let mut p = dir.join("item");
+    no_link(&p)?;
+    for s in rest {
+        if !crate::webdav::names::valid_name(s) {
+            return Err(FsError::NotFound);
+        }
+        p.push(s);
+        no_link(&p)?;
+    }
+    Ok(p)
+}
+
+/// 実体の場所の失敗を、利用者の API の形にする（リンクは 403、無いものは 404）。
+fn fs_to_app(e: FsError) -> AppError {
+    match e {
+        FsError::NotFound => AppError::not_found("見つかりません"),
+        FsError::Forbidden => AppError::forbidden("この場所は読めません"),
+        _ => AppError::internal("ゴミ箱の中身を読めませんでした"),
+    }
+}
+
+/// VFS の失敗を、dav-server の形にする（parent_missing は 404、途中・壊れた・403 は 403）。
+pub fn vfs_err(e: AppError) -> FsError {
+    match (e.status.as_u16(), e.code) {
+        (404, _) | (409, "parent_missing") => FsError::NotFound,
+        (409, "exists") => FsError::Exists,
+        (403, _) | (409, _) => FsError::Forbidden,
+        _ => FsError::GeneralFailure,
+    }
+}
+
+/// ゴミ箱の直下の項目（完了したもの）を一覧の形にする。`active` は、要求で調べた結果（ゴミ箱の中では真）。
+/// 添付の ID（files 行）は出さない（削除された添付を、ID で読ませないため）。MIME は payload から。
+/// 実体が無い・リンクのときは None（一覧から隠す）。
+pub fn top_listing(
+    state: &SharedState,
+    row: &Row,
+    active: bool,
+) -> Option<crate::webdav::fs::Listed> {
+    let real = real_of(state, row, &[]).ok()?;
+    let m = std::fs::symlink_metadata(&real).ok()?;
+    let entry = entry_of(active, row);
+    Some(crate::webdav::fs::Listed::for_trash(
+        alias_of(&row.id, &row.original_path),
+        crate::webdav::fs::Meta::of_std(&m),
+        attachment_mime(row),
+        SharedTrashNode::Item { entry },
+    ))
+}
+
+/// ゴミ箱の大きさ（`rest` が空ならゴミ箱の中身すべて、そうでなければ一つの項目の中）。
+/// 実際のファイルの大きさを数える（行の大きさは使わない）。リンクは辿らず、外のものは数えない。
+/// - 直下の項目（フォルダ）は、ゴミ箱の中身の一覧の一つとして、ゴミ箱の直下の大きさにだけ 1 フォルダとして数える。
+/// - 要求したフォルダ（直下でも中でも）は、自分自身を数えない（配下だけ）。
+///
+/// 集計は blocking の thread で行う。
+pub async fn size_of(state: &SharedState, rest: &[String]) -> AppResult<Usage> {
+    // (実際の path, 直下の項目か, 添付か) の列を、先に作る（行の検査はここで）
+    let mut targets: Vec<PathBuf> = Vec::new();
+    let top_level = rest.is_empty();
+    if let Some((alias, inner)) = rest.split_first() {
+        let row = by_alias(state, alias)
+            .await?
+            .ok_or_else(|| AppError::not_found("見つかりません"))?;
+        let p = real_of(state, &row, inner).map_err(fs_to_app)?;
+        targets.push(p);
+    } else {
+        for row in ready_rows(state).await? {
+            // 安全でない項目（リンクなど）は、数えず、一覧にも出さない
+            if let Ok(p) = real_of(state, &row, &[]) {
+                targets.push(p);
+            }
+        }
+    }
+    let total = tokio::task::spawn_blocking(move || -> std::io::Result<Usage> {
+        let mut total = Usage::default();
+        for p in targets {
+            let m = match std::fs::symlink_metadata(&p) {
+                Ok(m) if !m.file_type().is_symlink() => m,
+                // リンク・消えたもの: 数えない
+                Ok(_) => continue,
+                Err(e) if top_level && e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(e),
+            };
+            if m.is_dir() {
+                // フォルダ: 配下だけを数える（自分自身は含めない）
+                total.add(usage(&p, &[])?);
+                if top_level {
+                    total.dirs += 1;
+                }
+            } else {
+                total.size += m.len();
+                total.files += 1;
+            }
+        }
+        Ok(total)
+    })
+    .await
+    .map_err(AppError::internal)?;
+    total.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            AppError::not_found("見つかりません")
+        } else {
+            AppError::internal(e)
+        }
+    })
 }
