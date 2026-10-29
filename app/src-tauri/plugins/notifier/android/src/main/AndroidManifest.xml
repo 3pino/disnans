@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
-    <!-- 通話: マイク（WebView の getUserMedia がアプリの許可を求める）と、通話中のフォアグラウンドサービス -->
+    <!-- 通話: マイク（実行時に許可を求める）と、通話中のフォアグラウンドサービス -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- 写真を撮る（WebView の getUserMedia の video。実行時の許可は WebChromeClient が求める） -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -64,10 +64,17 @@
             android:exported="false"
             android:foregroundServiceType="remoteMessaging" />
 
-        <!-- microphone: 画面を消しても通話のマイクを使い続けるための種類 -->
+        <!-- 汎用のバックグラウンド保持。呼び出し側の microphone 指定に合わせて種類を選ぶ -->
         <service
             android:name="dev.disnans.notifier.CallService"
             android:exported="false"
+            android:foregroundServiceType="microphone|remoteMessaging" />
+
+        <!-- ネイティブ通話。プロセスは分けず、WebView がなくても音声と再接続を担当する -->
+        <service
+            android:name="dev.disnans.notifier.NativeCallService"
+            android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="microphone" />
 
         <!-- BOOT_COMPLETED はシステムからしか送れないが、受け取るには exported が必要 -->

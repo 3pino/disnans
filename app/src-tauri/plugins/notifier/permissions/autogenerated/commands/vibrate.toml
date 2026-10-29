@@ -3,11 +3,11 @@
 "$schema" = "../../schemas/schema.json"
 
 [[permission]]
-identifier = "allow-log-call"
+identifier = "allow-vibrate"
 description = "Enables the vibrate command without any pre-configured scope."
 commands.allow = ["vibrate"]
 
 [[permission]]
-identifier = "deny-log-call"
+identifier = "deny-vibrate"
 description = "Denies the vibrate command without any pre-configured scope."
 commands.deny = ["vibrate"]

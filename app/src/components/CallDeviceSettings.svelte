@@ -9,6 +9,7 @@
 
   // 設定の「通話」の機器の行（設定の木の Slot `callDevices`。ほかの行は木の Field が描く）。
   // 機器はこのデバイスだけに保存する（lib/call/settings.svelte.ts）
+  // Android のネイティブ所有の通話は、マイクをネイティブ（Android の通話用の入力）が選ぶ。Web の機器の一覧は使わず、保存した値も消さない
 
   const s = $derived(callSettings.value);
   let inputs = $state<Disnans.AudioInput[]>([]);
@@ -16,7 +17,7 @@
   onMount(() => {
     // 機器の一覧は、開いたときに取る（使えない環境では行ごと出さない）
     void call.refreshOutputs();
-    void audio.listInputs().then((list) => (inputs = list));
+    if (!call.nativeOwned) void audio.listInputs().then((list) => (inputs = list));
   });
 
   const selectedOutput = $derived(call.outputs.find((o) => o.selected)?.id ?? '');
@@ -35,7 +36,13 @@
   </SettingRow>
 {/if}
 
-{#if inputs.length > 0}
+{#if call.nativeOwned}
+  <SettingRow name="マイク" icon={Mic}>
+    {#snippet control()}
+      <span class="call-device-value">Android の通話用マイク</span>
+    {/snippet}
+  </SettingRow>
+{:else if inputs.length > 0}
   <SettingRow name="マイク" icon={Mic}>
     {#snippet control()}
       <select
@@ -60,5 +67,9 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+  /* ネイティブが選ぶ入力の説明（操作はできない。読むだけの値） */
+  .call-device-value {
+    color: var(--text-muted);
   }
 </style>

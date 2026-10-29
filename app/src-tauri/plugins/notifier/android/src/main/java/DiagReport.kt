@@ -62,6 +62,11 @@ object DiagReport {
     add("常駐の設定") { "有効=${prefs.enabled} サーバー=${prefs.serverUrl ?: "（なし）"}" }
     add("常駐サービス") { "動作中=${NotifyService.running} 接続中=${NotifyService.connected}" }
     add("通話のサービス") { "動作中=${CallService.running}" }
+    add("ネイティブ通話のサービス") { "動作中=${NativeCallService.running}" }
+    add("ネイティブ通話の保存状態") {
+      val call = NativeCallPrefs(activity).read()
+      "再開希望=${call.wanted} ミュート=${call.status?.muted} スピーカーミュート=${call.status?.deafened}"
+    }
     add("電池の最適化の対象外") { pm.isIgnoringBatteryOptimizations(activity.packageName) }
     add("省電力モード") { pm.isPowerSaveMode }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

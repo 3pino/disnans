@@ -50,6 +50,9 @@ for (const file of readAll(srcDir).filter((p) => /\.(ts|svelte)$/.test(p) && !/\
   if (where.endsWith('call/nativeCall.ts')) {
     for (const m of text.matchAll(/\bcall\('([a-z_]+)'/g)) addCall('notifier', m[1], where);
   }
+  if (where.endsWith('call/nativePort.ts')) {
+    for (const m of text.matchAll(/\binvoke(?:<[^>]*>)?\(\s*'(native_call_[a-z_]+)'/g)) addCall('notifier', m[1], where);
+  }
 }
 
 test('各プラグインの COMMANDS は、Kotlin の @Command にあり、default.toml で許可されている', () => {

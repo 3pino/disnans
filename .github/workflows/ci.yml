@@ -23,6 +23,13 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/wip' }}
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: ネイティブ通話の相互接続試験用サーバー
+        run: cargo build -p disnans-server --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-call-test-server-linux
+          path: target/debug/disnans-server
+          retention-days: 1
       - name: 生成した TypeScript の型がコミット済みか確認
         run: git diff --exit-code app/src/lib/protocol app/src/lib/emojiNames.generated.ts app/src/lib/uiTree.generated.ts
 
@@ -62,6 +69,45 @@ jobs:
       - run: node --test ../scripts/prepare-cli.test.mjs ../scripts/release-latest-json.test.mjs ../scripts/notifier-permissions.test.mjs ../scripts/plugin-permissions.test.mjs ../scripts/check-docs.test.mjs
       # markdown の相対リンクとアンカーが壊れていないこと
       - run: node ../scripts/check-docs.mjs
+
+  # 通話の純粋部分は JVM で実行し、Android のサービスと橋渡しは実際の SDK/Tauri API でコンパイルする。
+  # APK のインストール・マイクの取得・実デバイスへの接続はしない。
+  android-call:
+    runs-on: ubuntu-latest
+    needs: [server]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.6.1
+          cache-read-only: ${{ github.ref != 'refs/heads/wip' }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-call-test-server-linux
+          path: ${{ runner.temp }}/native-call-test-server
+      - name: 今回ビルドした一時サーバーだけを相互接続試験に使う
+        run: |
+          chmod +x "$RUNNER_TEMP/native-call-test-server/disnans-server"
+          echo "DISNANS_NATIVE_TEST_SERVER_BIN=$RUNNER_TEMP/native-call-test-server/disnans-server" >> "$GITHUB_ENV"
+      - name: 通話プロトコル・音声処理・復帰制御・現サーバーとの相互接続の JVM テスト
+        run: gradle --no-daemon -p app/src-tauri/plugins/notifier/native-tests nativeCallTest
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: android-actions/setup-android@v3
+      - name: コンパイル用の Android SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: ロック済みの Tauri Android API を使う
+        shell: bash
+        run: |
+          cargo metadata --manifest-path app/src-tauri/Cargo.toml --locked --filter-platform aarch64-linux-android --format-version 1 > "$RUNNER_TEMP/android-metadata.json"
+          manifest=$(jq -r '.packages[] | select(.name == "tauri") | .manifest_path' "$RUNNER_TEMP/android-metadata.json")
+          test -n "$manifest" && test -f "$manifest"
+          echo "TAURI_ANDROID_DIR=$(dirname "$manifest")/mobile/android" >> "$GITHUB_ENV"
+      - name: 通知プラグインの Kotlin・マニフェストをコンパイルし、ローカル通信を試験
+        run: gradle --no-daemon -p app/src-tauri/plugins/notifier/android-check :notifier:assembleDebug :notifier:testDebugUnitTest
 
   # Desktop IPC と共通ファイル移行の Rust 側を Windows のネイティブ環境でも検証する。
   app-windows:
@@ -189,7 +235,7 @@ jobs:
   # GITHUB_TOKEN での更新はワークフローを起動しないので、master で CI は二重に動かない。
   promote:
     if: github.ref == 'refs/heads/wip' && github.event_name == 'push'
-    needs: [server, client-windows, app, app-windows, app-linux, nsis-hook]
+    needs: [server, client-windows, app, android-call, app-windows, app-linux, nsis-hook]
     runs-on: ubuntu-latest
     permissions:
       contents: write

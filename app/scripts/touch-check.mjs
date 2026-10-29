@@ -262,6 +262,8 @@ if (IS_ANDROID) {
   await S('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
 }
 // Tauri の IPC 境界だけを fixture で差し込む（本体へは test mode を入れない）。サーバーは仮のサーバー
+// 呼び出しは記録するが、本物のマイクや音声デバイスには決して到達させない。
+await S('Page.addScriptToEvaluateOnNewDocument', { source: `window.__mediaCalls = []; (() => { const md = navigator.mediaDevices; if (md) md.getUserMedia = () => { window.__mediaCalls.push('getUserMedia'); return Promise.reject(new Error('Media capture is disabled in this fixture')); }; for (const n of ['AudioContext', 'webkitAudioContext']) { const C = window[n]; if (C) window[n] = new Proxy(C, { construct() { window.__mediaCalls.push('AudioContext'); throw new Error('WebAudio is disabled in this fixture'); } }); } })();` });
 await S('Page.addScriptToEvaluateOnNewDocument', { source: fixtureScript({ server: FAKE, platform: process.env.TOUCH_PLATFORM === 'android' ? 'android' : 'linux' }) });
 await S('Page.navigate', { url: APP + '/' });
 await sleep(2500);
@@ -835,9 +837,76 @@ const confirmOk = async (text) => {
 
 }
 
+// ======== Android: native 通話の境界（合成データだけ。実機・マイク・ネットワークの通話ではない） ========
+async function nativeCallChecks() {
+  const ipc = () => evalJs(`JSON.stringify(window.__ipcLog ?? [])`).then(JSON.parse);
+  const count = async (cmd) => (await ipc()).filter((c) => c === cmd).length;
+  // 参加の入口は WebView のメディアを使わない（呼ばれたら記録）
+  const body = () => evalJs(`document.body.innerText`);
+  const publish = (patch) => evalJs(`JSON.stringify(window.__nativeCallPublish(${JSON.stringify(patch)}))`);
+  const wait = (expr) => waitFor(expr, 3000);
+  expect('native: 起動時に native の状態を読み、通話は始めない', (await count('plugin:notifier|native_call_snapshot')) >= 1 && (await count('plugin:notifier|native_call_start')) === 0);
+  expect('native: 起動時は WebView のマイク・音声を使わない', (await evalJs(`window.__mediaCalls.length`)) === 0);
+  // 通話の画面へ（ナビバーの通話か、バーの全画面ボタン）。チャットへ移る
+  await pressDom('native: チャットのナビバー', '.nav-bar-item', '');
+  await sleep(400);
+  // 回復した（合成）: joined
+  await publish({ session: 'fixture-recovered', generation: 50, phase: 'joined', wanted: true, listed: true, linkUp: true, serverUrl: FAKE, peer: 'fixture-recovered-peer', members: [{ peer: 'fixture-recovered-peer', user_id: 'u1', status: { muted: false, deafened: false, device: 'smartphone' } }] });
+  await sleep(500);
+  const joinedText = () => evalJs(`document.body.innerText.includes('通話中')`);
+  const snap = () => evalJs(`JSON.stringify(window.__nativeCallSnapshot())`).then(JSON.parse);
+  const btn = (label) => `button[aria-label="${label}"]`;
+  expect('native: 合成の回復スナップショット（joined）で、通話中の表示になる', await wait(`document.body.innerText.includes('通話中')`));
+  expect('native: 回復では start を呼ばず、WebView のメディアも使わない', (await count('plugin:notifier|native_call_start')) === 0 && (await evalJs(`window.__mediaCalls.length`)) === 0);
+  expect('native: 操作（スピーカーミュート・設定・退出）が見える', (await evalJs(`['スピーカーミュート','通話の設定','通話から抜ける'].every(l=>!!document.querySelector('button[aria-label="'+l+'"]'))`)) === true);
+  // 操作は native の IPC へ（実際のタッチ。被っていれば NG）
+  let c0 = await count('plugin:notifier|native_call_control');
+  await pressDom('通話の「スピーカーミュート」', btn('スピーカーミュート'), '');
+  await sleep(300);
+  expect('native: スピーカーミュートが native_call_control に届き、状態に反映される', (await count('plugin:notifier|native_call_control')) === c0 + 1 && (await snap()).deafened === true);
+  expect('native: 反映後、ボタンが「解除」に変わる', await wait(`!!document.querySelector('button[aria-label="スピーカーミュートを解除"]')`));
+  c0 = await count('plugin:notifier|native_call_control');
+  await pressDom('通話の「スピーカーミュートを解除」', btn('スピーカーミュートを解除'), '');
+  await sleep(300);
+  expect('native: 解除も native_call_control へ届く', (await count('plugin:notifier|native_call_control')) === c0 + 1 && (await snap()).deafened === false);
+  // native 側の変化（合成）を、そのまま取り込む（メンバーのミュート）
+  await publish({ members: [{ peer: 'fixture-recovered-peer', user_id: 'u1', status: { muted: true, deafened: false, device: 'smartphone' } }], muted: true });
+  expect('native: 合成のイベント（ミュート）を取り込み、表示が変わる', await wait(`!!document.querySelector('button[aria-label*="ミュートを解除"], button[aria-label*="ミュート解除"]') || document.body.innerHTML.includes('ミュート中')`));
+  // 全画面の通話の画面へ（退出後も「参加」が出る）
+  await pressDom('通話の「通話を全画面で開く」', btn('通話を全画面で開く'), '');
+  await sleep(400);
+  expect('native: 全画面の通話でも操作が見える', (await evalJs(`!!document.querySelector('.call-view .call-leave, .call-view button[aria-label="通話から抜ける"]')`)) === true);
+  // 退出は native_call_stop へ（1 回）
+  const s0 = await count('plugin:notifier|native_call_stop');
+  await pressDom('通話の「通話から抜ける」', btn('通話から抜ける'), '');
+  await sleep(500);
+  expect('native: 退出が native_call_stop に 1 回届き、native が idle になる', (await count('plugin:notifier|native_call_stop')) === s0 + 1 && (await snap()).session === null);
+  expect('native: 退出後、通話中の表示が消える', await wait(`!document.body.innerText.includes('通話中')`));
+  // 参加: start の受け付けだけでは「参加した」にしない
+  const joinBtn = await evalJs(`[...document.querySelectorAll('button')].map(b=>(b.getAttribute('aria-label')||b.textContent).trim()).filter(t=>/参加|接続/.test(t)).join('|')`);
+  expect('native: 退出後に「参加」ボタンが出る', /参加/.test(joinBtn ?? ''));
+  const st0 = await count('plugin:notifier|native_call_start');
+  await pressDom('通話の「参加」', 'button', '参加');
+  await sleep(600);
+  expect('native: 参加は native_call_start を 1 回だけ呼ぶ', (await count('plugin:notifier|native_call_start')) === st0 + 1);
+  const sj = await snap();
+  expect('native: start 直後は joining・wanted=false で、参加した扱いにならない', sj.phase === 'joining' && sj.wanted === false && !(await joinedText()));
+  expect('native: 参加の経路で WebView の getUserMedia・AudioContext は使わない', (await evalJs(`window.__mediaCalls.length`)) === 0);
+  await publish({ wanted: true, listed: true, linkUp: false });
+  await sleep(300);
+  expect('native: wanted・listed だけ（linkUp なし）でも、参加した扱いにならない', !(await joinedText()));
+  await publish({ phase: 'joined', wanted: true, listed: true, linkUp: true, members: [{ peer: sj.peer, user_id: 'u1', status: { muted: false, deafened: false, device: 'smartphone' } }] });
+  expect('native: wanted・listed・linkUp がそろって初めて、通話中になる', await wait(`document.body.innerText.includes('通話中')`));
+  expect('native: 参加後も start は 1 回のまま・メディアは未使用', (await count('plugin:notifier|native_call_start')) === st0 + 1 && (await evalJs(`window.__mediaCalls.length`)) === 0);
+  await pressDom('通話の「通話から抜ける」（後始末）', btn('通話から抜ける'), '');
+  await sleep(400);
+}
+
 if (IS_ANDROID) await androidBaseline();
 else await desktopChecks();
 await sharedFlows();
+
+if (IS_ANDROID) await nativeCallChecks();
 
 // 未対応の IPC があれば失敗（本体の機能追加で起動時に呼ぶ IPC が増えた退行を、null で隠さない）
 const unknownIpc = JSON.parse(await evalJs('JSON.stringify(window.__ipcUnknown)'));

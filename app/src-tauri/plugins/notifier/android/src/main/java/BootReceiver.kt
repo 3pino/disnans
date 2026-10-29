@@ -8,6 +8,8 @@ import android.content.Intent
 class BootReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+    // 再起動では通話のマイクを始めない。保存された「通話中」の印だけを消す（ネイティブの通話）
+    NativeCallPrefs(context).clearWanted()
     DiagLog.init(context)
     val prefs = Prefs(context)
     DiagLog.i("[notify] デバイスが起動しました（有効=${prefs.enabled}）")

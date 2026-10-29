@@ -30,6 +30,24 @@ export function fixtureScript({ server, ignored = Object.keys(IGNORED_IPC), plat
   window.__ipcUnknown = [];
   const store = { server: SERVER };
   const PREFS = () => (PLATFORM === 'android' ? { raw: {}, view: { navBarItems: ['app:open-chat', 'app:open-files', 'app:open-settings'] } } : { raw: {}, view: {} });
+  // 通話は native の IPC だけを模倣。start は受け付けるだけで、勝手に joined にはしない。
+  const notifierListeners = new Map();
+  let nativeCall = {
+    session: null, generation: 0, seq: 0, wanted: false, phase: 'idle', serverUrl: null, peer: null,
+    members: [], muted: false, deafened: false, muteByDeafen: false, speaking: {}, localMuted: [],
+    settings: { micVolume: 1, outVolume: 1, limiter: true, limitDb: -6, rawInput: false, outputId: null },
+    linkUp: false, listed: false, bufferedBytes: 0, error: null,
+  };
+  const nativeSnapshot = () => JSON.parse(JSON.stringify(nativeCall));
+  const publishNative = (patch = {}) => {
+    nativeCall = { ...nativeCall, ...patch, seq: nativeCall.seq + 1 };
+    const snapshot = nativeSnapshot();
+    queueMicrotask(() => { for (const listener of notifierListeners.values()) if (listener.event === 'call_native') listener.handler.onmessage({ kind: 'state', snapshot }); });
+    return snapshot;
+  };
+  const requireSession = (session) => { if (session !== nativeCall.session || session === null) throw { code: 'stale' }; };
+  window.__nativeCallSnapshot = nativeSnapshot;
+  window.__nativeCallPublish = publishNative;
   const handlers = {
     api_me: () => ME,
     api_users: () => [ME],
@@ -58,7 +76,42 @@ export function fixtureScript({ server, ignored = Object.keys(IGNORED_IPC), plat
     'plugin:system-bars|set_navigation_bar_hidden': () => null,
     'plugin:system-bars|set_style': () => null,
     'plugin:notifier|diag_log': () => null,
-    'plugin:notifier|register_listener': () => null,
+    'plugin:notifier|list_audio_outputs': () => ({ outputs: [], current: null }),
+    'plugin:notifier|register_listener': ({ event, handler }) => { notifierListeners.set(handler.id, { event, handler }); return null; },
+    'plugin:notifier|remove_listener': ({ channelId }) => { notifierListeners.delete(channelId); return null; },
+    'plugin:notifier|native_call_snapshot': nativeSnapshot,
+    'plugin:notifier|native_call_start': (args) => {
+      if (nativeCall.session !== null) throw { code: 'busy' };
+      return publishNative({ session: args.session, generation: nativeCall.generation + 1, phase: 'joining',
+        wanted: false, serverUrl: args.serverUrl, peer: 'fixture-native-peer', settings: { ...args.settings },
+        muted: args.status.muted, deafened: args.status.deafened, localMuted: args.localMuted ?? [] });
+    },
+    'plugin:notifier|native_call_stop': ({ session }) => {
+      if (session === nativeCall.session) publishNative({ session: null, generation: nativeCall.generation + 1,
+        wanted: false, phase: 'idle', serverUrl: null, peer: null, members: [], speaking: {}, localMuted: [],
+        muted: false, deafened: false, muteByDeafen: false, linkUp: false, listed: false });
+      return null;
+    },
+    'plugin:notifier|native_call_control': ({ session, patch }) => {
+      requireSession(session);
+      const next = {};
+      if ('muted' in patch) next.muted = patch.muted;
+      if ('deafened' in patch) {
+        next.deafened = patch.deafened;
+        next.muteByDeafen = patch.deafened ? !nativeCall.muted : false;
+        next.muted = patch.deafened ? true : (nativeCall.muteByDeafen ? false : nativeCall.muted);
+      }
+      if (patch.settings) next.settings = { ...nativeCall.settings, ...patch.settings };
+      if (patch.peerMute) {
+        const muted = new Set(nativeCall.localMuted);
+        if (patch.peerMute.muted) muted.add(patch.peerMute.peer); else muted.delete(patch.peerMute.peer);
+        next.localMuted = [...muted];
+      }
+      publishNative(next);
+      return null;
+    },
+    'plugin:notifier|native_call_kick': ({ session }) => { requireSession(session); if (!nativeCall.listed) throw { code: 'not_joined' }; return null; },
+    'plugin:notifier|native_call_emit': ({ session, name }) => { requireSession(session); if (!nativeCall.listed || name === 'audio') throw { code: 'not_joined' }; return null; },
     'plugin:notifier|take_shared': () => null,
     'plugin:notifier|take_launch_target': () => null,
     'plugin:notifier|set_orientation': () => null,

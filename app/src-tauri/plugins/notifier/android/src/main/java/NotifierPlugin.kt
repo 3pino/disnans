@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.VibrationAttributes
@@ -19,6 +20,7 @@ import android.provider.Settings
 import android.util.Log
 import android.webkit.WebView
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import app.tauri.PermissionState
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -103,6 +105,7 @@ class VibrateArgs {
 @TauriPlugin(
   permissions = [
     Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = "notifications"),
+    Permission(strings = [Manifest.permission.RECORD_AUDIO], alias = "microphone"),
     // 最近の画像（写真アプリの一覧）。33 以上は READ_MEDIA_IMAGES、34 以上の部分的な許可は VISUAL_USER_SELECTED、
     // 32 以下は READ_EXTERNAL_STORAGE。文字列で書く（コンパイルの SDK の版に依らない）
     Permission(strings = ["android.permission.READ_MEDIA_IMAGES"], alias = "media"),
@@ -117,6 +120,15 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   private var launchTarget: JSObject? = null
 
   private var webView: WebView? = null
+
+  private val nativeCall by lazy {
+    NativeCallBridge(
+      activity,
+      microphoneGranted = { ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
+      requestMicrophone = { invoke -> requestPermissionForAlias("microphone", invoke, "nativeMicrophonePermission") },
+      deliver = { event -> if (this.webView != null && hasListener("call_native")) trigger("call_native", event) },
+    )
+  }
 
   /** 通話中に裏へ回っても WebView を動かし続けるか（JS が通話の参加時に決める。既定は動かし続ける） */
   @Volatile
@@ -134,6 +146,7 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     DiagLog.init(activity)
     DiagLog.i("[app] 起動しました（${DiagReport.appVersion(activity)}）")
     NotifyService.createChannels(activity)
+    nativeCall.load()
     launchTarget = targetOf(activity.intent)
     CallService.actionSink = { id -> deliverCallAction(id) }
     CallService.failedSink = { deliverServiceFailed() }
@@ -141,7 +154,9 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   override fun onDestroy() {
-    DiagLog.i("[app] アクティビティを閉じます（通話中=${CallService.running}）")
+    DiagLog.i("[app] アクティビティを閉じます（汎用通話=${CallService.running} ネイティブ通話=${NativeCallService.running}）")
+    nativeCall.close()
+    webView = null
     CallService.actionSink = null
     CallService.failedSink = null
     shareExecutor.shutdown()
@@ -170,6 +185,28 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   /** 届けられなかったボタンを受け取る（リスナーを付けた直後に呼ぶ） */
+  // Android の通話。開始の準備は許可を尋ねる前、停止の応答は wanted の永続的な解除のあと。
+  @Command
+  fun nativeCallStart(invoke: Invoke) = nativeCall.start(invoke)
+
+  @PermissionCallback
+  private fun nativeMicrophonePermission(invoke: Invoke) = nativeCall.permissionResult(invoke)
+
+  @Command
+  fun nativeCallStop(invoke: Invoke) = nativeCall.stop(invoke)
+
+  @Command
+  fun nativeCallSnapshot(invoke: Invoke) = nativeCall.snapshot(invoke)
+
+  @Command
+  fun nativeCallControl(invoke: Invoke) = nativeCall.control(invoke)
+
+  @Command
+  fun nativeCallKick(invoke: Invoke) = nativeCall.kick(invoke)
+
+  @Command
+  fun nativeCallEmit(invoke: Invoke) = nativeCall.emit(invoke)
+
   @Command
   fun takeCallActions(invoke: Invoke) {
     val ids = JSArray()
@@ -670,7 +707,9 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     val args = invoke.parseArgs(SetAudioOutputArgs::class.java)
     try {
       val ret = JSObject()
-      ret.put("ok", CallAudio.set(activity, args.id))
+      val ok = CallAudio.set(activity, args.id)
+      if (ok) nativeCall.outputSelected(args.id)
+      ret.put("ok", ok)
       invoke.resolve(ret)
     } catch (ex: Exception) {
       invoke.reject(ex.message)

@@ -16,6 +16,7 @@
 
 - [design/architecture.md](design/architecture.md): クライアントの分担・共通表示データ・見た目の取り込み
 - [design/settings-storage.md](design/settings-storage.md): 設定の保存先
+- [design/android-call.md](design/android-call.md): Android の通話の所有者・プロセス終了からの復帰・試験の範囲
 - [design/tui.md](design/tui.md): TUI の部品・色の対応
 - [design/ui-tree.md](design/ui-tree.md): 設定画面とナビバーの、GUI と TUI の共通の木
 - [crates/client-core/README.md](../crates/client-core/README.md): クレートの境界

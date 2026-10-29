@@ -13,30 +13,60 @@ import android.os.Build
  */
 data class AudioOutput(val id: String, val label: String, val kind: String)
 
+/**
+ * 通話の音の経路を使う主体。従来の CallService（WebView の通話）と、ネイティブの通話（NativeCallService）。
+ * 両方が同時に使うことはないが、片方の終わりがもう片方の経路を壊さないように、主体ごとに数える。
+ */
+enum class RouteOwner { LEGACY, NATIVE }
+
 object CallAudio {
   private var previousMode: Int? = null
+  private val leases = HashMap<RouteOwner, Int>()
 
-  /** 通話用に音の経路を整える。始めたときに、イヤホンがあればそれ、なければスピーカーにする */
-  fun begin(context: Context) {
-    val am = manager(context)
-    if (previousMode == null) previousMode = am.mode
-    am.mode = AudioManager.MODE_IN_COMMUNICATION
-    defaultOf(list(context))?.let { set(context, it.id) }
+  /**
+   * 通話用に音の経路を整える。主体ごとに 1 つ数える。最初の主体だけが既定の出力先を選ぶ。
+   * 初めて経路を使うときに、イヤホンがあればそれ、なければスピーカーにする。
+   */
+  @Synchronized
+  fun begin(context: Context, owner: RouteOwner = RouteOwner.LEGACY) {
+    val first = leases.isEmpty()
+    leases[owner] = (leases[owner] ?: 0) + 1
+    if (!first) return
+    try {
+      val am = manager(context)
+      if (previousMode == null) previousMode = am.mode
+      am.mode = AudioManager.MODE_IN_COMMUNICATION
+      defaultOf(list(context))?.let { set(context, it.id) }
+    } catch (e: Exception) {
+      // 経路を整えられなくても通話は続ける（端末の既定の経路を使う）
+      DiagLog.w("[call] 音の経路を整えられませんでした。端末の既定の経路を使います", e)
+    }
   }
 
-  /** 通話が終わったら元に戻す */
-  fun end(context: Context) {
-    val am = manager(context)
+  /**
+   * 主体の数を 1 つ減らす。対応する begin が無い end は何もしない（別の主体の経路を戻さない）。
+   * 最後の主体が終わったら、経路と音声のモードを元に戻す。
+   */
+  @Synchronized
+  fun end(context: Context, owner: RouteOwner = RouteOwner.LEGACY) {
+    val n = leases[owner] ?: return
+    if (n <= 1) leases.remove(owner) else leases[owner] = n - 1
+    if (leases.isNotEmpty()) return
     try {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        am.clearCommunicationDevice()
-      } else {
-        legacyReset(am)
+      val am = manager(context)
+      try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+          am.clearCommunicationDevice()
+        } else {
+          legacyReset(am)
+        }
+      } catch (e: Exception) {
+        // 元に戻せなくても続ける
       }
+      previousMode?.let { am.mode = it }
     } catch (e: Exception) {
-      // 元に戻せなくても続ける
+      DiagLog.w("[call] 音の経路を元に戻せませんでした", e)
     }
-    previousMode?.let { am.mode = it }
     previousMode = null
   }
 
@@ -47,8 +77,15 @@ object CallAudio {
     am.isSpeakerphoneOn = false
   }
 
-  /** 使える出力先。id は set に渡す */
-  fun list(context: Context): List<AudioOutput> {
+  /** 使える出力先。id は set に渡す。権限が無い・使えないときは空（既定の経路のまま） */
+  fun list(context: Context): List<AudioOutput> = try {
+    listOrThrow(context)
+  } catch (e: Exception) {
+    DiagLog.w("[call] 出力先の一覧を取れませんでした（既定の経路を使います）", e)
+    emptyList()
+  }
+
+  private fun listOrThrow(context: Context): List<AudioOutput> {
     val am = manager(context)
     val devices: List<AudioDeviceInfo> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       am.availableCommunicationDevices
@@ -87,7 +124,14 @@ object CallAudio {
    * 現在の出力先の id。わからなければ null（画面は未選択と出す）。
    * 通話の前は null。end() の後の communicationDevice は、システムの既定（多くは受話口）で、利用者の選択ではない。
    */
-  fun current(context: Context): String? {
+  fun current(context: Context): String? = try {
+    currentOrThrow(context)
+  } catch (e: Exception) {
+    DiagLog.w("[call] 今の出力先を取れませんでした", e)
+    null
+  }
+
+  private fun currentOrThrow(context: Context): String? {
     if (previousMode == null) return null
     val am = manager(context)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -106,8 +150,17 @@ object CallAudio {
     }
   }
 
-  /** 出力先を切り替える。見つからなければ false */
-  fun set(context: Context, id: String): Boolean {
+  /**
+   * 出力先を切り替える。見つからない・権限が無い・使えないときは false（既定の経路のまま。通話は続ける）。
+   */
+  fun set(context: Context, id: String): Boolean = try {
+    setOrThrow(context, id)
+  } catch (e: Exception) {
+    DiagLog.w("[call] 出力先を切り替えられませんでした（既定の経路のまま）", e)
+    false
+  }
+
+  private fun setOrThrow(context: Context, id: String): Boolean {
     val am = manager(context)
     val target = list(context).firstOrNull { it.id == id } ?: return false
     if (am.mode != AudioManager.MODE_IN_COMMUNICATION) am.mode = AudioManager.MODE_IN_COMMUNICATION

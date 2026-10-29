@@ -295,6 +295,90 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the clipboard_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-clipboard-image",
+          "markdownDescription": "Enables the clipboard_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the clipboard_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-clipboard-image",
+          "markdownDescription": "Denies the clipboard_image command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the clipboard_peek command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-clipboard-peek",
+          "markdownDescription": "Enables the clipboard_peek command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the clipboard_peek command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-clipboard-peek",
+          "markdownDescription": "Denies the clipboard_peek command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the clipboard_text command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-clipboard-text",
+          "markdownDescription": "Enables the clipboard_text command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the clipboard_text command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-clipboard-text",
+          "markdownDescription": "Denies the clipboard_text command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the diag_clear command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-diag-clear",
+          "markdownDescription": "Enables the diag_clear command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the diag_clear command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-diag-clear",
+          "markdownDescription": "Denies the diag_clear command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the diag_log command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-diag-log",
+          "markdownDescription": "Enables the diag_log command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the diag_log command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-diag-log",
+          "markdownDescription": "Denies the diag_log command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the diag_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-diag-read",
+          "markdownDescription": "Enables the diag_read command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the diag_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-diag-read",
+          "markdownDescription": "Denies the diag_read command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the diag_share command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-diag-share",
+          "markdownDescription": "Enables the diag_share command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the diag_share command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-diag-share",
+          "markdownDescription": "Denies the diag_share command without any pre-configured scope."
+        },
+        {
           "description": "Enables the list_audio_outputs command without any pre-configured scope.",
           "type": "string",
           "const": "allow-list-audio-outputs",
@@ -307,6 +391,90 @@
           "markdownDescription": "Denies the list_audio_outputs command without any pre-configured scope."
         },
         {
+          "description": "Enables the log_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-log-call",
+          "markdownDescription": "Enables the log_call command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the log_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-log-call",
+          "markdownDescription": "Denies the log_call command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the native_call_control command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-native-call-control",
+          "markdownDescription": "Enables the native_call_control command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the native_call_control command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-native-call-control",
+          "markdownDescription": "Denies the native_call_control command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the native_call_emit command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-native-call-emit",
+          "markdownDescription": "Enables the native_call_emit command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the native_call_emit command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-native-call-emit",
+          "markdownDescription": "Denies the native_call_emit command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the native_call_kick command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-native-call-kick",
+          "markdownDescription": "Enables the native_call_kick command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the native_call_kick command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-native-call-kick",
+          "markdownDescription": "Denies the native_call_kick command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the native_call_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-native-call-snapshot",
+          "markdownDescription": "Enables the native_call_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the native_call_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-native-call-snapshot",
+          "markdownDescription": "Denies the native_call_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the native_call_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-native-call-start",
+          "markdownDescription": "Enables the native_call_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the native_call_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-native-call-start",
+          "markdownDescription": "Denies the native_call_start command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the native_call_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-native-call-stop",
+          "markdownDescription": "Enables the native_call_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the native_call_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-native-call-stop",
+          "markdownDescription": "Denies the native_call_stop command without any pre-configured scope."
+        },
+        {
           "description": "Enables the open_battery_settings command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-battery-settings",
@@ -317,6 +485,30 @@
           "type": "string",
           "const": "deny-open-battery-settings",
           "markdownDescription": "Denies the open_battery_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-image",
+          "markdownDescription": "Enables the read_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-image",
+          "markdownDescription": "Denies the read_image command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the recent_images command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-recent-images",
+          "markdownDescription": "Enables the recent_images command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the recent_images command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-recent-images",
+          "markdownDescription": "Denies the recent_images command without any pre-configured scope."
         },
         {
           "description": "Enables the register_listener command without any pre-configured scope.",
@@ -355,6 +547,18 @@
           "markdownDescription": "Denies the request_permission command without any pre-configured scope."
         },
         {
+          "description": "Enables the request_recent_images_permission command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-request-recent-images-permission",
+          "markdownDescription": "Enables the request_recent_images_permission command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the request_recent_images_permission command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-request-recent-images-permission",
+          "markdownDescription": "Denies the request_recent_images_permission command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_audio_output command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-audio-output",
@@ -365,6 +569,30 @@
           "type": "string",
           "const": "deny-set-audio-output",
           "markdownDescription": "Denies the set_audio_output command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_keep_web_view command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-keep-web-view",
+          "markdownDescription": "Enables the set_keep_web_view command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_keep_web_view command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-keep-web-view",
+          "markdownDescription": "Denies the set_keep_web_view command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_orientation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-orientation",
+          "markdownDescription": "Enables the set_orientation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_orientation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-orientation",
+          "markdownDescription": "Denies the set_orientation command without any pre-configured scope."
         },
         {
           "description": "Enables the start command without any pre-configured scope.",
@@ -463,10 +691,22 @@
           "markdownDescription": "Denies the take_shared command without any pre-configured scope."
         },
         {
-          "description": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-take-call-actions`\n- `allow-list-audio-outputs`\n- `allow-set-audio-output`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Enables the vibrate command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-vibrate",
+          "markdownDescription": "Enables the vibrate command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the vibrate command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-vibrate",
+          "markdownDescription": "Denies the vibrate command without any pre-configured scope."
+        },
+        {
+          "description": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-native-call-start`\n- `allow-native-call-stop`\n- `allow-native-call-snapshot`\n- `allow-native-call-control`\n- `allow-native-call-kick`\n- `allow-native-call-emit`\n- `allow-take-call-actions`\n- `allow-list-audio-outputs`\n- `allow-set-audio-output`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-set-orientation`\n- `allow-set-keep-web-view`\n- `allow-log-call`\n- `allow-diag-log`\n- `allow-diag-read`\n- `allow-diag-clear`\n- `allow-diag-share`\n- `allow-vibrate`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-recent-images`\n- `allow-request-recent-images-permission`\n- `allow-read-image`\n- `allow-clipboard-image`\n- `allow-clipboard-peek`\n- `allow-clipboard-text`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-take-call-actions`\n- `allow-list-audio-outputs`\n- `allow-set-audio-output`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-native-call-start`\n- `allow-native-call-stop`\n- `allow-native-call-snapshot`\n- `allow-native-call-control`\n- `allow-native-call-kick`\n- `allow-native-call-emit`\n- `allow-take-call-actions`\n- `allow-list-audio-outputs`\n- `allow-set-audio-output`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-set-orientation`\n- `allow-set-keep-web-view`\n- `allow-log-call`\n- `allow-diag-log`\n- `allow-diag-read`\n- `allow-diag-clear`\n- `allow-diag-share`\n- `allow-vibrate`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-recent-images`\n- `allow-request-recent-images-permission`\n- `allow-read-image`\n- `allow-clipboard-image`\n- `allow-clipboard-peek`\n- `allow-clipboard-text`"
         }
       ]
     }

@@ -5,6 +5,9 @@ import type { ServerEvent } from '../protocol/ServerEvent';
 import type { IconRef } from '../icons.svelte';
 import { startCapture, type Capture } from './capture';
 import { keepWebViewEnabled, setKeepWebViewResumed } from './nativeCall';
+import { mirrorOf, type NativeCallPort, type NativeControlPatch, type NativeError, type NativeRelay, type NativeSettings, type NativeSnapshot } from './native';
+import { NativeCallSession } from './nativeSession';
+import { canonicalServerUrl } from '../config';
 import { LATENCY_REPORT_MS, callLatency, clockText, type ClockPoint } from './latency';
 import { AudioDiag, describeTrack, type DiagState } from './audioDiag';
 import { isAndroid } from '../platform';
@@ -65,6 +68,12 @@ export type CallDeps = {
   now(): number;
   /** WebSocket でまだ送り出せていないバイト数（無ければ 0 とみなす） */
   buffered?(): number;
+  /** Android のネイティブ所有の通話の橋。あれば、参加・操作・音はすべてネイティブが行う（無ければ従来どおり WebView） */
+  native?: NativeCallPort;
+  /** ネイティブへ渡す接続先（参加のたびに読む） */
+  serverUrl?(): string;
+  /** ネイティブへ渡す開発用ユーザー（本番は null） */
+  devUser?(): string | null;
 };
 
 /** 画面・プラグインに見せる参加者1人分 */
@@ -86,6 +95,25 @@ export type CallDataEvent = { peer: string; userId: string; payload: unknown };
 
 /** プラグインが使えるイベント名。audio は本体の音声が使う */
 const RESERVED_EVENTS = new Set([EV_AUDIO]);
+
+/** 音量などを動かしている途中に、ネイティブへ送るまでの間隔（ms） */
+const SETTINGS_COALESCE_MS = 50;
+
+/** 接続先が同じか（末尾の / などの書き方の違いは同じとみなす） */
+function sameServer(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  try {
+    return canonicalServerUrl(a) === canonicalServerUrl(b);
+  } catch {
+    return false;
+  }
+}
+
+/** 固定の短い code（英小文字と _ のみ。それ以外は unknown） */
+function safeCode(c: unknown): string {
+  return typeof c === 'string' && /^[a-z_]{1,32}$/.test(c) ? c : 'unknown';
+}
 
 /** 通話のバーに足すボタン */
 export type BarButtonDef = { icon: IconRef; label: string; onClick: () => void; active?: boolean; disabled?: boolean; location?: 'both' | 'view' };
@@ -246,8 +274,93 @@ export class CallStore {
   private eventListeners = new Map<string, Set<(e: CallDataEvent) => void>>();
   private changeListeners = new Set<() => void>();
   private changeSig = '';
+  /** ネイティブ所有の通話（deps.native があるデバイスだけ）。無ければ従来の WebView の通話 */
+  private readonly nativeSession: NativeCallSession | null;
+  /** サーバーの一覧（チャットの接続が見た room の状態。参加していないあいだの表示に使う） */
+  private roomMembers: CallMember[] = [];
+  private nativeBytes = 0;
+  private lastNativeError = '';
+  private settingsTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 採用・参加の読み込み中か。読み込み中に来た接続先の知らせを覚える */
+  private booting = false;
+  private changedWhileBooting = false;
+  /** ネイティブへ送っていて、まだ返事の来ていない操作（ミュート・スピーカーミュート） */
+  private intents = new Map<'muted' | 'deafened', { value: boolean; n: number }>();
+  private intentSeq = 0;
 
-  constructor(private deps: CallDeps) {}
+  constructor(private deps: CallDeps) {
+    this.nativeSession = deps.native
+      ? new NativeCallSession(deps.native, {
+          onSnapshot: (s) => this.applyNative(s),
+          onRelay: (r) => this.onNativeRelay(r),
+          onStartFailed: (code) => this.onNativeStartFailed(code),
+          onStartUnknown: (code) => this.deps.toast(`通話の状態を確かめられません（コード: ${code}）。通話が続いていれば「通話から抜ける」で止めてください`, 'error'),
+          onStopped: () => this.resetNativeView(),
+          onStopFailed: () => this.deps.toast('通話を終えられませんでした。もう一度お試しください', 'error'),
+        })
+      : null;
+    // 動かしている途中の音量は、少しまとめて送る。保存したときは、すぐ送る
+    deps.settings.onChange?.((kind) => this.syncNativeSettings(kind === 'save'));
+  }
+
+  /** ネイティブ所有の通話か（このデバイスでは、参加・音はネイティブが行う） */
+  get nativeOwned(): boolean {
+    return this.nativeSession !== null;
+  }
+
+  /** 起動のとき1回。ネイティブの回復中・参加中の通話を、画面が採用する（読むだけ。参加も開始もしない） */
+  async adoptNative(): Promise<void> {
+    if (!this.nativeSession) return;
+    this.beginBoot();
+    try {
+      await this.nativeSession.adopt().catch(() => console.warn('[call] ネイティブの通話の状態を読めませんでした'));
+    } finally {
+      // 読み込みの前後に接続先が変わっていても、採用のあとに一度だけ確かめる（以後は、変わったときの知らせに任せる）
+      this.checkAfterBoot();
+    }
+  }
+
+  /** 読み込み（採用・参加）の始まり。このあいだに来た接続先の知らせを覚える（まだ通話が無いので、その場では比べない） */
+  private beginBoot(): void {
+    this.booting = true;
+    this.changedWhileBooting = false;
+  }
+
+  /**
+   * 読み込み（採用・参加）が終わった時点で、採用した通話の接続先と今の接続先を一度だけ比べる。
+   * 読み込み中に接続先の変更の知らせが来ていたなら、結果が空（明示的に外した）でも比べる。
+   * 知らせが無い空の値は、まだ整っていない値として比べない（同じ接続先の初期化で止めないため）。
+   * 状態の更新のたびには比べない（止めようとして失敗が続くのを避ける）。
+   */
+  private checkAfterBoot(): void {
+    const changed = this.changedWhileBooting;
+    this.booting = false;
+    this.changedWhileBooting = false;
+    if (!this.nativeSession || !this.nativeSession.active) return;
+    if (!changed && (this.deps.serverUrl?.() ?? '') === '') return;
+    this.onServerChanged();
+  }
+
+  /**
+   * 接続先が変わった（設定の読み込み・変更）。採用・参加したときの接続先と同じなら何もしない（読み込みで同じ値が入っても止めない）。
+   * 違う（空にした・別のサーバーにした）なら、いまの論理セッションだけを止める。新しいサーバーへは自動で入らない
+   */
+  onServerChanged(): void {
+    const s = this.nativeSession;
+    if (!s) return;
+    if (!s.active) {
+      // 読み込みの途中なら、知らせを覚えておく（読み込みが終わったあとに比べる）
+      if (this.booting) this.changedWhileBooting = true;
+      return;
+    }
+    const captured = s.serverUrl;
+    if (captured === null) return;
+    if (sameServer(captured, this.deps.serverUrl?.() ?? '')) return;
+    // 「抜けました」は、ネイティブが停止を受け付けたあとにだけ出す（失敗のときは、失敗の一度だけ出す）
+    void this.leaveNative('server-change').then((ok) => {
+      if (ok) this.deps.toast('接続先が変わったので、通話から抜けました', 'info');
+    });
+  }
 
   private get settings() {
     return this.deps.settings.value;
@@ -318,6 +431,15 @@ export class CallStore {
 
   /** client.subscribe から受け取る。call.* 以外と hello を見る */
   onServerEvent(ev: ServerEvent): void {
+    if (this.nativeSession) {
+      // ネイティブ所有: 参加・音・kick・再接続はネイティブが行う。チャットの接続からは、参加していないときの一覧だけ使う
+      if (ev.type === 'call.state') {
+        this.roomMembers = ev.members;
+        if (!this.joined && !this.joining) this.members = ev.members;
+        this.refresh();
+      }
+      return;
+    }
     switch (ev.type) {
       case 'hello':
         this.onReconnect();
@@ -395,7 +517,8 @@ export class CallStore {
    * 戻ったら hello（onReconnect）で入り直す。ここでは利用者へ知らせるだけ。
    */
   onLink(up: boolean): void {
-    if (!this.joined) return;
+    // ネイティブ所有の通話は、チャットの接続が切れても（再接続を含め）止めない。表示はネイティブの linkUp に従う
+    if (this.nativeSession || !this.joined) return;
     if (up) {
       if (this.linkDown) {
         this.linkDown = false;
@@ -622,7 +745,10 @@ export class CallStore {
     this.emitQueueTimer = null;
     const q = this.emitQueue;
     this.emitQueue = [];
-    for (const e of q) this.sendCall({ type: 'call.emit', name: e.name, payload: e.payload });
+    for (const e of q) {
+      if (this.nativeSession) void this.nativeSession.emit(e.name, e.payload);
+      else this.sendCall({ type: 'call.emit', name: e.name, payload: e.payload });
+    }
   }
 
   private dropEmits(): void {
@@ -632,6 +758,7 @@ export class CallStore {
   }
 
   private sendStatus(): void {
+    if (this.nativeSession) return; // ネイティブ所有: 状態はネイティブが送る
     // 参加が一覧に載るまでは送らない（載ったときに、その時点の状態を一度送る）
     if (this.listed) this.sendCall({ type: 'call.update', status: this.status() });
   }
@@ -639,6 +766,7 @@ export class CallStore {
   // ---- 参加・退出 ----
 
   async join(): Promise<void> {
+    if (this.nativeSession) return this.joinNative();
     if (this.joined || this.joining) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       // WebKitGTK では、メディアストリームの設定が効いていない・安全なコンテキストでないと mediaDevices が無い
@@ -740,8 +868,44 @@ export class CallStore {
     }
   }
 
+  /** ネイティブへ参加を頼む。画面は、ネイティブが受け付けた状態（joining）と、確かめた参加（joined）に従う */
+  private async joinNative(): Promise<void> {
+    const s = this.nativeSession;
+    if (!s || this.joined || this.joining || s.active) return;
+    const me = this.deps.meId();
+    if (!me) {
+      this.deps.toast('サーバーに接続できてから参加してください', 'error');
+      return;
+    }
+    this.joining = true;
+    this.refresh();
+    this.beginBoot();
+    try {
+      await s.start({
+        serverUrl: this.deps.serverUrl?.() ?? '',
+        expectedUserId: me,
+        devUser: this.deps.devUser?.() ?? null,
+        status: { muted: this.settings.joinMuted, deafened: false, device: this.deps.deviceKind() },
+        settings: this.nativeSettings(),
+        localMuted: [],
+      });
+      // 読み込みで回復中の通話を採用していたら、その接続先と今の接続先を一度だけ確かめる
+      this.checkAfterBoot();
+    } finally {
+      this.booting = false;
+      if (!s.active && this.joining) {
+        this.joining = false;
+        this.refresh();
+      }
+    }
+  }
+
   /** 抜ける。sendLeave が false なのは、サーバーに外されたとき */
   leave(sendLeave = true, reason = 'user'): void {
+    if (this.nativeSession) {
+      void this.leaveNative(reason);
+      return;
+    }
     if (!this.joined && !this.localStream) return;
     this.diagNow(`退出: ${reason}`);
     console.info(`[call] 通話から抜けます: reason=${reason} sendLeave=${sendLeave}`);
@@ -781,6 +945,131 @@ export class CallStore {
     this.serviceOff?.();
     this.serviceOff = null;
     this.refresh();
+  }
+
+  /** 送っているあいだの、その項目の目標の値（無ければ画面の値） */
+  private nativeIntent(key: 'muted' | 'deafened', shown: boolean): boolean {
+    return this.intents.get(key)?.value ?? shown;
+  }
+
+  /** 操作を送る。送り終わるまでの押しは、この値を基にする（同じ値を二度送らない） */
+  private sendNativeIntent(key: 'muted' | 'deafened', value: boolean, patch: NativeControlPatch): void {
+    const n = ++this.intentSeq;
+    this.intents.set(key, { value, n });
+    void this.nativeSession?.control(patch).finally(() => {
+      if (this.intents.get(key)?.n === n) this.intents.delete(key);
+    });
+  }
+
+  /** 止める。受け付けられたら true（失敗・すでに止めている最中は false。失敗の知らせは停止の側が出す） */
+  private leaveNative(reason: string): Promise<boolean> {
+    const s = this.nativeSession;
+    if (!s || !(s.active || this.joined || this.joining)) return Promise.resolve(false);
+    // 停止の完了（ack）まで画面は残す。受け付けたら onStopped で空にする
+    return s.stop(reason);
+  }
+
+  /** ネイティブの通話を止めた（画面を空にする）。一覧は、チャットの接続が見たサーバーの状態に戻す */
+  private resetNativeView(): void {
+    this.dropEmits();
+    this.joined = false;
+    this.joining = false;
+    this.listed = false;
+    this.linkDown = false;
+    this.muted = false;
+    this.deafened = false;
+    this.muteByDeafen = false;
+    this.peerId = '';
+    this.peerView = {};
+    this.selfSpeaking = false;
+    this.members = this.roomMembers;
+    this.nativeBytes = 0;
+    this.refresh();
+  }
+
+  /** ネイティブの状態を画面へ写す（判断は持たない。不変条件はネイティブが守る） */
+  private applyNative(snap: NativeSnapshot): void {
+    const m = mirrorOf(snap);
+    const wasListed = this.listed;
+    this.joined = m.joined;
+    this.joining = m.joining;
+    this.listed = m.listed;
+    this.linkDown = m.linkDown;
+    this.muted = m.muted;
+    this.deafened = m.deafened;
+    this.muteByDeafen = snap.muteByDeafen;
+    this.peerId = m.peer;
+    this.nativeBytes = snap.bufferedBytes;
+    this.members = m.joined || m.joining ? snap.members : this.roomMembers;
+    const view: Record<string, PeerView> = {};
+    for (const mem of this.members) {
+      if (mem.peer === m.peer) continue;
+      view[mem.peer] = { speaking: !!m.speaking[mem.peer], localMuted: m.localMuted.has(mem.peer) };
+    }
+    this.peerView = view;
+    this.selfSpeaking = m.peer !== '' && !!m.speaking[m.peer];
+    if (!m.joined && !m.joining) this.dropEmits();
+    else if (!wasListed && this.listed) this.flushEmits();
+    this.reportNativeError(snap.error);
+    this.refresh();
+  }
+
+  /** 同じエラーは一度だけ知らせる。文章（ネイティブの説明）は出さず、固定の短いコードだけを使う */
+  private reportNativeError(e: NativeError | null): void {
+    const code = e ? safeCode(e.code) : '';
+    const key = e ? `${code}|${e.by ?? ''}` : '';
+    if (key === this.lastNativeError) return;
+    this.lastNativeError = key;
+    if (!e) return;
+    if (code === 'kicked') this.deps.toast(`${this.deps.nameOf(e.by ?? '')}さんに通話から外されました`, 'info');
+    else this.deps.toast(`通話でエラーが起きました（コード: ${code}）`, 'error');
+  }
+
+  /** 参加できなかった。原因は固定の短いコードだけを出す */
+  private onNativeStartFailed(code: string): void {
+    this.joining = false;
+    this.refresh();
+    this.deps.toast(`通話に参加できませんでした（コード: ${code}）`, 'error');
+  }
+
+  /** ネイティブから、非音声の中継（プラグインの emit）が届いた */
+  private onNativeRelay(r: NativeRelay): void {
+    if (RESERVED_EVENTS.has(r.name)) return;
+    const set = this.eventListeners.get(r.name);
+    if (!set) return;
+    for (const cb of [...set]) this.safe(() => cb({ peer: r.peer, userId: r.from, payload: r.payload }));
+  }
+
+  private nativeSettings(): NativeSettings {
+    const s = this.settings;
+    return {
+      micVolume: s.micVolume,
+      outVolume: s.outVolume,
+      limiter: s.limiter,
+      limitDb: s.limitDb,
+      rawInput: micRawFlag(readLocal('disnans.micRaw')),
+      outputId: s.output?.id ?? null,
+    };
+  }
+
+  /**
+   * 音量・上限などが変わったら、ネイティブへ送る（参加中だけ）。保存したときはすぐ、動かしている途中は約 50ms まとめる。
+   * 送る値は、そのときの最新の設定（途中の値は捨てる）
+   */
+  private syncNativeSettings(immediate: boolean): void {
+    if (!this.nativeSession) return;
+    if (this.settingsTimer !== null) {
+      clearTimeout(this.settingsTimer);
+      this.settingsTimer = null;
+    }
+    if (immediate) {
+      this.nativeSession.setSettings(this.nativeSettings());
+      return;
+    }
+    this.settingsTimer = setTimeout(() => {
+      this.settingsTimer = null;
+      this.nativeSession?.setSettings(this.nativeSettings());
+    }, SETTINGS_COALESCE_MS);
   }
 
   /** 通話中に AudioContext が止まっていたら動かし直す */
@@ -957,6 +1246,12 @@ export class CallStore {
       this.deps.toast('通話に参加していません', 'error');
       return;
     }
+    // ネイティブ所有: 変えるのはネイティブ（スピーカーミュートとの関係も、そこで決まる）。送っているあいだの押しは、送った値を基にする
+    if (this.nativeSession) {
+      const next = !this.nativeIntent('muted', this.muted);
+      this.sendNativeIntent('muted', next, { muted: next });
+      return;
+    }
     this.muted = !this.muted;
     // ミュートを外したら、スピーカーミュートも外す（ミュートなしでスピーカーミュートにはしない）
     if (!this.muted && this.deafened) this.setDeafened(false);
@@ -973,6 +1268,11 @@ export class CallStore {
   toggleDeafen(): void {
     if (!this.joined) {
       this.deps.toast('通話に参加していません', 'error');
+      return;
+    }
+    if (this.nativeSession) {
+      const next = !this.nativeIntent('deafened', this.deafened);
+      this.sendNativeIntent('deafened', next, { deafened: next });
       return;
     }
     this.setDeafened(!this.deafened);
@@ -999,6 +1299,11 @@ export class CallStore {
 
   /** 相手1人を、自分の側だけで消音する／戻す */
   toggleLocalMute(peer: string): void {
+    if (this.nativeSession) {
+      if (!this.others.some((m) => m.peer === peer)) return;
+      void this.nativeSession.control({ peerMute: { peer, muted: !(this.peerView[peer]?.localMuted ?? false) } });
+      return;
+    }
     const e = this.entries.get(peer);
     if (!e) return;
     e.localMuted = !e.localMuted;
@@ -1019,6 +1324,10 @@ export class CallStore {
       danger: true,
     });
     if (!ok || !this.joined) return;
+    if (this.nativeSession) {
+      void this.nativeSession.kick(peer);
+      return;
+    }
     this.sendCall({ type: 'call.kick', peer });
   }
 
@@ -1315,6 +1624,10 @@ export class CallStore {
       this.queueEmit(name, payload);
       return;
     }
+    if (this.nativeSession) {
+      void this.nativeSession.emit(name, payload);
+      return;
+    }
     this.sendCall({ type: 'call.emit', name, payload });
   }
 
@@ -1347,6 +1660,7 @@ export class CallStore {
 
   /** WebSocket でまだ送り出せていないバイト数。映像を送るプラグインは、多いあいだ次のフレームを待つ */
   get bufferedAmount(): number {
+    if (this.nativeSession) return this.nativeBytes;
     try {
       return this.deps.buffered?.() ?? 0;
     } catch {
@@ -1406,7 +1720,8 @@ export class CallStore {
     try {
       fn();
     } catch (e) {
-      console.error('[call] プラグインのコールバックで例外', e);
+      if (this.nativeSession) console.error('[call] プラグインのコールバックで例外');
+      else console.error('[call] プラグインのコールバックで例外', e);
     }
   }
 

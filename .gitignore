@@ -11,6 +11,13 @@ node_modules/
 # Tauri プラグインの Android ビルド成果物
 /app/src-tauri/plugins/*/android/build
 /app/src-tauri/plugins/*/android/.tauri
+# マイクを使わないネイティブ通話の JVM テスト
+/app/src-tauri/plugins/*/native-tests/build
+/app/src-tauri/plugins/*/native-tests/.gradle
+/app/src-tauri/plugins/*/native-tests/.kotlin
+/app/src-tauri/plugins/*/android-check/build
+/app/src-tauri/plugins/*/android-check/.gradle
+/app/src-tauri/plugins/*/android-check/.kotlin
 
 # 個人的なファイル
 /.pi/

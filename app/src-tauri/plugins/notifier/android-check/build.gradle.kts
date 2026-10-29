@@ -1,0 +1,17 @@
+// 本体の Android ビルドと同じプラグインで、Rust や APK のインストールなしに Kotlin を検証する。
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:9.3.1")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.10")
+    }
+}
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

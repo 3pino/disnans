@@ -37,7 +37,25 @@ export class CallSettings {
   /** 音量のスライダーを動かしている間の仮の値（離したときに保存する） */
   private draft = $state<Partial<CallSettingsData>>({});
 
+  private listeners = new Set<(kind: 'preview' | 'save') => void>();
+
   constructor(private src: CallSettingsSource = liveSource) {}
+
+  /** 設定が変わったとき（保存 save・動かしている途中の反映 preview）に呼ばれる。戻り値の関数で外す */
+  onChange(fn: (kind: 'preview' | 'save') => void): () => void {
+    this.listeners.add(fn);
+    return () => void this.listeners.delete(fn);
+  }
+
+  private notify(kind: 'preview' | 'save'): void {
+    for (const fn of [...this.listeners]) {
+      try {
+        fn(kind);
+      } catch {
+        console.error('[call] 設定の変更の通知で例外');
+      }
+    }
+  }
 
   /** いまの設定（保存済みの値に、動かしている途中の値を重ねたもの） */
   get value(): CallSettingsData {
@@ -54,11 +72,13 @@ export class CallSettings {
     for (const k of CALL_USER_KEYS) if (k in p) (user as Record<string, unknown>)[k] = p[k];
     if (Object.keys(user).length > 0) this.src.setUser(user);
     for (const k of CALL_DEVICE_KEYS) if (k in p) this.src.setDevice(k, p[k] ?? null);
+    this.notify('save');
   }
 
   /** 音量のスライダーを動かしている間は反映だけして、離したときに保存する */
   preview(p: Partial<CallSettingsData>): void {
     this.draft = { ...this.draft, ...p };
+    this.notify('preview');
   }
 
   /** 仮の値を保存する */
