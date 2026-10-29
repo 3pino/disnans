@@ -7,7 +7,7 @@ import type { SharedKind } from "./SharedKind";
  */
 export type SharedTrashEntry = { id: string, 
 /**
- * 削除されたときの共有フォルダからの相対パス（`docs/a.txt`。添付は `attachments/<file_id>` の形）。
+ * 削除されたときの共有フォルダからの相対パス（`docs/a.txt`）。添付は `attachments/<当時の名前>` の形（名前は削除時点の添付の名前。内部の ID は別に保持し、ここには出さない）。
  */
 original_path: string, kind: SharedKind, 
 /**
@@ -19,7 +19,7 @@ size: number,
  */
 deleted_at: number, 
 /**
- * フォルダ（`.trash/`）の中の別名（`<ID>--<元の名前>`）。仮想の名前空間が有効なときだけ入る（JSON では省略する）。
+ * `.trash/` の中での完全な共有内の相対パス（`.trash/<ID>--<元の名前>`。`.trash/` を含む。別名だけではない）。仮想の名前空間が有効なときだけ入る（JSON では省略する）。
  * 既存の実ファイル `shared/.trash` と衝突するときは入らない。
  */
 trash_path?: string, };

@@ -7,13 +7,24 @@
 import type { SharedEntry } from './protocol/SharedEntry';
 import type { SharedApi } from './transport/shared';
 import { attachmentActionText } from './fileLink';
-import { baseName } from './sharedPath';
+import { baseName, parentOf } from './sharedPath';
 import { ATTACHMENTS_DIR, childPath, inAttachments, nameError, overwriteConfirm, RESERVED_REASON, sameNameEntry } from './sharedOps';
 
 export type TransferOp = 'move' | 'copy';
 
-/** 移動・コピーする項目（パスと種類。バッファにも入る） */
-export type TransferItem = { path: string; kind: 'file' | 'dir' };
+/**
+ * 移動・コピーする項目（パスと種類。バッファにも入る）。
+ * name: 先の名前（省略はパスの末尾）。ゴミ箱の直下の項目は元の名前（別名のままコピーしない）。
+ * trash: ゴミ箱の仮想フォルダの中での場所（省略は、ふつうの項目）。
+ *   root = `.trash/` そのもの（動かせない・コピーもできない）/ inside = 中身（コピーだけ）/
+ *   item = 直下の項目（コピーは元の名前で。移動は元の場所へ戻すときだけ。restoreTo は元のパス）
+ */
+export type TransferItem = {
+  path: string;
+  kind: 'file' | 'dir';
+  name?: string;
+  trash?: { where: 'root' } | { where: 'inside' } | { where: 'item'; restoreTo: string };
+};
 
 export type Check = { ok: true } | { ok: false; message: string };
 
@@ -23,11 +34,19 @@ const fail = (message: string): Check => ({ ok: false, message });
 /** 項目を、移動先のフォルダへ move / copy できるか（サーバーの決まりと同じ） */
 export function checkTransfer(op: TransferOp, item: TransferItem, destDir: string): Check {
   if (item.path === ATTACHMENTS_DIR) return fail(RESERVED_REASON);
+  const trash = item.trash;
+  if (trash?.where === 'root') return fail('ゴミ箱のフォルダは動かせません');
+  if (trash?.where === 'inside' && op === 'move') return fail('ゴミ箱の中身は動かせません（コピーしてください）');
+  if (trash?.where === 'item' && op === 'move') {
+    // 移動は、元の場所へ戻すことだけ（元のパスぴったり）。ほかの先へは移せない
+    const back = parentOf(trash.restoreTo);
+    return destDir === back ? ok : fail(`ゴミ箱の項目は、元の場所（${back === '' ? '共有フォルダの直下' : back}）へだけ戻せます`);
+  }
   // フォルダを自分自身・子孫へは移動もコピーもできない
   if (item.kind === 'dir' && (destDir === item.path || destDir.startsWith(item.path + '/'))) {
     return op === 'move' ? fail('フォルダを自分の中へは移せません') : fail('フォルダを自分の中へはコピーできません');
   }
-  if (op === 'move') {
+  if (op === 'move' && !trash) {
     if (inAttachments(item.path) !== inAttachments(destDir)) return fail('共有フォルダと添付の間は移動できません（コピーしてください）');
   }
   return ok;
@@ -56,7 +75,7 @@ export function planTransfer(
   destEntries: ReadonlyMap<string, SharedEntry> | null,
 ): Planned[] {
   return items.map((item): Planned => {
-    const name = baseName(item.path);
+    const name = item.name ?? baseName(item.path);
     const to = childPath(destDir, name);
     const blocked = (message: string): Planned => ({ item, name, to, kind: 'blocked', message });
     const c = checkTransfer(op, item, destDir);
@@ -67,6 +86,8 @@ export function planTransfer(
     if (!destEntries) return blocked('フォルダの中身を読み終えてから、もう一度試してください');
     const same = sameNameEntry(destEntries, destDir, name);
     if (!same) return { item, name, to, kind: 'create' };
+    // ゴミ箱から元へ戻すときは、上書きしない（同じ名前があれば戻せない。サーバーの決まり）
+    if (op === 'move' && item.trash?.where === 'item') return blocked('同じ名前があるので、元の場所へ戻せません');
     // 上書きの先は既存の項目の名前（attachments/ は大文字・小文字を区別しない）
     if (same.kind === 'dir') return blocked('同じ名前のフォルダがあります');
     return { item, name, to: childPath(destDir, same.name), kind: 'overwrite' };
@@ -129,5 +150,5 @@ export function transferFailure(result: TransferResult): string | null {
   if (result.failed.length === 0) return null;
   const first = result.failed[0];
   const more = result.failed.length > 1 ? `（ほか ${result.failed.length - 1} 件）` : '';
-  return `「${baseName(first.item.path)}」: ${first.message}${more}`;
+  return `「${first.item.name ?? baseName(first.item.path)}」: ${first.message}${more}`;
 }

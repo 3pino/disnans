@@ -37,17 +37,33 @@
 - `move` でも、宛先に同名のフォルダがあれば `overwrite: true` でも `409 exists`
 - `attachments/` の中はフォルダを持てないので、フォルダのコピーの宛先にできない（`403`）
 
-### ゴミ箱（`/api/shared-trash`）
+### ゴミ箱（仮想フォルダ `.trash/` と `/api/shared-trash`）
 
 アプリのエクスプローラーの「削除」はゴミ箱へ移す。`DELETE /api/shared/{パス}` と WebDAV の `DELETE` は、従来どおり**完全に削除**する（ゴミ箱を通らない）。
+
+ゴミ箱は、共有フォルダの直下に見える仮想フォルダ `.trash/` で、ふつうのフォルダと同じように一覧・開く・読む・コピーできる（マウントした WebDAV からも見える）。
+
+- 直下の項目は `.trash/<26 文字の ULID>--<元の名前>`（ファイルもフォルダも）。別名は変わらず、拡張子を残し、UTF-8 で 255 バイト以下にする。ラッパーのフォルダは作らない
+- `GET`・`PROPFIND`・読み取り（`Range` 可）・コピー（外へ出す）は、項目の中身（子孫）にも使える。添付へのコピーは新しい ID の添付になり、フォルダは `403`
+- `DELETE`: 直下の項目ごとに完全削除（purge）する。中身の一部だけの削除は `403`
+- `MOVE`: 元のパスぴったりへの移動だけが復元になる（添付の ID は変わらない）。それ以外の `MOVE`、中身の一部の変更、`.trash/` への `PUT`・`MKCOL` は `403`
+- ゴミ箱の中の項目は `file_id` と `message_id` が `null`（削除された添付の ID を渡さない）。`mime` は残る
+- 安全でないシンボリックリンクは隠し、`404` にする。処理中・壊れた項目への直接アクセスは `403`、存在しない・形が正しくない別名は `404`
+- 一覧の `SharedEntry` に、任意の `trash` が付く（ふつうの項目にはない）。`{ kind: "root" }`（`.trash/` そのもの）、`{ kind: "item", entry: SharedTrashEntry }`（直下の項目。元の名前は `entry.original_path` から出す）、`{ kind: "descendant", id }`（中身。`id` は直下の項目の ID）
+- `SharedTrashEntry` には、任意で `trash_path`（別名のパス）が付く
+- WebDAV の `MOVE`・`COPY` で、移動元か移動先が仮想の `.trash/` のときは、`Overwrite` を常に `F` として扱う（dav-server は `T` のとき宛先を先に消すため、既存の宛先を守る）。宛先がすでにあれば `412`、親がなければ `404`、処理中・壊れた項目は `403`。マウントした OS の挙動は確かめていない（HTTP/DAV のテストで確かめた範囲）。`/api/shared-trash` の復元は、同名なら `409 exists`（`412` ではない）
+- 共有フォルダに実在する `.trash`（大文字小文字は区別しない）がすでにあるときは、それを実際のフォルダとして読み書きでき、仮想のゴミ箱は無効になる（サーバーは WARN を出す。取り込み・隠す・上書きはしない。起動も失敗しない）。このときも下の `/api/shared-trash` は使える
+- ルートのサイズ（`/api/shared-size`）に仮想のゴミ箱は入らない。`.trash` を指定すると、読める中身を数える
+
+`/api/shared-trash`（アプリの削除・取り消しが使う）:
 
 | メソッド | パス | 内容 |
 |---|---|---|
 | GET | `/api/shared-trash` | ゴミ箱の一覧。`SharedTrashListing`: `{ entries: SharedTrashEntry[] }` |
-| POST | `/api/shared-trash` | `SharedTrashOp`。`{ op: "trash", path }` は共有のパスをゴミ箱へ移し、`{ id, original_path, kind, size, deleted_at }`（`SharedTrashEntry`）を返す。`{ op: "restore", id }` は元のパスへ戻し、`SharedEntry` を返す |
+| POST | `/api/shared-trash` | `SharedTrashOp`。`{ op: "trash", path }` は共有のパスをゴミ箱へ移し、`SharedTrashEntry`（`{ id, original_path, kind, size, deleted_at, trash_path? }`）を返す。`{ op: "restore", id }` は元のパスへ戻し、`SharedEntry` を返す |
 | DELETE | `/api/shared-trash/{id}` | その項目を完全に削除（purge）。`204` |
 
-- `id` は ULID の文字列で、中身には意味がない（そのまま渡す）
+- `id` は 26 文字の ULID で、そのまま渡す
 - 復元先に同名があれば `409 exists`、親のフォルダがなければ `409 parent_missing`（親を自動で作らない）
 - 添付（`attachments/` の中）もゴミ箱へ移せ、復元できる。復元しても添付の ID は変わらず、投稿が残っていれば本文のリンクが再び使える。削除されたメッセージは復活しない。ゴミ箱にある間に元の投稿が削除されたときは、復元は元の ID のライブラリの添付として戻り、投稿は作り直さない
 - 保存先は `data/trash/` と DB のメタデータ。バックアップの対象に入る。保持期間と自動の削除（TTL）はなく、purge するまで残る
@@ -58,7 +74,7 @@
 `GET /api/shared-size`（ルート）と `GET /api/shared-size/{パス}` は `{ size, files, dirs }` を返す（バイト数・ファイルの数・フォルダの数）。
 
 - 数えるのは、要求したフォルダの**配下**のファイルとフォルダ。要求したフォルダ自身は `dirs` に入れない。ファイルを指定すると `files: 1`・`dirs: 0`
-- ルートは、`attachments/`（仮想フォルダ）の中身を 1 回だけ合計に入れる
+- ルートは、`attachments/`（仮想フォルダ）の中身を 1 回だけ合計に入れる（仮想の `.trash/` は入れない）
 - シンボリックリンクは辿らず、数えない
 - 一覧（`SharedEntry`）のフォルダの `size` は、従来どおり 0 のまま
 

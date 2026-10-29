@@ -6,6 +6,7 @@
   import Button from './ui/Button.svelte';
   import { formatFull, formatSize } from '../lib/format';
   import { kindLabel } from '../lib/fileExplorer';
+  import { entryLabel, trashItemOf } from '../lib/trashFolder';
   import { copyText } from '../lib/clipboard';
   import { ui } from '../lib/stores/ui.svelte';
   import { messageSearch } from '../lib/stores/search.svelte';
@@ -19,6 +20,9 @@
   // （リンクしたファイルは、今の名前で検索に当たる）。フォルダはサイズを非同期で取得する。見た目は仮
   let { entry, onclose }: { entry: SharedEntry; onclose: () => void } = $props();
   const isFile = $derived(entry.kind === 'file');
+  /** 名前（ゴミ箱の直下の項目は元の名前。パスは別名のまま、元の場所を別に出す） */
+  const label = $derived(entryLabel(entry));
+  const trashed = $derived(trashItemOf(entry));
 
   // フォルダのサイズ（entry.kind === 'dir' のとき非同期で取得する）。
   // 単調な世代カウンタ（sizeGen）で A→B→A のような完了順逆転でもstale結果を捨てる。
@@ -59,16 +63,20 @@
   function searchMessages(): void {
     onclose();
     ui.openSearch();
-    messageSearch.setQuery(entry.name);
+    messageSearch.setQuery(label);
   }
 </script>
 
 <Modal title="プロパティ" {onclose} width={380}>
   <dl class="file-properties">
     <dt>名前</dt>
-    <dd><button type="button" class="file-properties-copy" title="押すとコピー" onclick={() => void copy(entry.name, '名前')}>{entry.name}<Copy size={12} /></button></dd>
+    <dd><button type="button" class="file-properties-copy" title="押すとコピー" onclick={() => void copy(label, '名前')}>{label}<Copy size={12} /></button></dd>
     <dt>パス</dt>
     <dd><button type="button" class="file-properties-copy file-properties-path" title="押すとコピー" onclick={() => void copy(entry.path, 'パス')}>{entry.path}<Copy size={12} /></button></dd>
+    {#if trashed}
+      <dt>元の場所</dt>
+      <dd><button type="button" class="file-properties-copy file-properties-path" title="押すとコピー" onclick={() => void copy(trashed.original_path, '元の場所')}>{trashed.original_path}<Copy size={12} /></button></dd>
+    {/if}
     <dt>種類</dt>
     <dd>{kindLabel(entry)}{#if entry.mime} <span class="muted">（{entry.mime}）</span>{/if}</dd>
     <dt>サイズ</dt>

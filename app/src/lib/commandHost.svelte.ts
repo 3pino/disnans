@@ -121,7 +121,7 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       icon: SquareX,
       defaultHotkey: 'Escape',
       // 選択モードの間だけ。拡大表示・ダイアログ・メニューが開いていれば、そちらの Esc（閉じる）に任せる
-      when: () => explorerSelection.active && !ui.lightbox && !ui.confirmReq && !document.querySelector('[aria-modal="true"], [role="menu"]'),
+      when: () => explorerSelection.showing && !ui.lightbox && !ui.confirmReq && !document.querySelector('[aria-modal="true"], [role="menu"]'),
       run: () => explorerSelection.clear(),
     },
     {

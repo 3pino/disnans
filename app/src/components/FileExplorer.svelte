@@ -14,18 +14,15 @@
   import Copy from '@lucide/svelte/icons/copy';
   import Scissors from '@lucide/svelte/icons/scissors';
   import Trash from '@lucide/svelte/icons/trash';
-  import Trash2 from '@lucide/svelte/icons/trash-2';
   import IconButton from './ui/IconButton.svelte';
   import PanelBar from './ui/PanelBar.svelte';
   import Button from './ui/Button.svelte';
   import Modal from './ui/Modal.svelte';
   import TextInput from './ui/TextInput.svelte';
   import SharedEntryActions from './SharedEntryActions.svelte';
-  import TrashView from './TrashView.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { fileExplorer } from '../lib/stores/fileExplorer.svelte';
   import { sharedIndex } from '../lib/stores/sharedIndex.svelte';
-  import { explorerTrash } from '../lib/stores/explorerTrash.svelte';
   import { breadcrumbs, entryAction, kindLabel, sortEntries } from '../lib/fileExplorer';
   import { explorerView, type ViewMode } from '../lib/stores/explorerView.svelte';
   import { baseName, parentOf } from '../lib/sharedPath';
@@ -36,6 +33,7 @@
   import { attachmentActionText } from '../lib/fileLink';
   import { childPath, inAttachments, nameError, overwriteConfirm, planUpload, renameAllowed, renameTarget, sameNameEntry, trashManyConfirm, ATTACHMENTS_DIR } from '../lib/sharedOps';
   import { checkTransfer, runTransfer, transferFailure, type TransferItem, type TransferOp } from '../lib/sharedTransfer';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
   import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
   import { LONG_PRESS_MS } from '../lib/sortable';
@@ -43,10 +41,11 @@
   import { diagLog } from '../lib/diagLog';
   import { readClipboardImage, readNativeClipboardImage } from '../lib/clipboardImage';
   import { clipboardTextName, peekClipboard, readClipboardText, type ClipboardPeek } from '../lib/clipboardPaste';
-  import { isLinuxDesktop } from '../lib/platform';
+  import { isLinuxDesktop, isTauri, osName } from '../lib/platform';
   import { listenNativeDrop, listenOsDrop, osDropEntries, osDropRelease, dropRootsOf, entriesFromDropRoots, type OsDropEntry } from '../lib/dropFiles';
   import { sharedApi, uploadShared, type SharedApi } from '../lib/transport/shared';
   import { sharedFileUrl, fileUrl, getServerUrl, onServerChange } from '../lib/config';
+import { TRASH_ROOT, displayEntry, entryLabel, trashItemOf, trashPlace, virtualDir, writeBlockReason } from '../lib/trashFolder';
   import { isImage, isPdf } from '../lib/fileLink';
   import { viewerKind } from '../lib/viewers';
   import type { LightboxItem } from '../lib/lightbox';
@@ -59,13 +58,44 @@
   // フォルダは中へ、画像は拡大表示、ほかのファイルはリンクで開く・保存する（明示的に押したときだけ）。
   // 一覧は sharedIndex の写し。files.changed で捨てられたら、ここで読み直す。
   const listing = $derived(fileExplorer.state);
-  const crumbs = $derived(breadcrumbs(fileExplorer.dir));
+  /** 開いているフォルダの場所（ゴミ箱の直下の項目は、元の名前で表す） */
+  const crumbs = $derived(breadcrumbs(fileExplorer.dir).map((c) => ({ ...c, name: crumbName(c.path, c.name) })));
+  function crumbName(path: string, seg: string): string {
+    if (parentOf(path) !== TRASH_ROOT) return seg;
+    const top = sharedIndex.state(TRASH_ROOT);
+    const x = top?.kind === 'ok' ? top.entries.get(seg) : undefined;
+    return x ? entryLabel(x) : seg;
+  }
+
+  /** 開いているフォルダが、仮想のゴミ箱の中か（印で決める。直下の一覧が無いときは確かめられない） */
+  const vdir = $derived(virtualDir(fileExplorer.dir, sharedIndex.state('')));
+  /** 書き込みを止める理由（ゴミ箱の中・確かめ中）。ふつうのフォルダなら null */
+  function writeBlock(dir: string): string | null {
+    return writeBlockReason(virtualDir(dir, sharedIndex.state('')));
+  }
+
+  // 仮想のゴミ箱（.trash/ の中）を開いたときだけ、その判定に要る直下の一覧（と .trash の一覧）を読む。ほかのフォルダでは読まない
+  // 読み直しの状態は読んでいる（無効化されて無くなったら読み直し、その結果で判定と表示を直す）。読むだけの ensure は追わない
+  $effect(() => {
+    const dir = fileExplorer.dir;
+    if (dir !== TRASH_ROOT && !dir.startsWith(TRASH_ROOT + '/')) return;
+    if (sharedIndex.state('') === undefined) untrack(() => sharedIndex.ensure(''));
+    if (dir !== TRASH_ROOT && sharedIndex.state(TRASH_ROOT) === undefined) untrack(() => sharedIndex.ensure(TRASH_ROOT));
+  });
   const now = Date.now();
 
   $effect(() => {
     const dir = fileExplorer.dir;
     if (sharedIndex.state(dir) === undefined) untrack(() => sharedIndex.ensure(dir));
   });
+
+  /** PC の Tauri（Windows・Linux）。選択の操作は常に効き、0 件でも終わらない（Android・ブラウザは従来の選択モード） */
+  function isDesktopPc(): boolean {
+    if (!isTauri()) return false;
+    const os = osName();
+    return os === 'windows' || os === 'linux';
+  }
+  explorerSelection.desktop = isDesktopPc();
 
   // 選択モードと名前の書き換えは、フォルダを変えたら外す（別のフォルダの項目を選んだままにしない）
   $effect(() => {
@@ -76,9 +106,10 @@
     });
   });
 
-  // 選択中の「戻る」（Android の戻る・Alt+←）は、選択モードを終える（フォルダやパネルは戻らない）
+  // 選んでいる間の「戻る」（Android の戻る・Alt+←）は、選びを外す（フォルダやパネルは戻らない）。
+  // PC の 0 件（操作だけ続いている）では登録しない（戻るを奪わない）
   $effect(() => {
-    if (!explorerSelection.active) return;
+    if (!explorerSelection.showing) return;
     // 登録で読む ui.pluginBack には依存しない（依存すると、登録のたびにやり直して回り続ける）
     return untrack(() => ui.addPluginBack(() => explorerSelection.clear()));
   });
@@ -100,16 +131,25 @@
     return sharedFileUrl(e.path);
   }
 
+  /**
+   * 読む元の URL（画像・PDF・拡大表示の共通）。ゴミ箱の中の項目（trash あり）は、消えた添付の ID を使わず、
+   * いつも共有フォルダのパスで読む（.trash の中身は読める）。ふつうの添付は ID の URL（縮小版は thumb）。ほかは共有フォルダのパス
+   */
+  function readUrl(e: SharedEntry, thumb = false): string {
+    if (!e.trash && e.file_id) return fileUrl(e.file_id, thumb);
+    return sharedFileUrl(e.path);
+  }
+
   /** 並べ目（グリッド）の小さい画像。添付は縮小版（WebP）、共有フォルダの画像は原本。画像でなければ無し */
   function thumbUrl(e: SharedEntry): string | null {
     if (e.kind === 'dir' || !isImage(e.name, e.mime)) return null;
-    return e.file_id ? fileUrl(e.file_id, true) : sharedFileUrl(e.path);
+    return readUrl(e, true);
   }
 
   /** PDF のサムネイルの元（1 ページ目を描く）。大きすぎる PDF・PDF でなければ無し */
   function pdfSource(e: SharedEntry): { url: string; key: string } | null {
     if (e.kind === 'dir' || !isPdf(e.name, e.mime) || e.size > PDF_THUMB_MAX_BYTES) return null;
-    return { url: e.file_id ? fileUrl(e.file_id) : sharedFileUrl(e.path), key: `${e.path}:${e.modified}:${e.size}` };
+    return { url: readUrl(e), key: `${e.path}:${e.modified}:${e.size}` };
   }
 
   // 操作のメニュー（≡）。項目を選んだら閉じてから動く
@@ -126,12 +166,12 @@
    */
   function openViewer(e: SharedEntry): void {
     const item = (x: SharedEntry): LightboxItem => {
-      const src = x.file_id ? fileUrl(x.file_id) : href(x);
-      return { src, alt: x.name, downloadUrl: src, kind: viewerKind(x.name, x.mime) ?? undefined };
+      const src = readUrl(x);
+      return { src, alt: entryLabel(x), downloadUrl: src, kind: viewerKind(x.name, x.mime) ?? undefined };
     };
     const viewable = () =>
       listing?.kind === 'ok'
-        ? sortEntries(listing.entries.values(), dirView.sortKey, dirView.sortOrder)
+        ? sortEntries([...listing.entries.values()].map(displayEntry), dirView.sortKey, dirView.sortOrder)
             .filter((x) => x.kind === 'file' && viewerKind(x.name, x.mime) !== null)
             .map(item)
         : [];
@@ -147,7 +187,7 @@
   let fileInput: HTMLInputElement | undefined = $state();
 
   /** attachments/ の中では新しいフォルダは作れない（中はファイルだけ） */
-  const canCreateFolder = $derived(!inAttachments(fileExplorer.dir));
+  const canCreateFolder = $derived(!inAttachments(fileExplorer.dir) && writeBlockReason(vdir) === null);
 
   function dropUpload(key: number): void {
     const u = uploads.find((x) => x.key === key);
@@ -205,6 +245,11 @@
 
   /** 宛先の一覧を用意する（未読なら取り直す）。範囲は今のサーバー。取れない・サーバーが変わったら null */
   async function beginBatch(dir: string): Promise<Batch | null> {
+    const why = writeBlock(dir);
+    if (why) {
+      ui.toast(why, 'error');
+      return null;
+    }
     const scope = beginScope();
     const entries = await fetchDestEntries(dir);
     if (!scope.alive()) {
@@ -240,6 +285,11 @@
    * batch が無いときは、宛先の一覧を取り直してから同名を確かめる（クリップボードの 1 件など）。
    */
   async function sendOne(dir: string, file: File, batch?: Batch): Promise<string | null> {
+    const why = writeBlock(dir);
+    if (why) {
+      ui.toast(why, 'error');
+      return null;
+    }
     uploads.push({ key: ++uploadSeq, name: file.name, ratio: 0, error: null, abort: null });
     const row = uploads[uploads.length - 1];
     const scope = batch?.scope ?? beginScope();
@@ -324,8 +374,10 @@
   onMount(() => {
     // 戻るの履歴は、パネルを開いたところから数える
     fileExplorer.forgetHistory();
-    // サーバーが変わったら、開いているゴミ箱を閉じる（古いゴミ箱・完全削除の確認を、新しいサーバーの上で押させない）
-    const unsubServer = onServerChange(() => closeTrash());
+    // サーバーが変わったら、進んでいる選びの操作の印を外す（古い操作の終わりは、新しい操作の印に触らない）
+    const unsubServer = onServerChange(() => {
+      action = null;
+    });
     void refreshClip();
     const onFocus = () => void refreshClip();
     const onVisible = () => {
@@ -337,7 +389,7 @@
     // Linux デスクトップ（Tauri/WebKitGTK）では HTML5 の dragover/drop でファイルが届かないので、
     // Tauri のネイティブイベントを使う:
     //   - listenNativeDrop: hover の enter/over/leave で externalDragOver を更新（ハイライト用）
-    //     ハイライトは最前面要素が .file-explorer に属し trashOpen でないときだけ。position=null は fail closed
+    //     ハイライトは最前面要素が .file-explorer に属するときだけ。position=null は fail closed
     //   - listenOsDrop: 実際のドロップ（os-drop カスタムイベント）。position + elementFromPoint で対象判定
     //     宛先は data-drop-dir 属性（フォルダ行・パンくず）またはカレントフォルダ
     //     他の view への drop は release せずそのまま（別の view がclaim/releaseする）
@@ -352,7 +404,7 @@
           // position=null は fail closed（ハイライトしない）
           if (!ev.position) { externalDragOver = false; return; }
           const el = document.elementFromPoint(ev.position.x, ev.position.y);
-          const inExplorer = !!el?.closest('.file-explorer') && !trashOpen;
+          const inExplorer = !!el?.closest('.file-explorer');
           externalDragDepth = inExplorer ? 1 : 0;
           externalDragOver = inExplorer;
         } else if (ev.type === 'leave' || ev.type === 'drop') {
@@ -377,9 +429,9 @@
         // position=null は fail closed（どこへの drop か分からない → 受けない）
         const pos = ev.position;
         if (!pos) return;
-        // 最前面の要素がこの .file-explorer に属するか確認。trash/modal 前面も拒否
+        // 最前面の要素がこの .file-explorer に属するか確認。前面のダイアログ等も拒否
         const target = document.elementFromPoint(pos.x, pos.y);
-        if (!target?.closest('.file-explorer') || trashOpen) return;
+        if (!target?.closest('.file-explorer')) return;
         // await 前に destDir・serverUrl をキャプチャ
         const dirEl = target.closest<HTMLElement>('[data-drop-dir]');
         const destDir = dirEl?.dataset.dropDir ?? fileExplorer.dir;
@@ -461,7 +513,7 @@
    * 一覧に出たところで入力欄に替わる。送っている間に別のフォルダへ移っていたら何もしない
    */
   function renameAfterPaste(dir: string, path: string | null): void {
-    if (!path || fileExplorer.dir !== dir || !renameAllowed(path).ok) return;
+    if (!path || fileExplorer.dir !== dir || !renameAllowed(path).ok || writeBlock(dir)) return;
     renamingPath = path;
     renameTo = baseName(path);
     renameError = null;
@@ -542,22 +594,50 @@
   // ---- 複数選択の操作（コピー・切り取り・削除・移動）。まとめて 1 回の確認（削除・上書き） ----
 
   /** 選んでいる項目（一覧に今ある分。消えたものは外す） */
-  const selectedItems = $derived.by((): TransferItem[] => {
+  const selectedEntries = $derived.by((): SharedEntry[] => {
     if (listing?.kind !== 'ok') return [];
     const want = new Set(explorerSelection.paths());
-    return [...listing.entries.values()].filter((e) => want.has(e.path)).map((e) => ({ path: e.path, kind: e.kind === 'dir' ? 'dir' : 'file' }));
+    return [...listing.entries.values()].filter((e) => want.has(e.path));
   });
 
-  /** 選んだ項目に、切り取り・削除できないもの（添付のフォルダなど）があれば、その理由 */
-  const cutBlocked = $derived(selectedItems.map((i) => checkTransfer('move', i, parentOf(i.path))).find((c) => !c.ok)?.message ?? null);
-  const deleteBlocked = $derived(selectedItems.map((i) => renameAllowed(i.path)).find((c) => !c.ok)?.message ?? null);
+  /** 操作に渡す形（移動・コピー・ゴミ箱の位置・元の名前） */
+  function transferItemOf(e: SharedEntry): TransferItem {
+    const kind = e.kind === 'dir' ? 'dir' : 'file';
+    const place = trashPlace(e);
+    if (place === 'item') return { path: e.path, kind, name: entryLabel(e), trash: { where: 'item', restoreTo: trashItemOf(e)!.original_path } };
+    if (place === 'root') return { path: e.path, kind, trash: { where: 'root' } };
+    if (place === 'inside') return { path: e.path, kind, trash: { where: 'inside' } };
+    return { path: e.path, kind };
+  }
+
+  const selectedItems = $derived(selectedEntries.map(transferItemOf));
+  /** 選んだものが、全部ゴミ箱の直下の項目（元へ戻す・完全削除の対象） */
+  const allWhole = $derived(selectedEntries.length > 0 && selectedEntries.every((e) => trashPlace(e) === 'item'));
+
+  /** 選んだ項目に、コピーできないもの（ゴミ箱のフォルダ）があれば、その理由 */
+  const copyBlocked = $derived(selectedItems.some((i) => i.trash?.where === 'root') ? 'ゴミ箱のフォルダはコピーできません' : null);
+
+  /** 選んだ項目に、切り取りできないもの（添付のフォルダ・ゴミ箱のフォルダや中身など）があれば、その理由。ゴミ箱の直下の項目は切り取れる（貼り付けで元の場所だけ）。 */
+  const cutBlocked = $derived(
+    selectedItems
+      .map((i) => (i.trash?.where === 'item' ? ({ ok: true } as const) : checkTransfer('move', i, parentOf(i.path))))
+      .find((c) => !c.ok)?.message ?? null,
+  );
+  /** 選んだ項目を削除できない理由。ゴミ箱のフォルダ・中身は消せない。ゴミ箱の項目は完全削除（ふつうの項目と混ぜない） */
+  const deleteBlocked = $derived.by((): string | null => {
+    const places = selectedEntries.map(trashPlace);
+    if (places.includes('root')) return 'ゴミ箱のフォルダは消せません';
+    if (places.includes('inside')) return 'ゴミ箱の中身は消せません（項目を選んで、元へ戻すか完全に削除してください）';
+    if (places.includes('item') && places.includes('normal')) return 'ゴミ箱の項目と、ふつうの項目は一緒に消せません';
+    return selectedItems.map((i) => renameAllowed(i.path)).find((c) => !c.ok)?.message ?? null;
+  });
 
   /** 選んだ項目をコピー・切り取りする（できたことは、貼り付けが押せるようになることで分かるので通知は出さない） */
   function copySelected(): void {
     const items = selectedItems;
-    // attachments/ そのものは動かせないので除く（フォルダのコピーは可）
-    const allowed = items.filter((i) => i.path !== ATTACHMENTS_DIR);
-    if (allowed.length < items.length) ui.toast('添付のフォルダは動かせないので除きました');
+    // attachments/ そのものと、ゴミ箱のフォルダは動かせないので除く（フォルダのコピーは可）
+    const allowed = items.filter((i) => i.path !== ATTACHMENTS_DIR && i.trash?.where !== 'root');
+    if (allowed.length < items.length) ui.toast('添付・ゴミ箱のフォルダは動かせないので除きました');
     if (allowed.length === 0) return;
     explorerBuffer.set('copy', allowed);
     syncToClipboard();
@@ -572,7 +652,118 @@
     explorerSelection.clear();
   }
 
-  async function deleteSelected(): Promise<void> {
+  /** ゴミ箱の直下の項目（選んだもの）の、押した時点の ID と名前。確認のあとも、この分だけ扱う */
+  function wholeTargets(): { id: string; alias: string; label: string }[] {
+    return selectedEntries
+      .filter((e) => trashPlace(e) === 'item')
+      .map((e) => ({ id: trashItemOf(e)!.id, alias: e.path, label: entryLabel(e) }));
+  }
+
+  /**
+   * ゴミ箱の項目を、1 件ずつ元へ戻す・完全に削除する（選んだものを押した時点のサーバーで）。
+   * 各項目の前と応答のあとにサーバーが変わっていないか確かめる。変わったら以後は送らず、新しいサーバーの選びや一覧には触らない。
+   * 成功したものだけ一覧から外す（選びも外す）。失敗したものは選んだまま残す。
+   */
+  async function wholeBatch(
+    targets: { id: string; alias: string; label: string }[],
+    scope: Scope,
+    call: (id: string) => Promise<{ path?: string } | void>,
+    doneText: (n: number) => string,
+  ): Promise<void> {
+    const done: { alias: string }[] = [];
+    const failed: string[] = [];
+    let changed = false;
+    for (const t of targets) {
+      if (!scope.alive()) {
+        changed = true;
+        break;
+      }
+      try {
+        const r = await call(t.id);
+        if (!scope.alive()) {
+          changed = true;
+          break;
+        }
+        done.push({ alias: t.alias });
+        sharedIndex.invalidate(t.alias);
+        if (r && typeof r === 'object' && typeof r.path === 'string') sharedIndex.invalidate(r.path);
+      } catch (err) {
+        if (!scope.alive()) {
+          changed = true;
+          break;
+        }
+        failed.push(`${t.label}: ${attachmentActionText(err)}`);
+      }
+    }
+    if (changed) {
+      ui.toast(`${SERVER_CHANGED}。残りは扱っていません`, 'error');
+      return;
+    }
+    for (const d of done) if (explorerSelection.has(d.alias)) explorerSelection.toggle(d.alias);
+    explorerBuffer.remove(done.map((d) => d.alias));
+    if (done.length > 0) ui.toast(doneText(done.length));
+    if (failed.length > 0) ui.toast(`${failed.length} 件を扱えませんでした（${failed[0]}）`, 'error');
+  }
+
+  /**
+   * 選んだ項目への操作（削除・元へ戻す・完全削除。確認の途中も含む）は、同時に 1 つだけ。
+   * 進んでいるあいだの押しは何もしない（確認を重ねて出さない・二重に送らない）。終わったら、自分の分だけ外す（token）。
+   * サーバーが変わると外す（古い操作は、終わっても新しい操作の状態に触らず、新しいサーバーの選びにも触らない）。
+   */
+  let action = $state<{ token: number } | null>(null);
+  let actionSeq = 0;
+  const actionBusy = $derived(action !== null);
+
+  async function exclusive(run: () => Promise<void>): Promise<void> {
+    if (action) return;
+    const token = ++actionSeq;
+    action = { token };
+    try {
+      await run();
+    } finally {
+      if (action?.token === token) action = null;
+    }
+  }
+
+  /** 元へ戻す（確認は不要。同じ名前があれば、その項目だけ戻せない） */
+  function restoreSelected(): Promise<void> {
+    return exclusive(async () => {
+      const targets = wholeTargets();
+      if (targets.length === 0) return;
+      const scope = beginScope();
+      await wholeBatch(targets, scope, (id) => sharedApi.restore(id), (n) => `${n} 件を元の場所に戻しました`);
+    });
+  }
+
+  /** 完全に削除する（名前を出して確認。取り消せない。ゴミ箱の項目だけ）。確認から終わりまで 1 つの操作 */
+  function purgeSelected(): Promise<void> {
+    return exclusive(async () => {
+      const targets = wholeTargets();
+      if (targets.length === 0) return;
+      const scope = beginScope();
+      const names = targets.map((t) => t.label);
+      const shown = names.length === 1 ? `「${names[0]}」` : `${names.length} 件（${names.slice(0, 3).join('、')}${names.length > 3 ? ' など' : ''}）`;
+      const ok = await ui.confirm({ title: '完全に削除しますか', body: `${shown}を完全に削除します。取り消せません。`, okLabel: '完全に削除', danger: true });
+      if (!ok) return;
+      if (!scope.alive()) {
+        ui.toast(SERVER_CHANGED, 'error');
+        return;
+      }
+      await wholeBatch(targets, scope, async (id) => void (await sharedApi.purge(id)), (n) => `${n} 件を完全に削除しました`);
+    });
+  }
+
+  /** 選んだ項目を、押したものに合わせて扱う（ゴミ箱の項目は完全削除、ふつうの項目はゴミ箱へ） */
+  function removeSelected(): void {
+    if (allWhole) void purgeSelected();
+    else void deleteSelected();
+  }
+
+  function deleteSelected(): Promise<void> {
+    return exclusive(deleteSelectedOnce);
+  }
+
+  async function deleteSelectedOnce(): Promise<void> {
     const items = selectedItems;
     if (items.length === 0 || deleteBlocked) return;
     // 範囲（サーバー）は、選んで押したときのもの。確認を待つあいだに変わったら、何も移さない
@@ -698,7 +889,7 @@
       explorerSelection.start(path);
       logPress('contextmenu で選択モードに入った');
     }
-    if (explorerSelection.active || longPressed) ev.preventDefault();
+    if (explorerSelection.showing || longPressed) ev.preventDefault();
   }
 
   /** 行を押したとき（選択モードの中では選び直す。長押しの直後は何もしない。名前の文字を押したら書き換える） */
@@ -710,6 +901,8 @@
     }
     if (explorerSelection.active) {
       ev.preventDefault();
+      // PC: ダブルクリックの 2 回目の押しでは選び直さない（開くのは dblclick）
+      if (explorerSelection.desktop && ev.detail >= 2) return;
       explorerSelection.toggle(e.path);
       return;
     }
@@ -720,10 +913,45 @@
     open();
   }
 
-  /** 行のキー操作: F2 で名前を書き換える */
+  /**
+   * 開く（PC の Enter・ダブルクリック）。フォルダは中へ、画像・PDF は拡大表示、ほかはダウンロード。
+   * ダウンロードは、一時のリンクを押して行う（行の押しには届かせない）
+   */
+  function activateEntry(e: SharedEntry): void {
+    const action = entryAction(e);
+    if (action === 'enter') fileExplorer.open(e.path);
+    else if (action === 'file') downloadEntry(e);
+    else openViewer(e);
+  }
+
+  function downloadEntry(e: SharedEntry): void {
+    const a = document.createElement('a');
+    a.href = href(e);
+    a.download = e.name;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  /**
+   * 行のキー操作。PC は Enter で開く（Space は押すと選ぶ＝ボタンの既定の押し）。F2 で名前を書き換える。
+   * タッチの選択モードの中では、名前の書き換えはしない（従来どおり）
+   */
   function rowKey(ev: KeyboardEvent, e: SharedEntry): void {
-    if (ev.key !== 'F2' || explorerSelection.active) return;
+    if (explorerSelection.desktop && ev.key === 'Enter') {
+      ev.preventDefault();
+      activateEntry(e);
+      return;
+    }
+    if (ev.key !== 'F2') return;
+    if (explorerSelection.active && !explorerSelection.desktop) return;
     if (startRename(e)) ev.preventDefault();
+    else {
+      const why = renameBlock(e);
+      if (why) ui.toast(why, 'error');
+    }
   }
 
   // ---- 名前の変更: 名前の文字を押すと、その場で入力欄に置き換わる。Enter・外を押すと確定、Esc で取り消し ----
@@ -733,9 +961,18 @@
   let renameError = $state<string | null>(null);
   let renameBusy = $state(false);
 
+  /** 名前を変えられない理由（ゴミ箱の中の項目・添付のフォルダ・書けない場所）。変えられるなら null */
+  function renameBlock(e: SharedEntry): string | null {
+    const place = trashPlace(e);
+    if (place !== 'normal') return 'ゴミ箱の中の項目は名前を変えられません';
+    const a = renameAllowed(e.path);
+    if (!a.ok) return a.message;
+    return writeBlock(parentOf(e.path));
+  }
+
   /** 書き換えを始める（名前を変えられない項目なら false。そのときは普通に開く） */
   function startRename(e: SharedEntry): boolean {
-    if (!renameAllowed(e.path).ok) return false;
+    if (renameBlock(e)) return false;
     renamingPath = e.path;
     renameTo = baseName(e.path);
     renameError = null;
@@ -801,7 +1038,7 @@
   const noneSelected = $derived(explorerSelection.count === 0);
   /** 上端の件数: 選んでいるときは「N 件選択中」、選んでいないときはフォルダの項目数 */
   const countLabel = $derived.by(() => {
-    if (explorerSelection.active) return `${explorerSelection.count} 件選択中`;
+    if (explorerSelection.showing) return `${explorerSelection.count} 件選択中`;
     return listing?.kind === 'ok' ? `${listing.entries.size} 件` : '';
   });
   /** 選択の操作が押せないときの理由（ホバーで出す） */
@@ -811,7 +1048,7 @@
 
   /** 空きスペース（項目の外）を押したら、選択を解除する。項目・バー・メニュー・パンくずは解除しない */
   function onbodyclick(ev: MouseEvent): void {
-    if (!explorerSelection.active || ctx) return;
+    if (!explorerSelection.showing || ctx) return;
     if (ev.target instanceof Element && ev.target.closest('.file-explorer-item, .file-explorer-menu, .menu-backdrop, .file-explorer-bar, .file-explorer-crumbs, .file-explorer-columns')) return;
     explorerSelection.clear();
   }
@@ -821,30 +1058,6 @@
   let mkdirError = $state<string | null>(null);
   let mkdirBusy = $state(false);
 
-  // ---- ゴミ箱の表示 ----
-  let trashOpen = $state(false);
-
-  function openTrash(): void {
-    menuOpen = false;
-    explorerSelection.clear();
-    explorerTrash.reset();
-    explorerTrash.open = true;
-    trashOpen = true;
-  }
-
-  // ゴミ箱を閉じたら open フラグを戻す（invalidate 時の即再取得を止める）
-  function closeTrash(): void {
-    explorerTrash.open = false;
-    trashOpen = false;
-  }
-
-  // Android 戻る / Alt+← でゴミ箱を閉じる（フォルダ履歴やパネルを閉じない）
-  // untrack: addPluginBack の内部読み書きをこの effect に追跡させない（無限ループ防止）
-  $effect(() => {
-    if (!trashOpen) return;
-    return untrack(() => ui.addPluginBack(() => closeTrash()));
-  });
-
   // ---- 内部 DnD（項目をフォルダ・パンくず・空きスペースへドラッグ＆ドロップ） ----
   // ドラッグ中の項目（null なら DnD していない）。タッチの長押しと競合しないよう、HTML5 Drag API のみ
   let dragItems = $state<TransferItem[] | null>(null);
@@ -853,7 +1066,7 @@
 
   function startItemDrag(ev: DragEvent, e: SharedEntry): void {
     if (renamingPath === e.path) { ev.preventDefault(); return; }
-    const item: TransferItem = { path: e.path, kind: e.kind === 'dir' ? 'dir' : 'file' };
+    const item = transferItemOf(e);
     // 選択中にドラッグしたら選択中の全項目を、そうでなければその 1 件だけ
     const items = explorerSelection.active && explorerSelection.has(e.path) ? selectedItems : [item];
     dragItems = items;
@@ -876,7 +1089,6 @@
     const internal = isInternalDrag(ev);
     const external = isExternalFileDrag(ev);
     if (!internal && !external) return;
-    if (trashOpen) return;
     if (internal) {
       if (!dragItems) return;
       if (dragItems.some((i) => i.path === folderPath || (i.kind === 'dir' && folderPath.startsWith(i.path + '/')))) return;
@@ -897,7 +1109,7 @@
     dragTarget = null;
 
     if (isInternalDrag(ev)) {
-      if (!items || trashOpen) return;
+      if (!items) return;
       ev.preventDefault();
       ev.stopPropagation();
       const op: TransferOp = ev.ctrlKey ? 'copy' : 'move';
@@ -905,7 +1117,7 @@
       return;
     }
 
-    if (isExternalFileDrag(ev) && !trashOpen) {
+    if (isExternalFileDrag(ev)) {
       // 外部 OS ファイル → そのフォルダを宛先としてアップロード
       await bodyExternalDrop(ev, folderPath);
     }
@@ -916,7 +1128,6 @@
     const internal = isInternalDrag(ev);
     const external = isExternalFileDrag(ev);
     if (!internal && !external) return;
-    if (trashOpen) return;
     if (internal) {
       if (!dragItems) return;
       if (dragItems.some((i) => i.path === dirPath || (i.kind === 'dir' && dirPath.startsWith(i.path + '/')))) return;
@@ -936,14 +1147,14 @@
     dragTarget = null;
 
     if (isInternalDrag(ev)) {
-      if (!items || trashOpen) return;
+      if (!items) return;
       ev.preventDefault();
       const op: TransferOp = ev.ctrlKey ? 'copy' : 'move';
       await performInternalTransfer(op, items, dirPath);
       return;
     }
 
-    if (isExternalFileDrag(ev) && !trashOpen) {
+    if (isExternalFileDrag(ev)) {
       await bodyExternalDrop(ev, dirPath);
     }
   }
@@ -958,6 +1169,11 @@
    * 上書きの確認や応答を待つあいだにサーバーが変わったら、新しいサーバーへは何も送らない（残りは移さず、知らせる）。
    */
   async function transferInScope(op: TransferOp, items: TransferItem[], destDir: string): Promise<void> {
+    const why = writeBlock(destDir);
+    if (why) {
+      ui.toast(why, 'error');
+      return;
+    }
     const scope = beginScope();
     const fetched = await fetchDestEntries(destDir);
     if (!scope.alive()) {
@@ -1026,8 +1242,6 @@
   async function bodyExternalDrop(ev: DragEvent, overrideDir?: string): Promise<void> {
     externalDragOver = false;
     externalDragDepth = 0;
-    // ゴミ箱が前面に出ているときは背後のフォルダへアップロードしない
-    if (trashOpen) return;
     if (!ev.dataTransfer) return;
     // Windows: dropRootsOf は必ずドロップイベントの中で同期的に呼ぶ（後からは取れない）
     const roots = dropRootsOf(ev.dataTransfer);
@@ -1058,6 +1272,11 @@
    */
   async function uploadOsDropEntries(entries: OsDropEntry[], destDir: string, serverUrl: string): Promise<void> {
     if (entries.length === 0) return;
+    const why = writeBlock(destDir);
+    if (why) {
+      ui.toast(why, 'error');
+      return;
+    }
 
     // 宛先一覧を取得（fetchDestEntries で キャッシュ / 明示取得を共通化）
     if (getServerUrl() !== serverUrl) {
@@ -1164,7 +1383,7 @@
       const items = dragItems;
       dragItems = null;
       dragTarget = null;
-      if (!items || trashOpen) return; // ゴミ箱前面中は内部 DnD も背後のフォルダへ移動しない
+      if (!items) return;
       ev.preventDefault();
       ev.stopPropagation();
       const op: TransferOp = ev.ctrlKey ? 'copy' : 'move';
@@ -1187,6 +1406,11 @@
     if (mkdirBusy) return;
     const dir = fileExplorer.dir;
     const name = mkdirName.trim();
+    const blocked = writeBlock(dir);
+    if (blocked) {
+      mkdirError = blocked;
+      return;
+    }
     const bad = nameError(dir, name);
     if (bad) {
       mkdirError = bad;
@@ -1215,14 +1439,19 @@
     <div class="file-explorer-selection" role="toolbar" aria-label="選んだ項目の操作">
       <span class="file-explorer-selection-count" aria-live="polite">{countLabel}</span>
       <div class="file-explorer-selection-actions">
-        {#if listing?.kind === 'ok' && explorerSelection.active}
+        {#if listing?.kind === 'ok' && explorerSelection.showing}
           <IconButton label="すべて選ぶ" title="すべて選ぶ" onclick={() => explorerSelection.selectAll([...listing.entries.values()].map((e) => e.path))}><SquareCheck size={18} /></IconButton>
         {/if}
-        <IconButton label="コピー" title={selectionReason('コピー')} disabled={noneSelected} onclick={copySelected}><Copy size={18} /></IconButton>
+        <IconButton label="コピー" title={copyBlocked ?? selectionReason('コピー')} disabled={noneSelected || copyBlocked !== null} onclick={copySelected}><Copy size={18} /></IconButton>
         <IconButton label="切り取り" title={cutBlocked ?? selectionReason('切り取り')} disabled={noneSelected || cutBlocked !== null} onclick={cutSelected}><Scissors size={18} /></IconButton>
         <!-- 貼り付けは選ばなくても押せる（アプリ内でコピーしたもの、または OS のクリップボードの中身） -->
         <IconButton label="貼り付け" title={canPaste ? '貼り付け' : 'コピー・切り取りすると貼り付けられます'} disabled={!canPaste || pasting} onclick={() => void pasteAny()}><ClipboardPaste size={18} /></IconButton>
-        <IconButton label="削除" title={deleteBlocked ?? selectionReason('削除')} disabled={noneSelected || deleteBlocked !== null} onclick={() => void deleteSelected()}><Trash size={18} /></IconButton>
+        {#if allWhole}
+          <IconButton label="元へ戻す" title={selectionReason('元へ戻す')} disabled={noneSelected || actionBusy} onclick={() => void restoreSelected()}><RotateCcw size={18} /></IconButton>
+          <IconButton label="完全削除" title={deleteBlocked ?? selectionReason('完全削除')} disabled={noneSelected || deleteBlocked !== null || actionBusy} onclick={removeSelected}><Trash size={18} /></IconButton>
+        {:else}
+          <IconButton label="削除" title={deleteBlocked ?? selectionReason('削除')} disabled={noneSelected || deleteBlocked !== null || actionBusy} onclick={removeSelected}><Trash size={18} /></IconButton>
+        {/if}
       </div>
     </div>
     {#snippet actions()}
@@ -1230,7 +1459,6 @@
       <IconButton label="メニュー" title="メニュー" active={menuOpen} onclick={() => (menuOpen = !menuOpen)}><MenuIcon size={18} /></IconButton>
       {#if menuOpen}
         <Menu class="file-explorer-popup-menu file-explorer-menu" label="共有フォルダの操作" onclose={() => (menuOpen = false)}>
-          <MenuItem icon={Trash2} onclick={openTrash}>ゴミ箱</MenuItem>
           {#if canCreateFolder}
             <MenuItem icon={FolderPlus} onclick={() => run(openMkdir)}>新しいフォルダ</MenuItem>
           {/if}
@@ -1315,7 +1543,7 @@
     {:else if listing.entries.size === 0}
       <p class="file-explorer-status muted">このフォルダには、まだ何もありません。</p>
     {:else}
-      {@const sorted = sortEntries(listing.entries.values(), dirView.sortKey, dirView.sortOrder)}
+      {@const sorted = sortEntries([...listing.entries.values()].map(displayEntry), dirView.sortKey, dirView.sortOrder)}
       {#if dirView.view === 'details'}
         <div class="file-explorer-columns" aria-hidden="true">
           <span class="file-explorer-col-name">名前</span>
@@ -1376,7 +1604,7 @@
             {/snippet}
             {#snippet row()}
               {#if dirView.view === 'grid'}
-                {#if explorerSelection.active}
+                {#if explorerSelection.showing}
                   <span class="file-explorer-check" class:file-explorer-check-on={explorerSelection.has(e.path)}>{#if explorerSelection.has(e.path)}<SquareCheck size={18} />{:else}<Square size={18} />{/if}</span>
                 {/if}
                 <span class="file-explorer-thumb">
@@ -1390,7 +1618,7 @@
               {:else}
                 <!-- 詳細。選択モードのときは、アイコンの場所にチェックを出す（同じ大きさで入れ替える） -->
                 <span class="file-explorer-icon">
-                  {#if explorerSelection.active}
+                  {#if explorerSelection.showing}
                     <span class="file-explorer-check" class:file-explorer-check-on={explorerSelection.has(e.path)}>{#if explorerSelection.has(e.path)}<SquareCheck size={18} />{:else}<Square size={18} />{/if}</span>
                   {:else if action === 'enter'}<Folder size={18} />{:else if action === 'image'}<ImageIcon size={18} />{:else if action === 'pdf'}<FileText size={18} />{:else}<FileIcon size={18} />{/if}
                 </span>
@@ -1404,7 +1632,11 @@
               <!-- 書き換え中は、入力欄を入れるため押せる行（button・a）にしない -->
               <div class="file-explorer-row">{@render row()}</div>
             {:else if explorerSelection.active}
-              <button type="button" class="file-explorer-row" aria-pressed={explorerSelection.has(e.path)} onclick={(ev) => rowClick(ev, e, () => {})}>{@render row()}</button>
+              <!-- 選ぶ操作の行（タッチの選択モード・PC の常時）。PC は、ダブルクリック・Enter で開く -->
+              <button type="button" class="file-explorer-row" aria-pressed={explorerSelection.has(e.path)}
+                data-drop-dir={explorerSelection.desktop && e.kind === 'dir' ? e.path : undefined}
+                ondblclick={explorerSelection.desktop ? () => activateEntry(e) : undefined}
+                onclick={(ev) => rowClick(ev, e, () => {})} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
             {:else if action === 'enter'}
               <button type="button" class="file-explorer-row" data-drop-dir={e.path} onclick={(ev) => rowClick(ev, e, () => fileExplorer.open(e.path))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
             {:else if action !== 'file'}
@@ -1419,10 +1651,6 @@
       </ul>
     {/if}
   </div>
-  <!-- ゴミ箱画面（file-explorer を覆う絶対位置） -->
-  {#if trashOpen}
-    <div class="file-explorer-trash-overlay"><TrashView onclose={closeTrash} /></div>
-  {/if}
 </div>
 
 <!-- 空きスペースの長押し・右クリックのメニュー（押したところに出す） -->
@@ -1874,14 +2102,6 @@
     outline: 2px dashed var(--accent);
     outline-offset: -2px;
     border-radius: var(--radius-sm);
-  }
-  /* ゴミ箱画面: file-explorer の中に絶対位置で全体を覆う */
-  .file-explorer-trash-overlay {
-    position: absolute;
-    inset: 0;
-    /* 背後の sticky 見出しと項目メニューより前、確認ダイアログより後ろ */
-    z-index: calc(var(--z-menu) + 1);
-    background: var(--bg);
   }
   .file-explorer {
     position: relative;

@@ -1,7 +1,7 @@
 <script lang="ts">
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
   import Info from '@lucide/svelte/icons/info';
-  import { baseName } from '../lib/sharedPath';
+  import { entryLabel } from '../lib/trashFolder';
   import type { SharedEntry } from '../lib/protocol/SharedEntry';
   import IconButton from './ui/IconButton.svelte';
   import Menu from './ui/Menu.svelte';
@@ -15,7 +15,7 @@
     placement = 'overlay',
   }: { entry: SharedEntry; placement?: 'overlay' | 'inline' } = $props();
 
-  const name = $derived(baseName(entry.path));
+  const name = $derived(entryLabel(entry));
   let open = $state(false);
   let showProperties = $state(false);
 

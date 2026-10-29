@@ -159,3 +159,77 @@ describe('runTransfer', () => {
     expect(transferFailure({ done: [], failed: [], skipped: [], declined: [] })).toBeNull();
   });
 });
+
+describe('ゴミ箱の項目（仮想フォルダ）の移動・コピー', () => {
+  const ENTRY = (name: string, path: string): SharedEntry => ({ name, path, kind: 'file', size: 1, modified: 0, mime: null, message_id: null, file_id: null });
+  const item = (path: string, restoreTo: string, name = restoreTo.split('/').pop()): TransferItem => ({
+    path,
+    kind: 'file',
+    name,
+    trash: { where: 'item', restoreTo },
+  });
+  const ALIAS = '.trash/01HZX0000000000000000000AB--report.pdf';
+
+  it('直下の項目は、元の名前でコピーする（別名のままにしない）', () => {
+    const plan = planTransfer('copy', [item(ALIAS, 'docs/report.pdf')], 'other', new Map());
+    expect(plan[0]).toMatchObject({ kind: 'create', name: 'report.pdf', to: 'other/report.pdf' });
+  });
+
+  it('直下の項目は、元の場所へだけ移す（戻す）。元のパスぴったりになる', () => {
+    expect(checkTransfer('move', item(ALIAS, 'docs/report.pdf'), 'docs')).toEqual({ ok: true });
+    const plan = planTransfer('move', [item(ALIAS, 'docs/report.pdf')], 'docs', new Map());
+    expect(plan[0]).toMatchObject({ kind: 'create', to: 'docs/report.pdf' });
+  });
+
+  it('元の場所以外へは移せない（はっきり止める。送らない）', () => {
+    const c = checkTransfer('move', item(ALIAS, 'docs/report.pdf'), 'other');
+    expect(c.ok).toBe(false);
+    if (!c.ok) expect(c.message).toContain('元の場所');
+    const plan = planTransfer('move', [item(ALIAS, 'docs/report.pdf')], 'other', new Map());
+    expect(plan[0]!.kind).toBe('blocked');
+  });
+
+  it('元の場所が直下なら、直下へだけ戻せる', () => {
+    expect(checkTransfer('move', item(ALIAS, 'report.pdf'), '')).toEqual({ ok: true });
+    const c = checkTransfer('move', item(ALIAS, 'report.pdf'), 'docs');
+    expect(c.ok).toBe(false);
+  });
+
+  it('attachments の項目は、attachments へ戻せる（添付と共有の間の決まりは掛けない）', () => {
+    const att = item('.trash/01HZX0000000000000000000AB--F1.png', 'attachments/F1.png', 'F1.png');
+    expect(checkTransfer('move', att, 'attachments')).toEqual({ ok: true });
+  });
+
+  it('同じ名前があるときは、戻せない（上書きしない）。コピーは確認して上書き', () => {
+    const dest = new Map([['report.pdf', ENTRY('report.pdf', 'docs/report.pdf')]]);
+    const back = planTransfer('move', [item(ALIAS, 'docs/report.pdf')], 'docs', dest);
+    expect(back[0]).toMatchObject({ kind: 'blocked' });
+    expect(back[0]!.message).toContain('戻せません');
+    const copy = planTransfer('copy', [item(ALIAS, 'docs/report.pdf')], 'docs', dest);
+    expect(copy[0]).toMatchObject({ kind: 'overwrite', to: 'docs/report.pdf' });
+  });
+
+  it('ゴミ箱のルートは、動かせず、コピーもできない', () => {
+    const root: TransferItem = { path: '.trash', kind: 'dir', trash: { where: 'root' } };
+    expect(checkTransfer('move', root, '').ok).toBe(false);
+    expect(checkTransfer('copy', root, 'docs').ok).toBe(false);
+  });
+
+  it('ゴミ箱の中身は、コピーはできるが、動かせない', () => {
+    const inner: TransferItem = { path: '.trash/X--d/a.txt', kind: 'file', trash: { where: 'inside' } };
+    expect(checkTransfer('copy', inner, 'docs')).toEqual({ ok: true });
+    const c = checkTransfer('move', inner, 'docs');
+    expect(c.ok).toBe(false);
+  });
+
+  it('失敗の一言は、元の名前で出す', () => {
+    const msg = transferFailure({ done: [], failed: [{ item: item(ALIAS, 'docs/report.pdf'), message: 'x' }], skipped: [], declined: [] });
+    expect(msg).toContain('「report.pdf」');
+    expect(msg).not.toContain('01HZX');
+  });
+
+  it('ふつうの項目の決まりは変えない（既定の操作は従来どおり）', () => {
+    expect(checkTransfer('move', f('docs/a.txt'), 'other')).toEqual({ ok: true });
+    expect(planTransfer('copy', [f('docs/a.txt')], 'other', new Map())[0]).toMatchObject({ kind: 'create', to: 'other/a.txt' });
+  });
+});

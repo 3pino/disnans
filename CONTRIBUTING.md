@@ -44,7 +44,7 @@ node scripts/prepare-cli.mjs          # 本物の CLI を release で作って�
 | クライアント(型・Svelte) | `cd app && npm run check` |
 | クライアントの単体テスト | `cd app && npx vitest run` |
 | Rust | `cargo test --workspace` |
-| Chromium での DOM 測定・タッチ操作(手動) | `app/scripts/touch-check.mjs`。`npm run dev` で vite を起動し(既定は 5173)、`CHROME_BIN=<Chromium か headless_shell のパス> DISNANS_URL=http://127.0.0.1:5173 node scripts/touch-check.mjs`(`app` の中で実行)。Tauri の IPC(`window.__TAURI_INTERNALS__` と `__DISNANS_PLATFORM__`)を `scripts/touch-fixture.mjs` が CDP で読み込み前に差し込み、共有フォルダの一覧は仮のサーバーから返す。サーバー・Tauri は要らない。ソースを編集中の `npm run dev` は再読み込みされて不安定になるので、固定して測るときは `npx vite build --outDir /tmp/tc-dist` のあと `npx vite preview --outDir /tmp/tc-dist --port 5198` を `DISNANS_URL` に使う。最後に、fixture に無い IPC を本体が呼んでいないことも確かめる。メニューや「…」の位置・タップ・長押しを矩形とイベントで確かめる(見た目は目で確かめる)。fixture に無い IPC を本体が呼ぶようになったら、`touch-fixture.mjs` の `handlers` に足す(`TOUCH_DEBUG=1` で未対応のコマンドを表示) |
+| Chromium での DOM 測定・タッチ・マウス操作(手動) | `app/scripts/touch-check.mjs`。`npx vite build --outDir /tmp/tc-dist` のあと `npx vite preview --outDir /tmp/tc-dist --port 5198` を起動し、`app` の中で `CHROME_BIN=<chrome-headless-shell のパス> DISNANS_URL=http://127.0.0.1:5198 node scripts/touch-check.mjs`(デスクトップ: 実際のマウス・ダブルクリック・キー)と、同じコマンドに `TOUCH_PLATFORM=android` を付けたもの(Android: 実際のタッチ・長押し)の 2 回を実行する。Tauri の IPC(`window.__TAURI_INTERNALS__` と `__DISNANS_PLATFORM__`)を `scripts/touch-fixture.mjs` が CDP で読み込み前に差し込み、共有フォルダは仮のサーバー(メモリ上のフォルダと仮想の `.trash/`)から返す。サーバー・Tauri は要らない。矩形とイベント、押せるか(上に何も被らないか)を確かめる(見た目は目で確かめる)。fixture か仮のサーバーに無い IPC・REST を本体が呼ぶと失敗にする。足すときは `touch-fixture.mjs` の `handlers` か `touch-check.mjs` の仮サーバーへ(`TOUCH_DEBUG=1` で呼ばれた IPC を表示)。ソース編集中の `vite dev` は再読み込みで不安定になるので、固定して測る |
 | 文書のリンク・アンカー | `node scripts/check-docs.mjs` |
 
 ## ドキュメント

@@ -10,7 +10,6 @@ import { adjacentItem } from '../lib/lightbox';
 import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
 import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
 import { explorerView } from '../lib/stores/explorerView.svelte';
-import { explorerTrash } from '../lib/stores/explorerTrash.svelte';
 import { LONG_PRESS_MS } from '../lib/sortable';
 import * as cfg from '../lib/config';
 
@@ -39,6 +38,7 @@ const h = vi.hoisted(() => ({
   remove: vi.fn(async (_path: string) => {}),
   trash: vi.fn(async (path: string) => ({ id: `id-${path}`, original_path: path, kind: 'file' as const, size: 1, deleted_at: 0 })),
   restore: vi.fn(async (_id: string) => ({ name: '', path: '', kind: 'file' as const, size: 1, modified: 0, mime: null, message_id: null, file_id: null })),
+  purge: vi.fn(async (_id: string) => {}),
   move: vi.fn(async (_from: string, _to: string) => ({})),
   /** OS のクリップボード（差し替え）。copyText で書いたものが text に入る */
   clip: { text: null as string | null, image: null as File | null, writable: true },
@@ -72,20 +72,31 @@ vi.mock('../lib/transport/shared', () => ({
     restore: h.restore,
     size: async () => ({ size: 0, files: 0, dirs: 0 }),
     trashList: async () => [],
-    purge: async () => {},
+    purge: h.purge,
   },
   uploadShared: h.upload,
+}));
+
+/** PC の Tauri（Windows・Linux）かどうか。true のときだけ、選択の操作が 0 件でも続く（テストごとに戻す） */
+const dsk = vi.hoisted(() => ({ desktop: false }));
+vi.mock('../lib/platform', async (orig) => ({
+  ...(await orig<typeof import('../lib/platform')>()),
+  isTauri: () => dsk.desktop,
+  osName: () => (dsk.desktop ? 'windows' : ''),
+  isLinuxDesktop: () => false,
 }));
 
 let instance: ReturnType<typeof mount> | undefined;
 let target: HTMLElement | undefined;
 
 beforeEach(() => {
+  ui.toasts = [];
   h.upload.mockReset();
   h.upload.mockImplementation(() => ({ promise: new Promise(() => {}), abort: () => {} }));
   fileExplorer.dir = '';
 });
 afterEach(async () => {
+  dsk.desktop = false;
   if (instance) await unmount(instance);
   target?.remove();
   instance = undefined;
@@ -99,6 +110,7 @@ afterEach(async () => {
   h.list.mockImplementation(async () => h.current ?? listing);
   h.remove.mockClear();
   h.trash.mockClear();
+  h.purge.mockClear();
   h.restore.mockClear();
   h.move.mockClear();
   h.clip = { text: null, image: null, writable: true };
@@ -436,7 +448,7 @@ describe('複数選択（選択モード）', () => {
     el.querySelector<HTMLButtonElement>('button[aria-label="削除"]')!.click();
     await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
     ui.confirmReq!.resolve(true);
-    await vi.waitFor(() => expect(ui.toasts.length).toBeGreaterThan(0));
+    await vi.waitFor(() => expect(ui.toasts.some((t) => t.action?.label === '取り消す')).toBe(true));
     // 成功トースト: id-a のみ
     const undoToast = ui.toasts.find((t) => t.action?.label === '取り消す');
     expect(undoToast).toBeTruthy();
@@ -444,8 +456,8 @@ describe('複数選択（選択モード）', () => {
     h.restore.mockResolvedValueOnce({ name: 'a.txt', path: 'a.txt', kind: 'file', size: 1, modified: 0, mime: null, message_id: null, file_id: null });
     undoToast!.action!.run();
     await vi.waitFor(() => expect(h.restore).toHaveBeenCalledTimes(1));
-    // mock は id-${path} を返すので a.txt → id-a.txt
-    expect(h.restore.mock.calls[0][0]).toBe('id-a.txt');
+    // 削除の応答（id-a）の ID で戻す（失敗した docs の ID は含まない）
+    expect(h.restore.mock.calls[0][0]).toBe('id-a');
   });
 
   it('ゴミ箱 undo: サーバーが変わっていたら restore を送らない', async () => {
@@ -471,33 +483,6 @@ describe('複数選択（選択モード）', () => {
     } finally {
       vi.restoreAllMocks();
     }
-  });
-
-  it('ゴミ箱を開くと選択解除・戻る操作で閉じる', async () => {
-    const el = await render();
-    explorerSelection.enter();
-    flushSync();
-    pressRow(el, 'a.txt');
-    flushSync();
-    expect(explorerSelection.active).toBe(true);
-    // ≡ → ゴミ箱
-    el.querySelector<HTMLButtonElement>('button[aria-label="メニュー"]')!.click();
-    flushSync();
-    const trashItem = [...document.querySelectorAll<HTMLButtonElement>('.file-explorer-menu .menu-item')].find((b) => b.textContent?.includes('ゴミ箱'));
-    expect(trashItem).toBeTruthy();
-    trashItem!.click();
-    flushSync();
-    // 選択が解除される
-    expect(explorerSelection.active).toBe(false);
-    // ゴミ箱ビューが表示される
-    expect(el.querySelector('.file-explorer-trash-overlay')).not.toBeNull();
-    // 戻る操作でゴミ箱を閉じる（フォルダには戻らない）
-    const before = fileExplorer.dir;
-    const backOk = ui.back();
-    flushSync();
-    expect(backOk).toBe(true);
-    expect(el.querySelector('.file-explorer-trash-overlay')).toBeNull();
-    expect(fileExplorer.dir).toBe(before); // フォルダは変わらない
   });
 
   it('削除後にカットバッファから成功したパスを除去する（trash→paste でnot_found にならない）', async () => {
@@ -1285,29 +1270,968 @@ describe('OS のドロップで、上書きを取り消したものだけ送ら�
   });
 });
 
-describe('サーバーが変わったら、開いているゴミ箱を閉じる', () => {
-  it('ゴミ箱を開いたあとにサーバーが変わると、ゴミ箱（完全削除の確認を含む）を閉じる。外れたら購読も解く', async () => {
-    let listener: (() => void) | null = null;
-    const unsub = vi.fn();
-    const spy = vi.spyOn(cfg, 'onServerChange').mockImplementation((fn: () => void) => {
-      listener = fn;
-      return unsub;
-    });
+/** PC の選択（0 件でも操作が続く）: 行の押し・ダブルクリック・Enter・F2・空きスペース */
+describe('PC の選択（0 件でも続く。ダブルクリック・Enter で開く）', () => {
+  beforeEach(() => {
+    dsk.desktop = true;
+  });
+
+  const clickRow = (el: HTMLElement, name: string, detail = 1) => {
+    rowOf(el, name).querySelector<HTMLElement>('.file-explorer-row')!.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true, detail }),
+    );
+    flushSync();
+  };
+  const keyRow = (el: HTMLElement, name: string, key: string) => {
+    rowOf(el, name).querySelector<HTMLElement>('.file-explorer-row')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+    );
+    flushSync();
+  };
+  const count = (el: HTMLElement) => el.querySelector('.file-explorer-selection-count')!.textContent?.trim();
+
+  it('0→1→0→1: 1 件押すと選び、外しても 0 件のまま操作は続く（印・件数の選択表示は出さない）', async () => {
+    const el = await render();
+    expect(count(el)).toBe('3 件');
+    clickRow(el, 'a.txt');
+    expect(count(el)).toBe('1 件選択中');
+    expect(el.querySelector('.file-explorer-check')).not.toBeNull();
+    clickRow(el, 'a.txt');
+    expect(count(el)).toBe('3 件');
+    expect(el.querySelector('.file-explorer-check')).toBeNull();
+    expect(el.querySelector('button[aria-label="すべて選ぶ"]')).toBeNull();
+    // 0 件でも行は押せる（選ぶ操作が続いている）
+    expect(rowOf(el, 'a.txt').querySelector('.file-explorer-row')!.getAttribute('aria-pressed')).toBe('false');
+    clickRow(el, 'a.txt');
+    expect(count(el)).toBe('1 件選択中');
+  });
+
+  it('0 件のときは、通常の一覧（チェック・選択の件数なし）。選ぶ操作は押せるまま', async () => {
+    const el = await render();
+    expect(el.querySelectorAll('.file-explorer-check').length).toBe(0);
+    expect(count(el)).toBe('3 件');
+    expect(el.querySelector('.file-explorer-row')!.tagName).toBe('BUTTON');
+  });
+
+  it('シングルクリックでは開かない・名前の文字を押しても書き換えにならない', async () => {
+    const el = await render();
+    const name = rowOf(el, 'docs').querySelector<HTMLElement>('.file-explorer-name-text')!;
+    name.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
+    flushSync();
+    expect(fileExplorer.dir).toBe('');
+    expect(el.querySelector('.file-explorer-rename')).toBeNull();
+    expect(count(el)).toBe('1 件選択中');
+  });
+
+  it('ダブルクリックでフォルダを開く（2 回目の押しでは選び直さない）', async () => {
+    const el = await render();
+    clickRow(el, 'docs', 1);
+    clickRow(el, 'docs', 2);
+    // 2 回目（detail 2）では選び直さない。選びは 1 件のまま
+    expect(count(el)).toBe('1 件選択中');
+    rowOf(el, 'docs').querySelector<HTMLElement>('.file-explorer-row')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    flushSync();
+    expect(fileExplorer.dir).toBe('docs');
+  });
+
+  it('Enter で開く（フォルダは中へ）。画像は拡大表示、ほかのファイルはダウンロード', async () => {
+    const el = await render();
+    keyRow(el, 'docs', 'Enter');
+    expect(fileExplorer.dir).toBe('docs');
+    fileExplorer.open('');
+    flushSync();
+    await vi.waitFor(() => expect(rowOf(el, 'pic.png')).toBeTruthy());
+    keyRow(el, 'pic.png', 'Enter');
+    expect(ui.lightbox).not.toBeNull();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     try {
-      const el = await render();
-      menuClick(el, 'ゴミ箱');
-      await vi.waitFor(() => expect(el.querySelector('.file-explorer-trash-overlay')).not.toBeNull());
-      expect(listener).not.toBeNull();
-      listener!();
+      keyRow(el, 'a.txt', 'Enter');
+      expect(click).toHaveBeenCalledTimes(1);
+    } finally {
+      click.mockRestore();
+    }
+    // Enter で開いたときは選びは変わらない（0 件のまま）
+    expect(count(el)).toBe('3 件');
+  });
+
+  it('ダブルクリックで画像を開く（拡大表示）', async () => {
+    const el = await render();
+    rowOf(el, 'pic.png').querySelector<HTMLElement>('.file-explorer-row')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    expect(ui.lightbox).not.toBeNull();
+  });
+
+  it('F2 で名前を書き換える（0 件でも・選んでいても使える）', async () => {
+    const el = await render();
+    keyRow(el, 'a.txt', 'F2');
+    flushSync();
+    expect(el.querySelector('.file-explorer-rename')).not.toBeNull();
+    renameKeyEsc(el);
+    clickRow(el, 'a.txt');
+    keyRow(el, 'a.txt', 'F2');
+    flushSync();
+    expect(el.querySelector('.file-explorer-rename')).not.toBeNull();
+  });
+
+  it('空きスペースを押すと選びを外す。0 件でも操作は続く（再び押せる）', async () => {
+    const el = await render();
+    clickRow(el, 'a.txt');
+    el.querySelector<HTMLElement>('.file-explorer-body')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    flushSync();
+    expect(count(el)).toBe('3 件');
+    expect(explorerSelection.active).toBe(true);
+    clickRow(el, 'pic.png');
+    expect(count(el)).toBe('1 件選択中');
+  });
+
+  it('0 件のあいだは「戻る」（パネルの戻る）を奪わない。選んでいる間は選びを外す', async () => {
+    const el = await render();
+    const spy = vi.spyOn(ui, 'addPluginBack');
+    try {
       flushSync();
-      expect(el.querySelector('.file-explorer-trash-overlay')).toBeNull();
-      expect(explorerTrash.open).toBe(false);
-      // 閉じられる前に外れたら、購読を解く
-      await unmount(instance!);
-      instance = undefined;
-      expect(unsub).toHaveBeenCalled();
+      expect(spy).not.toHaveBeenCalled();
+      clickRow(el, 'a.txt');
+      flushSync();
+      expect(spy).toHaveBeenCalled();
     } finally {
       spy.mockRestore();
+    }
+  });
+});
+
+function renameKeyEsc(el: HTMLElement): void {
+  const ta = el.querySelector<HTMLTextAreaElement>('.file-explorer-rename');
+  ta?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  flushSync();
+}
+
+/** タッチ（Android）: 従来どおり。0 件で終わる・タップで開く・長押しで選ぶ */
+describe('タッチ（Android）の選択は従来どおり（0 件で終わる）', () => {
+  it('選びを外して 0 件になると選択モードを終え、タップは開く動作に戻る', async () => {
+    const el = await render();
+    explorerSelection.start('a.txt');
+    flushSync();
+    expect(el.querySelector('.file-explorer-check')).not.toBeNull();
+    rowOf(el, 'a.txt').querySelector<HTMLElement>('.file-explorer-row')!.click();
+    flushSync();
+    expect(explorerSelection.active).toBe(false);
+    expect(el.querySelector('.file-explorer-check')).toBeNull();
+    expect(count(el)).toBe('3 件');
+    // 0 件に戻ったあと、フォルダのタップは開く
+    rowOf(el, 'docs').querySelector<HTMLElement>('.file-explorer-row')!.click();
+    flushSync();
+    expect(fileExplorer.dir).toBe('docs');
+  });
+
+  it('選択モードでは F2 で書き換えない（従来どおり）', async () => {
+    const el = await render();
+    explorerSelection.start('a.txt');
+    flushSync();
+    rowOf(el, 'a.txt').querySelector<HTMLElement>('.file-explorer-row')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true, cancelable: true }));
+    flushSync();
+    expect(el.querySelector('.file-explorer-rename')).toBeNull();
+  });
+
+  function count(el: HTMLElement): string | undefined {
+    return el.querySelector('.file-explorer-selection-count')!.textContent?.trim();
+  }
+});
+
+/** 名前の行（一覧の 1 件）。PC・タッチの選択のテストで使う */
+function rowOf(el: HTMLElement, name: string): HTMLElement {
+  return [...el.querySelectorAll<HTMLElement>('.file-explorer-item')].find((li) => li.textContent?.includes(name))!;
+}
+
+/* ---- ゴミ箱は、ふつうのフォルダとして開く（.trash。直下の項目は元の名前で出す・元へ戻す・完全削除） ---- */
+
+const ID1 = '01HZX0000000000000000000AB';
+const ID2 = '01HZX0000000000000000000CD';
+const ID3 = '01HZX0000000000000000000EF';
+const ID4 = '01HZX0000000000000000000GH';
+const ROOT_TRASH: SharedEntry = { ...entry('.trash', 'dir'), path: '.trash', trash: { kind: 'root' } };
+/** 直下の項目（ゴミ箱の 1 件）。名前は ID--元の名前、パスも同じ別名。表示は元の名前 */
+function trashItem(id: string, original: string, kind: 'file' | 'dir' = 'file'): SharedEntry {
+  const leaf = original.split('/').pop()!;
+  return {
+    ...entry(`${id}--${leaf}`, kind),
+    path: `.trash/${id}--${leaf}`,
+    size: 1,
+    trash: { kind: 'item', entry: { id, original_path: original, kind, size: 1, deleted_at: 0 } },
+  };
+}
+function inner(parentAlias: string, name: string, kind: 'file' | 'dir' = 'file'): SharedEntry {
+  return { ...entry(name, kind), path: `${parentAlias}/${name}`, trash: { kind: 'descendant', id: ID4 } };
+}
+const rootList = (): SharedEntry[] => [ROOT_TRASH, entry('docs', 'dir')];
+const trashList = (): SharedEntry[] => [
+  trashItem(ID1, 'docs/report.pdf'),
+  trashItem(ID2, 'a/x.txt'),
+  trashItem(ID3, 'b/x.txt'),
+  trashItem(ID4, 'old', 'dir'),
+];
+const innerList = (): SharedEntry[] => [inner(`.trash/${ID4}--old`, 'sub', 'dir'), inner(`.trash/${ID4}--old`, 'k.txt')];
+const ALIAS1 = `.trash/${ID1}--report.pdf`;
+const ALIAS4 = `.trash/${ID4}--old`;
+
+/** パスごとの一覧（書いていないパスは空）。'pending' は応答しない、'error' は失敗 */
+function serve(map: Record<string, SharedEntry[] | 'pending' | 'error'>): void {
+  h.list.mockImplementation(async (path?: string) => {
+    const v = map[path ?? ''];
+    if (v === undefined) return [];
+    if (v === 'error') throw new Error('読めません');
+    if (v === 'pending') return new Promise<SharedEntry[]>(() => {});
+    return v;
+  });
+}
+
+/** 名前の表示（一覧に出ている通り） */
+function names(el: HTMLElement): string[] {
+  return [...el.querySelectorAll('.file-explorer-name-text')].map((t) => t.textContent?.trim() ?? '');
+}
+function btn(el: HTMLElement, label: string): HTMLButtonElement | null {
+  return el.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+}
+function toastTexts(): string[] {
+  return ui.toasts.map((t) => t.text);
+}
+/** 既存の名前の項目を、選択モードのまま押す（選ぶ） */
+function pickRow(el: HTMLElement, name: string): void {
+  rowOf(el, name).querySelector<HTMLElement>('.file-explorer-row')!.click();
+  flushSync();
+}
+
+describe('ゴミ箱は、ふつうのフォルダとして開く（.trash）', () => {
+  beforeEach(() => {
+    // 前のテストの拡大表示・戻る操作が残らないように
+    ui.lightbox = null;
+    ui.pluginBack = [];
+  });
+  it('≡ に「ゴミ箱」は無い（ゴミ箱は一覧の .trash の行から開く）', async () => {
+    serve({ '': rootList() });
+    const el = await render();
+    expect(menuLabels(el).some((l) => l.includes('ゴミ箱'))).toBe(false);
+  });
+
+  it('一覧の「.trash」の行は、ふつうのフォルダの行として開く（戻るで前のフォルダへ）', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    const trashRow = rowOf(el, '.trash');
+    expect(trashRow.querySelector('.file-explorer-name-text')!.textContent).toBe('.trash');
+    trashRow.querySelector<HTMLElement>('.file-explorer-row')!.click();
+    flushSync();
+    expect(fileExplorer.dir).toBe('.trash');
+    await vi.waitFor(() => expect(names(el)).toEqual(['old', 'report.pdf', 'x.txt', 'x.txt']));
+    flushSync();
+    expect(ui.back()).toBe(true);
+    flushSync();
+    expect(fileExplorer.dir).toBe('');
+  });
+
+  it('中の項目は元の名前で出す（別名は見せない）。同じ名前は別の行として別々に扱う', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    expect(names(el).join('|')).not.toContain(ID1);
+    const xs = [...el.querySelectorAll<HTMLElement>('.file-explorer-item')].filter((li) => li.textContent?.includes('x.txt'));
+    expect(xs.length).toBe(2);
+    // 選んでも、同じ名前の片方だけが選ばれる（パスは別名のまま）
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'x.txt');
+    expect(explorerSelection.count).toBe(1);
+    expect(explorerSelection.paths()[0]!.startsWith('.trash/')).toBe(true);
+  });
+
+  it('直下の項目を選ぶと、元へ戻す・完全削除が出る（削除はそれに替わる）', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'report.pdf');
+    expect(btn(el, '元へ戻す')).not.toBeNull();
+    expect(btn(el, '完全削除')).not.toBeNull();
+    expect(btn(el, '削除')).toBeNull();
+  });
+
+  it('元へ戻す: 押した時点の ID で戻す。成功したものだけ選びから外す。失敗（同じ名前がある）は選んだまま', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'report.pdf');
+    pickRow(el, 'old');
+    h.restore.mockImplementation(async (id: string) => {
+      if (id === ID4) throw Object.assign(new Error('同じ名前があります'), { code: 'exists' });
+      return { name: 'report.pdf', path: 'docs/report.pdf', kind: 'file' as const, size: 1, modified: 0, mime: null, message_id: null, file_id: null };
+    });
+    btn(el, '元へ戻す')!.click();
+    await vi.waitFor(() => expect(h.restore).toHaveBeenCalledTimes(2));
+    expect(h.restore.mock.calls.map((c) => c[0])).toEqual([ID1, ID4]);
+    await vi.waitFor(() => expect(toastTexts().some((t) => t.includes('1 件を元の場所に戻しました'))).toBe(true));
+    expect(toastTexts().some((t) => t.includes('1 件を扱えませんでした'))).toBe(true);
+    expect(explorerSelection.paths()).toEqual([ALIAS4]);
+    h.restore.mockReset();
+    h.restore.mockImplementation(async () => ({ name: '', path: '', kind: 'file' as const, size: 1, modified: 0, mime: null, message_id: null, file_id: null }));
+  });
+
+  it('完全削除: 名前を出して確認。キャンセルでは消さない。確認すると、押した時点の ID で消す', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'report.pdf');
+    btn(el, '完全削除')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    expect(ui.confirmReq!.title).toBe('完全に削除しますか');
+    expect(ui.confirmReq!.body).toContain('「report.pdf」');
+    expect(ui.confirmReq!.body).toContain('取り消せません');
+    ui.confirmReq!.resolve(false);
+    await vi.waitFor(() => expect(ui.confirmReq).toBeNull());
+    expect(h.purge).not.toHaveBeenCalled();
+    await waitEnabled(el, '完全削除');
+    btn(el, '完全削除')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(h.purge).toHaveBeenCalledTimes(1));
+    expect(h.purge).toHaveBeenCalledWith(ID1);
+    await vi.waitFor(() => expect(toastTexts().some((t) => t.includes('1 件を完全に削除しました'))).toBe(true));
+  });
+
+  it('完全削除の途中で失敗したものは、選んだまま残る（成功したものだけ外す）', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'report.pdf');
+    pickRow(el, 'old');
+    h.purge.mockImplementationOnce(async () => {
+      throw new Error('できません');
+    });
+    btn(el, '完全削除')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    expect(ui.confirmReq!.body).toContain('2 件');
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(h.purge).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(toastTexts().some((t) => t.includes('1 件を扱えませんでした'))).toBe(true));
+    expect(explorerSelection.paths()).toEqual([ALIAS1]);
+  });
+
+  it('確認を待つあいだにサーバーが変わったら、完全削除は送らない', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'report.pdf');
+    btn(el, '完全削除')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    const spy = vi.spyOn(cfg, 'getServerUrl').mockReturnValue('http://other.test');
+    try {
+      ui.confirmReq!.resolve(true);
+      await vi.waitFor(() => expect(toastTexts().some((t) => t.includes('サーバーが変わった'))).toBe(true));
+      expect(h.purge).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('1 件目の応答を待つあいだにサーバーが変わったら、2 件目は新しいサーバーへ送らない', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'report.pdf');
+    pickRow(el, 'old');
+    let first: (v: Awaited<ReturnType<typeof h.restore>>) => void = () => {};
+    h.restore.mockImplementationOnce(() => new Promise((r) => (first = r)));
+    btn(el, '元へ戻す')!.click();
+    await vi.waitFor(() => expect(h.restore).toHaveBeenCalledTimes(1));
+    const spy = vi.spyOn(cfg, 'getServerUrl').mockReturnValue('http://other.test');
+    try {
+      first({ name: 'report.pdf', path: 'docs/report.pdf', kind: 'file', size: 1, modified: 0, mime: null, message_id: null, file_id: null });
+      await vi.waitFor(() => expect(toastTexts().some((t) => t.includes('サーバーが変わった'))).toBe(true));
+      expect(h.restore).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('ゴミ箱のフォルダ（.trash）は、コピー・切り取り・削除・名前の変更ができない（理由つき）', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, '.trash');
+    expect(btn(el, 'コピー')!.disabled).toBe(true);
+    expect(btn(el, '切り取り')!.disabled).toBe(true);
+    expect(btn(el, '削除')!.disabled).toBe(true);
+    expect(btn(el, '元へ戻す')).toBeNull();
+    // 名前は変えない（押しても入力欄にならない）
+    const row = rowOf(el, '.trash');
+    row.querySelector<HTMLElement>('.file-explorer-name-text')!.click();
+    flushSync();
+    expect(el.querySelector('.file-explorer-rename')).toBeNull();
+  });
+
+  it('ゴミ箱の中（直下の項目のフォルダ）は、読むとコピーだけ。書き込み・削除・切り取りは出さない', async () => {
+    serve({ '': rootList(), '.trash': trashList(), [ALIAS4]: innerList() });
+    const el = await render();
+    fileExplorer.open(ALIAS4);
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toEqual(['sub', 'k.txt']));
+    // 新しいフォルダは出さない
+    expect(menuLabels(el).some((l) => l.includes('新しいフォルダ'))).toBe(false);
+    // アップロードは止める（理由を出す）
+    pick(el, new File(['x'], 'new.txt'));
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(toastTexts().some((t) => t.includes('ゴミ箱の中には書き込めません'))).toBe(true);
+    // 中身を選ぶ: コピーはできる、切り取り・削除はできない
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'k.txt');
+    expect(btn(el, 'コピー')!.disabled).toBe(false);
+    expect(btn(el, '切り取り')!.disabled).toBe(true);
+    expect(btn(el, '削除')!.disabled).toBe(true);
+    expect(btn(el, '元へ戻す')).toBeNull();
+  });
+
+  it('中身をコピーして、ほかのフォルダへ貼り付けられる（元の名前のまま）', async () => {
+    serve({ '': rootList(), '.trash': trashList(), [ALIAS4]: innerList() });
+    const el = await render();
+    fileExplorer.open(ALIAS4);
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('k.txt'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'k.txt');
+    btn(el, 'コピー')!.click();
+    flushSync();
+    fileExplorer.open('');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('docs'));
+    pasteClick(el);
+    await vi.waitFor(() => expect(h.copy).toHaveBeenCalledWith(`${ALIAS4}/k.txt`, 'k.txt', false));
+  });
+
+  it('直下の項目の切り取りは、元の場所へだけ戻せる（ほかの場所は、貼り付けの前に止める）', async () => {
+    serve({ '': rootList(), '.trash': trashList(), docs: [] });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'report.pdf');
+    btn(el, '切り取り')!.click();
+    flushSync();
+    // ほかの場所（直下）へは戻せない
+    fileExplorer.open('');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('docs'));
+    pasteClick(el);
+    await vi.waitFor(() => expect(toastTexts().some((t) => t.includes('元の場所'))).toBe(true));
+    expect(h.move).not.toHaveBeenCalled();
+    // 元の場所（docs）へは、戻る（移動）になる
+    fileExplorer.open('docs');
+    flushSync();
+    await vi.waitFor(() => expect(h.list).toHaveBeenCalledWith('docs'));
+    pasteClick(el);
+    await vi.waitFor(() => expect(h.move).toHaveBeenCalledWith(ALIAS1, 'docs/report.pdf', false));
+  });
+
+  it('本当の（実在の）.trash は、ふつうのフォルダ。書けて、新しいフォルダも作れる', async () => {
+    serve({ '': [entry('.trash', 'dir'), entry('docs', 'dir')], '.trash': [entry('memo.txt')] });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toEqual(['memo.txt']));
+    expect(menuLabels(el).some((l) => l.includes('新しいフォルダ'))).toBe(true);
+    pick(el, new File(['x'], 'new.txt'));
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledWith('.trash/new.txt', expect.any(File), expect.any(Function)));
+  });
+
+  it('直下の一覧が読み終えていない（直接 .trash の中を開いた）あいだは、書き込みを止める（確かめるまで）', async () => {
+    serve({ '': 'pending', [ALIAS4]: innerList() });
+    target = document.createElement('div');
+    document.body.appendChild(target);
+    instance = mount(FileExplorer, { target });
+    flushSync();
+    fileExplorer.open(ALIAS4);
+    flushSync();
+    await vi.waitFor(() => expect(names(target!)).toEqual(['sub', 'k.txt']));
+    expect(menuLabels(target!).some((l) => l.includes('新しいフォルダ'))).toBe(false);
+    pick(target!, new File(['x'], 'new.txt'));
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(toastTexts().some((t) => t.includes('確かめて'))).toBe(true);
+  });
+
+  it('直接開いた空のゴミ箱の中も、書き込みは止める（直下の印で判定する）', async () => {
+    serve({ '': rootList(), [ALIAS4]: [] });
+    const el = await render();
+    fileExplorer.open(ALIAS4);
+    flushSync();
+    await vi.waitFor(() => expect(el.querySelector('.file-explorer-empty, .file-explorer-list-empty') ?? el).toBeTruthy());
+    expect(menuLabels(el).some((l) => l.includes('新しいフォルダ'))).toBe(false);
+    pick(el, new File(['x'], 'new.txt'));
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(toastTexts().some((t) => t.includes('ゴミ箱の中には書き込めません'))).toBe(true);
+  });
+
+  it('.trash 以外のフォルダでは、余分な読み（直下・.trash の一覧）をしない', async () => {
+    serve({ '': rootList(), docs: [entry('a.txt')] });
+    await render();
+    fileExplorer.open('docs');
+    flushSync();
+    await vi.waitFor(() => expect(h.list).toHaveBeenCalledWith('docs'));
+    expect(h.list.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['', 'docs']);
+  });
+
+  it('中の項目を開く: デスクトップは Enter・ダブルクリックで、タッチは押すと、元の名前のフォルダへ入る', async () => {
+    serve({ '': rootList(), '.trash': trashList(), [ALIAS4]: innerList() });
+    // タッチ（既定）: 押すと開く
+    let el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('old'));
+    rowOf(el, 'old').querySelector<HTMLElement>('.file-explorer-row')!.click();
+    flushSync();
+    expect(fileExplorer.dir).toBe(ALIAS4);
+    expect(explorerSelection.active).toBe(false);
+    // 戻る
+    fileExplorer.back();
+    flushSync();
+    unmount(instance!);
+    instance = undefined;
+    target?.remove();
+    target = undefined;
+    // デスクトップ: Enter で開く（選びは変わらない）
+    dsk.desktop = true;
+    el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('old'));
+    rowOf(el, 'old').querySelector<HTMLElement>('.file-explorer-row')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    flushSync();
+    expect(fileExplorer.dir).toBe(ALIAS4);
+  });
+});
+
+describe('ゴミ箱の中のパンくずも、元の名前で出す', () => {
+  beforeEach(() => {
+    ui.lightbox = null;
+    ui.pluginBack = [];
+  });
+
+  it('.trash/<別名> の段は元の名前、.trash の段はそのまま。押すとその段のフォルダへ（別名のパス）', async () => {
+    serve({ '': rootList(), '.trash': trashList(), [ALIAS4]: innerList() });
+    const el = await render();
+    fileExplorer.open(ALIAS4);
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('k.txt'));
+    const crumbs = [...el.querySelectorAll<HTMLButtonElement>('.file-explorer-crumb')].map((b) => b.textContent?.trim());
+    expect(crumbs).toEqual(['共有フォルダ', '.trash', 'old']);
+    // 「.trash」の段へ戻る
+    const trashCrumb = [...el.querySelectorAll<HTMLButtonElement>('.file-explorer-crumb')].find((b) => b.textContent?.trim() === '.trash')!;
+    trashCrumb.click();
+    flushSync();
+    expect(fileExplorer.dir).toBe('.trash');
+  });
+});
+
+describe('ゴミ箱の中へは、貼り付けでも書かない', () => {
+  beforeEach(() => {
+    ui.lightbox = null;
+    ui.pluginBack = [];
+  });
+
+  it('コピーしたものを、ゴミ箱のフォルダ（.trash）へ貼り付けても送らない（理由を出す）', async () => {
+    serve({ '': rootList(), '.trash': trashList(), [ALIAS4]: innerList() });
+    const el = await render();
+    fileExplorer.open(ALIAS4);
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('k.txt'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'k.txt');
+    btn(el, 'コピー')!.click();
+    flushSync();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('old'));
+    pasteClick(el);
+    await vi.waitFor(() => expect(toastTexts().some((t) => t.includes('ゴミ箱の中には書き込めません'))).toBe(true));
+    expect(h.copy).not.toHaveBeenCalled();
+  });
+
+  it('完全削除の途中で 2 件目が失敗しても、成功した 1 件は一覧から外れる（失敗だけ選んだまま）', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'report.pdf');
+    pickRow(el, 'old');
+    h.purge.mockImplementationOnce(async () => {});
+    h.purge.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('x'), { code: 'forbidden' });
+    });
+    btn(el, '完全削除')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(h.purge).toHaveBeenCalledTimes(2));
+    expect(h.purge.mock.calls.map((c) => c[0])).toEqual([ID1, ID4]);
+    await vi.waitFor(() => expect(explorerSelection.paths()).toEqual([ALIAS4]));
+  });
+});
+
+describe('ゴミ箱の直下の項目を、外へコピーすると元の名前になる', () => {
+  beforeEach(() => {
+    ui.lightbox = null;
+    ui.pluginBack = [];
+  });
+
+  it('コピーは元の名前で貼る（別名のまま貼らない）。元の場所の外へは移せないが、コピーはできる', async () => {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'report.pdf');
+    btn(el, 'コピー')!.click();
+    flushSync();
+    fileExplorer.open('');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('docs'));
+    pasteClick(el);
+    await vi.waitFor(() => expect(h.copy).toHaveBeenCalledWith(ALIAS1, 'report.pdf', false));
+    expect(h.move).not.toHaveBeenCalled();
+  });
+});
+
+describe('ゴミ箱の添付は、消えた ID ではなく共有フォルダのパスで読む（サムネイル・PDF・拡大表示）', () => {
+  beforeEach(() => {
+    ui.lightbox = null;
+    ui.pluginBack = [];
+  });
+  afterEach(() => {
+    explorerView.reset();
+  });
+
+  /** 消えた添付の ID を（誤って）持っている、ゴミ箱の画像・PDF・ふつうのファイル */
+  const DELETED = 'DELETEDFILEID';
+  const trashedImage = (): SharedEntry => ({ ...trashItem(ID1, 'attachments/F1.png'), mime: 'image/png', file_id: DELETED });
+  const trashedPdf = (): SharedEntry => ({ ...trashItem(ID2, 'attachments/doc.pdf'), mime: 'application/pdf', file_id: DELETED, size: 10 });
+  const trashedFile = (): SharedEntry => ({ ...trashItem(ID3, 'attachments/F2.zip'), mime: 'application/zip', file_id: DELETED });
+
+  it('ゴミ箱の画像（サムネイル・拡大表示）は、元の名前で出し、共有フォルダのパスで読む（/api/files/<消えたID> にしない）', async () => {
+    explorerView.setView('.trash', 'grid');
+    serve({ '': rootList(), '.trash': [trashedImage(), trashedPdf(), trashedFile()] });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('F1.png'));
+    // 元の名前（別名や消えた ID は出さない）
+    expect(names(el).join('|')).not.toContain(DELETED);
+    expect(names(el).join('|')).not.toContain(ID1);
+    // サムネイルは共有フォルダの正しいパス
+    const img = rowOf(el, 'F1.png').querySelector<HTMLImageElement>('img')!;
+    expect(img.getAttribute('src')).toContain(`/api/shared/.trash/${ID1}--F1.png`);
+    expect(img.getAttribute('src')).not.toContain('/api/files/');
+    // 拡大表示も同じ（前後・元の名前）
+    rowOf(el, 'F1.png').querySelector<HTMLElement>('.file-explorer-row')!.click();
+    flushSync();
+    expect(ui.lightbox!.src).toContain(`/api/shared/.trash/${ID1}--F1.png`);
+    expect(ui.lightbox!.src).not.toContain('/api/files/');
+    expect(ui.lightbox!.alt).toBe('F1.png');
+  });
+
+  it('ゴミ箱の PDF は、拡大表示も共有フォルダのパスで読む（/api/files/<消えたID> にしない）', async () => {
+    serve({ '': rootList(), '.trash': [trashedPdf()] });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('doc.pdf'));
+    rowOf(el, 'doc.pdf').querySelector<HTMLElement>('.file-explorer-row')!.click();
+    flushSync();
+    expect(ui.lightbox).toMatchObject({ alt: 'doc.pdf', kind: 'pdf' });
+    expect(ui.lightbox!.src).toContain(`/api/shared/.trash/${ID2}--doc.pdf`);
+    expect(ui.lightbox!.src).not.toContain('/api/files/');
+  });
+
+  it('ゴミ箱のふつうのファイル（ダウンロード）も、共有フォルダのパスの保存先になる', async () => {
+    serve({ '': rootList(), '.trash': [trashedFile()] });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('F2.zip'));
+    const href = rowOf(el, 'F2.zip').querySelector<HTMLAnchorElement>('a.file-explorer-row')!.getAttribute('href') ?? '';
+    expect(href).toContain(`/api/shared/.trash/${ID3}--F2.zip`);
+    expect(href).not.toContain('/api/files/');
+  });
+
+  it('ふつうの（生きている）添付は、これまでどおり ID の URL で読む（縮小版も）', async () => {
+    explorerView.setView('attachments', 'grid');
+    const live: SharedEntry = { ...entry('pic.png'), path: 'attachments/pic.png', mime: 'image/png', file_id: 'LIVEFILEID' };
+    serve({ '': rootList(), attachments: [live] });
+    const el = await render();
+    fileExplorer.open('attachments');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('pic.png'));
+    const img = rowOf(el, 'pic.png').querySelector<HTMLImageElement>('img')!;
+    expect(img.getAttribute('src')).toContain('/api/files/LIVEFILEID/thumb');
+    rowOf(el, 'pic.png').querySelector<HTMLElement>('.file-explorer-row')!.click();
+    flushSync();
+    expect(ui.lightbox!.src).toContain('/api/files/LIVEFILEID');
+    expect(ui.lightbox!.src).not.toContain('/api/shared/');
+  });
+});
+
+/** 操作の終わりを待つ（ボタンが押せるまで。操作の後で選びが空になり、ボタンが消えているなら、それも終わり） */
+async function waitEnabled(el: HTMLElement, label: string): Promise<void> {
+  await vi.waitFor(() => {
+    flushSync();
+    const b = btn(el, label);
+    expect(b === null || !b.disabled).toBe(true);
+  });
+}
+
+
+/* ---- A: 読み直しの状態を追う（無効化されたあと、判定と名前の表示を直す） ---- */
+
+function crumbTexts(el: HTMLElement): string[] {
+  return [...el.querySelectorAll<HTMLButtonElement>('.file-explorer-crumb')].map((b) => b.textContent?.trim() ?? '');
+}
+
+describe('ゴミ箱の中にいるあいだに .trash が変わったら、直下の判定と元の名前を読み直す', () => {
+  beforeEach(() => {
+    ui.lightbox = null;
+    ui.pluginBack = [];
+  });
+
+  it('.trash の中の項目の段（パンくず）は、無効化のあとも元の名前に戻る（読み直しが走る）', async () => {
+    serve({ '': rootList(), '.trash': trashList(), [ALIAS4]: innerList() });
+    const el = await render();
+    fileExplorer.open(ALIAS4);
+    flushSync();
+    await vi.waitFor(() => expect(crumbTexts(el)).toEqual(['共有フォルダ', '.trash', 'old']));
+    h.list.mockClear();
+    sharedIndex.invalidate('.trash');
+    await vi.waitFor(() => {
+      flushSync();
+      expect(crumbTexts(el)).toEqual(['共有フォルダ', '.trash', 'old']);
+    });
+    // 直下（root）と .trash を読み直した（以前は読み直さず、段が別名のまま戻らなかった）
+    expect(h.list.mock.calls.map((c) => (c as unknown[])[0])).toEqual(expect.arrayContaining(['', '.trash']));
+  });
+
+  it('中にいるあいだに無効化されても、判定は仮想のまま（書き込みは止める。確かめ中のまま止まらない）', async () => {
+    serve({ '': rootList(), [ALIAS4]: innerList() });
+    const el = await render();
+    fileExplorer.open(ALIAS4);
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toEqual(['sub', 'k.txt']));
+    sharedIndex.invalidate('.trash');
+    await vi.waitFor(() => {
+      flushSync();
+      expect(sharedIndex.state('')?.kind).toBe('ok');
+    });
+    pick(el, new File(['x'], 'new.txt'));
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(toastTexts().some((t) => t.includes('ゴミ箱の中には書き込めません'))).toBe(true);
+    expect(toastTexts().some((t) => t.includes('確かめて'))).toBe(false);
+  });
+
+  it('実在の .trash（印なし）は、無効化のあとも書き込める（仮想に間違えない）', async () => {
+    serve({ '': [entry('.trash', 'dir'), entry('docs', 'dir')], '.trash': [entry('memo.txt')] });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toEqual(['memo.txt']));
+    h.list.mockClear();
+    sharedIndex.invalidate('.trash');
+    await vi.waitFor(() => {
+      flushSync();
+      expect(names(el)).toEqual(['memo.txt']);
+    });
+    flushSync();
+    expect(menuLabels(el).some((l) => l.includes('新しいフォルダ'))).toBe(true);
+    pick(el, new File(['x'], 'new.txt'));
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledWith('.trash/new.txt', expect.any(File), expect.any(Function)));
+  });
+
+  it('仮想の .trash のあいだに、直下の一覧を読み直しても、ふつうのフォルダの余分な読みは増えない', async () => {
+    serve({ '': rootList(), docs: [entry('a.txt')] });
+    await render();
+    fileExplorer.open('docs');
+    flushSync();
+    await vi.waitFor(() => expect(h.list).toHaveBeenCalledWith('docs'));
+    h.list.mockClear();
+    sharedIndex.invalidate('docs');
+    fileExplorer.reload();
+    flushSync();
+    await vi.waitFor(() => expect(h.list).toHaveBeenCalledWith('docs'));
+    expect(h.list.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['docs']);
+  });
+});
+
+/* ---- B: 選んだ項目への操作（削除・元へ戻す・完全削除）は、同時に 1 つだけ ---- */
+
+describe('選んだ項目への操作は、同時に 1 つだけ（確認の途中も含む）', () => {
+  beforeEach(() => {
+    ui.lightbox = null;
+    ui.pluginBack = [];
+  });
+
+  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+  const restored = { name: 'report.pdf', path: 'docs/report.pdf', kind: 'file' as const, size: 1, modified: 0, mime: null, message_id: null, file_id: null };
+
+  /** .trash を開いて、report.pdf を選んだ状態にする */
+  async function openWithOneSelected(): Promise<HTMLElement> {
+    serve({ '': rootList(), '.trash': trashList() });
+    const el = await render();
+    fileExplorer.open('.trash');
+    flushSync();
+    await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+    explorerSelection.enter();
+    flushSync();
+    pickRow(el, 'report.pdf');
+    return el;
+  }
+
+  it('元へ戻すを二回押しても、送るのは一回。終わるまで押せない（終わったら押せる）', async () => {
+    const el = await openWithOneSelected();
+    const d = deferred<typeof restored>();
+    h.restore.mockImplementationOnce(() => d.promise);
+    btn(el, '元へ戻す')!.click();
+    flushSync();
+    expect(btn(el, '元へ戻す')!.disabled).toBe(true);
+    btn(el, '元へ戻す')!.click();
+    expect(h.restore).toHaveBeenCalledTimes(1);
+    d.resolve(restored);
+    await waitEnabled(el, '元へ戻す');
+    expect(h.restore).toHaveBeenCalledTimes(1);
+  });
+
+  it('元へ戻すの途中は、完全削除を始めない（確認も出ない）', async () => {
+    const el = await openWithOneSelected();
+    const d = deferred<typeof restored>();
+    h.restore.mockImplementationOnce(() => d.promise);
+    btn(el, '元へ戻す')!.click();
+    flushSync();
+    expect(btn(el, '完全削除')!.disabled).toBe(true);
+    // 押せないボタンでも、押しの処理（ハンドラ）は止める
+    btn(el, '完全削除')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(ui.confirmReq).toBeNull();
+    expect(h.purge).not.toHaveBeenCalled();
+    d.resolve(restored);
+    await waitEnabled(el, '完全削除');
+    expect(h.purge).not.toHaveBeenCalled();
+  });
+
+  it('完全削除を重ねて押しても、確認は一つだけ。確認に答えるまで、次の操作は始まらない', async () => {
+    const el = await openWithOneSelected();
+    const confirm = vi.spyOn(ui, 'confirm');
+    try {
+      btn(el, '完全削除')!.click();
+      await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+      flushSync();
+      btn(el, '完全削除')!.click();
+      btn(el, '完全削除')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      btn(el, '元へ戻す')!.click();
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(h.restore).not.toHaveBeenCalled();
+      ui.confirmReq!.resolve(true);
+      await vi.waitFor(() => expect(h.purge).toHaveBeenCalledTimes(1));
+      await waitEnabled(el, '完全削除');
+      expect(h.purge).toHaveBeenCalledTimes(1);
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  it('完全削除の確認を取り消すと、押せるようになり、もう一度始められる', async () => {
+    const el = await openWithOneSelected();
+    btn(el, '完全削除')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(false);
+    await waitEnabled(el, '完全削除');
+    btn(el, '完全削除')!.click();
+    await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+    ui.confirmReq!.resolve(true);
+    await vi.waitFor(() => expect(h.purge).toHaveBeenCalledTimes(1));
+  });
+
+  it('サーバーを変えると、前の操作の途中でも、新しいサーバーでの操作は始められる。前の操作の終わりは新しい操作に触らない', async () => {
+    const srv = { url: 'http://a.test' };
+    const spy = vi.spyOn(cfg, 'getServerUrl').mockImplementation(() => srv.url);
+    let serverListener: (() => void) | null = null;
+    const listenSpy = vi.spyOn(cfg, 'onServerChange').mockImplementation((fn: () => void) => {
+      serverListener = fn;
+      return () => {};
+    });
+    try {
+      const el = await openWithOneSelected();
+      // 前のサーバーで、元へ戻すを送ったまま応答を待つ
+      const old = deferred<typeof restored>();
+      h.restore.mockImplementationOnce(() => old.promise);
+      btn(el, '元へ戻す')!.click();
+      await vi.waitFor(() => expect(h.restore).toHaveBeenCalledTimes(1));
+      // サーバーを変える（接続先の変更の通知。選びも外す）
+      srv.url = 'http://b.test';
+      serverListener!();
+      explorerSelection.clear();
+      flushSync();
+      // 新しいサーバーで、選んで完全削除の確認を出す（前の操作の途中でも許す）
+      fileExplorer.open('.trash');
+      flushSync();
+      await vi.waitFor(() => expect(names(el)).toContain('report.pdf'));
+      explorerSelection.enter();
+      flushSync();
+      pickRow(el, 'report.pdf');
+      btn(el, '完全削除')!.click();
+      await vi.waitFor(() => expect(ui.confirmReq).not.toBeNull());
+      flushSync();
+      expect(btn(el, '完全削除')!.disabled).toBe(true);
+      // 前のサーバーの応答が、いま届く。新しい操作の印は外さない・新しい選びに触らない
+      old.resolve(restored);
+      await vi.waitFor(() => expect(toastTexts().some((t) => t.includes('サーバーが変わった'))).toBe(true));
+      flushSync();
+      expect(btn(el, '完全削除')!.disabled).toBe(true);
+      expect(explorerSelection.paths()).toEqual([ALIAS1]);
+      btn(el, '完全削除')!.click();
+      expect(ui.confirmReq).not.toBeNull();
+      ui.confirmReq!.resolve(true);
+      await vi.waitFor(() => expect(h.purge).toHaveBeenCalledWith(ID1));
+      expect(h.restore).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+      listenSpy.mockRestore();
     }
   });
 });

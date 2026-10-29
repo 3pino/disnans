@@ -152,3 +152,33 @@ describe('フォルダサイズのstaleガード', () => {
     expect(document.body.textContent).not.toContain('5 ファイル'); // A1 の stale 結果が出ていない
   });
 });
+
+describe('ゴミ箱の項目（直下）は、元の名前と元の場所で出す', () => {
+  const ID = '01HZX0000000000000000000AB';
+  const trashed: SharedEntry = {
+    name: `${ID}--report.pdf`,
+    path: `.trash/${ID}--report.pdf`,
+    kind: 'file',
+    size: 2048,
+    modified: 1_700_000_000_000,
+    mime: 'application/pdf',
+    message_id: null,
+    file_id: null,
+    trash: { kind: 'item', entry: { id: ID, original_path: 'docs/report.pdf', kind: 'file', size: 2048, deleted_at: 0 } },
+  };
+
+  it('名前は元の名前、パスは別名のまま、元の場所を別に出す', () => {
+    const text = open(trashed);
+    expect(text).toContain('report.pdf');
+    expect(text).toContain(`.trash/${ID}--report.pdf`);
+    expect(text).toContain('元の場所');
+    expect(text).toContain('docs/report.pdf');
+    // 名前の欄（最初の値）は元の名前だけ
+    expect(document.querySelector('.file-properties-copy')?.textContent?.trim()).toBe('report.pdf');
+  });
+
+  it('ふつうの項目には「元の場所」を出さない', () => {
+    const text = open(base);
+    expect(text).not.toContain('元の場所');
+  });
+});

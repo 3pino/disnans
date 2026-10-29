@@ -110,14 +110,14 @@ pub enum SharedOp {
 #[ts(export)]
 pub struct SharedTrashEntry {
     pub id: Id,
-    /// 削除されたときの共有フォルダからの相対パス（`docs/a.txt`。添付は `attachments/<file_id>` の形）。
+    /// 削除されたときの共有フォルダからの相対パス（`docs/a.txt`）。添付は `attachments/<当時の名前>` の形（名前は削除時点の添付の名前。内部の ID は別に保持し、ここには出さない）。
     pub original_path: String,
     pub kind: SharedKind,
     /// ファイルの大きさ（バイト）。フォルダは配下の合計（表示用）。
     pub size: u64,
     /// ゴミ箱へ入れた時刻（ミリ秒、UNIX 時間）。
     pub deleted_at: Timestamp,
-    /// フォルダ（`.trash/`）の中の別名（`<ID>--<元の名前>`）。仮想の名前空間が有効なときだけ入る（JSON では省略する）。
+    /// `.trash/` の中での完全な共有内の相対パス（`.trash/<ID>--<元の名前>`。`.trash/` を含む。別名だけではない）。仮想の名前空間が有効なときだけ入る（JSON では省略する）。
     /// 既存の実ファイル `shared/.trash` と衝突するときは入らない。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -707,11 +707,11 @@ mod tests {
         let v = serde_json::to_value(trash_row()).unwrap();
         assert!(v.get("trash_path").is_none(), "{v}");
         let with = SharedTrashEntry {
-            trash_path: Some("01HZ--a.txt".into()),
+            trash_path: Some(".trash/01HZ--a.txt".into()),
             ..trash_row()
         };
         let v = serde_json::to_value(&with).unwrap();
-        assert_eq!(v["trash_path"], "01HZ--a.txt");
+        assert_eq!(v["trash_path"], ".trash/01HZ--a.txt");
     }
 
     #[test]
