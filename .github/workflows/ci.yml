@@ -97,8 +97,9 @@ jobs:
         run: gradle --no-daemon -p app/src-tauri/plugins/notifier/native-tests nativeCallTest
       - uses: dtolnay/rust-toolchain@stable
       - uses: android-actions/setup-android@v3
-      - name: コンパイル用の Android SDK
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+        with:
+          # 廃止された既定の tools は不要。コンパイル用の SDK だけを入れる（adb は使わない）。
+          packages: 'platforms;android-36 build-tools;36.0.0'
       - name: ロック済みの Tauri Android API を使う
         shell: bash
         run: |
