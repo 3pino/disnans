@@ -1007,7 +1007,8 @@ export class CallStore {
       view[mem.peer] = { speaking: !!m.speaking[mem.peer], localMuted: m.localMuted.has(mem.peer) };
     }
     this.peerView = view;
-    this.selfSpeaking = m.peer !== '' && !!m.speaking[m.peer];
+    // ネイティブは、自分の声を peer ではなく空の鍵 "" で出す（NativeCallCore.level の peerId == null）
+    this.selfSpeaking = !!m.speaking[''];
     if (!m.joined && !m.joining) this.dropEmits();
     else if (!wasListed && this.listed) this.flushEmits();
     this.reportNativeError(snap.error);
@@ -1743,6 +1744,9 @@ export class CallStore {
 
   /** 接続の状態（つながった・しゃべっている・消音）を画面用に写す */
   private syncView(): void {
+    // ネイティブ所有の通話では、話している表示（peerView / selfSpeaking）はネイティブの状態だけから入る。
+    // 従来の entries / localMeter で上書きしない（空の値で消えるのを防ぐ）
+    if (this.nativeOwned) return;
     const view: Record<string, PeerView> = {};
     for (const e of this.entries.values()) {
       view[e.peer] = { speaking: !!e.relay?.meter?.speaking, localMuted: e.localMuted };

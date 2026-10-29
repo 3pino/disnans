@@ -31,6 +31,7 @@ export type NativeSnapshot = {
   muted: boolean;
   deafened: boolean;
   muteByDeafen: boolean;
+  /** 自分の発言は空文字のキー、相手の発言は peer をキーにする。 */
   speaking: Record<string, boolean>;
   localMuted: string[];
   settings: NativeSettings;

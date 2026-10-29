@@ -129,6 +129,8 @@ object NativeCallRuntimeTest {
   private class FakeAudio(private val trace: Trace) : AudioFactory {
     val runs = ArrayList<FakeRun>()
     @Volatile var created = 0
+    /** 直近に作られた録音へ渡された、実物の混合器（音量・上限の結果を、出た音で確かめるため） */
+    @Volatile var lastMixer: NativeMixer? = null
     /** 作られる録音に、解放されない印を付ける（前の録音が解放されない状況を模す） */
     @Volatile var makeUnreleased = false
     var startGate: CountDownLatch? = null
@@ -142,6 +144,7 @@ object NativeCallRuntimeTest {
       onFailure: (code: String) -> Unit,
     ): AudioRun {
       created += 1
+      lastMixer = mixer
       val r = FakeRun(trace, runs.size + 1, sender, onFailure, startGate, startCode)
       r.unreleased = makeUnreleased
       runs.add(r)
@@ -241,12 +244,31 @@ object NativeCallRuntimeTest {
     throw AssertionError("時間内に起きませんでした: $what")
   }
 
-  private fun args(session: String, user: String = "ua") =
-    NativeCallStartArgs(session, "https://example.invalid", user, null, status, settings, emptyList())
+  private fun args(session: String, user: String = "ua", s: NativeCallSettings = settings, st: NativeCallStatus = status) =
+    NativeCallStartArgs(session, "https://example.invalid", user, null, st, s, emptyList())
+
+  /** 相手 1 人の一定の音を 1 塊入れ、続けて 4 ブロック出して、出た音の最大の大きさ（16 ビット）を返す */
+  private fun peakAfter(mixer: NativeMixer, peer: String, value: Short): Int {
+    Check.that(mixer.accept(peer, ShortArray(NativePcm.FRAME) { value }) == NativeMixer.Accept.ACCEPTED) { "peer accepted by the mixer" }
+    var peak = 0
+    val out = ShortArray(NativePcm.FRAME)
+    repeat(4) {
+      mixer.mixBlock(out)
+      for (v in out) peak = Math.max(peak, Math.abs(v.toInt()))
+    }
+    return peak
+  }
+
+  /** 相手の一覧を届けてから、制御の順番を一つ進める（届いた分の効果を、ここまでに終わらせる） */
+  private fun sendMembers(r: Rig, peer: String, others: List<NativeCallMember>, st: NativeCallStatus = status) {
+    val sock = r.sockets.made.last()
+    sock.listener.onFrame(ServerFrame.CallState(listOf(NativeCallMember(peer, "ua", st)) + others))
+    r.runtime.snapshot()
+  }
 
   /** 準備から、参加（保存まで）まで。返り値は初回の参加に使う peer */
-  private fun join(r: Rig, session: String, user: String = "ua"): String {
-    Check.that(r.runtime.prepare(args(session, user)).ok) { "prepare" }
+  private fun join(r: Rig, session: String, user: String = "ua", s: NativeCallSettings = settings, st: NativeCallStatus = status, others: List<NativeCallMember> = emptyList()): String {
+    Check.that(r.runtime.prepare(args(session, user, s, st)).ok) { "prepare" }
     Check.that(r.runtime.startPrepared(session).ok) { "startPrepared" }
     waitUntil("service start") { r.service.started.contains(session) }
     val promoted = r.runtime.servicePromoted(session)
@@ -258,7 +280,7 @@ object NativeCallRuntimeTest {
     sock.listener.onFrame(ServerFrame.Hello(meId = user, meLoginName = null))
     waitUntil("join sent") { sock.sent().any { it.contains("call.join") } }
     val peer = r.runtime.snapshot().peer ?: throw AssertionError("peer")
-    sock.listener.onFrame(ServerFrame.CallState(listOf(NativeCallMember(peer, user, status))))
+    sock.listener.onFrame(ServerFrame.CallState(listOf(NativeCallMember(peer, user, st)) + others))
     waitUntil("audio run started") { r.audio.runs.isNotEmpty() && r.audio.runs.last().started }
     waitUntil("wanted committed") { r.store.wanted }
     waitUntil("joined") { r.runtime.snapshot().phase == NativeCallPhase.JOINED }
@@ -977,6 +999,70 @@ object NativeCallRuntimeTest {
         waitUntil("permission denial stops call") { r.runtime.snapshot().phase == NativeCallPhase.IDLE }
         Check.that(!r.store.wanted) { "audio permission denial clears recovery" }
       } finally { r.close() }
+    }
+
+    // 37. 初回の参加: 保存された相手の音量（0.5）は、後から入った相手にも当たる（既定の 1 のままにしない）
+    run {
+      val r = Rig()
+      try {
+        val quiet = NativeCallSettings(1.0, 0.5, false, -6.0, false, null)
+        val initial = NativeCallMember("initial", "bob", status)
+        val peer = join(r, "s1", s = quiet, others = listOf(initial))
+        val mixer = r.audio.lastMixer ?: throw AssertionError("mixer")
+        val firstPeak = peakAfter(mixer, "initial", 16000)
+        Check.that(Math.abs(firstPeak - 8000) <= 2) { "initial peer inherits saved output volume 0.5 (peak $firstPeak)" }
+        sendMembers(r, peer, listOf(initial, NativeCallMember("other", "sue", status)))
+        val peak = peakAfter(mixer, "other", 16000)
+        Check.that(Math.abs(peak - 8000) <= 2) { "late peer inherits saved output volume 0.5 (peak $peak)" }
+      } finally {
+        r.close()
+      }
+    }
+
+    // 38. 初回の参加: 保存された上限（オン）は、最初の音から効く（混合器の上限が無効のままにしない）
+    run {
+      val r = Rig()
+      try {
+        join(r, "s1", others = listOf(NativeCallMember("other", "bob", status)))
+        val mixer = r.audio.lastMixer ?: throw AssertionError("mixer")
+        val peak = peakAfter(mixer, "other", 32000)
+        Check.that(peak <= 16423) { "saved limiter (-6 dB) caps the output from the start (peak $peak)" }
+      } finally {
+        r.close()
+      }
+    }
+
+    // 39. スピーカーミュートで参加しても、後から入った相手の音は鳴らない
+    run {
+      val r = Rig()
+      try {
+        val deaf = NativeCallStatus(muted = false, deafened = true, device = "smartphone")
+        val peer = join(r, "s1", st = deaf)
+        sendMembers(r, peer, listOf(NativeCallMember("other", "bob", deaf)), st = deaf)
+        val mixer = r.audio.lastMixer ?: throw AssertionError("mixer")
+        val peak = peakAfter(mixer, "other", 16000)
+        Check.that(peak == 0) { "deafened resume stays silent for a late peer (peak $peak)" }
+      } finally {
+        r.close()
+      }
+    }
+
+    // 40. 音の入力の指定の切り替え（録音のし直し）のあとも、相手は混合器に残る（そのまま音が届く）
+    run {
+      val r = Rig()
+      try {
+        val peer = join(r, "s1")
+        sendMembers(r, peer, listOf(NativeCallMember("other", "bob", status)))
+        val mixer = r.audio.lastMixer ?: throw AssertionError("mixer")
+        Check.that(mixer.peerCount() == 1) { "peer present before the restart" }
+        r.runtime.control("s1", NativeCallControlPatch(settings = NativeCallSettingsPatch(rawInput = true)))
+        waitUntil("recorder restarted") { r.audio.runs.size == 2 && r.audio.runs.last().started }
+        waitUntil("peer restored after the restart") { mixer.peerCount() == 1 }
+        r.runtime.snapshot()
+        Check.that(mixer.accept("other", ShortArray(NativePcm.FRAME) { 1000 }) == NativeMixer.Accept.ACCEPTED) { "restored peer accepts audio" }
+      } finally {
+        r.close()
+      }
     }
 
     // 16. 経路の選択が失敗しても、通話は止まらない（既定の経路のまま）

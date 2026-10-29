@@ -590,6 +590,40 @@ object NativeCallCoreTest {
       Check.eq(false, h.step(Input.Stop("other", "user")).outcome.ok, "stop of another session ignored")
       Check.eq("joined", h.core.snapshot().phase.wire, "still joined")
     }
+
+    // 29. 一覧の変化は、自分の状態が変わらなくても画面へ配る（他人の離脱・参加・状態の変更）
+    run {
+      val h = H()
+      h.joinedFirstTime()
+      val other = "other-user"
+      // 自分（p1）と別の人（p2）が載っている
+      h.step(Input.Members(SESSION, listOf(NativeCallMember("p1", ME, status), NativeCallMember("p2", other, status))))
+      h.clear()
+      // 他人が離脱（別の peer）: 自分は残る → 画面へ配る
+      h.step(Input.Members(SESSION, listOf(NativeCallMember("p1", ME, status))))
+      val gone = h.all<Fx.Publish>()
+      Check.eq(1, gone.size, "departure of another peer publishes")
+      Check.eq(listOf("p1"), gone[0].snapshot.members.map { it.peer }, "published list has only self")
+      h.clear()
+      // 同じ人の別の peer が離脱（同じユーザー、peer が違う）も配る
+      h.step(Input.Members(SESSION, listOf(NativeCallMember("p1", ME, status), NativeCallMember("p3", ME, status))))
+      h.clear()
+      h.step(Input.Members(SESSION, listOf(NativeCallMember("p1", ME, status))))
+      Check.eq(1, h.all<Fx.Publish>().size, "same user other peer leaving publishes")
+      h.clear()
+      // 他人の参加と状態の変更も配る
+      h.step(Input.Members(SESSION, listOf(NativeCallMember("p1", ME, status), NativeCallMember("p4", other, status))))
+      Check.eq(1, h.all<Fx.Publish>().size, "new member publishes")
+      h.clear()
+      val muted = NativeCallStatus(muted = true, deafened = false, device = "smartphone")
+      h.step(Input.Members(SESSION, listOf(NativeCallMember("p1", ME, status), NativeCallMember("p4", other, muted))))
+      Check.eq(1, h.all<Fx.Publish>().size, "status change publishes")
+      Check.eq(true, h.all<Fx.Publish>()[0].snapshot.members.first { it.peer == "p4" }.status.muted, "published status is the new one")
+      h.clear()
+      // 変化が無い一覧は配らない（同じ内容が何度届いても、画面の更新は増やさない）
+      h.step(Input.Members(SESSION, listOf(NativeCallMember("p1", ME, status), NativeCallMember("p4", other, muted))))
+      Check.that(h.all<Fx.Publish>().isEmpty()) { "identical list does not publish" }
+    }
   }
 
   @JvmStatic fun main(args: Array<String>) {

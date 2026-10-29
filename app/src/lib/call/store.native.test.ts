@@ -663,3 +663,50 @@ describe('読み込みのあいだの接続先の「空にした」知らせ（�
     expect(h.store.joined).toBe(true);
   });
 });
+
+describe('話している表示（ネイティブの状態だけから。更新のたびに消えない）', () => {
+  // Android のネイティブは、自分の声を鍵 "" で、相手の声を peer id で出す（本物の形）
+  it('自分の声は、ネイティブの "" の鍵で話している表示になり、更新（refresh）のあとも残る。次の状態で消える', async () => {
+    await joined(h, { members: [member('p-self', 'me')] });
+    h.port.pushState(snap({ session: h.port.starts.at(-1)!.session, phase: 'joined', listed: true, generation: 2, seq: 2, peer: 'p-self', members: [member('p-self', 'me')], speaking: { '': true } }));
+    await flush();
+    expect(h.store.participants.find((p) => p.self)?.speaking).toBe(true);
+    // 別の状態の更新（refresh の経路）のあとも、話している表示は残る
+    h.port.pushState(snap({ session: h.port.starts.at(-1)!.session, phase: 'joined', listed: true, generation: 2, seq: 3, peer: 'p-self', members: [member('p-self', 'me')], speaking: { '': true }, bufferedBytes: 5 }));
+    await flush();
+    expect(h.store.participants.find((p) => p.self)?.speaking).toBe(true);
+    h.port.pushState(snap({ session: h.port.starts.at(-1)!.session, phase: 'joined', listed: true, generation: 2, seq: 4, peer: 'p-self', members: [member('p-self', 'me')], speaking: { '': false } }));
+    await flush();
+    expect(h.store.participants.find((p) => p.self)?.speaking).toBe(false);
+  });
+
+  it('自分がミュートしているあいだは、声が出ていても話している表示にならない', async () => {
+    const session = await joined(h, { members: [member('p-self', 'me', true)] });
+    h.port.pushState(snap({ session, phase: 'joined', listed: true, generation: 2, seq: 2, peer: 'p-self', members: [member('p-self', 'me', true)], muted: true, speaking: { '': true } }));
+    await flush();
+    expect(h.store.participants.find((p) => p.self)?.speaking).toBe(false);
+  });
+
+  it('相手の声は、peer id の鍵で話している表示になり、更新のあとも残る。次の状態で消える', async () => {
+    const session = await joined(h, { members: [member('p-self', 'me'), member('p-u1', 'u1')] });
+    const withSpeaking = (seq: number, speaking: Record<string, boolean>) =>
+      snap({ session, phase: 'joined', listed: true, generation: 2, seq, peer: 'p-self', members: [member('p-self', 'me'), member('p-u1', 'u1')], speaking });
+    h.port.pushState(withSpeaking(2, { 'p-u1': true }));
+    await flush();
+    expect(h.store.participants.find((p) => p.peer === 'p-u1')?.speaking).toBe(true);
+    h.port.pushState(withSpeaking(3, { 'p-u1': true, '': false }));
+    await flush();
+    expect(h.store.participants.find((p) => p.peer === 'p-u1')?.speaking).toBe(true);
+    h.port.pushState(withSpeaking(4, { 'p-u1': false }));
+    await flush();
+    expect(h.store.participants.find((p) => p.peer === 'p-u1')?.speaking).toBe(false);
+  });
+
+  it('自分と相手が同時に話していても、両方が正しく出て、互いに消さない', async () => {
+    const session = await joined(h, { members: [member('p-self', 'me'), member('p-u1', 'u1')] });
+    h.port.pushState(snap({ session, phase: 'joined', listed: true, generation: 2, seq: 2, peer: 'p-self', members: [member('p-self', 'me'), member('p-u1', 'u1')], speaking: { '': true, 'p-u1': true } }));
+    await flush();
+    expect(h.store.participants.find((p) => p.self)?.speaking).toBe(true);
+    expect(h.store.participants.find((p) => p.peer === 'p-u1')?.speaking).toBe(true);
+  });
+});

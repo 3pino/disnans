@@ -389,6 +389,8 @@ class NativeCallCore(private val newPeer: () -> String, initialGeneration: Long 
 
   private fun onMembers(s: String, list: List<NativeCallMember>) {
     if (!isCurrent(s) || phase == CallPhase.IDLE || phase == CallPhase.STOPPING || phase == CallPhase.PREPARING || phase == CallPhase.STARTING) return
+    // 一覧が変わったら必ず画面へ配る（他人の離脱・参加・状態の変更は、自分の状態が変わらなくても見えるように）
+    if (list != members) changed = true
     members = list
     val me = list.firstOrNull { it.peer == peer }
     val mine = me != null && me.userId == config?.expectedUserId
@@ -399,7 +401,7 @@ class NativeCallCore(private val newPeer: () -> String, initialGeneration: Long 
         changed = true
         if (!audioRunning) fx.add(Fx.StartAudio(settings, muted, deafened))
       }
-      fx.add(Fx.SyncPeers(list.filter { it.peer != peer }.map { it.peer }.toSet()))
+      audioSettingsFx()
       return
     }
     if (listed) {
@@ -423,6 +425,8 @@ class NativeCallCore(private val newPeer: () -> String, initialGeneration: Long 
     if (!isCurrent(s) || (phase != CallPhase.JOINING && phase != CallPhase.RECOVERING && phase != CallPhase.JOINED)) return
     if (!ok) return if (wanted) enterRecovery(code ?: "audio_failed") else fail(code ?: "audio_failed")
     audioRunning = true
+    // 録音・再生の開始のたびに、上限・相手の一覧・相手の音量を配り直す（新しい録音の状態は、ここから作り直す）
+    audioSettingsFx()
     if (phase == CallPhase.JOINED) return
     // 再起動の再開は、保存済みの wanted のまま。初回の参加は、保存が終わるまで「参加済み」にしない
     if (wanted) return enterJoined()
@@ -599,6 +603,17 @@ class NativeCallCore(private val newPeer: () -> String, initialGeneration: Long 
       fx.add(Fx.StartAudio(settings, muted, deafened))
     }
     changed = true
+  }
+
+  /**
+   * 音の処理の状態を、いまの設定と一覧から録音・再生へ配る。順序が大事: 相手を入れてから音量を当てる（音量は入っている相手にだけ効く）。
+   * 何度送っても同じ結果になる（上限は同じ値なら変えない、相手は差分だけ足す・消す）。
+   */
+  private fun audioSettingsFx() {
+    fx.add(Fx.SetLimit(if (settings.limiter) settings.limitDb else null))
+    val others = if (listed) members.filter { it.peer != peer }.map { it.peer }.toSet() else emptySet()
+    fx.add(Fx.SyncPeers(others))
+    refreshGains()
   }
 
   private fun refreshGains() {

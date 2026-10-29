@@ -111,6 +111,7 @@ data class NativeCallSnapshot(
   val muted: Boolean,
   val deafened: Boolean,
   val muteByDeafen: Boolean,
+  /** 自分の発言は空文字のキー、相手の発言は peer をキーにする。 */
   val speaking: Map<String, Boolean>,
   val localMuted: List<String>,
   val settings: NativeCallSettings,
