@@ -935,7 +935,7 @@ dependencies = [
 
 [[package]]
 name = "disnans-client-core"
-version = "0.2.51"
+version = "0.2.52"
 dependencies = [
  "disnans-shared",
  "fastrand",
