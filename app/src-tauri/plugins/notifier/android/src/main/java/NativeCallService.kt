@@ -259,7 +259,7 @@ class NativeCallService : Service() {
       linkUp = false, listed = false, bufferedBytes = 0L, error = null,
     ), session)
     val ok = try {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
       } else {
         startForeground(NOTIFICATION_ID, n)

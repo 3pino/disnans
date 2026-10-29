@@ -249,7 +249,10 @@ class NativeCallRuntime(
   }
 
   private val core = NativeCallCore(peerFactory, store.read().generation)
-  private val inControl = ThreadLocal.withInitial { false }
+  // withInitial は API 26 以降。minSdk 24 でも同じ再入ガードを使う。
+  private val inControl = object : ThreadLocal<Boolean>() {
+    override fun initialValue(): Boolean = false
+  }
   private val counters = ConcurrentHashMap<String, Long>()
   private val pendingAudio = AtomicInteger(0)
 

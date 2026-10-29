@@ -37,10 +37,12 @@ internal class NativeCallAudio(
   private fun openRecorder(): NativeCallAudioLifecycle.Recorder {
     val size = AudioRecord.getMinBufferSize(NativePcm.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
     if (size <= 0) throw NativeCallAudioLifecycle.Failure("record_unsupported")
-    val rec = AudioRecord(
-      if (rawInput) MediaRecorder.AudioSource.MIC else MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-      NativePcm.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, max(size, FRAME_BYTES * 4),
-    )
+    val rec = try {
+      AudioRecord(
+        if (rawInput) MediaRecorder.AudioSource.MIC else MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+        NativePcm.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, max(size, FRAME_BYTES * 4),
+      )
+    } catch (_: SecurityException) { throw NativeCallAudioLifecycle.Failure("permission_lost") }
     val ownedEffects = ArrayList<AudioEffect>()
     var transferred = false
     try {
