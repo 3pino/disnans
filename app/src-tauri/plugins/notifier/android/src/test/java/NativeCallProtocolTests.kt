@@ -336,6 +336,18 @@ object NativeCallProtocolTests {
       yes(node.get("serverUrl").isNull, "serverUrl null")
       eq(true, node.get("speaking").get("p1").asBoolean())
     }
+    case("notification repost gate: only visible content repaints (not speaking, seq, buffer)") {
+      val k = NativeCallNotice.keyOf(snapshot)
+      yes(NativeCallNotice.shouldRepost(null, k), "first notice always posts")
+      val quiet = snapshot.copy(seq = 999, speaking = mapOf("p1" to false, "" to true), bufferedBytes = 5000L)
+      yes(!NativeCallNotice.shouldRepost(k, NativeCallNotice.keyOf(quiet)), "speaking/seq/buffer do not repost")
+      yes(NativeCallNotice.shouldRepost(k, NativeCallNotice.keyOf(snapshot.copy(muted = true))), "mute change reposts")
+      yes(NativeCallNotice.shouldRepost(k, NativeCallNotice.keyOf(snapshot.copy(deafened = true))), "deafen change reposts")
+      yes(NativeCallNotice.shouldRepost(k, NativeCallNotice.keyOf(snapshot.copy(members = emptyList()))), "member count change reposts")
+      yes(NativeCallNotice.shouldRepost(k, NativeCallNotice.keyOf(snapshot.copy(session = "other"))), "new session reposts")
+      val otherPeer = snapshot.copy(members = listOf(NativeCallMember("p9", "u9", status)))
+      yes(!NativeCallNotice.shouldRepost(k, NativeCallNotice.keyOf(otherPeer)), "same count, different peer: no repost (text shows counts only)")
+    }
     case("error.by only when known") {
       val kicked = snapshot.copy(error = NativeCallError("kicked", "removed", by = "u9"))
       eq("u9", mapper.readTree(NativeCallProtocol.snapshotJson(kicked)).get("error").get("by").asText())

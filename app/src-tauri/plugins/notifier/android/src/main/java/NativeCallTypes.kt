@@ -164,3 +164,17 @@ object NativeCallLimits {
   /** Largest incoming text frame accepted (server message limit is 8 MiB). */
   const val MAX_INCOMING_FRAME_CHARS: Int = 8 * 1024 * 1024
 }
+
+/**
+ * 通知の中身の判定（純粋）。通知に出る内容（セッション・ミュート・スピーカーミュート・人数）だけで決める。
+ * 発言の表示・seq・送信の残り量などは通知の文字に出ないので、変わっても通知を出し直さない（出し直すと、
+ * デバイスによっては音・振動・ポップアップが出る）。
+ */
+object NativeCallNotice {
+  data class Key(val session: String?, val muted: Boolean, val deafened: Boolean, val members: Int)
+
+  fun keyOf(s: NativeCallSnapshot): Key = Key(s.session, s.muted, s.deafened, s.members.size)
+
+  /** 前回の通知と内容が違うときだけ出し直す。前回が無い（まだ出していない）ときは出す。 */
+  fun shouldRepost(last: Key?, next: Key): Boolean = last != next
+}

@@ -1444,3 +1444,81 @@ describe('examples/screenshare', () => {
     s.r.stop();
   });
 });
+
+describe('examples/screenshare: 裏で timer が遅れても、ネイティブのフレームで送り直す', () => {
+  async function nativeShare(bufferedAmount = 0) {
+    let onFrame: (f: Disnans.ScreenCaptureFrame) => void = () => {};
+    const start = vi.fn(async (_o: Disnans.ScreenCaptureOptions, cb: (f: Disnans.ScreenCaptureFrame) => void) => {
+      onFrame = cb;
+    });
+    const stop = vi.fn(async () => {});
+    const update = vi.fn(async () => {});
+    const s = await setup({ display: false, native: { supported: true, start, stop, update } });
+    s.call.bufferedAmount = bufferedAmount;
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    const frame = (d: string) => onFrame({ data: d, mime: 'image/jpeg', width: 1280, height: 720 });
+    const sent = () => emitted(s.call, 'screen.frame').map((c) => c.d);
+    return { s, stop, frame, sent };
+  }
+
+  it('送る時刻を過ぎ、予約の timer が来ていないときに届いたフレームは、最新の 1 枚と heartbeat を送る', async () => {
+    const { s, frame, sent } = await nativeShare();
+    frame('/9j/QUJDRA==');
+    expect(sent()).toEqual(['/9j/QUJDRA==']);
+    // 予約（200 ms 後）を作る。ここから timer は発火させない（裏で止められた状態）
+    frame('/9j/QUFB');
+    const t0 = Date.now();
+    vi.setSystemTime(t0 + 4000); // 時計は進むが、timer は来ない
+    s.call.emit.mockClear();
+    frame('/9j/QkJC');
+    expect(sent()).toEqual(['/9j/QkJC']); // 同期で送る（古い '/9j/QUFB' は捨てて最新だけ）
+    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true, source: 'screen' }]); // 3 秒を過ぎたので heartbeat
+    // 取り消した古い予約は、後から発火しても二重に送らない
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sent()).toEqual(['/9j/QkJC']);
+    s.r.stop();
+  });
+
+  it('送る時刻がまだ来ていないなら、届いても即送らず、予約どおりに送る（予算を外さない）', async () => {
+    const { s, frame, sent } = await nativeShare();
+    frame('/9j/QUJDRA==');
+    frame('/9j/QUFB');
+    // 時計は 50 ms しか進んでいない（予約の 200 ms より前）
+    vi.setSystemTime(Date.now() + 50);
+    frame('/9j/QkJC');
+    expect(sent()).toEqual(['/9j/QUJDRA==']);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(sent()).toEqual(['/9j/QUJDRA==', '/9j/QkJC']);
+    s.r.stop();
+  });
+
+  it('送信待ちが上限を超えているあいだは、時刻が過ぎていても送らない（待って、空いたら送る）', async () => {
+    const { s, frame, sent } = await nativeShare();
+    frame('/9j/QUJDRA==');
+    frame('/9j/QUFB');
+    s.call.bufferedAmount = 1024 * 1024; // BACKLOG_LIMIT（192 KB）を超える
+    vi.setSystemTime(Date.now() + 4000);
+    frame('/9j/QkJC');
+    expect(sent()).toEqual(['/9j/QUJDRA==']);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sent()).toEqual(['/9j/QUJDRA==']);
+    s.call.bufferedAmount = 0;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sent()).toEqual(['/9j/QUJDRA==', '/9j/QkJC']);
+    s.r.stop();
+  });
+
+  it('止めたあとに届いたフレームは送らない（時刻が過ぎていても）', async () => {
+    const { s, stop, frame, sent } = await nativeShare();
+    frame('/9j/QUJDRA==');
+    frame('/9j/QUFB');
+    vi.setSystemTime(Date.now() + 4000);
+    s.button()!.onClick();
+    expect(stop).toHaveBeenCalled();
+    frame('/9j/QkJC');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sent()).toEqual(['/9j/QUJDRA==']);
+    s.r.stop();
+  });
+});

@@ -1834,6 +1834,12 @@ export default class ScreenSharePlugin extends Plugin {
     if (!this.sharing || this.backend !== 'native') return;
     this.lastNative = f;
     this.pendingNative = f;
+    // 送る時刻を過ぎているのに予約の timer が来ていない（裏で遅れている）ときは、予約を取り消して、いま送り直す。
+    // 予算の間隔・送信待ちの上限は、flushNative がそのまま見る（ここでは外さない）
+    if (this.nativeTimer !== null && this.nativeNextAt <= Date.now()) {
+      clearTimeout(this.nativeTimer);
+      this.nativeTimer = null;
+    }
     this.flushNative();
   }
 

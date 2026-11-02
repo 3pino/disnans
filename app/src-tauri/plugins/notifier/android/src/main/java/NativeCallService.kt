@@ -61,6 +61,10 @@ class NativeCallService : Service() {
     /** 通話が前景で動いているときの通知（無ければ通話は動いていない）。古い開始の命令が、これを壊さないために使う */
     @Volatile private var liveNotification: Notification? = null
 
+    /** 最後に出した通知の内容（通知に出る部分だけ）。同じ内容なら出し直さない */
+    private var lastNotice: NativeCallNotice.Key? = null
+    private val noticeLock = Any()
+
     /** 開始を頼む。startForegroundService が拒否されたら false */
     fun start(context: Context, session: String): Boolean {
       val intent = Intent(context, NativeCallService::class.java)
@@ -84,14 +88,32 @@ class NativeCallService : Service() {
       if (!running) return
       val session = s.session ?: return
       val nm = context.getSystemService(NotificationManager::class.java) ?: return
-      val n = build(context, s, session)
-      liveNotification = n
-      nm.notify(NOTIFICATION_ID, n)
+      synchronized(noticeLock) {
+        if (!running) return
+        // 通知に出る内容が変わったときだけ出し直す（発言・seq などでは出し直さない）
+        val key = NativeCallNotice.keyOf(s)
+        if (!NativeCallNotice.shouldRepost(lastNotice, key)) return
+        val n = build(context, s, session)
+        nm.notify(NOTIFICATION_ID, n)
+        liveNotification = n
+        lastNotice = key
+      }
     }
 
-    /** 通話の停止（サービスが壊されたとき） */
+    /** 前景にできた通話の通知を覚える（次の内容の判定は、必ず出し直す） */
+    internal fun adoptPromoted(n: Notification) {
+      synchronized(noticeLock) {
+        liveNotification = n
+        lastNotice = null
+      }
+    }
+
+    /** 通話の停止（サービスが壊されたとき）。次の通話は、最初の内容から出し直す */
     internal fun clearLive() {
-      liveNotification = null
+      synchronized(noticeLock) {
+        liveNotification = null
+        lastNotice = null
+      }
     }
 
     /** 前景の通知の中身（古い開始の命令のとき、通話の通知を壊さずに前景を満たすため） */
@@ -103,6 +125,8 @@ class NativeCallService : Service() {
         .setContentTitle("通話")
         .setContentText("準備しています")
         .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setSilent(true)
         .build()
     }
 
@@ -133,6 +157,8 @@ class NativeCallService : Service() {
         .setShowWhen(false)
         .setCategory(NotificationCompat.CATEGORY_CALL)
         .setPriority(NotificationCompat.PRIORITY_LOW)
+        .setOnlyAlertOnce(true)
+        .setSilent(true)
         .setContentIntent(contentIntent)
       builder.addAction(0, if (s.muted) "ミュート解除" else "ミュート", actionIntent(context, ACTION_MUTE, session, 101))
       builder.addAction(0, if (s.deafened) "スピーカー解除" else "スピーカーミュート", actionIntent(context, ACTION_DEAFEN, session, 102))
@@ -271,7 +297,7 @@ class NativeCallService : Service() {
     }
     if (ok) {
       holdWakeLock()
-      NativeCallService.liveNotification = n
+      NativeCallService.adoptPromoted(n)
     }
     NativeCallHost.serviceStarted(app, session, ok)
     // 失敗したのは、この通話を前景にした開始。その開始の番号で止める（新しい開始を止めない）

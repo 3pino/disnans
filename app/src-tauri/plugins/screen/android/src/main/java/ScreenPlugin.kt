@@ -103,14 +103,19 @@ class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   /**
-   * 小窓の間は Activity が onPause になり、WebView が止まって映像の更新が止まる。
-   * 通話中の WebView を保つ処理（NotifierPlugin.onPause）と同じく、小窓のあいだは動かし直す
+   * 裏に回ると Activity が onPause になり、WebView の休止によって共有の送信や生存通知が途切れ得る。
+   * 小窓か、画面の共有（CaptureService が動いている）のあいだは動かし直す。
+   * 通話のネイティブ化で、通話中の WebView を保つ処理（NotifierPlugin.onPause）は CallService が動くときだけなので、ここで自前に保つ。
+   * TauriActivity.onPause は WebView.onPause() のあとに、この処理を呼ぶ。
    */
   override fun onPause() {
-    if (inPip) {
-      webView?.onResume()
-      webView?.resumeTimers()
+    if (!inPip && !CaptureService.running) return
+    // 送信のレンダラーを、表示されていなくても下げない（API 26 以上）
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      webView?.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
     }
+    webView?.onResume()
+    webView?.resumeTimers()
   }
 
   // ---- 画面のキャプチャ ----
