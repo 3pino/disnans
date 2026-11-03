@@ -96,4 +96,24 @@ if (pip.supported) {
 - `onEnd` は、通知欄の「停止」やシステム側の操作で止められたときに呼ばれます（`stop()` では呼ばれません）
 - `screenCapture.snapshot()`（v11）は、設定のプレビューのような「いまの画面を 1 枚だけ見たい」用途向けです。`getDisplayMedia` や `start` と違って、どの画面を共有するかの選択も許可のダイアログも出しません。撮れるものは環境で違い、`source` で分かります: Windows は主モニター全体（GDI）、Linux は X11 なら主モニター全体（ルートウィンドウ）で Wayland などでは disnans 自身の画面（WebKitGTK のスナップショット）、Android は disnans 自身の画面（PixelCopy。MediaProjection は使わない）。長辺 1920 以下に縮めた JPEG の data URL を返します。対象外のデバイスでは例外です
 - `screenCapture.supported` は Android / Linux のアプリ版で `true`、それ以外は `false` です。`pip.supported` は Android だけ `true` です。デスクトップの PiP は `<video>` の `requestPictureInPicture()` を使ってください
-- 通話中にアプリを裏に回しても共有が続くのは、通話のフォアグラウンドサービス（マイク）と、画面のキャプチャのフォアグラウンドサービス（`mediaProjection`）が動いているためです
+
+### Android の通話へ直接中継する（API v16）
+
+`screenCapture.supportsCallRelay` が `true` の本体では、`start` に `callRelay` を指定できます。取得の許可は従来どおり利用者の操作から求めます。通話へ参加済みである必要があり、中継が使えなければ失敗します。黙って JS の送信へは切り替えません。
+
+```js
+await screenCapture.start({
+  maxEdge: 1280, quality: 0.6, fps: 5,
+  callRelay: {
+    frameEvent: 'screen.frame',
+    stateEvent: 'screen.state',
+    queryEvent: 'screen.query',
+    state: { source: 'screen' },
+  },
+}, (frame) => updatePreview(frame));
+```
+
+- 前景・背景ともネイティブが画像の分割送信・生存通知・問い合わせへの応答を行います。プラグインは同じフレームや通知を JS から重ねて送らないでください。`onFrame` はこの方式では前景のプレビュー用です。画面外のページに画像を溜めません。
+- 受け手へ送るイベントは従来と同じです。画像は `{f,i,n,d}`、状態は `{on:true,...state}` と `{on:false}`。イベント名は重複させず、`audio` は指定できません。`state` は `on` を含まない有限の数値・文字列・真偽値のオブジェクト（JSON で 256 バイト以内）です。
+- 中継は開始時の通話・世代と一回の取得に結び付きます。同じ通話の再接続中は送信を待ち、取得終了・明示的な退出・別の通話への変更では止まります。取得を自動再開したり、画面ロックなどの OS の終了条件を無効にしたりはしません。
+- 古い本体や Windows・Linux はこの方式に対応しません。対応を必須にするなら `minApiVersion: 16` とし、任意に使うなら `supportsCallRelay` を調べて既存の送信方式と一方だけを選んでください。フォアグラウンドサービスがあるだけでは、JS のページの凍結までは防げません。

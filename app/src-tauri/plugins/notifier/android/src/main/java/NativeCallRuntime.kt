@@ -328,6 +328,15 @@ class NativeCallRuntime(
 
   fun emit(session: String, name: String, payload: JsonNode): Outcome = call { step(Input.Emit(session, name, payload)) }
 
+  /**
+   * 世代を指定した送信（画面の中継など）。世代の確認は、制御のスレッドの中で、送る直前に行う（確認と送信の間に世代が変わらない）。
+   * 世代が違えば送らない（古い世代・同じ通話 ID の再開の後の送信を防ぐ）。
+   */
+  fun emitScoped(session: String, generation: Long, name: String, payload: JsonNode): Outcome = call {
+    if (core.snapshot().generation != generation) Outcome(false, "stale_generation")
+    else step(Input.Emit(session, name, payload))
+  }
+
   /** 読み取りだけ。何も始めない・止めない。通話が無いときは、保存されている wanted を返す */
   fun snapshot(): NativeCallSnapshot = call {
     val s = core.snapshot()

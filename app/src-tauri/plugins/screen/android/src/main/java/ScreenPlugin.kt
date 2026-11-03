@@ -11,6 +11,8 @@ import android.os.Looper
 import android.util.Base64
 import android.view.PixelCopy
 import java.io.ByteArrayOutputStream
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -42,6 +44,8 @@ class StartCaptureArgs {
   /** 前のフレームとの差（0〜255 の平均）がこれ以下なら送らない */
   var diffThreshold: Double = 1.5
   var keepaliveMs: Long = 5000
+  /** JS が付ける画面の番号（イベントと停止をこの番号で絞る）。0 は無し */
+  var captureId: Long = 0
 }
 
 @InvokeArg
@@ -75,11 +79,24 @@ private const val SNAPSHOT_TIMEOUT_MS = 8000L
 class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
   private var webView: WebView? = null
 
-  /** 許可のダイアログの結果を待っている間の設定 */
-  private var pendingArgs: StartCaptureArgs? = null
 
   /** いま小窓になっている */
   @Volatile private var inPip = false
+
+  /** 撮りの要求（許可のダイアログの結果を待つあいだ）。すべてのモードで、この 1 件だけ */
+  private val gate = CaptureGate<Invoke, CaptureRequest>()
+  /** いま中継している画面（無ければ null）と、その番号 */
+  @Volatile private var relay: ShareRelayHost? = null
+  @Volatile private var relayCaptureId = 0L
+  /** 最後に終わった画面の番号（同じ終わりを二度知らせないため） */
+  @Volatile private var endedCaptureId = 0L
+  /** Activity が前面にいる（onResume で真、onPause で偽） */
+  @Volatile private var resumed = true
+  /** 見せられなかった最新の 1 枚（前面に戻ったとき、一度だけ見せる） */
+  @Volatile private var heldPreview: CapturedFrame? = null
+
+  private class CaptureRequest(val args: StartCaptureArgs, val relay: RelayRequest?)
+  private class RelayRequest(val binding: RelayBinding, val config: RelayConfig)
 
   private val pipListener = Consumer<PictureInPictureModeChangedInfo> { info ->
     inPip = info.isInPictureInPictureMode
@@ -91,25 +108,32 @@ class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
   override fun load(webView: WebView) {
     this.webView = webView
     CaptureService.frameSink = { frame -> deliverFrame(frame) }
-    CaptureService.endSink = { reason -> deliverEnd(reason) }
+    CaptureService.endSink = { id, reason -> onCaptureEnded(id, reason) }
     (activity as? OnPictureInPictureModeChangedProvider)?.addOnPictureInPictureModeChangedListener(pipListener)
   }
 
   override fun onDestroy() {
+    webView = null
     CaptureService.frameSink = null
     CaptureService.endSink = null
+    gate.pendingId()?.let { CaptureService.cancelReservation(it) }
     (activity as? OnPictureInPictureModeChangedProvider)?.removeOnPictureInPictureModeChangedListener(pipListener)
+    // Activity が消えたら、待ち・中継（送り手）を終えてから画面を止める
+    gate.clear()
+    stopRelay("activity_destroyed")
+    heldPreview = null
     CaptureService.stop(activity)
   }
 
   /**
    * 裏に回ると Activity が onPause になり、WebView の休止によって共有の送信や生存通知が途切れ得る。
-   * 小窓か、画面の共有（CaptureService が動いている）のあいだは動かし直す。
+   * 小窓か、JS が送信する従来の共有のあいだだけ動かし直す。ネイティブ中継はページの動作に依存しない。
    * 通話のネイティブ化で、通話中の WebView を保つ処理（NotifierPlugin.onPause）は CallService が動くときだけなので、ここで自前に保つ。
    * TauriActivity.onPause は WebView.onPause() のあとに、この処理を呼ぶ。
    */
   override fun onPause() {
-    if (!inPip && !CaptureService.running) return
+    resumed = false
+    if (!RelayPolicy.keepWebViewActive(inPip, CaptureService.running, relay != null)) return
     // 送信のレンダラーを、表示されていなくても下げない（API 26 以上）
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       webView?.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
@@ -118,68 +142,250 @@ class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
     webView?.resumeTimers()
   }
 
+  /** 前面に戻った。見せられなかった最新の 1 枚を、一度だけ見せる */
+  override fun onResume() {
+    resumed = true
+    val held = heldPreview
+    heldPreview = null
+    if (held != null) deliverFrame(held)
+  }
+
   // ---- 画面のキャプチャ ----
+
+  /** JS の callRelay を、型まで厳しく検査する（無い・在るの区別。在るのに形が違えば拒否） */
+  private fun parseRelay(invoke: Invoke): RelayParse {
+    val args = invoke.getArgs()
+    val present = args.has("callRelay")
+    return RelayConfig.fromRaw(present, if (present) jsonToKotlin(args.get("callRelay")) else null)
+  }
+
+  /** JSON の値を、検査しやすい Kotlin の値へ（オブジェクトは Map、配列は List、null は null） */
+  private fun jsonToKotlin(v: Any?): Any? = when (v) {
+    JSONObject.NULL -> null
+    is JSONObject -> LinkedHashMap<String, Any?>().also { m -> v.keys().asSequence().forEach { k -> m[k] = jsonToKotlin(v.opt(k)) } }
+    is JSONArray -> (0 until v.length()).map { jsonToKotlin(v.opt(it)) }
+    else -> v
+  }
 
   /** OS の確認のダイアログ（画面の録画の許可）を出し、許可されたらサービスで撮り始める */
   @Command
   fun startCapture(invoke: Invoke) {
     val args = invoke.parseArgs(StartCaptureArgs::class.java)
     try {
-      // 撮っている途中なら、いったん止めてやり直す
+      // 許可を待っている要求が、もう一つあるなら受け付けない（結果を取り違えないため）
+      if (gate.isBusy()) {
+        invoke.reject("別の画面の共有の確認を待っています", "busy")
+        return
+      }
+      var relayReq: RelayRequest? = null
+      when (val parsed = parseRelay(invoke)) {
+        is RelayParse.Absent -> {}
+        is RelayParse.Err -> {
+          invoke.reject("画面の中継の要求が正しくありません", parsed.code)
+          return
+        }
+        is RelayParse.Ok -> {
+          // 中継は、通話に参加しているときだけ。番号も、中継のときは必ず要る
+          if (args.captureId == 0L) {
+            invoke.reject("画面の中継には、画面の番号が要ります", "bad_capture_id")
+            return
+          }
+          val read = ShareRelayHost.readBinding(activity)
+          if (read is BindingRead.Unavailable) {
+            invoke.reject("通話の状態を読めなかったため、画面を中継できません", "unavailable")
+            return
+          }
+          val b = RelayPolicy.callOf(read)
+          if (b == null || !RelayPolicy.startable(b)) {
+            invoke.reject("通話に参加していないため、画面を中継できません", "not_joined")
+            return
+          }
+          relayReq = RelayRequest(b, parsed.config)
+        }
+      }
+      if (!gate.begin(invoke, args.captureId, CaptureRequest(args, relayReq))) {
+        invoke.reject("別の画面の共有の確認を待っています", "busy")
+        return
+      }
+      // 持ち主は、待ちの時点で今の番号に替わる（古い撮りへの停止は、もう届かない）
+      CaptureService.owner.claim(args.captureId)
+      // 撮っている途中なら、いったん止めてやり直す（中継も止める）
+      stopRelay("restart")
+      clearPreview()
       if (CaptureService.running) CaptureService.stop(activity)
-      pendingArgs = args
       val mpm = activity.getSystemService(MediaProjectionManager::class.java)
       startActivityForResult(invoke, mpm.createScreenCaptureIntent(), "captureResult")
     } catch (ex: Exception) {
+      gate.take(invoke)
       invoke.reject(ex.message)
     }
   }
 
   @ActivityCallback
   fun captureResult(invoke: Invoke, result: ActivityResult) {
-    val args = pendingArgs
-    pendingArgs = null
-    val data = result.data
-    if (result.resultCode != Activity.RESULT_OK || data == null || args == null) {
-      // ユーザーがダイアログで「キャンセル」を押した。JS 側は code で見分けて、何も知らせずに終える
+    // 同じ呼び出しの結果だけを取り出す（違う呼び出しの結果は、待ちを消さない）
+    val p = gate.take(invoke)
+    if (p == null) {
       invoke.reject("画面の共有がキャンセルされました (cancelled)", "cancelled")
       return
     }
+    val data = result.data
+    if (result.resultCode != Activity.RESULT_OK || data == null) {
+      // ユーザーがダイアログで「キャンセル」を押した。JS 側は code で見分けて、何も知らせずに終える
+      CaptureService.owner.release(p.captureId)
+      invoke.reject("画面の共有がキャンセルされました (cancelled)", "cancelled")
+      return
+    }
+    val cfg = CaptureConfig.from(p.payload.args, p.payload.relay?.binding)
     try {
-      CaptureService.start(activity, result.resultCode, data, CaptureConfig.from(args))
+      var host: ShareRelayHost? = null
+      val rr = p.payload.relay
+      if (rr != null) {
+        // 許可のあいだに通話が変わっていないか。読めないときは、画面を取らない
+        val read = ShareRelayHost.readBinding(activity)
+        if (read is BindingRead.Unavailable) {
+          CaptureService.owner.release(p.captureId)
+          invoke.reject("通話の状態を読めなかったため、画面の共有を始めませんでした", "unavailable")
+          return
+        }
+        val now = RelayPolicy.callOf(read)
+        if (now == null || !RelayPolicy.revalidate(rr.binding, read)) {
+          CaptureService.owner.release(p.captureId)
+          invoke.reject("通話が変わったため、画面の共有をやめました", "call_changed")
+          return
+        }
+        val id = cfg.captureId
+        val h = ShareRelayHost(
+          activity, rr.config, cfg.fps,
+          { CaptureService.lowerQualityForRelay(cfg) },
+          { code -> relayEnded(id, code) },
+        )
+        if (!h.begin(now)) {
+          CaptureService.owner.release(p.captureId)
+          invoke.reject("通話に参加していないため、画面を中継できません", "not_joined")
+          return
+        }
+        host = h
+        relay = h
+        relayCaptureId = id
+        // 投影を始める直前にも、通話を確かめる（許可から始めるまでのあいだの変化を見逃さない）
+        val again = ShareRelayHost.readBinding(activity)
+        if (!RelayPolicy.revalidate(rr.binding, again)) {
+          stopRelay("call_changed")
+          CaptureService.owner.release(p.captureId)
+          invoke.reject("通話が変わったため、画面の共有をやめました", "call_changed")
+          return
+        }
+      }
+      cfg.relaySink = host?.sink()
+      CaptureService.start(activity, result.resultCode, data, cfg)
       invoke.resolve()
     } catch (ex: Exception) {
+      stopRelay("start_failed")
+      CaptureService.owner.release(p.captureId)
       invoke.reject(ex.message)
     }
   }
 
-  /** 撮りながら品質と縮小の倍率を変える */
+  /** 撮る画面の品質と縮小を変える（今の持ち主の番号のものだけ） */
   @Command
   fun updateCapture(invoke: Invoke) {
     val args = invoke.parseArgs(UpdateCaptureArgs::class.java)
-    CaptureService.update(args.quality, args.scale)
+    val id = invoke.getArgs().optLong("captureId", 0L)
+    if (CaptureService.owner.accepts(id)) {
+      CaptureService.update(args.quality, args.scale)
+    }
     invoke.resolve()
   }
 
   @Command
   fun stopCapture(invoke: Invoke) {
+    val id = invoke.getArgs().optLong("captureId", 0L)
+    // 古い画面への停止は、今の待ち・予約・撮りを止めない
+    if (!CaptureService.owner.accepts(id)) {
+      invoke.resolve()
+      return
+    }
+    // 許可のダイアログを待っている同じ番号の要求は、ここで取り消す（あとから始まらない）
+    gate.cancelIf(id)
+    // 開始を頼んだあと、サービスが始まる前の停止も、予約を取り消して止める
+    CaptureService.cancelReservation(id)
+    stopRelay("user_stop")
+    clearPreview()
     CaptureService.stop(activity)
+    CaptureService.owner.release(id)
     invoke.resolve()
   }
 
-  private fun deliverFrame(f: CapturedFrame) {
-    if (webView == null || !hasListener("capture_frame")) return
-    val o = JSObject()
-    o.put("data", f.data)
-    o.put("mime", f.mime)
-    o.put("width", f.width)
-    o.put("height", f.height)
-    activity.runOnUiThread { trigger("capture_frame", o) }
+  /** 中継（送り手）だけを止める。画面は止めない（呼び出し側が決める） */
+  private fun stopRelay(reason: String) {
+    clearPreview()
+    val h = relay ?: return
+    relay = null
+    h.stop(reason)
   }
 
-  private fun deliverEnd(reason: String) {
+  private fun clearPreview() {
+    heldPreview = null
+  }
+
+  /** 送り手が自分で終わった（通話が終わった・権限・Activity など）。同じ画面なら、画面も止める */
+  private fun relayEnded(captureId: Long, code: String) {
+    activity.runOnUiThread {
+      if (relay == null || captureId != relayCaptureId) return@runOnUiThread
+      relay = null
+      clearPreview()
+      CaptureService.stop(activity)
+      deliverEnd(captureId, code)
+    }
+  }
+
+  /** 画面の撮りが終わった（システムの停止など）。同じ画面の中継なら、送り手も終える */
+  private fun onCaptureEnded(captureId: Long, reason: String) {
+    if (relay != null && captureId == relayCaptureId) {
+      // ログに入る理由は固定の code だけ（例外の文言は JS へ渡すだけで、ネイティブのログには出さない）
+      stopRelay(if (reason == "stopped") "capture_stopped" else "capture_error")
+    }
+    deliverEnd(captureId, reason)
+  }
+
+  private fun deliverFrame(f: CapturedFrame) {
+    if (webView == null) return
+    if (!RelayPolicy.deliverPreview(relay != null, RelayPolicy.previewVisible(resumed, inPip))) {
+      heldPreview = f
+      relay?.notePreviewSuppressed()
+      return
+    }
+    // 見せる前の確かめ（前面か・番号・中継の状態）は、画面のスレッドの中で行う（後から変わっていても、古い画像を出さない）
+    activity.runOnUiThread {
+      if (webView == null || !hasListener("capture_frame")) return@runOnUiThread
+      // 今の画面の画像だけを見せる（撮りが替わっていたら、古い画像は捨てる）
+      if (f.captureId != 0L && f.captureId != CaptureService.owner.current()) return@runOnUiThread
+      if (!RelayPolicy.deliverPreview(relay != null, RelayPolicy.previewVisible(resumed, inPip))) {
+        // 見えていない間は、閉じたページに溜めない。最新の 1 枚だけを覚えておく
+        heldPreview = f
+        relay?.notePreviewSuppressed()
+        return@runOnUiThread
+      }
+      val o = JSObject()
+      o.put("data", f.data)
+      o.put("mime", f.mime)
+      o.put("width", f.width)
+      o.put("height", f.height)
+      o.put("captureId", f.captureId)
+      trigger("capture_frame", o)
+    }
+  }
+
+  private fun deliverEnd(captureId: Long, reason: String) {
+    // 同じ画面の終わりは一度だけ知らせる（停止の経路が二つあっても、JS には一つ）
+    if (captureId != 0L && captureId == endedCaptureId) return
+    endedCaptureId = captureId
+    CaptureService.owner.release(captureId)
+    if (webView == null) return
     val o = JSObject()
     o.put("reason", reason)
+    o.put("captureId", captureId)
     activity.runOnUiThread { trigger("capture_end", o) }
   }
 

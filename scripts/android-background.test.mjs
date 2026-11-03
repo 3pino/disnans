@@ -18,9 +18,9 @@ function body(source, signature) {
   assert.fail(`method not closed: ${signature}`);
 }
 
-test('画面共有は旧通話サービスに依存せず、画面外でも WebView を再開する', () => {
+test('画面共有の WebView 維持は旧通話サービスに依存せず、ネイティブ中継を区別する', () => {
   const pause = body(screen, 'override fun onPause()');
-  assert.match(pause, /if\s*\(\s*!inPip\s*&&\s*!CaptureService\.running\s*\)\s*return/);
+  assert.match(pause, /if\s*\(!RelayPolicy\.keepWebViewActive\(inPip,\s*CaptureService\.running,\s*relay\s*!=\s*null\)\)\s*return/);
   assert.match(pause, /webView\?\.onResume\(\)/);
   assert.match(pause, /webView\?\.resumeTimers\(\)/);
   assert.doesNotMatch(pause, /(?:Native)?CallService\.running/);

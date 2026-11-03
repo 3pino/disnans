@@ -56,6 +56,7 @@
 - 12: 通話画面だけに出すボタン `call.addButton({ location: 'view' })`・Linux のネイティブ画面取得（portal / PipeWire）
 - 14: `disnans.PluginError`・`session.viewers`
 - 15: 共有フォルダ `this.files`
+- 16: Android のネイティブ通話へ画面を中継する `screenCapture.supportsCallRelay` / `start({ callRelay })`
 
 ## 注意点
 

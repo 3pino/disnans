@@ -114,6 +114,16 @@ object NativeCallHost {
     return attempt(Outcome(false, "failed")) { rt(context).emit(session, name, node) }
   }
 
+  /** [emit] と同じ。ただし、世代が [generation] と違えば送らない（画面の中継の送信用） */
+  fun emitScoped(context: Context, session: String, generation: Long, name: String, payloadJson: String): Outcome {
+    val node = try {
+      mapper.readTree(payloadJson)
+    } catch (_: Exception) {
+      return Outcome(false, "bad_payload")
+    }
+    return attempt(Outcome(false, "failed")) { rt(context).emitScoped(session, generation, name, node) }
+  }
+
   /** 状態と中継のイベントを受け取る。戻り値の関数で外せる。届くのは別のスレッド */
   fun addListener(listener: (NativeCallEvent) -> Unit): () -> Unit {
     listeners.add(listener)

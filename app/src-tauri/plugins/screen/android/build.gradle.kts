@@ -31,4 +31,9 @@ dependencies {
     implementation("androidx.activity:activity:1.10.1")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.15.3")
     implementation(project(":tauri-android"))
+    // Tauri の生成名と単独ビルドの名前に依存せず、同梱の通話ライブラリを参照する。
+    val notifierDir = file("../../notifier/android").canonicalFile
+    val notifier = rootProject.allprojects.single { it.projectDir.canonicalFile == notifierDir }
+    implementation(project(notifier.path))
+    testImplementation("junit:junit:4.13.2")
 }

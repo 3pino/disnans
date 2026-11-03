@@ -63,11 +63,58 @@ export function toCaptureError(e: unknown): Error {
 
 type CaptureFramePayload = { data: string; mime: string; width: number; height: number; captureId?: number };
 type CaptureEndPayload = { reason?: string; message?: string; captureId?: number };
+type CallRelay = NonNullable<Disnans.ScreenCaptureOptions['callRelay']>;
 
 let captureOff: (() => void)[] = [];
 let capturing = false;
-let captureSeq = 0;
+// ページの再作成後も古い取得の番号をすぐ再利用しない（ネイティブの遅い終了通知と区別する）。
+let captureSeq = Date.now();
 let captureBackend: 'android' | 'linux' | null = null;
+
+// ---- 通話へのネイティブ送信（API v16）。フロントエンドと Android のネイティブは同じ APK に入るので、Android なら使える ----
+
+/** 名前・状態の決まり（本体へ渡す前に、JS で確かめる）。違うものは invalid_argument */
+const RELAY_RESERVED_NAMES = new Set(['audio']);
+const RELAY_STATE_MAX_BYTES = 256;
+
+function relayName(v: unknown, what: string): string {
+  if (typeof v !== 'string' || v.length < 1 || v.length > 64) throw new PluginError('invalid_argument', `${what} は 1〜64 文字の文字列にしてください`);
+  if (RELAY_RESERVED_NAMES.has(v)) throw new PluginError('invalid_argument', `${what} の ${v} は本体が使います`);
+  return v;
+}
+
+function relayState(v: unknown): Record<string, string | number | boolean> {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new PluginError('invalid_argument', 'callRelay.state はオブジェクトにしてください');
+  const entries: [string, string | number | boolean][] = [];
+  for (const [k, x] of Object.entries(v)) {
+    if (k === 'on') throw new PluginError('invalid_argument', 'callRelay.state のキー on は使えません');
+    if (typeof x === 'string' || typeof x === 'boolean' || (typeof x === 'number' && Number.isFinite(x))) entries.push([k, x]);
+    else throw new PluginError('invalid_argument', 'callRelay.state の値は文字列・有限の数・真偽だけにしてください');
+  }
+  const out = Object.fromEntries(entries);
+  if (new TextEncoder().encode(JSON.stringify(out)).length > RELAY_STATE_MAX_BYTES) {
+    throw new PluginError('invalid_argument', `callRelay.state は ${RELAY_STATE_MAX_BYTES} バイトまでです`);
+  }
+  return out;
+}
+
+/** callRelay を確かめて、本体に渡す形にそろえる（名前が 3 つとも違うこと） */
+export function validateCallRelay(r: unknown): CallRelay {
+  if (typeof r !== 'object' || r === null || Array.isArray(r)) throw new PluginError('invalid_argument', 'callRelay はオブジェクトにしてください');
+  const o = r as Record<string, unknown>;
+  const frameEvent = relayName(o.frameEvent, 'frameEvent');
+  const stateEvent = relayName(o.stateEvent, 'stateEvent');
+  const queryEvent = o.queryEvent === undefined ? undefined : relayName(o.queryEvent, 'queryEvent');
+  const names = [frameEvent, stateEvent, ...(queryEvent === undefined ? [] : [queryEvent])];
+  if (new Set(names).size !== names.length) throw new PluginError('invalid_argument', 'callRelay の 3 つの名前は互いに違うものにしてください');
+  const state = o.state === undefined ? undefined : relayState(o.state);
+  return {
+    frameEvent,
+    stateEvent,
+    ...(queryEvent === undefined ? {} : { queryEvent }),
+    ...(state === undefined ? {} : { state }),
+  };
+}
 
 async function invokeCapture<T>(backend: 'android' | 'linux', operation: 'start' | 'stop' | 'update', args?: Record<string, unknown>): Promise<T> {
   if (backend === 'android') return invokeScreen<T>(`${operation}_capture`, args);
@@ -79,15 +126,24 @@ export const screenCaptureApi: Disnans.ScreenCapture = {
   get supported() {
     return capabilities().nativeScreen !== null;
   },
+  /** 通話へのネイティブ送信（API v16）が使える。Android（この版の本体）だけ true。Linux・ブラウザーでは false */
+  get supportsCallRelay() {
+    return native();
+  },
   async start(opts, onFrame) {
     if (!screenCaptureApi.supported) throw new PluginError('unsupported', 'この環境では使えません');
+    // 通話への送信は Android だけ。ほかで頼まれたら、黙って別の経路に替えず、そのまま失敗させる
+    const relay = opts.callRelay === undefined ? null : validateCallRelay(opts.callRelay);
+    if (relay && !native()) throw new PluginError('unsupported', 'この環境では通話へ直接送れません（Android だけ対応しています）');
     if (capturing) await screenCaptureApi.stop();
     capturing = true;
     const seq = ++captureSeq;
     const backend = capabilities().nativeScreen ?? 'android';
     captureBackend = backend;
+    // 撮り始めた回（captureId）が今のものと違えば捨てる（Android も Linux も、本体は必ず captureId を返す）
+    const idOk = (id: number | undefined) => id === seq;
     const frame = (f: CaptureFramePayload) => {
-      if (!capturing || seq !== captureSeq || (backend === 'linux' && f.captureId !== seq)) return;
+      if (!capturing || seq !== captureSeq || !idOk(f.captureId)) return;
       try {
         onFrame({ data: f.data, mime: f.mime, width: f.width, height: f.height });
       } catch (e) {
@@ -95,7 +151,7 @@ export const screenCaptureApi: Disnans.ScreenCapture = {
       }
     };
     const end = (e: CaptureEndPayload) => {
-      if (!capturing || seq !== captureSeq || (backend === 'linux' && e.captureId !== seq)) return;
+      if (!capturing || seq !== captureSeq || !idOk(e.captureId)) return;
       if (e.reason) console.info('[screen] 画面の取得を終了しました', e.reason, e.message ?? '');
       cleanup();
       opts.onEnd?.();
@@ -121,7 +177,8 @@ export const screenCaptureApi: Disnans.ScreenCapture = {
       }
       if (!capturing || seq !== captureSeq) throw new DOMException('画面の共有は終了しました', 'AbortError');
       await invokeCapture(backend, 'start', {
-        ...(backend === 'linux' ? { captureId: seq } : {}),
+        captureId: seq,
+        ...(relay === null ? {} : { callRelay: relay }),
         maxEdge: opts.maxEdge,
         quality: opts.quality,
         fps: opts.fps,
@@ -131,6 +188,11 @@ export const screenCaptureApi: Disnans.ScreenCapture = {
         diffThreshold: opts.diffThreshold ?? 1.5,
         keepaliveMs: opts.keepaliveMs ?? 5000,
       });
+      // 開始の応答が来る前に止められていたら（新しい開始もない）、Android では撮り始めたものを止める
+      if (seq !== captureSeq) {
+        if (backend === 'android') void invokeCapture('android', 'stop', { captureId: seq }).catch(() => {});
+        throw new DOMException('画面の共有は終了しました', 'AbortError');
+      }
     } catch (e) {
       if (seq === captureSeq) cleanup();
       throw toCaptureError(e);
@@ -138,15 +200,16 @@ export const screenCaptureApi: Disnans.ScreenCapture = {
   },
   async update(patch) {
     if (!capturing || !captureBackend) return;
-    await invokeCapture(captureBackend, 'update', { ...patch });
+    await invokeCapture(captureBackend, 'update', { ...patch, ...(captureBackend === 'android' ? { captureId: captureSeq } : {}) });
   },
   snapshot,
   async stop() {
     if (!capturing || !captureBackend) return;
     const backend = captureBackend;
+    const seq = captureSeq;
     cleanup();
     try {
-      await invokeCapture(backend, 'stop');
+      await invokeCapture(backend, 'stop', backend === 'android' ? { captureId: seq } : undefined);
     } catch (e) {
       console.warn('画面のキャプチャを止められませんでした', e);
     }

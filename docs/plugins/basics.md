@@ -11,7 +11,7 @@
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまの版は `15`（`14` 以下の本体には `this.files`（共有フォルダ）がない。共有フォルダを使うなら `15`。`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまの版は `16`（Android のネイティブ通話への画面中継は `16`。`14` 以下の本体には `this.files`（共有フォルダ）がない。共有フォルダを使うなら `15`。`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`10` の本体には `screenCapture.snapshot` がなく、`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
 | `apiVersion` | | このプラグインを作った（対象の）ホスト API のバージョン。省略すると `minApiVersion` とみなす。`minApiVersion` 以上の整数。本体がこれより新しく、その後に削除・意味を変えた API があると、読み込んだうえで設定の一覧に警告が出る（→ [互換](distribution.md#互換apiversion-と削除の警告)） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 | `permissions` | | 使う権限の配列（v15）。`"files"` で共有フォルダ（`this.files`）。入れていないと、その API は `permission_denied` で失敗する。知らない名前は無視される（→ [共有フォルダ](runtime.md#共有フォルダfilesv15)） |
@@ -154,4 +154,4 @@ app/node_modules/.bin/tsc -p examples/dice
 | `disnans.ui.onBack(handler)` / `ui.setImmersive(on)` | 戻る操作（Android の戻るジェスチャー・PC の Alt+←）で閉じる層を足す／Android で全画面（システムバーを隠す没入モード）にする（v9。→ [画面共有のためのネイティブ API](call.md#画面共有のためのネイティブ-apiv9)） |
 | `disnans.screenCapture.*` / `disnans.pip.*` | Android の画面のキャプチャ（MediaProjection）と、ピクチャーインピクチャー（v9。同上）。Linux の画面のキャプチャは portal / PipeWire（v12）。ダイアログなしの静止画 `screenCapture.snapshot()`（v11。デスクトップでも使える） |
 | `this.files` | 共有フォルダ（v15。権限 `files` が要る。→ [共有フォルダ](runtime.md#共有フォルダfilesv15)） |
-| `disnans.apiVersion` | ホスト API のバージョン（いまは 15） |
+| `disnans.apiVersion` | ホスト API のバージョン（いまは 16） |

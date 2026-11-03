@@ -1,6 +1,10 @@
 package dev.disnans.notifier
 
 import org.junit.runner.JUnitCore
+import dev.disnans.screen.ShareRelayCoreTest
+import dev.disnans.screen.ShareRelayWireGoldenTest
+import dev.disnans.screen.CaptureGateTest
+import dev.disnans.screen.RelayInboxTest
 
 /** Android・マイクを使わず、実際の通話処理に使う純粋部分を確認する。 */
 fun main() {
@@ -18,5 +22,8 @@ fun main() {
     NativeCallRuntimeTest.run()
     NativeCallPumpTest.run()
     NativeCallAudioAdapterTest.run()
-    println("Native call: $protocol protocol cases, ${junit.runCount} transport cases and ${Check.count} pure assertions passed")
+    val screen = JUnitCore.runClasses(ShareRelayCoreTest::class.java, ShareRelayWireGoldenTest::class.java, CaptureGateTest::class.java, RelayInboxTest::class.java)
+    for (failure in screen.failures) System.err.println(failure)
+    check(screen.wasSuccessful()) { "Native screen relay tests failed: ${screen.failureCount}/${screen.runCount}" }
+    println("Native call: $protocol protocol cases, ${junit.runCount} transport cases and ${Check.count} pure assertions passed; screen relay: ${screen.runCount} cases")
 }

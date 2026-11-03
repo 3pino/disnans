@@ -108,7 +108,7 @@ jobs:
           test -n "$manifest" && test -f "$manifest"
           echo "TAURI_ANDROID_DIR=$(dirname "$manifest")/mobile/android" >> "$GITHUB_ENV"
       - name: 通知・画面共有プラグインの Kotlin・マニフェストをコンパイルし、ローカル通信を試験
-        run: gradle --no-daemon -p app/src-tauri/plugins/notifier/android-check :notifier:assembleDebug :notifier:testDebugUnitTest :screen:assembleDebug
+        run: gradle --no-daemon -p app/src-tauri/plugins/notifier/android-check :notifier:assembleDebug :notifier:testDebugUnitTest :screen:assembleDebug :screen:testDebugUnitTest
 
   # Desktop IPC と共通ファイル移行の Rust 側を Windows のネイティブ環境でも検証する。
   app-windows:

@@ -1522,3 +1522,97 @@ describe('examples/screenshare: 裏で timer が遅れても、ネイティブ�
     s.r.stop();
   });
 });
+
+describe('examples/screenshare: 通話へのネイティブ送信（API v16）。本体が送るあいだ、JS は何も送らない', () => {
+  /** 本体が送れる共有を始める（onFrame は前面のプレビュー） */
+  async function relayShare(native: Partial<Disnans.ScreenCapture> = {}) {
+    let onFrame: (f: Disnans.ScreenCaptureFrame) => void = () => {};
+    const start = vi.fn(async (_o: Disnans.ScreenCaptureOptions, cb: (f: Disnans.ScreenCaptureFrame) => void) => {
+      onFrame = cb;
+    });
+    const stop = vi.fn(async () => {});
+    const update = vi.fn(async () => {});
+    const s = await setup({ display: false, native: { supported: true, supportsCallRelay: true, start, stop, update, ...native } });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    const frame = (d: string) => onFrame({ data: d, mime: 'image/jpeg', width: 1280, height: 720 });
+    return { s, start, stop, frame };
+  }
+
+  it('対応する本体では、開始の設定に callRelay を渡し、開始の状態も JS からは送らない', async () => {
+    const { s, start } = await relayShare();
+    expect(start.mock.calls[0]![0]).toMatchObject({
+      callRelay: { frameEvent: 'screen.frame', stateEvent: 'screen.state', queryEvent: 'screen.query', state: { source: 'screen' } },
+    });
+    expect(s.button()!.active).toBe(true);
+    expect(s.call.emit).not.toHaveBeenCalled();
+    s.r.stop();
+  });
+
+  it('送っているあいだ、フレーム（前面のプレビュー）・heartbeat・問い合わせ・参加者の変化で JS は何も送らない', async () => {
+    const { s, frame } = await relayShare();
+    frame('/9j/QUJDRA==');
+    frame('/9j/QUFB');
+    await vi.advanceTimersByTimeAsync(20_000);
+    s.call.participants.push({ peer: 'pb', self: false });
+    s.changed();
+    // 参加した人からの問い合わせ（本体が答える。JS の答えは送らない）
+    s.fire('screen.query', 'pb', 'a', {});
+    frame('/9j/QkJC');
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(s.call.emit).not.toHaveBeenCalled();
+    s.r.stop();
+  });
+
+  it('止めるのは本体に任せる。JS からは off の状態も送らない', async () => {
+    const { s, stop } = await relayShare();
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(stop).toHaveBeenCalled();
+    expect(s.button()!.active).toBeFalsy();
+    expect(s.call.emit).not.toHaveBeenCalled();
+    s.r.stop();
+  });
+
+  it('本体の側で終わった（onEnd）ときも、JS は送らず、表示だけ片付ける', async () => {
+    const { s, start } = await relayShare();
+    (start.mock.calls[0]![0] as Disnans.ScreenCaptureOptions).onEnd!();
+    expect(s.button()!.active).toBeFalsy();
+    expect(s.call.emit).not.toHaveBeenCalled();
+    s.r.stop();
+  });
+
+  it('本体が受け付けないときは、取得を始めず、トーストで知らせる（黙って JS の送信に替えない）', async () => {
+    const s = await setup({
+      display: false,
+      native: {
+        supported: true,
+        supportsCallRelay: true,
+        start: vi.fn(async () => {
+          throw new PluginError('unsupported', '本体が通話への送信に対応していません');
+        }),
+        stop: vi.fn(async () => {}),
+        update: vi.fn(async () => {}),
+      },
+    });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.button()!.active).toBeFalsy();
+    expect(s.toast).toHaveBeenCalledWith(expect.stringContaining('画面を取得できませんでした'), 'error');
+    expect(s.call.emit).not.toHaveBeenCalled();
+    s.r.stop();
+  });
+
+  it('対応しない本体（supportsCallRelay なし）では、これまでどおり JS が送り、callRelay は渡さない', async () => {
+    let opts: Disnans.ScreenCaptureOptions | null = null;
+    const start = vi.fn(async (o: Disnans.ScreenCaptureOptions) => {
+      opts = o;
+    });
+    const s = await setup({ display: false, native: { supported: true, start, stop: vi.fn(async () => {}), update: vi.fn(async () => {}) } });
+    s.button()!.onClick();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(opts).not.toHaveProperty('callRelay');
+    expect(emitted(s.call, 'screen.state')).toEqual([{ on: true, source: 'screen' }]);
+    s.r.stop();
+  });
+});

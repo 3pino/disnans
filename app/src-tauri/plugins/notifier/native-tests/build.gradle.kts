@@ -19,6 +19,8 @@ kotlin {
     sourceSets.main {
         kotlin.srcDir("../android/src/main/java")
         kotlin.srcDir("../android/src/test/java")
+        kotlin.srcDir("../../screen/android/src/main/java")
+        kotlin.srcDir("../../screen/android/src/test/java")
         kotlin.include(
             "NativeCallTypes.kt",
             "NativeCallProtocol.kt",
@@ -28,12 +30,20 @@ kotlin {
             "NativeCallRuntime.kt",
             "NativeCallPump.kt",
             "NativeCallAudioLifecycle.kt",
+            "ShareRelayConfig.kt",
+            "ShareRelayCore.kt",
+            "ShareRelayInbox.kt",
+            "CaptureGate.kt",
             "**/NativeCall*Test*.kt",
+            "**/ShareRelay*Test*.kt",
+            "**/RelayInboxTest.kt",
+            "**/CaptureGateTest.kt",
         )
     }
 }
 sourceSets.main {
     resources.srcDir("../android/src/test/resources")
+    resources.srcDir("../../screen/android/src/test/resources")
 }
 
 dependencies {

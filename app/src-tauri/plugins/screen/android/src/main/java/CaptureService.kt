@@ -27,6 +27,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import java.io.ByteArrayOutputStream
 import kotlin.math.abs
+import dev.disnans.notifier.DiagLog
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -41,9 +42,25 @@ class CaptureConfig(
   val keepaliveMs: Long,
   @Volatile var quality: Double,
   @Volatile var scale: Double = 1.0,
+  /** JS が付けた画面の番号（イベントと停止をこの番号で絞る）。0 は無し */
+  val captureId: Long = 0,
+  val relayBinding: RelayBinding? = null,
 ) {
+  // 送り先も一回の取得に固定する。古い取得の完了を、新しい送り先へ流さない。
+  @Volatile var relaySink: ((CapturedFrame) -> Unit)? = null
+  var previewSink: ((CapturedFrame) -> Unit)? = null
+  var endedSink: ((Long, String) -> Unit)? = null
+
+  fun deliver(frame: CapturedFrame) {
+    if (frame.captureId != captureId) return
+    relaySink?.invoke(frame)
+    try { previewSink?.invoke(frame) } catch (_: Exception) {
+      // プレビューの失敗で、ネイティブ送信を止めない。
+    }
+  }
+
   companion object {
-    fun from(a: StartCaptureArgs) = CaptureConfig(
+    fun from(a: StartCaptureArgs, binding: RelayBinding? = null) = CaptureConfig(
       maxEdge = a.maxEdge.coerceIn(160, 4096),
       fps = a.fps.coerceIn(1, 30),
       format = a.format,
@@ -51,11 +68,13 @@ class CaptureConfig(
       diffThreshold = a.diffThreshold,
       keepaliveMs = a.keepaliveMs.coerceAtLeast(500),
       quality = a.quality.coerceIn(0.1, 1.0),
+      captureId = a.captureId,
+      relayBinding = binding,
     )
   }
 }
 
-class CapturedFrame(val data: String, val mime: String, val width: Int, val height: Int)
+class CapturedFrame(val data: String, val mime: String, val width: Int, val height: Int, val captureId: Long = 0)
 
 /**
  * 画面のキャプチャ（MediaProjection）を行うフォアグラウンドサービス（foregroundServiceType=mediaProjection）。
@@ -68,6 +87,7 @@ class CaptureService : Service() {
     private const val CHANNEL = "screen_capture"
     private const val ONGOING_ID = 7301
     private const val ACTION_STOP = "dev.disnans.screen.STOP_CAPTURE"
+    private const val REQUEST_ID = "capture_request_id"
     /** 形式を選び直す間隔（フレーム数）。減色・グレースケールのとき、候補を全部試して小さいものを選ぶ */
     private const val PROBE_EVERY = 30
     /** 変化の判定の標本の数。細かい変化（文字の入力など）も拾えるよう、格子を細かめにしている */
@@ -77,20 +97,35 @@ class CaptureService : Service() {
     private const val PEAK_THRESHOLD = 24
 
     @Volatile var running = false
+    /** いま撮っている画面の番号（0 は無し）。古い画面の停止はこの番号で無視する */
+    @Volatile var currentCaptureId = 0L
+    /** 画面の見た目（JS の表示）への送り先 */
     var frameSink: ((CapturedFrame) -> Unit)? = null
-    var endSink: ((String) -> Unit)? = null
+    var endSink: ((Long, String) -> Unit)? = null
 
-    private var pendingCode = 0
-    private var pendingData: Intent? = null
-    private var pendingConfig: CaptureConfig? = null
+    private class StartRequest(val code: Int, val data: Intent, val config: CaptureConfig)
+    private val starts = CaptureStarts<StartRequest>()
     @Volatile private var activeConfig: CaptureConfig? = null
+    @Volatile private var activeService: CaptureService? = null
 
+    /** 撮りの持ち主（待ち・予約・撮り中）。停止・更新の指示が今のものかを決める */
+    val owner = CaptureOwner()
+
+    /** 開始を頼む。予約は、頼む前に置く（頼んでからサービスが始まるまでの停止を取りこぼさないため） */
     fun start(context: Context, resultCode: Int, data: Intent, config: CaptureConfig) {
-      pendingCode = resultCode
-      pendingData = data
-      pendingConfig = config
-      ContextCompat.startForegroundService(context, Intent(context, CaptureService::class.java))
+      config.previewSink = frameSink
+      config.endedSink = endSink
+      starts.reserve(config.captureId, StartRequest(resultCode, data, config))
+      try {
+        ContextCompat.startForegroundService(context, Intent(context, CaptureService::class.java).putExtra(REQUEST_ID, config.captureId))
+      } catch (e: Exception) {
+        cancelReservation(config.captureId)
+        throw e
+      }
     }
+
+    /** 予約を取り消す（番号が一致するときだけ）。後から開始が届いても、撮らない */
+    fun cancelReservation(captureId: Long): Boolean = starts.cancel(captureId)
 
     fun stop(context: Context) {
       context.stopService(Intent(context, CaptureService::class.java))
@@ -100,6 +135,13 @@ class CaptureService : Service() {
       val c = activeConfig ?: return
       if (quality != null) c.quality = quality.coerceIn(0.1, 1.0)
       if (scale != null) c.scale = scale.coerceIn(0.2, 1.0)
+    }
+
+    /** 中継が「大きすぎる」と言ったとき、画質を一段下げる（下限は中継の決まり） */
+    fun lowerQualityForRelay(c: CaptureConfig) {
+      val t = RelayPacing.lowerQuality(c.quality, c.scale) ?: return
+      c.quality = t.first
+      c.scale = t.second
     }
 
     /** 画素（ARGB）の色数を減らす。JS の applyColorMode と同じ計算 */
@@ -147,30 +189,30 @@ class CaptureService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     if (intent?.action == ACTION_STOP) {
-      endSink?.invoke("stopped")
+      config?.endedSink?.invoke(currentCaptureId, "stopped")
       stopSelf()
       return START_NOT_STICKY
     }
-    val data = pendingData
-    val cfg = pendingConfig
-    if (data == null || cfg == null) {
-      stopSelf()
+    // 予約と一致する開始だけを撮る。予約のない・取り消された開始（古い指示）は、この開始だけを終える（今の撮りは止めない）
+    val requestId = intent?.getLongExtra(REQUEST_ID, Long.MIN_VALUE) ?: Long.MIN_VALUE
+    val request = starts.take(requestId)
+    if (request == null || !owner.accepts(requestId)) {
+      stopSelf(startId)
       return START_NOT_STICKY
     }
-    pendingData = null
-    pendingConfig = null
-    createChannel()
-    val n = notification()
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      startForeground(ONGOING_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-    } else {
-      startForeground(ONGOING_ID, n)
-    }
+    val cfg = request.config
     try {
-      begin(pendingCode, data, cfg)
+      createChannel()
+      val n = notification()
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        startForeground(ONGOING_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+      } else {
+        startForeground(ONGOING_ID, n)
+      }
+      begin(request.code, request.data, cfg)
     } catch (e: Exception) {
-      endSink?.invoke(e.message ?: "error")
-      stopSelf()
+      cfg.endedSink?.invoke(cfg.captureId, "capture_failed")
+      stopSelf(startId)
       return START_NOT_STICKY
     }
     // 強制終了されたあとに勝手に再開しない（許可のダイアログをもう一度出す必要がある）
@@ -178,10 +220,20 @@ class CaptureService : Service() {
   }
 
   private fun begin(code: Int, data: Intent, cfg: CaptureConfig) {
+    val myId = cfg.captureId
+    // 新しい開始で、まだ解放していない取得を上書きしない。
+    check(projection == null && thread == null) { "capture_busy" }
+    check(owner.accepts(myId)) { "capture_cancelled" }
+    cfg.relayBinding?.let { b ->
+      val v = RelayPolicy.classify(b, ShareRelayHost.readBinding(applicationContext))
+      check(v is Verdict.Active || v is Verdict.Paused) { "call_unavailable" }
+    }
+    currentCaptureId = myId
+    activeService = this
+    config = cfg
     val mpm = getSystemService(MediaProjectionManager::class.java)
     val p = mpm.getMediaProjection(code, data) ?: throw IllegalStateException("画面を取得できません")
     projection = p
-    config = cfg
     activeConfig = cfg
     val t = HandlerThread("disnans-screen-capture").also { it.start() }
     thread = t
@@ -190,9 +242,10 @@ class CaptureService : Service() {
     // Android 14 以降は、VirtualDisplay を作る前にコールバックを登録する必要がある
     p.registerCallback(object : MediaProjection.Callback() {
       override fun onStop() {
-        // 画面の共有がシステム側（ステータスバーのチップなど）で止められた
+        // 画面の共有がシステム側（ステータスバーのチップなど）で止められた。古い画面の停止は、新しい画面を止めない
         h.post {
-          endSink?.invoke("stopped")
+          if (activeService !== this@CaptureService || projection !== p || config !== cfg) return@post
+          cfg.endedSink?.invoke(myId, "stopped")
           stopSelf()
         }
       }
@@ -216,6 +269,7 @@ class CaptureService : Service() {
       h,
     )
     running = true
+    DiagLog.i("[screen-capture] 開始 relay=${cfg.relayBinding != null}")
     // 画面が変わらないと新しいフレームは来ないので、一定時間ごとに最後のフレームを送り直す
     h.postDelayed(keepaliveTask, cfg.keepaliveMs)
   }
@@ -284,10 +338,12 @@ class CaptureService : Service() {
     val changed = diff > c.diffThreshold || peakOf(prevSample, sample) > PEAK_THRESHOLD
     if (!force && !changed && now - lastSentAt < c.keepaliveMs) return
     prevSample = sample
-    val sink = frameSink ?: return
+    val preview = c.previewSink
+    val relay = c.relaySink
+    if (preview == null && relay == null) return
     val frame = encode(bmp, c) ?: return
     lastSentAt = now
-    sink(frame)
+    c.deliver(frame)
   }
 
   /** 変化の判定に使う小さな標本（格子状に DIFF_W×DIFF_H 点の RGB） */
@@ -374,7 +430,7 @@ class CaptureService : Service() {
         result = run(if (candidates.size == 1) candidates[0] else chosen ?: candidates[0])
         framesSinceProbe++
       }
-      return CapturedFrame(Base64.encodeToString(result.first, Base64.NO_WRAP), result.second, bmp.width, bmp.height)
+      return CapturedFrame(Base64.encodeToString(result.first, Base64.NO_WRAP), result.second, bmp.width, bmp.height, c.captureId)
     } catch (e: Exception) {
       return null
     } finally {
@@ -384,8 +440,19 @@ class CaptureService : Service() {
   }
 
   override fun onDestroy() {
-    running = false
-    activeConfig = null
+    val c = config
+    if (c != null) DiagLog.i("[screen-capture] 停止")
+    if (activeService === this) {
+      activeService = null
+      running = false
+      currentCaptureId = 0L
+      activeConfig = null
+    }
+    config = null
+    c?.relaySink = null
+    c?.previewSink = null
+    c?.endedSink?.invoke(c.captureId, "service_destroyed")
+    c?.endedSink = null
     handler?.removeCallbacksAndMessages(null)
     try {
       display?.release()

@@ -1,5 +1,5 @@
 /**
- * disnans プラグインの型定義（ホスト API バージョン 15）。
+ * disnans プラグインの型定義（ホスト API バージョン 16）。
  *
  * プラグインの main.js は ES モジュールで、`Plugin` を継承したクラスを `export default` する。
  * ホスト API はグローバルの `disnans` から取る（`import` は使わない）。
@@ -67,7 +67,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 15） */
+      /** ホスト API のバージョン（いまは 16） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -105,6 +105,28 @@ declare global {
       keepaliveMs?: number;
       /** OS 側（通知欄の停止ボタンなど）で止められたときに呼ばれる。`stop()` では呼ばれない */
       onEnd?: () => void;
+      /**
+       * 通話へのネイティブ送信（API v16）。指定すると、フレームと状態（on/off）・問い合わせへの応答を、本体（Android）が
+       * 通話のソケットへ直接送る。JS は送らない（画面が裏で止まっても送り続けられる）。`supportsCallRelay` が false の環境では例外。
+       * このときの `onFrame` は前面のプレビューだけ（送信には使わない）。プラグインは `call.emit` で同じ名前を送らないこと
+       */
+      callRelay?: ScreenCallRelay;
+    };
+
+    /**
+     * `ScreenCaptureOptions.callRelay`（API v16）。送るイベントの名前と、on/off の状態に足す値。
+     * 名前は 1〜64 文字で、`audio` と本体の予約の名前は使えない。3 つの名前は互いに違うこと。
+     * フレームは分割して送る（受け取る側は `screen.frame` の形 `{f, i, n, d}` を組み立てる。既存の形と同じ）
+     */
+    type ScreenCallRelay = {
+      /** フレームのイベント名（例: `screen.frame`） */
+      frameEvent: string;
+      /** 状態のイベント名（例: `screen.state`）。開始は `{on: true, ...state}`、止めたら `{on: false}` */
+      stateEvent: string;
+      /** 問い合わせのイベント名（例: `screen.query`）。受け取ったら、本体が状態と最新の 1 枚を送り直す */
+      queryEvent?: string;
+      /** on の状態に足す値（例: `{source: 'screen'}`）。値は文字列・有限の数・真偽だけで、合わせて 256 バイト（UTF-8）まで。キー `on` は使えない */
+      state?: Record<string, string | number | boolean>;
     };
 
     /** `screenCapture` が渡す 1 フレーム（API v9） */
@@ -135,6 +157,11 @@ declare global {
      */
     interface ScreenCapture {
       readonly supported: boolean;
+      /**
+       * 通話へのネイティブ送信（`ScreenCaptureOptions.callRelay`）が使えるか（API v16）。
+       * Android のアプリ（フロントエンドとネイティブが同じ版）だけ true。API v15 以前のアプリでは、このプロパティが無い（undefined）
+       */
+      readonly supportsCallRelay?: boolean;
       /**
        * 許可を求めて撮り始める。断られたら例外。フレームは `onFrame` に届く（変化が無い間は届かない）。
        * ユーザーが許可のダイアログでキャンセルしたときの例外は `name` が `AbortError`（API v10。何も知らせずに終えてよい）

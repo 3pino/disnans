@@ -382,6 +382,36 @@ object NativeCallRuntimeTest {
       }
     }
 
+    // 5b. 世代を指定した送信: 同じ世代だけ送る。古い世代・同じ通話 ID の再開の後・停止の後は送らない
+    run {
+      val r = Rig()
+      try {
+        val peer = join(r, "s1")
+        val sock = r.sockets.made.last()
+        val gen = r.runtime.snapshot().generation
+        val payload = json.readTree("{\"x\":1}")
+        Check.eq(true, r.runtime.emitScoped("s1", gen, "screen", payload).ok, "matching generation sends")
+        waitUntil("scoped emit sent") { sock.sent().any { it.contains("\"screen\"") } }
+        Check.that(!r.runtime.emitScoped("s1", gen + 1, "screen", payload).ok) { "other generation refused" }
+        Check.eq(1, sock.sent().count { it.contains("\"screen\"") }, "refused generation does not send")
+        // 停止し、同じ通話 ID で入り直す（世代は進む）。古い世代は、同じ ID でも送らない
+        r.runtime.stop("s1", "user")
+        join(r, "s1", user = "ua")
+        val newGen = r.runtime.snapshot().generation
+        Check.that(newGen != gen) { "re-join advances generation" }
+        val sock2 = r.sockets.made.last()
+        Check.that(!r.runtime.emitScoped("s1", gen, "screen", payload).ok) { "stale generation with reused session refused" }
+        Check.that(sock2.sent().none { it.contains("\"screen\"") }) { "stale generation sends nothing on new socket" }
+        Check.eq(true, r.runtime.emitScoped("s1", newGen, "screen", payload).ok, "current generation sends")
+        r.runtime.stop("s1", "user")
+        Check.that(!r.runtime.emitScoped("s1", newGen, "screen", payload).ok) { "stopped call refuses scoped emit" }
+        Check.that(sock2.sent().count { it.contains("\"screen\"") } == 1) { "nothing sent after stop" }
+        Check.that(peer.isNotEmpty()) { "peer" }
+      } finally {
+        r.close()
+      }
+    }
+
     // 6. 状態と中継は、一つの番号の列（世代の中で単調に増える）。停止中・準備中の状態の番号も、最後に出したものと同じ
     run {
       val r = Rig()

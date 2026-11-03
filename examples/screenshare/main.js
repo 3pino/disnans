@@ -50,6 +50,11 @@ const EVENT_FRAME = 'screen.frame';
 const EVENT_STATE = 'screen.state';
 /** 通話に入った人が「いま共有している人はいるか」と聞く。共有中の人は state とフレームを送り直す */
 const EVENT_QUERY = 'screen.query';
+/**
+ * 通話へのネイティブ送信（API v16）。本体の Android が、フレーム・状態・問い合わせへの応答を通話へ直接送る。
+ * この名前のとき JS は何も送らない（フレーム・状態・問い合わせへの応答・heartbeat）。
+ */
+const CALL_RELAY = Object.freeze({ frameEvent: EVENT_FRAME, stateEvent: EVENT_STATE, queryEvent: EVENT_QUERY, state: { source: 'screen' } });
 
 /** 1 回の payload に入れる base64 の文字数。上限の 64 KB に JSON の枠の余裕を見て、40 KB にしておく */
 export const CHUNK_CHARS = 40 * 1024;
@@ -1073,6 +1078,8 @@ export default class ScreenSharePlugin extends Plugin {
 
   // 共有する側
   sharing = false;
+  /** 本体（Android）が通話へ直接送っている共有か（API v16）。true のあいだ、JS は送らない */
+  relayOn = false;
   /** 共有を始めるたびに増える（非同期の処理が、止めたあとの古い共有に触らないように） */
   shareSeq = 0;
   /** 画面の取り方（共有中だけ） */
@@ -1494,6 +1501,8 @@ export default class ScreenSharePlugin extends Plugin {
     /** @type {Disnans.ScreenCaptureFrame | null} */
     let firstFrame = null;
     const preset = QUALITY_PRESETS[this.settings.quality];
+    // 本体が通話への送信に対応していれば、送り手は本体（JS は送らない）。対応していなければ、これまでどおり JS が送る
+    const relay = disnans.screenCapture.supportsCallRelay === true;
     try {
       await disnans.screenCapture.start(
         {
@@ -1504,6 +1513,7 @@ export default class ScreenSharePlugin extends Plugin {
           color: /** @type {'full' | 'c256' | 'gray'} */ (this.settings.color),
           diffThreshold: DIFF_THRESHOLD,
           keepaliveMs: KEEPALIVE_FRAME_MS,
+          ...(relay ? { callRelay: { ...CALL_RELAY, state: { ...CALL_RELAY.state } } } : {}),
           onEnd: () => {
             ended = true;
             this.stopShare(true);
@@ -1527,6 +1537,7 @@ export default class ScreenSharePlugin extends Plugin {
       return;
     }
     this.backend = 'native';
+    this.relayOn = relay;
     this.beginSharing('screen');
     // 最初の 1 枚が start の応答より早く届いても捨てない（静止した画面でもすぐ見える）
     if (firstFrame) this.onNativeFrame(firstFrame);
@@ -1593,15 +1604,21 @@ export default class ScreenSharePlugin extends Plugin {
     this.diffCanvas = null;
     this.lastDiffData = null;
     this.syncSelfPreview();
-    if (!was) return;
+    if (!was) {
+      this.relayOn = false;
+      return;
+    }
     if (this.source === 'camera') this.cameraButton?.update({ label: 'カメラを共有', icon: 'video', active: false });
     else this.button?.update({ label: '画面を共有', icon: 'monitor-up', active: false });
+    // 本体が送っている共有（relayOn）は、止めた状態も本体が送る。JS は送らない
     if (notify && this.call.joined) this.sendState(false);
+    this.relayOn = false;
     this.renderStatus();
   }
 
   /** @param {boolean} on */
   sendState(on) {
+    if (this.relayOn) return;
     try {
       this.call.emit(EVENT_STATE, on ? { on, source: this.source } : { on });
       this.lastHeartbeat = Date.now();
@@ -1811,7 +1828,7 @@ export default class ScreenSharePlugin extends Plugin {
 
   /** 見る人が増えた・問い合わせが来た: 共有中なら、すぐに知らせて画面も送り直す */
   announce() {
-    if (!this.sharing || !this.call.joined) return;
+    if (!this.sharing || !this.call.joined || this.relayOn) return;
     this.sendState(true);
     if (this.backend === 'web') {
       this.audienceKey = '';
@@ -1831,7 +1848,8 @@ export default class ScreenSharePlugin extends Plugin {
    * @param {Disnans.ScreenCaptureFrame} f
    */
   onNativeFrame(f) {
-    if (!this.sharing || this.backend !== 'native') return;
+    // 本体が送っている共有では、フレームは前面のプレビュー（送らない）
+    if (this.relayOn || !this.sharing || this.backend !== 'native') return;
     this.lastNative = f;
     this.pendingNative = f;
     // 送る時刻を過ぎているのに予約の timer が来ていない（裏で遅れている）ときは、予約を取り消して、いま送り直す。
@@ -1844,7 +1862,7 @@ export default class ScreenSharePlugin extends Plugin {
   }
 
   flushNative() {
-    if (this.nativeTimer !== null || !this.pendingNative) return;
+    if (this.relayOn || this.nativeTimer !== null || !this.pendingNative) return;
     let wait = this.nativeNextAt - Date.now();
     // 送信待ちが溜まっているあいだは待つ（そのあいだに新しいフレームが来たら、そちらに替わる）
     if (wait <= 0 && (this.call.bufferedAmount ?? 0) > BACKLOG_LIMIT) wait = BACKLOG_RETRY_MS;
@@ -1955,6 +1973,8 @@ export default class ScreenSharePlugin extends Plugin {
 
   /** 共有中の人に知らせ直してもらう */
   queryShares() {
+    // 本体が送っている共有では、問い合わせも本体が受けて答える（JS は送らない）
+    if (this.relayOn) return;
     try {
       this.call.emit(EVENT_QUERY, {});
       this.lastQueryAt = Date.now();
@@ -2004,7 +2024,7 @@ export default class ScreenSharePlugin extends Plugin {
     for (const [peer, s] of [...this.sharers]) if (now - s.lastSeen > SHARER_TIMEOUT_MS) this.removeSharer(peer);
     if (this.sharing && this.call.joined && now - this.lastHeartbeat >= HEARTBEAT_MS) this.sendState(true);
     // ネイティブの取得は画面が変わらないと届かないので、見る人が増えたら最後のフレームを送り直す
-    if (this.sharing && this.backend === 'native' && this.call.joined && this.lastNative) {
+    if (this.sharing && this.backend === 'native' && !this.relayOn && this.call.joined && this.lastNative) {
       const key = this.call.participants.map((p) => p.peer).join(',');
       if (key !== this.audienceKey && hasAudience(this.call.participants)) {
         this.audienceKey = key;
