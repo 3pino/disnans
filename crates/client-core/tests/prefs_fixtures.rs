@@ -73,6 +73,26 @@ fn user_pref_definitions_are_user_scoped() {
     }
 }
 
+/// 画面共有の設定（デバイスごと）の読み方。null は未設定、オブジェクトは外れた項目だけ既定に直す
+#[test]
+fn screen_share_reads_like_the_fixture() {
+    use disnans_client_core::view::settings::normalize_device_prefs;
+    let file = load_named("screen_share.json");
+    let cases = file["cases"].as_array().expect("cases");
+    let mut failures = Vec::new();
+    for case in cases {
+        let raw = serde_json::json!({ "screenShare": case["input"] });
+        let actual = normalize_device_prefs(&raw)["screenShare"].clone();
+        if !same_json(&actual, &case["expected"]) {
+            failures.push(format!(
+                "{}: got {actual}, expected {}",
+                case["name"], case["expected"]
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "failed:\n{}", failures.join("\n"));
+}
+
 #[test]
 fn defaults_match_the_fixture() {
     use disnans_client_core::view::settings::{default_of, find_definition};

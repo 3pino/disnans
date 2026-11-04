@@ -13,6 +13,7 @@ import { DEFAULT_NAV_ITEMS } from './navBar';
 import { DEFAULT_CALL_SETTINGS } from './call/pure';
 import { DEFAULT_ENTER_KEYS } from './enterKeys';
 import { DEFAULT_COMPOSER_MENU } from './composerMenu';
+import type { ScreenSettingsValue } from './call/screen/types';
 
 export type Raw = Record<string, unknown>;
 
@@ -34,7 +35,7 @@ export const CALL_USER_KEYS = ['joinMuted', 'micVolume', 'outVolume', 'limiter',
 export const CALL_DEVICE_KEYS = ['inputId', 'output'] as const;
 
 /** デバイスごとの項目（サーバーのデバイスの prefs のキー） */
-export const DEVICE_KEYS = ['inputId', 'output', 'deviceKind', 'hideNavigationBar', 'orientation', 'pluginsDisabled', 'pluginsDevDir'] as const;
+export const DEVICE_KEYS = ['inputId', 'output', 'deviceKind', 'hideNavigationBar', 'orientation', 'pluginsDisabled', 'pluginsDevDir', 'screenShare'] as const;
 
 /** ユーザー共通の既定値（crates/client-core/src/view/settings.rs の DEFINITIONS と同じ。ブラウザーの表示の補完だけに使う） */
 export function userDefaults(): Raw {
@@ -75,6 +76,8 @@ export const DEVICE_DEFAULTS: Readonly<Raw> = Object.freeze({
   orientation: 'auto',
   pluginsDisabled: [],
   pluginsDevDir: null,
+  // 未設定は null（既定の値は表示側で決める。保存の有無を区別するため）
+  screenShare: null,
 });
 
 /** 以前の localStorage の保存先（読むだけ）。値は文字列（JSON のものは JSON 文字列） */
@@ -85,6 +88,8 @@ export const LEGACY = {
   navBarLabels: 'disnans.navBarLabels',
   call: 'disnans.call.settings',
   callVoice: 'disnans.plugin.voice.data',
+  /** 画面共有の旧いプラグインの保存先（JSON）。移行のあと、消さずに残す */
+  screenShare: 'disnans.plugin.screenshare.data',
   hideNavigationBar: 'disnans.hideNavigationBar',
   orientation: 'disnans.orientation',
   deviceKind: 'disnans.deviceKind',
@@ -152,6 +157,23 @@ export function legacyDeviceValues(read: LegacyRead): Raw {
     for (const k of CALL_DEVICE_KEYS) if (k in call) out[k] = call[k];
   }
   return out;
+}
+
+/** 画面共有の旧い画質の名前（読み替え） */
+const LEGACY_SCREEN_QUALITY: Readonly<Record<string, string>> = { low: 'p480', standard: 'p720', high: 'p1080' };
+
+/**
+ * 旧い画面共有プラグインの保存先から、設定の値を作る（移行の元。無い・オブジェクトでなければ null）。
+ * 旧い版の parseSettings と同じ読み方（fps は 5・20、画質の旧い名前は読み替え、外れた項目は既定）。
+ */
+export function legacyScreenShare(read: LegacyRead): ScreenSettingsValue | null {
+  const v = readJson(read, LEGACY.screenShare);
+  if (!isObject(v)) return null;
+  const fps = v.fps === 20 ? 20 : 5;
+  const q = typeof v.quality === 'string' && Object.hasOwn(LEGACY_SCREEN_QUALITY, v.quality) ? LEGACY_SCREEN_QUALITY[v.quality] : v.quality;
+  const quality = q === 'p480' || q === 'p720' || q === 'p1080' ? q : 'p720';
+  const color = v.color === 'c256' || v.color === 'gray' ? v.color : 'full';
+  return { fps, quality, color };
 }
 
 /** デバイスの設定の表示の補完（足りない項目だけ既定で埋める。型は直さない。直すのは Rust の正規化） */

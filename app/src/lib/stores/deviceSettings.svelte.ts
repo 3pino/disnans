@@ -1,7 +1,7 @@
 import { osName } from '../platform';
 import { getItem, setItem } from '../storage';
 import { devUser, getServerUrl } from '../config';
-import { createDeviceApi, type DeviceApi } from '../transport/device';
+import { createDeviceApi, type DeviceApi, type DeviceView } from '../transport/device';
 import { tauriInvoke } from '../transport/tauri';
 import type { OrientationMode } from '../orientation';
 import { DEVICE_DEFAULTS, fillDeviceDefaults, legacyDeviceValues, reportSettingsError, type Raw } from '../settingsModel';
@@ -49,6 +49,8 @@ export class DeviceSettings {
   raw = $state.raw<Raw>({ ...DEVICE_DEFAULTS });
   /** 起動時の読み込みが済んだか（失敗しても true。手元の値で動く） */
   ready = $state(false);
+  /** サーバーの値を読めたか（読めていない間は、保存の移行などサーバーへ書く判断をしない） */
+  synced = $state(false);
 
   private id: string | null = null;
   private started = false;
@@ -56,6 +58,10 @@ export class DeviceSettings {
   /** 送っていない（送信中の）書き込みの数 */
   private pending = 0;
   private listeners = new Set<() => void>();
+  /** 書き込み（ローカルの変更）の回数。読み直しの途中で変わっていたら、読んだ値で上書きしない（同期のあと） */
+  private version = 0;
+  /** まだサーバーの値と合わせていない間に変えた項目。読んだサーバーの値の上に、この項目だけを重ねる */
+  private unsent = new Set<string>();
   private gate: { allow(): boolean };
 
   constructor(private deps: DeviceDeps) {
@@ -112,6 +118,8 @@ export class DeviceSettings {
 
   /** 1項目を変えて保存する（キャッシュにはすぐ残す。サーバーへは順番に送る） */
   set(key: string, value: unknown): void {
+    // サーバーと合わせる前の変更は、送らずに覚える（既定の全体を送って、サーバーの値を消さないため）
+    if (!this.synced) this.unsent.add(key);
     this.commit({ ...this.raw, [key]: value });
   }
 
@@ -138,8 +146,8 @@ export class DeviceSettings {
       this.id = id;
       await api.register(id, this.deviceName());
       const view = await api.read(id);
-      if (view.saved) this.apply(view.prefs);
-      else this.commit(this.raw);
+      this.settle(view);
+      this.notify();
     } catch (e) {
       reportSettingsError(`デバイスの設定を読めませんでした: ${errorText(e)}`);
     } finally {
@@ -156,9 +164,14 @@ export class DeviceSettings {
     const api = this.deps.api;
     if (!this.id || this.pending > 0) return;
     if (!this.gate.allow()) return;
+    const before = this.version;
     try {
       const view = await api.read(this.id);
-      if (this.pending === 0 && view.saved) this.apply(view.prefs);
+      // まだ同期していない（最初の読みが失敗した）なら、読んだ値に未送信の変更を重ねる。同期のあとは、読んでいるあいだの変更を上書きしない
+      if (!this.synced) this.settle(view);
+      else if (this.pending === 0 && this.version === before && view.saved) this.apply(view.prefs);
+      this.synced = true;
+      this.notify();
     } catch (e) {
       if (opts.quiet) console.warn('デバイスの設定を読めませんでした', e);
       else reportSettingsError(`デバイスの設定を読めませんでした: ${errorText(e)}`);
@@ -173,11 +186,33 @@ export class DeviceSettings {
     this.notify();
   }
 
+  /**
+   * サーバーの読みを、手元の値に取り込む（最初の同期）。
+   * サーバーに無ければ、今の値を送って作る。あれば、サーバーの値（知らない項目を含む）を土台にし、
+   * まだ送っていない変更だけを重ねて、その結果を送り返す。これで、ほかの項目（例: 入力機器）を既定で消さない。
+   */
+  private settle(view: DeviceView): void {
+    const local = [...this.unsent];
+    this.unsent.clear();
+    this.synced = true;
+    if (!view.saved) {
+      this.commit(this.raw);
+      return;
+    }
+    const server = typeof view.prefs === 'object' && view.prefs !== null && !Array.isArray(view.prefs) ? (view.prefs as Raw) : {};
+    const next: Raw = { ...server };
+    for (const key of local) next[key] = this.raw[key];
+    this.apply(next);
+    if (local.length > 0) this.push(this.raw);
+  }
+
   private commit(next: Raw): void {
+    this.version++;
     this.raw = next;
     this.deps.set(DEVICE_CACHE_KEY, JSON.stringify(next));
     this.notify();
-    if (this.id) this.push(next);
+    // 同期の前は送らない（settle が、読んだ値と合わせて送る）
+    if (this.id && this.synced && this.raw === next) this.push(next);
   }
 
   /** 書き込みを順番に送る。送っている間に、さらに変えていなければ、サーバーの返事に合わせる */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEVICE_DEFAULTS, LEGACY, fillDeviceDefaults, fillUserDefaults, legacyDeviceValues, legacyUserValues, prefsResultOf } from './settingsModel';
+import { DEVICE_DEFAULTS, LEGACY, fillDeviceDefaults, fillUserDefaults, legacyDeviceValues, legacyScreenShare, legacyUserValues, prefsResultOf } from './settingsModel';
 
 /** 手元の localStorage の代わり */
 function store(entries: Record<string, string>) {
@@ -136,6 +136,7 @@ const SCOPE_OF: Record<string, 'user' | 'device' | 'local'> = {
   orientation: 'device',
   pluginsDisabled: 'device',
   pluginsDevDir: 'device',
+  screenShare: 'device',
   server: 'local',
   devUser: 'local',
   updateCheckedAt: 'local',
@@ -183,5 +184,31 @@ describe('既定値は fixture（Rust の定義と同じ）と一致する', () 
   it('TS の既定が、fixture のすべての項目を覆う（ローカル項目を除く）', () => {
     const missing = Object.keys(fixture).filter((k) => SCOPE_OF[k] !== 'local' && !(k in TS_DEFAULTS));
     expect(missing).toEqual([]);
+  });
+});
+
+describe('legacyScreenShare（旧い画面共有プラグインの保存先からの移行の元）', () => {
+  const key = LEGACY.screenShare;
+
+  it('保存が無ければ null（未設定のまま）', () => {
+    expect(legacyScreenShare(store({}))).toBeNull();
+  });
+
+  it('オブジェクトでない・壊れた JSON は null', () => {
+    expect(legacyScreenShare(store({ [key]: 'null' }))).toBeNull();
+    expect(legacyScreenShare(store({ [key]: '[1]' }))).toBeNull();
+    expect(legacyScreenShare(store({ [key]: '{oops' }))).toBeNull();
+  });
+
+  it('そろった値はそのまま。旧い画質の名前（low/standard/high）は読み替える', () => {
+    expect(legacyScreenShare(store({ [key]: '{"fps":20,"quality":"p1080","color":"gray"}' }))).toEqual({ fps: 20, quality: 'p1080', color: 'gray' });
+    expect(legacyScreenShare(store({ [key]: '{"fps":5,"quality":"low","color":"full"}' }))).toEqual({ fps: 5, quality: 'p480', color: 'full' });
+    expect(legacyScreenShare(store({ [key]: '{"quality":"standard"}' }))).toEqual({ fps: 5, quality: 'p720', color: 'full' });
+    expect(legacyScreenShare(store({ [key]: '{"quality":"high"}' }))).toEqual({ fps: 5, quality: 'p1080', color: 'full' });
+  });
+
+  it('外れた項目は既定（fps 5・p720・full）。fps の 5 と 20 以外は 5', () => {
+    expect(legacyScreenShare(store({ [key]: '{"fps":7,"quality":"x","color":"sepia"}' }))).toEqual({ fps: 5, quality: 'p720', color: 'full' });
+    expect(legacyScreenShare(store({ [key]: '{"fps":"20"}' }))).toEqual({ fps: 5, quality: 'p720', color: 'full' });
   });
 });

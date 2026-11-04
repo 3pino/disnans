@@ -33,6 +33,7 @@
     "orientation": "auto",
     "pluginsDisabled": [],
     "pluginsDevDir": null,
+    "screenShare": null,
     "server": null,
     "devUser": null,
     "updateCheckedAt": null,

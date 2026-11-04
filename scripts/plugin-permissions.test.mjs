@@ -76,7 +76,7 @@ test('各プラグインの COMMANDS には、許可の定義ファイルがあ�
 test('TypeScript から呼ぶコマンドは、すべて COMMANDS と default.toml の許可にある', () => {
   // 画面の操作は `${operation}_capture` で組むので、その三つを明示する
   const screenBuilt = ['start_capture', 'update_capture', 'stop_capture'];
-  assert.ok(readFileSync(join(srcDir, 'lib', 'plugins', 'nativeScreen.ts'), 'utf8').includes('_capture`'));
+  assert.ok(readFileSync(join(srcDir, 'lib', 'media', 'nativeScreen.ts'), 'utf8').includes('_capture`'));
   for (const [plugin, calls] of Object.entries(tsCalls)) {
     const p = info[plugin];
     assert.ok(p, `プラグイン ${plugin} が無い`);

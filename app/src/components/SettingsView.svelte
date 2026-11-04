@@ -29,6 +29,9 @@
   import NavBarSettings from './NavBarSettings.svelte';
   import ComposerMenuSettings from './ComposerMenuSettings.svelte';
   import CallDeviceSettings from './CallDeviceSettings.svelte';
+  import ScreenShareSettings from './ScreenShareSettings.svelte';
+  import { screenShareSettings } from '../lib/call/screen/settings.svelte';
+  import { screenCaptureApi } from '../lib/media/nativeScreen';
   import SettingsTree from './SettingsTree.svelte';
   import PanelBar from './ui/PanelBar.svelte';
   import DeviceKindSettings from './DeviceKindSettings.svelte';
@@ -374,6 +377,7 @@
     <ComposerMenuSettings />
   {:else if item.id === 'callDevices'}
     <CallDeviceSettings />
+    <ScreenShareSettings settings={screenShareSettings} snapshot={screenCaptureApi.snapshot} />
   {:else if item.id === 'deviceList'}
     <DeviceListSettings />
   {:else if item.id === 'diagnostics'}

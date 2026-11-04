@@ -19,6 +19,8 @@
   import PanelBar from './ui/PanelBar.svelte';
   import Button from './ui/Button.svelte';
   import IconButton from './ui/IconButton.svelte';
+  import ScreenShareControls from './ScreenShareControls.svelte';
+  import ScreenSharePreview from './ScreenSharePreview.svelte';
   import { call } from '../lib/call/instance.svelte';
   import { longPress } from '../lib/call/longPress';
   import { normalizeDevice, statusBadges, type StatusBadge } from '../lib/call/pure';
@@ -132,6 +134,12 @@
         {/each}
       </ul>
     {/if}
+    <!-- 画面共有の表示（共有されている画面と、自分の映像）は、参加者の下に置く。押すと全画面で開く -->
+    {#if call.joined && call.screen}
+      <div class="call-view-screen">
+        <ScreenSharePreview screen={call.screen} {nameOf} />
+      </div>
+    {/if}
     <!-- プラグインの領域（画面共有など）は、参加者の下に置く -->
     {#each panels as p (p.id)}
       <section class="call-view-panel" aria-label={p.label || undefined} use:mountPanel={{ id: p.id, el: p.el }}></section>
@@ -140,6 +148,7 @@
 
   <div class="call-view-controls" role="group" aria-label="通話の操作">
     {#if call.joined}
+      {#if call.screen}<ScreenShareControls screen={call.screen} />{/if}
       {#each call.barButtons as b (b.id)}
         <IconButton class={b.active ? 'call-active' : ''} label={b.label} title={b.label} icon={b.icon} disabled={b.disabled} onclick={(e) => pressPluginButton(e, b.onClick)} />
       {/each}
@@ -200,6 +209,11 @@
     padding: var(--space-7);
   }
   .call-view-panel {
+    margin: var(--space-7) 0 0;
+  }
+  /* 埋め込みの表示と自分の映像は、この箱の中で位置を決める */
+  .call-view-screen {
+    position: relative;
     margin: var(--space-7) 0 0;
   }
   .call-view-empty {

@@ -164,12 +164,13 @@ declare global {
       readonly supportsCallRelay?: boolean;
       /**
        * 許可を求めて撮り始める。断られたら例外。フレームは `onFrame` に届く（変化が無い間は届かない）。
+       * 本体の標準共有が取得中なら code='busy'。拡張から本体の取得を停止・変更することはできない。
        * ユーザーが許可のダイアログでキャンセルしたときの例外は `name` が `AbortError`（API v10。何も知らせずに終えてよい）
        */
       start(opts: ScreenCaptureOptions, onFrame: (frame: ScreenCaptureFrame) => void): Promise<void>;
       /** 撮りながら品質を変える。`scale` は取得した画像をさらに縮める倍率（0〜1） */
       update(patch: { quality?: number; scale?: number }): Promise<void>;
-      /** 止める（撮っていなければ何もしない） */
+      /** 止める（撮っていなければ何もしない）。停止を確認できなければ stop_unconfirmed で失敗し、再停止が必要 */
       stop(): Promise<void>;
       /**
        * 静止画を 1 枚だけ撮る（API v11）。どの画面を共有するかの選択や、許可のダイアログを出さない（設定のプレビューなど向け）。
@@ -339,7 +340,7 @@ declare global {
      * 本体が投げる例外（API v14）。`code` は機械向けの語。
      * サーバーのエラーは、サーバーの code をそのまま使う（例: `not_found`）。本体側の失敗は次のどれか:
      * `disconnected`（サーバーに届かなかった）、`not_loaded`（読み込まれていない）、`invalid_argument`（値が正しくない）、
-     * `not_found`（指定されたものがない）、`stopped`（外された・もう使えない）、`unsupported`（この環境では使えない）、`permission_denied`（権限がない・v15）、`failed`（そのほか）
+     * `not_found`（指定されたものがない）、`stopped`（外された・もう使えない）、`unsupported`（この環境では使えない）、`busy`（他の機能が取得中）、`stop_unconfirmed`（画像取得の停止未確認）、`permission_denied`（権限がない・v15）、`failed`（そのほか）
      */
     class PluginError extends Error {
       readonly code: string;

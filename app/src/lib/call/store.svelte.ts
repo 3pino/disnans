@@ -43,6 +43,8 @@ import {
   updateSpeaking,
 } from './pure';
 import type { CallSettings } from './settings.svelte';
+import { ScreenShareStore } from './screen/store.svelte';
+import type { ScreenShareDeps } from './screen/types';
 
 // 通話（みんな共通の1部屋）。参加者の一覧・kick・音声の中継はサーバー（call.* イベント）が受け持つ。
 // 音声は全員のあいだをサーバー経由（call.emit の audio。16kHz モノラル PCM）で流す（WebRTC は使わない）。
@@ -74,6 +76,8 @@ export type CallDeps = {
   serverUrl?(): string;
   /** ネイティブへ渡す開発用ユーザー（本番は null） */
   devUser?(): string | null;
+  /** 本体の画面共有。音声だけの試験では省略できる。取得は明示操作まで始めない。 */
+  screen?: Omit<ScreenShareDeps, 'call'>;
 };
 
 /** 画面・プラグインに見せる参加者1人分 */
@@ -288,7 +292,11 @@ export class CallStore {
   private intents = new Map<'muted' | 'deafened', { value: boolean; n: number }>();
   private intentSeq = 0;
 
+  /** 通話に属する画面・カメラ共有。プラグインの有無や画面のマウントには依存しない。 */
+  readonly screen: ScreenShareStore | null;
+
   constructor(private deps: CallDeps) {
+    this.screen = deps.screen ? new ScreenShareStore({ ...deps.screen, call: this }) : null;
     this.nativeSession = deps.native
       ? new NativeCallSession(deps.native, {
           onSnapshot: (s) => this.applyNative(s),
@@ -693,9 +701,11 @@ export class CallStore {
     }
     if (!this.joined) return;
     const e = this.entries.get(peer);
+    if (!e) return;
+    const event = { peer, userId: e.userId, payload };
+    this.screen?.onEvent(name, event);
     const set = this.eventListeners.get(name);
-    if (!e || !set) return;
-    for (const cb of [...set]) this.safe(() => cb({ peer, userId: e.userId, payload }));
+    if (set) for (const cb of [...set]) this.safe(() => cb(event));
   }
 
   // ---- 状態の送信 ----
@@ -902,6 +912,7 @@ export class CallStore {
 
   /** 抜ける。sendLeave が false なのは、サーバーに外されたとき */
   leave(sendLeave = true, reason = 'user'): void {
+    this.screen?.stop();
     if (this.nativeSession) {
       void this.leaveNative(reason);
       return;
@@ -963,6 +974,7 @@ export class CallStore {
 
   /** 止める。受け付けられたら true（失敗・すでに止めている最中は false。失敗の知らせは停止の側が出す） */
   private leaveNative(reason: string): Promise<boolean> {
+    this.screen?.stop();
     const s = this.nativeSession;
     if (!s || !(s.active || this.joined || this.joining)) return Promise.resolve(false);
     // 停止の完了（ack）まで画面は残す。受け付けたら onStopped で空にする
@@ -1036,6 +1048,7 @@ export class CallStore {
   /** ネイティブから、非音声の中継（プラグインの emit）が届いた */
   private onNativeRelay(r: NativeRelay): void {
     if (RESERVED_EVENTS.has(r.name)) return;
+    this.screen?.onEvent(r.name, { peer: r.peer, userId: r.from, payload: r.payload });
     const set = this.eventListeners.get(r.name);
     if (!set) return;
     for (const cb of [...set]) this.safe(() => cb({ peer: r.peer, userId: r.from, payload: r.payload }));
@@ -1759,6 +1772,7 @@ export class CallStore {
   private refresh(): void {
     this.syncView();
     this.updateNotification();
+    this.screen?.onCallChange();
     const sig = JSON.stringify([this.joined, this.joining, this.participants.map((p) => [p.peer, p.userId, p.muted, p.deafened, p.connected, p.localMuted, p.speaking, p.device])]);
     if (sig === this.changeSig) return;
     this.changeSig = sig;

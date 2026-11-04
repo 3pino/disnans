@@ -56,6 +56,8 @@ pub enum Kind {
     NavLabels,
     /// 通話の出力先（`{id, kind, label}` の文字列の 3 つがそろったものだけ。それ以外は null）
     AudioOutput,
+    /// 画面共有の設定（`{fps, quality, color}`）。null は「未設定」。オブジェクトなら、外れた項目だけ既定に直す
+    ScreenShare,
 }
 
 /// 既定値
@@ -262,6 +264,12 @@ pub const DEFINITIONS: &[Def] = &[
         kind: Kind::NullableText,
         default: DefaultValue::Null,
     },
+    Def {
+        key: "screenShare",
+        scope: Scope::Device,
+        kind: Kind::ScreenShare,
+        default: DefaultValue::Null,
+    },
     // ---- このデバイスだけ（サーバーに送らない。キーは移行の目印として一覧に置く）----
     Def {
         key: "server",
@@ -342,6 +350,7 @@ pub fn normalize_value(def: &Def, value: Option<&Value>) -> Value {
         (Kind::NavItems, Some(v)) => nav_items(v),
         (Kind::NavLabels, Some(v)) => nav_labels(v),
         (Kind::AudioOutput, Some(v)) => audio_output(v),
+        (Kind::ScreenShare, Some(v)) => screen_share(v),
         (_, None) => fallback(),
         _ => fallback(),
     }
@@ -367,6 +376,31 @@ fn nav_items(raw: &Value) -> Value {
         }
     }
     Value::Array(out)
+}
+
+/// 画面共有の FPS・画質・色数の一覧（`call/screen` の型と同じ）
+const SCREEN_FPS: [u64; 2] = [5, 20];
+const SCREEN_QUALITY: &[&str] = &["p480", "p720", "p1080"];
+const SCREEN_COLOR: &[&str] = &["full", "c256", "gray"];
+
+/// 画面共有の設定。オブジェクトでなければ null（未設定）。オブジェクトなら、外れた項目だけ既定（5・p720・full）に直す
+fn screen_share(raw: &Value) -> Value {
+    let Value::Object(map) = raw else {
+        return Value::Null;
+    };
+    let fps = match map.get("fps").and_then(Value::as_u64) {
+        Some(n) if SCREEN_FPS.contains(&n) => n,
+        _ => SCREEN_FPS[0],
+    };
+    let quality = match map.get("quality").and_then(Value::as_str) {
+        Some(q) if SCREEN_QUALITY.contains(&q) => q,
+        _ => "p720",
+    };
+    let color = match map.get("color").and_then(Value::as_str) {
+        Some(c) if SCREEN_COLOR.contains(&c) => c,
+        _ => "full",
+    };
+    serde_json::json!({"fps": fps, "quality": quality, "color": color})
 }
 
 /// 出力先: `id`・`kind`・`label` が文字列のとき、その 3 つだけを残す。そろわなければ null（未選択と同じ）
@@ -565,6 +599,7 @@ fn kind_json(kind: Kind) -> Value {
         Kind::NavItems => serde_json::json!({"type": "navItems"}),
         Kind::NavLabels => serde_json::json!({"type": "navLabels"}),
         Kind::AudioOutput => serde_json::json!({"type": "audioOutput"}),
+        Kind::ScreenShare => serde_json::json!({"type": "screenShare"}),
     }
 }
 
@@ -608,6 +643,29 @@ mod tests {
         assert_eq!(defaults["orientation"], "auto");
         assert_eq!(defaults["pluginsDisabled"], json!([]));
         assert_eq!(defaults["pluginsDevDir"], Value::Null);
+        // 未設定は null（既定の 5・p720・full は表示側の既定。保存の有無を区別するため）
+        assert_eq!(defaults["screenShare"], Value::Null);
+    }
+
+    #[test]
+    fn screen_share_null_means_unconfigured_and_objects_are_fixed_per_field() {
+        let def = def("screenShare");
+        assert_eq!(normalize_value(def, Some(&Value::Null)), Value::Null);
+        assert_eq!(normalize_value(def, Some(&json!("x"))), Value::Null);
+        assert_eq!(normalize_value(def, Some(&json!([1]))), Value::Null);
+        assert_eq!(
+            normalize_value(def, Some(&json!({"fps": 20, "quality": "p1080", "color": "gray"}))),
+            json!({"fps": 20, "quality": "p1080", "color": "gray"})
+        );
+        // 外れた項目だけ既定に戻る（オブジェクトは「設定済み」のまま）
+        assert_eq!(
+            normalize_value(def, Some(&json!({"fps": 7, "quality": "low", "color": "c256"}))),
+            json!({"fps": 5, "quality": "p720", "color": "c256"})
+        );
+        assert_eq!(
+            normalize_value(def, Some(&json!({}))),
+            json!({"fps": 5, "quality": "p720", "color": "full"})
+        );
     }
 
     #[test]

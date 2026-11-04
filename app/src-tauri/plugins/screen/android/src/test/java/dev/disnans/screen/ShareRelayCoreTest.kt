@@ -13,6 +13,17 @@ import org.junit.Test
  * 受け手の組み立ては、JS の FrameAssembler で確かめた fixture（relay_chunks_fixture.json）と突き合わせる。
  */
 class ShareRelayCoreTest {
+  @Test fun frameIdsFollowTheClockAndNeverGoBackAcrossEncoderSwitches() {
+    var clock = 100L
+    val ids = FrameIdAllocator(10L) { clock }
+    assertEquals(100L, ids.next())
+    // JS のカメラへ替わってからネイティブへ戻っても、古い小さなカウンターを出さない。
+    clock = 10_000L
+    assertEquals(10_000L, ids.next())
+    clock = 50L
+    assertEquals(10_001L, ids.next())
+  }
+
 
   /** 偽の窓口。送った内容を記録し、通話の状態と送信待ちの量を外から動かす */
   private class FakePort : RelayPort {

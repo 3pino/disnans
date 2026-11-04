@@ -52,7 +52,7 @@ class ShareRelayHost(
     private const val LOG_EVERY_SEC = 5L
 
     /** プロセス全体で 1 つ。撮りをまたいでも f が戻らないように、時計の値から始める */
-    private val ids: FrameIdSource = FrameIdAllocator(System.currentTimeMillis())
+    private val ids: FrameIdSource = FrameIdAllocator(System.currentTimeMillis(), System::currentTimeMillis)
 
     /**
      * 通話の読み取り（読むだけ）。読めなかったら Unavailable（通話が終わったとは決めない）。

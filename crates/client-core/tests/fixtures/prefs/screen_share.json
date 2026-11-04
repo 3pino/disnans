@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "note": "デバイスごとの画面共有の設定（screenShare）の読み方。null は未設定。オブジェクトは外れた項目だけ既定（fps 5・画質 p720・色 full）に直す。旧い名前（low/standard/high）の読み替えは TS（移行）の仕事で、ここでは扱わない。",
+  "cases": [
+    { "name": "未設定", "input": null, "expected": null },
+    { "name": "オブジェクトでない文字列は未設定扱い", "input": "p720", "expected": null },
+    { "name": "配列は未設定扱い", "input": [1, 2], "expected": null },
+    { "name": "そろった値はそのまま", "input": { "fps": 20, "quality": "p1080", "color": "gray" }, "expected": { "fps": 20, "quality": "p1080", "color": "gray" } },
+    { "name": "空のオブジェクトは既定で埋める（設定済み）", "input": {}, "expected": { "fps": 5, "quality": "p720", "color": "full" } },
+    { "name": "fps は 5 と 20 だけ", "input": { "fps": 7, "quality": "p480", "color": "full" }, "expected": { "fps": 5, "quality": "p480", "color": "full" } },
+    { "name": "fps が文字列なら既定", "input": { "fps": "20", "quality": "p480", "color": "full" }, "expected": { "fps": 5, "quality": "p480", "color": "full" } },
+    { "name": "旧い画質の名前は既定に戻す（読み替えは TS）", "input": { "fps": 5, "quality": "low", "color": "full" }, "expected": { "fps": 5, "quality": "p720", "color": "full" } },
+    { "name": "色数の外れは既定", "input": { "fps": 5, "quality": "p720", "color": "sepia" }, "expected": { "fps": 5, "quality": "p720", "color": "full" } },
+    { "name": "色数の c256 は残す", "input": { "fps": 5, "quality": "p720", "color": "c256" }, "expected": { "fps": 5, "quality": "p720", "color": "c256" } },
+    { "name": "余分な項目は捨てる（この項目だけ正規化）", "input": { "fps": 5, "quality": "p720", "color": "full", "extra": true }, "expected": { "fps": 5, "quality": "p720", "color": "full" } }
+  ]
+}

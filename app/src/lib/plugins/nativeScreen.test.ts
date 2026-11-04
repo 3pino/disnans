@@ -25,6 +25,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: fake.listen }));
 
 import { pipApi, screenCaptureApi, validateCallRelay } from './nativeScreen';
 import { PluginError } from './errors';
+import { screenCaptureApi as builtinCapture } from '../media/nativeScreen';
 
 beforeEach(() => {
   fake.linux = true;
@@ -41,6 +42,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await screenCaptureApi.stop();
+  await builtinCapture.stop();
 });
 
 const options = { maxEdge: 1280, quality: 0.6, fps: 5 };
@@ -50,7 +52,66 @@ const captureId = () => {
   return args.options.captureId;
 };
 
+describe('本体と公開 SDK の取得所有権', () => {
+  it('SDK の停止・設定・開始で本体の共有を奪わない', async () => {
+    await builtinCapture.start(options, vi.fn());
+    fake.invoke.mockClear();
+    await screenCaptureApi.stop();
+    await screenCaptureApi.update({ quality: 0.2 });
+    await expect(screenCaptureApi.start(options, vi.fn())).rejects.toMatchObject({ code: 'busy' });
+    expect(fake.invoke).not.toHaveBeenCalled();
+    await builtinCapture.stop();
+    expect(fake.invoke).toHaveBeenCalledWith('linux_screen_stop', undefined);
+  });
+
+  it('本体も別の拡張が取得中なら黙って奪わず、busy を返す', async () => {
+    await screenCaptureApi.start(options, vi.fn());
+    fake.invoke.mockClear();
+    await builtinCapture.stop();
+    await expect(builtinCapture.start(options, vi.fn())).rejects.toMatchObject({ code: 'busy' });
+    expect(fake.invoke).not.toHaveBeenCalled();
+  });
+});
+
 describe('Linux のネイティブ画面取得', () => {
+  it('Linux は停止の受理を待ってから次の取得番号で開始する', async () => {
+    await screenCaptureApi.start(options, vi.fn());
+    let finish!: () => void; let held = true;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    fake.invoke.mockImplementation(async (cmd) => { if (cmd === 'linux_screen_stop' && held) { held = false; await gate; } });
+    const stopping = screenCaptureApi.stop();
+    const starting = screenCaptureApi.start(options, vi.fn());
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    expect(fake.invoke.mock.calls.filter(([cmd]) => cmd === 'linux_screen_start')).toHaveLength(1);
+    finish(); await stopping; await starting;
+    expect(fake.invoke.mock.calls.filter(([cmd]) => cmd === 'linux_screen_start')).toHaveLength(2);
+  });
+
+  it('Linux の停止を待っている開始も、次の停止で取り消せる（遅い ghost start をしない）', async () => {
+    await screenCaptureApi.start(options, vi.fn());
+    let finish!: () => void; let held = true;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    fake.invoke.mockImplementation(async (cmd) => { if (cmd === 'linux_screen_stop' && held) { held = false; await gate; } });
+    const stopping = screenCaptureApi.stop();
+    const starting = screenCaptureApi.start(options, vi.fn());
+    const rejected = expect(starting).rejects.toMatchObject({ name: 'AbortError' });
+    const cancel = screenCaptureApi.stop();
+    finish(); await stopping; await cancel; await rejected;
+    expect(fake.invoke.mock.calls.filter(([cmd]) => cmd === 'linux_screen_start')).toHaveLength(1);
+  });
+
+  it('停止失敗を成功とみなして新しい取得を始めず、所有者から再停止できる', async () => {
+    await screenCaptureApi.start(options, vi.fn());
+    fake.invoke.mockRejectedValueOnce(new Error('synthetic secret failure'));
+    await expect(screenCaptureApi.stop()).rejects.toMatchObject({ code: 'stop_unconfirmed' });
+    const before = fake.invoke.mock.calls.length;
+    await expect(screenCaptureApi.start(options, vi.fn())).rejects.toMatchObject({ code: 'stop_unconfirmed' });
+    expect(fake.invoke.mock.calls).toHaveLength(before);
+    await screenCaptureApi.stop();
+    await screenCaptureApi.start(options, vi.fn());
+    expect(fake.invoke.mock.calls.filter(([cmd]) => cmd === 'linux_screen_start')).toHaveLength(2);
+  });
+
   it('Linux のアプリで対応し、Linux の PiP には対応を広げない', () => {
     expect(screenCaptureApi.supported).toBe(true);
     expect(pipApi.supported).toBe(false);

@@ -11,6 +11,7 @@
   import NavBar from './NavBar.svelte';
   import TopBarSlot from './TopBarSlot.svelte';
   import CommandPalette from './CommandPalette.svelte';
+  import ScreenShareOverlay from './ScreenShareOverlay.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
 
@@ -94,6 +95,10 @@
 
 {#if commandHost.paletteOpen}
   <CommandPalette onclose={() => (commandHost.paletteOpen = false)} />
+  <!-- 画面共有の全画面の表示（どのタブからでも開けるように、ここに 1 つだけ） -->
+  <ScreenShareOverlay />
+  <!-- 画面共有の全画面の表示（どのタブからでも開けるように、ここに 1 つだけ） -->
+  <ScreenShareOverlay />
 {/if}
 
 <style>

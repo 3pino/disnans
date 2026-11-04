@@ -1,4 +1,5 @@
 import { api } from '../api';
+import { isRetiredPlugin } from './retired';
 import { getItem, setItem } from '../storage';
 import { deviceSettings } from '../stores/deviceSettings.svelte';
 import { prefs } from '../stores/prefs.svelte';
@@ -152,7 +153,7 @@ async function importModule(id: string, code: string): Promise<{ default?: unkno
  * プラグインのホスト。配布済み（サーバー）と開発中（開発用フォルダ）のプラグインを読み込み・外す。
  * デバイスごとのオンオフと、読み込みのエラーもここで持つ。
  */
-class PluginHost {
+export class PluginHost {
   /** 配布済みのもの（サーバーの一覧） */
   server = $state<PluginInfo[]>([]);
   serverError = $state<string | null>(null);
@@ -380,13 +381,13 @@ class PluginHost {
       return e;
     };
     for (const p of this.server) {
-      if (p.type !== 'plugin') continue;
+      if (p.type !== 'plugin' || isRetiredPlugin(p.id)) continue;
       const e = get(p.id);
       e.server = p;
       e.manifest = manifestOf(p);
     }
     for (const d of this.dev) {
-      if (d.kind !== 'plugin') continue;
+      if (d.kind !== 'plugin' || (d.manifest && isRetiredPlugin(d.manifest.id))) continue;
       const e = get(d.manifest?.id ?? d.folder);
       e.dev = d;
       if (d.manifest) e.manifest = d.manifest;
@@ -464,11 +465,11 @@ class PluginHost {
   private syncIcons(): void {
     const want = new Map<string, { key: string; get: () => Promise<string> }>();
     for (const p of this.server) {
-      if (p.has_icon) want.set(p.id, { key: `server:${p.hash}`, get: () => api.pluginFile(p.id, 'icon.svg', p.hash) });
+      if (p.has_icon && !isRetiredPlugin(p.id)) want.set(p.id, { key: `server:${p.hash}`, get: () => api.pluginFile(p.id, 'icon.svg', p.hash) });
     }
     for (const d of this.dev) {
       const id = d.manifest?.id;
-      if (!id) continue;
+      if (!id || isRetiredPlugin(id)) continue;
       const svg = d.icon;
       if (svg === null) want.delete(id);
       else want.set(id, { key: `dev:${d.folder}:${d.stamp}`, get: async () => svg });
@@ -505,6 +506,8 @@ class PluginHost {
   }
 
   setEnabled(id: string, on: boolean): void {
+    // 旧いプラグインは、オンにもできない（本体の機能は、このプラグインの設定に関係なく使える）
+    if (isRetiredPlugin(id)) return;
     const disabled = on ? this.disabled.filter((x) => x !== id) : [...new Set([...this.disabled, id])];
     deviceSettings.set('pluginsDisabled', disabled);
     // オンにし直したら、前に失敗したものも読み直す
@@ -526,7 +529,7 @@ class PluginHost {
   private wanted(): Map<string, Wanted> {
     const out = new Map<string, Wanted>();
     for (const p of this.server) {
-      if (p.type !== 'plugin' || this.disabled.includes(p.id)) continue;
+      if (p.type !== 'plugin' || this.disabled.includes(p.id) || isRetiredPlugin(p.id)) continue;
       out.set(p.id, {
         sig: `server:${p.hash}`,
         manifest: manifestOf(p),
@@ -541,7 +544,7 @@ class PluginHost {
     // 同じ ID なら開発中のものを優先する
     for (const d of this.dev) {
       const m = d.manifest;
-      if (!m || d.kind !== 'plugin' || d.error || d.main === null || this.disabled.includes(m.id)) continue;
+      if (!m || d.kind !== 'plugin' || d.error || d.main === null || this.disabled.includes(m.id) || isRetiredPlugin(m.id)) continue;
       const main = d.main;
       out.set(m.id, { sig: `dev:${d.folder}:${d.stamp}`, manifest: m, load: async () => ({ main, styles: d.styles, permissions: m.permissions ?? [] }) });
     }
@@ -603,13 +606,15 @@ class PluginHost {
     let mod: { default?: unknown };
     try {
       files = await w.load();
+      // 旧いプラグインは、読み終えても（取得のあとでも）script を作らない・実行しない
+      if (isRetiredPlugin(id)) return;
       mod = await importModule(id, files.main);
     } catch (e) {
       this.fail(id, w.sig, `main.js を読み込めません: ${errorMessage(e)}`);
       return;
     }
-    // 待っている間に別の読み込みが済んでいたら、そちらを使う
-    if (this.loaded.has(id)) return;
+    // 待っている間に別の読み込みが済んでいたら、そちらを使う。旧いプラグインになっていたら、登録しない
+    if (this.loaded.has(id) || isRetiredPlugin(id)) return;
 
     let style: HTMLStyleElement | null = null;
     if (files.styles) {

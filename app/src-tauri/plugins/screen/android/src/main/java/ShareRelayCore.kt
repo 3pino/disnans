@@ -35,7 +35,7 @@ object RelayLimits {
   const val MIN_QUALITY = 0.35
   const val MIN_SCALE = 0.4
   const val NAME_MAX_CHARS = 64
-  /** on の状態の JSON 全体（{} を含む）の上限（UTF-8 のバイト） */
+  /** 追加状態の JSON 全体（{} を含む）の上限（UTF-8 のバイト） */
   const val STATE_EXTRA_MAX_BYTES = 256
 }
 
@@ -68,9 +68,15 @@ interface FrameIdSource {
 }
 
 /** 時計の値から始まる、増えていくだけの番号（JS の安全な整数の内に収まる） */
-class FrameIdAllocator(seed: Long) : FrameIdSource {
+class FrameIdAllocator(seed: Long, private val clock: () -> Long = { seed }) : FrameIdSource {
   private val last = java.util.concurrent.atomic.AtomicLong(seed)
-  override fun next(): Long = last.incrementAndGet()
+  override fun next(): Long {
+    while (true) {
+      val before = last.get()
+      val next = max(before + 1, clock())
+      if (last.compareAndSet(before, next)) return next
+    }
+  }
 }
 
 /** 中継が使う窓口（実物は ShareRelayHost。テストでは偽物）。UI のコールバックは呼ばない */

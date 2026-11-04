@@ -11,6 +11,8 @@ import { viewTexts } from '../viewTexts';
 import { isAndroid, isTauri } from '../platform';
 import { createTauriNativePort } from './nativePort';
 import { devUser, getServerUrl, onServerChange } from '../config';
+import { screenCaptureApi } from '../media/nativeScreen';
+import { screenShareSettings } from './screen/settings.svelte';
 
 /** Android（Tauri）の通話は、参加・マイク・音・再接続をネイティブが持つ。それ以外（Windows・Linux）は従来の WebView の通話 */
 const nativePort = isTauri() && isAndroid() ? createTauriNativePort() : undefined;
@@ -18,6 +20,7 @@ const nativePort = isTauri() && isAndroid() ? createTauriNativePort() : undefine
 /** アプリの通話（シングルトン）。画面・コマンド・プラグイン API が使う */
 export const call = new CallStore({
   native: nativePort,
+  screen: { capture: screenCaptureApi, settings: screenShareSettings, toast: (text, kind) => ui.toast(text, kind) },
   serverUrl: () => getServerUrl(),
   devUser: () => devUser,
   send: (ev) => void client.send(ev),

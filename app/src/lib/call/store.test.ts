@@ -165,7 +165,7 @@ class FakeServer {
 const names: Record<string, string> = { u1: 'Alice', u2: 'Bob', u3: 'Carol' };
 let server: FakeServer;
 
-function makeClient(userId: string, opts: { device?: string } = {}): Client {
+function makeClient(userId: string, opts: { device?: string; screen?: CallDeps['screen'] } = {}): Client {
   const toast = vi.fn();
   const confirm = vi.fn(async () => true);
   const hold = vi.fn(async () => Object.assign(() => {}, { update: vi.fn() }));
@@ -176,6 +176,7 @@ function makeClient(userId: string, opts: { device?: string } = {}): Client {
   client.failService = () => serviceCbs.forEach((f) => f());
   client.settings = new CallSettings(createCallSource());
   const deps: CallDeps = {
+    screen: opts.screen,
     send: (ev) => server.handle(client, ev),
     meId: () => userId,
     nameOf: (id) => names[id] ?? '不明なユーザー',
@@ -251,6 +252,26 @@ function speak(c: Client): { seq: number; pcm: string }[] {
 const plays = (c: Client) => (c.store as unknown as { ctx: FakeAudioContext }).ctx.plays;
 const gainOf = (c: Client, peer: string) =>
   (c.store as unknown as { entries: Map<string, { relay: { gain: { gain: { value: number } } } | null }> }).entries.get(peer)!.relay!.gain.gain.value;
+
+describe('標準の画面共有と旧クライアントの互換', () => {
+  it('プラグインの購読なしにデスクトップの call.event を受け、退出時にその peer だけ消す', async () => {
+    const a = makeClient('u1', { screen: {
+      capture: { supported: false, start: vi.fn(), stop: vi.fn(), update: vi.fn(), snapshot: vi.fn() },
+      settings: { value: { fps: 5, quality: 'p720', color: 'full' }, patch: vi.fn(), subscribe: () => () => {} },
+      toast: vi.fn(),
+    } });
+    const b = makeClient('u2');
+    try {
+      await connect(a, b);
+      b.store.emit('screen.state', { on: true });
+      b.store.emit('screen.frame', { f: 1, i: 0, n: 1, d: '/9j/QUJD' });
+      await flush();
+      expect(a.store.screen!.sharers).toMatchObject([{ peer: b.store.myPeer, userId: 'u2', source: 'screen', dataUrl: 'data:image/jpeg;base64,/9j/QUJD' }]);
+      b.store.leave(); await flush();
+      expect(a.store.screen!.sharers).toEqual([]);
+    } finally { a.store.screen?.dispose(); a.store.leave(); b.store.leave(); }
+  });
+});
 
 describe('参加と音声', () => {
   it("実験用の localStorage 'disnans.micRaw'='1' なら、次の参加からエコー消去などを切って開く", async () => {
