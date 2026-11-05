@@ -115,6 +115,7 @@ export function fixtureScript({ server, ignored = Object.keys(IGNORED_IPC), plat
     'plugin:notifier|take_shared': () => null,
     'plugin:notifier|take_launch_target': () => null,
     'plugin:notifier|set_orientation': () => null,
+    'plugin:notifier|set_haptics_enabled': () => null, // WebView の振動の設定だけ。偽物なので振動はさせない
     'plugin:notifier|clipboard_peek': () => ({ text: false, image: false }), // Android のクリップボードは空
     'plugin:notifier|clipboard_text': () => null,
     api_set_prefs: () => PREFS(),
