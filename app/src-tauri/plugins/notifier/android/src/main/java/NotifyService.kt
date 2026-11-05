@@ -107,6 +107,8 @@ class NotifyService : Service() {
     .pingInterval(30, TimeUnit.SECONDS)
     .readTimeout(0, TimeUnit.MILLISECONDS)
     .build()
+  /** 既読の位置を読む（普通の HTTP。WebSocket と違って時間で切る） */
+  private val readClient = newReadMarkerClient()
   private var socket: WebSocket? = null
   private var attempt = 0
   private var stopped = false
@@ -114,6 +116,9 @@ class NotifyService : Service() {
   private var networkCallback: ConnectivityManager.NetworkCallback? = null
   /** つないでいる回線。切り替わったら、古い回線の socket は使えないので張り直す */
   private var currentNetwork: Network? = null
+  /** 接続の持ち主（世代・アカウント・進行中の既読の同期）。メインのスレッドだけで触る */
+  private val owner = SyncOwner()
+  private lateinit var readSync: ReadSync
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -124,6 +129,14 @@ class NotifyService : Service() {
     createChannels(this)
     startInForeground()
     running = true
+    readSync = ReadSync(
+      owner,
+      OkReadMarkerSource(readClient),
+      PrefsMarkers(Prefs(this)),
+      AndroidNotes(this),
+      { action -> handler.post { action() } },
+      { DiagLog.i("[notify] $it") },
+    )
     watchNetwork()
   }
 
@@ -141,6 +154,7 @@ class NotifyService : Service() {
   override fun onDestroy() {
     DiagLog.i("[notify] サービスを止めます（connected=$connected）")
     stopped = true
+    owner.stop()
     running = false
     connected = false
     handler.removeCallbacks(reconnect)
@@ -208,6 +222,7 @@ class NotifyService : Service() {
           if (stopped || network != currentNetwork) return@post
           // この回線はもう使えない。つながっていないことを示し、次の回線が来たら（または backoff で）つなぎ直す
           currentNetwork = null
+          owner.beginConnection()
           socket?.cancel()
           socket = null
           setConnected(false)
@@ -233,6 +248,8 @@ class NotifyService : Service() {
       return
     }
     socket?.cancel()
+    // 新しい接続の世代。前の接続の受信・既読の結果は、この世代では使わない
+    val gen = owner.beginConnection()
     val url = base.replaceFirst(Regex("^http", RegexOption.IGNORE_CASE), "ws") + "/api/ws"
     val request = try {
       Request.Builder().url(url).build()
@@ -242,7 +259,7 @@ class NotifyService : Service() {
       return
     }
     DiagLog.i("[notify] つなぎます: $url")
-    socket = client.newWebSocket(request, Listener())
+    socket = client.newWebSocket(request, Listener(gen, base))
   }
 
   private fun scheduleReconnect() {
@@ -254,21 +271,32 @@ class NotifyService : Service() {
     handler.postDelayed(reconnect, delay)
   }
 
-  private inner class Listener : WebSocketListener() {
+  /** この接続（世代）のまま、メインのスレッドで処理する。古い接続・停止後は何もしない */
+  private fun onCurrent(gen: Long, webSocket: WebSocket, block: () -> Unit) {
+    handler.post {
+      if (webSocket !== socket || !owner.isCurrent(gen)) return@post
+      block()
+    }
+  }
+
+  private inner class Listener(private val gen: Long, private val base: String) : WebSocketListener() {
     override fun onOpen(webSocket: WebSocket, response: Response) {
-      handler.post {
-        if (webSocket !== socket) return@post
+      onCurrent(gen, webSocket) {
         attempt = 0
         setConnected(true)
       }
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
-      try {
-        val ev = JSONObject(text)
-        if (ev.optString("type") == "notify") handler.post { onNotify(ev) }
-      } catch (ex: Exception) {
-        DiagLog.w("[notify] イベントを読めませんでした", ex)
+      // hello・read.updated は既読の同期へ、notify は表示へ（判断は NotifyPolicy・ReadSync）
+      onCurrent(gen, webSocket) {
+        handleServerText(text, gen, base, readSync, owner) {
+          try {
+            onNotify(JSONObject(text), gen)
+          } catch (ex: Exception) {
+            DiagLog.w("[notify] 通知の内容を読めませんでした")
+          }
+        }
       }
     }
 
@@ -285,6 +313,8 @@ class NotifyService : Service() {
     private fun lost(webSocket: WebSocket) {
       handler.post {
         if (webSocket !== socket) return@post
+        // この接続の既読の同期と結果は、もう使わない（次の接続で読み直す）
+        owner.beginConnection()
         socket = null
         setConnected(false)
         scheduleReconnect()
@@ -292,7 +322,7 @@ class NotifyService : Service() {
     }
   }
 
-  private fun onNotify(ev: JSONObject) {
+  private fun onNotify(ev: JSONObject, gen: Long) {
     val sample = ev.optBoolean("sample", false)
     val logId = ev.optNullableString("message_id") ?: if (sample) "sample" else "-"
     // アプリが前面にあるときは、アプリ内の表示に任せる（サンプルは確認用なので必ず出す）
@@ -305,17 +335,18 @@ class NotifyService : Service() {
     val body = ev.optString("body")
     val messageId = ev.optNullableString("message_id")
     val threadId = ev.optNullableString("thread_id")
-    // 接続が切れていた間の再送や、二重に届いたものは、表示済みなら出さない
-    if (messageId != null) {
-      val prefs = Prefs(this)
-      val shown = prefs.shownMessages
-      if (messageId in shown) {
-        DiagLog.i("[notify] 受信 $logId: 表示済みなので出しません")
-        return
-      }
-      prefs.shownMessages = shown + messageId
+    // このアカウントの既読の位置（分からなければ、取り下げ・既読の判断の対象にならない別の値）
+    val key = owner.accountFor(gen) ?: NotifyPolicy.UNKNOWN_ACCOUNT
+    val prefs = Prefs(this)
+    // 既読のメッセージ、接続が切れていた間の再送や二重に届いたものは、出さない
+    if (!NotifyPolicy.shouldShow(messageId, prefs.lastRead(key), prefs.shownMessages)) {
+      DiagLog.i("[notify] 既読か表示済みなので出しません")
+      return
     }
+    if (messageId != null) prefs.shownMessages = prefs.shownMessages + messageId
     val id = (messageId ?: "sample-${System.currentTimeMillis()}").hashCode()
+    // タグにアカウントとメッセージ ID を入れる（再起動のあとでも、この通知だけを既読で取り下げられるように）
+    val tag = messageId?.let { NotifyPolicy.messageTag(key, it) }
 
     val n = NotificationCompat.Builder(this, CHANNEL_MESSAGES)
       .setSmallIcon(R.drawable.disnans_notification)
@@ -329,7 +360,7 @@ class NotifyService : Service() {
       .build()
     try {
       val nm = getSystemService(NotificationManager::class.java)
-      nm.notify(id, n)
+      nm.notify(tag, id, n)
       DiagLog.i("[notify] 受信 $logId: 通知を出しました（許可=${nm.areNotificationsEnabled()}）")
     } catch (ex: SecurityException) {
       // 通知が許可されていない
@@ -363,3 +394,26 @@ class NotifyService : Service() {
 
 private fun JSONObject.optNullableString(key: String): String? =
   if (isNull(key)) null else optString(key)
+
+/** 既読の位置の保存（Prefs）を、同期の口へ */
+private class PrefsMarkers(private val prefs: Prefs) : MarkerStore {
+  override fun lastRead(account: String): String? = prefs.lastRead(account)
+  override fun setLastRead(account: String, messageId: String) = prefs.setLastRead(account, messageId)
+}
+
+/** 表示中の通知（NotificationManager）を、同期の口へ。取得できなければ何もない扱い */
+private class AndroidNotes(context: Context) : NoteStore {
+  private val nm = context.getSystemService(NotificationManager::class.java)
+  override fun active(): List<NotifyPolicy.ActiveNote> = try {
+    nm.activeNotifications.map { NotifyPolicy.ActiveNote(it.tag, it.id) }
+  } catch (ex: SecurityException) {
+    emptyList()
+  }
+  override fun cancel(tag: String?, id: Int) {
+    try {
+      nm.cancel(tag, id)
+    } catch (ex: SecurityException) {
+      DiagLog.w("[notify] 通知を取り下げられませんでした")
+    }
+  }
+}

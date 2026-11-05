@@ -50,11 +50,14 @@ describe('applyColorMode', () => {
     expect([...data]).toEqual([10, 200, 30, 255]);
   });
 
-  it('c256: R・G は 3bit、B は 2bit の段階に揃える（LEVELS の値）', () => {
-    const data = new Uint8ClampedArray([128, 128, 128, 255]);
+  it('c256: 固定の格子ではなく、この画面の色から選んだ代表色にそろえる（アルファは残す）', () => {
+    // 単色の画面なら、その色そのもの（旧い格子では 146・146・170 に変わっていた）
+    const data = new Uint8ClampedArray([128, 128, 128, 255, 128, 128, 128, 255]);
     applyColorMode(data, 'c256');
-    // R・G: 128>>5 = 4 → round(4*255/7) = 146 / B: 128>>6 = 2 → round(2*255/3) = 170
-    expect([...data]).toEqual([146, 146, 170, 255]);
+    expect([...data]).toEqual([128, 128, 128, 255, 128, 128, 128, 255]);
+    const alpha = new Uint8ClampedArray([10, 20, 30, 77, 200, 100, 50, 0]);
+    applyColorMode(alpha, 'c256');
+    expect([alpha[3], alpha[7]]).toEqual([77, 0]);
   });
 
   it('gray: 輝度（R=G=B）。アルファは残す', () => {
@@ -200,8 +203,9 @@ describe('旧い examples/screenshare と同じ結果（写したものの確か
     for (const [w, h, m, s] of [[1920, 1080, 1280, 1], [800, 600, 854, 0.5], [3, 9, 10, 1]] as const) {
       expect(fitSize(w, h, m, s)).toEqual(old.fitSize(w, h, m, s));
     }
-    for (const mode of ['full', 'c256', 'gray']) {
-      expect(candidateFormats(mode)).toEqual(old.candidateFormats(mode));
+    // c256 は旧い examples（旧いクライアントの格子）とわざと違う。その確かめは quantize.test.ts
+    for (const mode of ['full', 'c256', 'gray']) expect(candidateFormats(mode)).toEqual(old.candidateFormats(mode));
+    for (const mode of ['full', 'gray']) {
       const a = new Uint8ClampedArray([9, 130, 250, 255, 0, 255, 128, 64]);
       const b = new Uint8ClampedArray(a);
       applyColorMode(a, mode);
@@ -215,7 +219,8 @@ describe('旧い examples/screenshare と同じ結果（写したものの確か
   });
 
   it('encodeFrame の結果（形式と画像）', () => {
-    for (const color of ['full', 'c256', 'gray']) {
+    // c256 は旧い examples と違う（代表色）ので、ここでは full と gray だけ比べる
+    for (const color of ['full', 'gray']) {
       const images = { 'image/jpeg': JPEG, 'image/webp': WEBP, 'image/png': PNG };
       const mine = fakeCanvas({ images });
       const theirs = fakeCanvas({ images });

@@ -9,6 +9,7 @@
   import { commandHost } from '../lib/commandHost.svelte';
   import { isAndroid } from '../lib/platform';
   import { setImmersive } from '../lib/systemBars';
+  import { orientation } from '../lib/stores/orientation.svelte';
   import type { LightboxItem } from '../lib/lightbox';
   import { startWebPip, webPipAvailable, type WebPip } from '../lib/call/screen/webPip';
   import type { ScreenShareView } from '../lib/call/screen/view';
@@ -65,6 +66,12 @@
       returnFocus = null;
       if (back?.isConnected) back.focus();
     });
+  });
+
+  // 写真と同じく、拡大して見ている間は「メディア」の自動回転に含める。閉じる・共有終了・破棄で解除する。
+  $effect(() => {
+    if (!open) return;
+    return untrack(() => orientation.holdMediaView());
   });
 
   // 開いているあいだだけ、戻る（Android）と Esc に応える

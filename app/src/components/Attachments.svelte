@@ -7,6 +7,7 @@
   import { formatSize } from '../lib/format';
   import { bodyAttachmentNames } from '../lib/fileLink';
   import { ui } from '../lib/stores/ui.svelte';
+  import { isAndroid } from '../lib/platform';
   import { chatGallery } from '../lib/chatGallery';
 
   // 本文に埋め込まれた添付は、本文の中（FileLink）で出す。ここは本文に無い添付（送信の途中の仮表示など）だけを出す
@@ -44,6 +45,7 @@
     return { w: Math.round(h * ratio), h };
   }
 
+  const android = isAndroid();
 </script>
 
 {#if images.length > 0}
@@ -55,8 +57,11 @@
         <button
           type="button"
           class="attachment-image"
-          style:width="{b.w}px"
-          style:height="{b.h}px"
+          class:attachment-image-android={android}
+          style:width={android ? undefined : `${b.w}px`}
+          style:height={android ? undefined : `${b.h}px`}
+          style:--att-w={android ? b.w : undefined}
+          style:--att-h={android ? b.h : undefined}
           style:aspect-ratio="{b.w} / {b.h}"
           onclick={() => ui.openLightbox({ src: local[a.id] ?? fileUrl(a.id), alt: a.file_name, downloadUrl: fileUrl(a.id) }, chatGallery)}
           aria-label="{a.file_name} を開く"
@@ -120,6 +125,11 @@
   }
   .attachment-images > .attachment-item {
     flex: none;
+  }
+  /* Android だけ、高さは画面の高さの 30%まで。縦横の比は保ったまま縮める（幅の最大はそのまま） */
+  .attachment-image-android {
+    width: min(calc(var(--att-w) * 1px), calc(30vh * var(--att-w) / var(--att-h)));
+    height: min(calc(var(--att-h) * 1px), 30vh);
   }
   .attachment-image {
     display: block;

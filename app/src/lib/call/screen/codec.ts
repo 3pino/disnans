@@ -6,6 +6,7 @@
 
 import { SERVER_BUDGET_KBPS, type ColorMode } from './constants';
 import { sniffImageMime } from './protocol';
+import { quantizeRgba } from './quantize';
 export { QUALITY_PRESETS, FPS_OPTIONS, COLOR_MODES, SERVER_BUDGET_KBPS, type QualityPreset, type ColorMode } from './constants';
 export { sniffImageMime } from './protocol';
 
@@ -31,20 +32,14 @@ export function fitSize(w: number, h: number, maxEdge: number, scale = 1): { w: 
   return { w: Math.max(1, Math.round(w * r)), h: Math.max(1, Math.round(h * r)) };
 }
 
-const LEVELS8 = Uint8ClampedArray.from({ length: 8 }, (_, i) => Math.round((i * 255) / 7));
-const LEVELS4 = Uint8ClampedArray.from({ length: 4 }, (_, i) => Math.round((i * 255) / 3));
 
 /**
  * 画素（RGBA）の色数を減らす。渡した配列をそのまま書き換える。
- * c256: R 3bit・G 3bit・B 2bit の 256 色 / gray: 輝度だけ（R=G=B）
+ * c256: この画面の色から選んだ 256 色の代表色（quantize.ts。アルファは残す） / gray: 輝度だけ（R=G=B）
  */
 export function applyColorMode(data: Uint8ClampedArray, mode: ColorMode | string): void {
   if (mode === 'c256') {
-    for (let i = 0; i + 3 < data.length; i += 4) {
-      data[i] = LEVELS8[data[i] >> 5];
-      data[i + 1] = LEVELS8[data[i + 1] >> 5];
-      data[i + 2] = LEVELS4[data[i + 2] >> 6];
-    }
+    quantizeRgba(data);
   } else if (mode === 'gray') {
     for (let i = 0; i + 3 < data.length; i += 4) {
       const y = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;

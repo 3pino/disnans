@@ -5,7 +5,7 @@ import { ui } from './ui.svelte';
 
 /**
  * Android の画面の向き。設定（デバイスごと）と、全画面のメディアを見ているかで、ネイティブの向きの固定を決めて渡す。
- * 全画面の検知: 写真の全画面（ui.lightbox）と、プラグインの没入モード（ui.setImmersive が成功したとき）。
+ * 全画面の検知: 写真の全画面（ui.lightbox）、共有映像などのメディア表示、プラグインの没入モード。
  */
 class Orientation {
   /** 画面の向きの設定（このデバイスだけ。deviceSettings の値） */
@@ -15,9 +15,10 @@ class Orientation {
   /** プラグインが没入モード（全画面の画面共有など）にしているか */
   immersive = $state(false);
   private started = false;
+  private mediaViews = $state(0);
 
   /** 全画面のメディアを見ているか */
-  readonly mediaFullscreen = $derived(this.immersive || ui.lightbox !== null);
+  readonly mediaFullscreen = $derived(this.immersive || this.mediaViews > 0 || ui.lightbox !== null);
   readonly lock = $derived(orientationLock(this.mode, this.mediaFullscreen));
 
   set(mode: OrientationMode): void {
@@ -27,6 +28,17 @@ class Orientation {
 
   setImmersive(on: boolean): void {
     this.immersive = on;
+  }
+
+  /** メディアの表示中だけ回転判定へ加える。重ねて開いた表示や、二度の解除でも他の表示を解除しない。 */
+  holdMediaView(): () => void {
+    this.mediaViews++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.mediaViews--;
+    };
   }
 
   /** ネイティブへ、いまの向きを渡す（Android 以外では何もしない）。保存は Kotlin 側が行い、次の起動で読み込みの前に使う */

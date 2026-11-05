@@ -50,6 +50,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State, WebviewWindow};
 use tokio_util::sync::CancellationToken;
 
+// 色の代表色（256 色）。JS・Kotlin と同じ計算（screen_quantize.rs の冒頭）
+#[path = "screen_quantize.rs"]
+mod screen_quantize;
+
 const EVENT_FRAME: &str = "linux-screen-frame";
 const EVENT_END: &str = "linux-screen-end";
 
@@ -210,15 +214,6 @@ pub fn downscale_rgb(src: &[u8], sw: usize, sh: usize, dw: usize, dh: usize) -> 
     out
 }
 
-/// RGB を 3・3・2 bit（256 色相当）に減らす。各段の中央の値にそろえる
-pub fn quantize_332(rgb: &mut [u8]) {
-    for p in rgb.chunks_exact_mut(3) {
-        p[0] = (p[0] & 0xE0) | 0x10;
-        p[1] = (p[1] & 0xE0) | 0x10;
-        p[2] = (p[2] & 0xC0) | 0x20;
-    }
-}
-
 /// RGB を輝度（Y）にする（白は 255、黒は 0）
 pub fn to_luma(rgb: &[u8]) -> Vec<u8> {
     rgb.chunks_exact(3)
@@ -310,7 +305,7 @@ pub fn prepare_frame(
     let color = match s.color {
         Color::Full => ColorType::Rgb,
         Color::C256 => {
-            quantize_332(&mut rgb);
+            screen_quantize::quantize_rgb(&mut rgb);
             ColorType::Rgb
         }
         Color::Gray => {
@@ -1265,10 +1260,7 @@ mod tests {
     }
 
     #[test]
-    fn quantize_keeps_bins_and_luma_matches_white_and_black() {
-        let mut px = vec![255, 255, 255, 0, 0, 0];
-        quantize_332(&mut px);
-        assert_eq!(px, vec![0xF0, 0xF0, 0xE0, 0x10, 0x10, 0x20]);
+    fn luma_matches_white_and_black() {
         assert_eq!(to_luma(&[255, 255, 255, 0, 0, 0]), vec![255, 0]);
     }
 

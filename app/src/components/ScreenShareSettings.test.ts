@@ -171,3 +171,23 @@ describe('プレビュー', () => {
     expect(preview.canvases).toBe(0);
   });
 });
+
+describe('設定の見た目の構成（見出し・共通の一文・説明なし・短い名前）', () => {
+  it('「画面共有」の見出しの下に、共通の一文を一つだけ置き、行ごとの説明は出さない', () => {
+    const el = render({ settings: port(), snapshot: null });
+    const h2 = el.querySelector('h2');
+    expect(h2?.textContent).toBe('画面共有');
+    expect(el.querySelectorAll('.screen-share-settings-note')).toHaveLength(1);
+    expect(el.querySelector('.screen-share-settings-note')!.textContent).toBe('次に共有を始めたときから使われます');
+    expect(el.querySelector('.setting-row-description')).toBeNull();
+  });
+  it('行の名前は短い名前（画面共有の接頭辞なし）', () => {
+    const el = render({ settings: port(), snapshot: vi.fn() });
+    const names = [...el.querySelectorAll('.setting-row-name')].map((n) => n.textContent);
+    expect(names).toEqual(['フレームレート', '画質', '色数', 'プレビュー']);
+  });
+  it('選択の読み上げの名前は、画面共有の名前のまま', () => {
+    const el = render({ settings: port(), snapshot: null });
+    expect(el.querySelector('[role="radiogroup"][aria-label="画面共有の色数"]')).not.toBeNull();
+  });
+});

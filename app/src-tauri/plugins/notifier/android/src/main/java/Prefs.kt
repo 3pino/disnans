@@ -20,6 +20,21 @@ internal class Prefs(context: Context) {
     set(v) = prefs.edit().putBoolean("enabled", v).apply()
 
   /**
+   * アカウントごとの既読の位置（メッセージ ID）。通知の取り下げと、既読の通知を出さないことに使う。
+   * 1 行 = アカウント・区切り・ID。アカウントは最近使った順に残す（多すぎないよう件数を絞る）。
+   */
+  fun lastRead(account: String): String? = readMarkers()[account]
+
+  fun setLastRead(account: String, messageId: String) {
+    val next = readMarkers().toMutableMap()
+    next.remove(account)
+    next[account] = messageId
+    prefs.edit().putString(READ_MARKERS_KEY, NotifyPolicy.encodeMarkers(next, READ_ACCOUNTS_LIMIT)).apply()
+  }
+
+  private fun readMarkers(): Map<String, String> = NotifyPolicy.decodeMarkers(prefs.getString(READ_MARKERS_KEY, "").orEmpty())
+
+  /**
    * 表示済みの通知のメッセージ ID（新しいものほど後ろ）。接続し直したときの再送で、同じ通知を二度出さないために使う。
    * サービスが作り直されても残るよう、設定に保存する。
    */
@@ -31,6 +46,8 @@ internal class Prefs(context: Context) {
     /** SharedPreferences の名前と向きのキー。MainActivity（起動時に読む）と合わせる */
     const val PREFS_NAME = "disnans.notifier"
     const val ORIENTATION_KEY = "orientation"
+    const val READ_MARKERS_KEY = "read_markers"
+    const val READ_ACCOUNTS_LIMIT = 16
 
     /** 覚えておく件数。サーバーの再送（直近10分・ユーザーごと50件）より多く持つ */
     const val SHOWN_LIMIT = 200

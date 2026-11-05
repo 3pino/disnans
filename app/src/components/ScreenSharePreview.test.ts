@@ -176,15 +176,41 @@ describe('共有されている画面の表示（埋め込み）', () => {
   });
 });
 
-describe('自分の映像', () => {
+describe('自分の映像（受け取った画面と同じ全幅のカード）', () => {
+  const selfCard = (el: HTMLElement) => el.querySelector<HTMLElement>('[role="group"][aria-label="自分の映像"]');
+
   it('自分が共有していなければ出さない', () => {
-    expect(render({ screen: fakeScreen({ localFrame: { data: 'QUJD', mime: 'image/jpeg', width: 1, height: 1 } }), nameOf }).querySelector('.screen-self')).toBeNull();
+    const el = render({ screen: fakeScreen({ localFrame: { data: 'QUJD', mime: 'image/jpeg', width: 1, height: 1 } }), nameOf });
+    expect(selfCard(el)).toBeNull();
+    expect(el.querySelector('.screen-self')).toBeNull();
+  });
+
+  it('自分の映像は小さな重なりのクラスを使わず、受け取った画面と同じ共通のカード（.screen-embedded）で、見出しの行に名前と操作を置く', () => {
+    const s = fakeScreen({ sharing: true, source: 'screen', sharers: [sharer('pa')], localFrame: { data: 'QUJD', mime: 'image/jpeg', width: 1, height: 1 } });
+    const el = render({ screen: s, nameOf });
+    expect(el.querySelector('.screen-self')).toBeNull();
+    const self = selfCard(el)!;
+    expect(self.classList.contains('screen-embedded')).toBe(true);
+    const bar = self.querySelector('.screen-embedded-bar')!;
+    expect(bar.querySelector('.screen-embedded-name')!.textContent).toBe('自分の画面');
+    expect(bar.querySelector('button[aria-label="共有を止める"]')).not.toBeNull();
+    // 本体の操作の列（通話のバーなど）には、自分の操作を出さない
+    expect(el.querySelector('.call-bar button[aria-label="共有を止める"]')).toBeNull();
+  });
+
+  it('受け取った画面と自分の映像は、どちらも通常の流れに出て、同時に表示される', () => {
+    const s = fakeScreen({ sharing: true, source: 'screen', sharers: [sharer('pa')], localFrame: { data: 'QUJD', mime: 'image/jpeg', width: 1, height: 1 } });
+    const el = render({ screen: s, nameOf });
+    const cards = [...el.querySelectorAll<HTMLElement>('.screen-embedded')];
+    expect(cards).toHaveLength(2);
+    expect(cards.map((c) => c.getAttribute('aria-label'))).toEqual(['Aさんの画面', '自分の映像']);
+    expect(cards.every((c) => c.querySelector('.screen-embedded-bar'))).toBe(true);
   });
 
   it('画面の共有中は、プレビューの画像と「共有を止める」。押すと stop', () => {
     const s = fakeScreen({ sharing: true, source: 'screen', localFrame: { data: 'QUJD', mime: 'image/jpeg', width: 1, height: 1 } });
     const el = render({ screen: s, nameOf });
-    expect(el.querySelector<HTMLImageElement>('.screen-self img')?.src).toContain('data:image/jpeg;base64,QUJD');
+    expect(selfCard(el)!.querySelector<HTMLImageElement>('img')?.src).toContain('data:image/jpeg;base64,QUJD');
     el.querySelector<HTMLButtonElement>('button[aria-label="共有を止める"]')!.click();
     expect(s.stop).toHaveBeenCalledOnce();
     expect(el.querySelector('button[aria-label="カメラを切り替え"]')).toBeNull();
@@ -193,7 +219,7 @@ describe('自分の映像', () => {
   it('カメラの共有中は映像（srcObject）を入れ、切り替えは canSwitchCamera のときだけ', () => {
     const stream = { getTracks: () => [] } as unknown as MediaStream;
     const off = render({ screen: fakeScreen({ sharing: true, source: 'camera', localStream: stream, canSwitchCamera: false }), nameOf });
-    expect(off.querySelector<HTMLVideoElement>('video')?.srcObject).toBe(stream);
+    expect(selfCard(off)!.querySelector<HTMLVideoElement>('video')?.srcObject).toBe(stream);
     expect(off.querySelector('button[aria-label="カメラを切り替え"]')).toBeNull();
     instance = undefined;
     target?.remove();
@@ -201,5 +227,61 @@ describe('自分の映像', () => {
     const el = render({ screen: s, nameOf });
     el.querySelector<HTMLButtonElement>('button[aria-label="カメラを切り替え"]')!.click();
     expect(s.switchCamera).toHaveBeenCalledOnce();
+  });
+
+  it('自分の映像は音を出さない（muted）', () => {
+    const stream = { getTracks: () => [] } as unknown as MediaStream;
+    const el = render({ screen: fakeScreen({ sharing: true, source: 'camera', localStream: stream }), nameOf });
+    expect(selfCard(el)!.querySelector<HTMLVideoElement>('video')?.muted).toBe(true);
+  });
+});
+
+describe('大きく見る（アイコンだけ・読み上げの名前は残す）', () => {
+  it('ボタンは文字を持たず、aria-label に「○○を大きく見る」を持つ', () => {
+    const el = render({ screen: fakeScreen({ sharers: [sharer('pa')] }), nameOf });
+    const b = el.querySelector<HTMLButtonElement>('button[aria-label="Aさんの画面を大きく見る"]');
+    expect(b).not.toBeNull();
+    expect(b!.textContent?.trim()).toBe('');
+    expect(b!.classList.contains('btn-icon-only')).toBe(true);
+  });
+});
+
+describe('自分の映像の拡大（受け取った画面と同じ舞台）', () => {
+  const selfCard = (el: HTMLElement) => el.querySelector<HTMLElement>('[role="group"][aria-label="自分の映像"]')!;
+  const selfStage = (el: HTMLElement) => selfCard(el).querySelector<HTMLElement>('[data-testid="screen-stage"]')!;
+  const selfImg = (el: HTMLElement) => selfCard(el).querySelector<HTMLImageElement>('img')!;
+
+  it('自分の画面のフレームは ScreenImageStage で出し、拡大し、フレームが来ても拡大・移動を保つ', () => {
+    const s = reactiveScreen({ sharing: true, source: 'screen', localFrame: { data: 'QUJD', mime: 'image/jpeg', width: 1, height: 1 } });
+    const el = render({ screen: s, nameOf });
+    selfImg(el).dispatchEvent(new Event('load')); flushSync();
+    expect(selfStage(el)).not.toBeNull();
+    selfStage(el).dispatchEvent(new WheelEvent('wheel', { deltaY: -200, ctrlKey: true, bubbles: true, cancelable: true })); flushSync();
+    expect(selfImg(el).style.transform).toMatch(/scale\(([2-9]|\d\.\d)/);
+    const before = selfImg(el).style.transform;
+    for (let n = 0; n < 4; n++) {
+      s.localFrame = { data: `NEW${n}`, mime: 'image/jpeg', width: 1, height: 1 }; flushSync();
+      selfImg(el).dispatchEvent(new Event('load')); flushSync();
+      expect(selfImg(el).style.transform).toBe(before);
+    }
+  });
+
+  it('同じ配信者が画面からカメラに替わっても（同じ人）、拡大は保つ', () => {
+    const s = reactiveScreen({ sharers: [sharer('pa')], selectedPeer: 'pa' });
+    const el = render({ screen: s, nameOf });
+    imgOf(el).dispatchEvent(new Event('load')); flushSync();
+    stageOf(el).dispatchEvent(new WheelEvent('wheel', { deltaY: -200, ctrlKey: true, bubbles: true, cancelable: true })); flushSync();
+    const before = imgOf(el).style.transform;
+    expect(scaleOf(el)).toBeGreaterThan(1);
+    s.sharers = [sharer('pa', { source: 'camera' })]; flushSync();
+    imgOf(el).dispatchEvent(new Event('load')); flushSync();
+    expect(imgOf(el).style.transform).toBe(before);
+  });
+
+  it('自分のカメラの映像は、画面の高さの 60vh まで（320px の固定の上限は使わない）', () => {
+    const stream = { getTracks: () => [] } as unknown as MediaStream;
+    const el = render({ screen: fakeScreen({ sharing: true, source: 'camera', localStream: stream }), nameOf });
+    expect(selfCard(el).querySelector('video')).not.toBeNull();
+    expect(selfCard(el).querySelector('[data-testid="screen-stage"]')).toBeNull();
   });
 });

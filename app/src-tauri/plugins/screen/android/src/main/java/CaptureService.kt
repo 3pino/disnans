@@ -144,19 +144,10 @@ class CaptureService : Service() {
       c.scale = t.second
     }
 
-    /** 画素（ARGB）の色数を減らす。JS の applyColorMode と同じ計算 */
+    /** 画素（ARGB）の色数を減らす。JS の applyColorMode と同じ方針（c256 は画面から選んだ 256 色。アルファは残す） */
     fun applyColor(px: IntArray, mode: String) {
       if (mode == "c256") {
-        for (i in px.indices) {
-          val p = px[i]
-          val r = (p shr 16) and 0xff
-          val g = (p shr 8) and 0xff
-          val b = p and 0xff
-          val r2 = ((r shr 5) * 255 / 7.0).roundToInt()
-          val g2 = ((g shr 5) * 255 / 7.0).roundToInt()
-          val b2 = ((b shr 6) * 255 / 3.0).roundToInt()
-          px[i] = (0xff shl 24) or (r2 shl 16) or (g2 shl 8) or b2
-        }
+        ScreenQuantizer.quantizeArgb(px)
       } else if (mode == "gray") {
         for (i in px.indices) {
           val p = px[i]

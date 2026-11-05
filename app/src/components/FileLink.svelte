@@ -10,6 +10,7 @@
   import { deletedAttachmentNames, fileLinkView } from '../lib/fileLink';
   import { formatSize } from '../lib/format';
   import { parentOf } from '../lib/sharedPath';
+  import { isAndroid } from '../lib/platform';
   import { chatGallery } from '../lib/chatGallery';
 
   // 本文のファイルリンク（`[別名](パス)`）と埋め込み（`![…](パス)`）。どちらも共有フォルダのパスを今の一覧と突き合わせて表す。
@@ -27,6 +28,7 @@
 
   /** 埋め込みの画像が読めなかった（消えた・取れない） */
   let broken = $state(false);
+  const android = isAndroid();
 </script>
 
 {#snippet content()}
@@ -49,7 +51,7 @@
     aria-label="{view.alt} を開く"
     onclick={() => ui.openLightbox({ src: view.src, alt: view.alt, downloadUrl: view.src }, chatGallery)}
   >
-    <img class="file-link-embed-image-img" src={view.src} alt={view.alt} loading="lazy" decoding="async" onerror={() => (broken = true)} />
+    <img class:file-link-embed-image-android={android} class="file-link-embed-image-img" src={view.src} alt={view.alt} loading="lazy" decoding="async" onerror={() => (broken = true)} />
   </button>
 {:else if view.kind === 'embedFile'}
   <a class="file-link-card" href={view.href} download={view.name} target="_blank" rel="noopener">
@@ -102,6 +104,10 @@
     max-width: 100%;
     max-height: 320px;
     object-fit: contain;
+  }
+  /* Android だけ、高さは画面の高さの 30%まで（幅の最大はそのまま）。デスクトップは 320px のまま */
+  .file-link-embed-image-android {
+    max-height: 30vh;
   }
   .file-link-card {
     display: inline-flex;

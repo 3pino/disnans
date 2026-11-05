@@ -389,7 +389,7 @@
   <!-- 「操作」のサブページ。一覧の上に重ねる（一覧はそのままにして、戻ったときに元の位置へ戻す） -->
   {#if ui.settingsSub}
     <div id="settings-sub-page" class="settings-sub-page" data-sub={ui.settingsSub}>
-      <PanelBar />
+      <PanelBar class="settings-blank-bar" />
       <div class="scroll settings-sub-page-body">
         <div class="settings-sub-page-content">
           {#if subPage}<SettingsTree page={subPage} {slot} />{/if}
@@ -398,7 +398,7 @@
     </div>
   {/if}
 
-  <header class="top-bar"></header>
+  <header class="top-bar settings-blank-bar"></header>
 
   <div class="scroll settings-body" inert={!!ui.settingsSub}>
     <div class="settings-content">
@@ -408,6 +408,10 @@
 </div>
 
 <style>
+  /* 上の枠（通話のバー・プラグインのステータス欄）に中身があるときは、その枠が安全域を取るので、空の見出しの行は出さない */
+  :global(.shell-root:has(.top-slot .call-bar, .top-slot .plugin-status-item > :not(:empty))) .settings-view :global(.settings-blank-bar) {
+    display: none;
+  }
   /* 設定画面は文章ではないので、文字を選択できないようにする（入力欄は除く） */
   .settings-view {
     -webkit-user-select: none;

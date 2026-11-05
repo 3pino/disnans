@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount, type Component } from 'svelte';
 import ScreenShareViewer from './ScreenShareViewer.svelte';
 import { ui } from '../lib/stores/ui.svelte';
+import { orientation } from '../lib/stores/orientation.svelte';
+import { deviceSettings } from '../lib/stores/deviceSettings.svelte';
 
 import { fakeScreen, sharer } from './testing/screenFake';
 import { reactiveScreen } from './testing/reactiveScreen.svelte';
@@ -23,6 +25,7 @@ vi.mock('../lib/call/screen/webPip', () => ({
 
 let instance: ReturnType<typeof mount> | undefined;
 let target: HTMLElement | undefined;
+const initialOrientation = deviceSettings.raw.orientation;
 
 function fakePip(over: Partial<ScreenPipPort> = {}): ScreenPipPort & { enter: ReturnType<typeof vi.fn> } {
   return { supported: true, active: false, enter: vi.fn(async () => true), onChange: vi.fn(() => () => {}), ...over } as ScreenPipPort & { enter: ReturnType<typeof vi.fn> };
@@ -59,6 +62,7 @@ afterEach(async () => {
   target?.remove();
   instance = undefined;
   target = undefined;
+  deviceSettings.raw = { ...deviceSettings.raw, orientation: initialOrientation };
   ui.pluginBack = [];
   ui.lightbox = null;
   ui.confirmReq = null;
@@ -185,6 +189,49 @@ describe('拡大・移動（写真の拡大表示と同じ操作）', () => {
     handled.preventDefault();
     window.dispatchEvent(handled);
     expect(s.closeViewer).not.toHaveBeenCalled();
+  });
+});
+
+describe('共有映像を拡大している間の自動回転', () => {
+  it('メディアだけ自動回転: 開いた間だけ回転を許可し、外から閉じても縦へ戻す', () => {
+    deviceSettings.raw = { ...deviceSettings.raw, orientation: 'media' };
+    const s = reactiveScreen({ sharers: [sharer('pa')], viewerOpen: false });
+    render({ screen: s, nameOf });
+    expect(orientation.lock).toBe('portrait');
+    s.viewerOpen = true;
+    flushSync();
+    expect(orientation.mediaFullscreen).toBe(true);
+    expect(orientation.lock).toBe('unlocked');
+    s.viewerOpen = false;
+    flushSync();
+    expect(orientation.mediaFullscreen).toBe(false);
+    expect(orientation.lock).toBe('portrait');
+  });
+
+  it('縦固定は解除しない。自動回転の設定では回転できる', () => {
+    deviceSettings.raw = { ...deviceSettings.raw, orientation: 'portrait' };
+    render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
+    expect(orientation.mediaFullscreen).toBe(true);
+    expect(orientation.lock).toBe('portrait');
+    deviceSettings.raw = { ...deviceSettings.raw, orientation: 'auto' };
+    flushSync();
+    expect(orientation.lock).toBe('unlocked');
+  });
+
+  it('共有の表示が破棄されても、別のメディア表示の回転許可を解除しない', async () => {
+    deviceSettings.raw = { ...deviceSettings.raw, orientation: 'media' };
+    const release = orientation.holdMediaView();
+    try {
+      render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
+      await unmount(instance!);
+      instance = undefined;
+      flushSync();
+      expect(orientation.lock).toBe('unlocked');
+      release();
+      release();
+      flushSync();
+      expect(orientation.lock).toBe('portrait');
+    } finally { release(); }
   });
 });
 

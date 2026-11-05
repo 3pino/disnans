@@ -7,6 +7,7 @@
   import SettingRow from './ui/SettingRow.svelte';
   import SegmentedButton from './ui/SegmentedButton.svelte';
   import Button from './ui/Button.svelte';
+  import Section from './ui/Section.svelte';
   import { FPS_OPTIONS, COLOR_MODES, formatBytes } from '../lib/call/screen/codec';
   import { encodePreview, loadSnapshotCanvas, newCanvas, type PreviewResult } from '../lib/call/screen/preview';
   import type { ScreenSettingsPort, ScreenSettingsValue, ScreenSnapshot } from '../lib/call/screen/types';
@@ -96,41 +97,45 @@
   }
 </script>
 
-<SettingRow name="画面共有のフレームレート" description="次に共有を始めたときから使われます" icon={Monitor}>
-  {#snippet control()}
-    <SegmentedButton label="画面共有のフレームレート" options={fpsOptions} value={String(value.fps)} onchange={(v) => patch('fps', Number(v) === 20 ? 20 : 5)} />
-  {/snippet}
-</SettingRow>
+<Section title="画面共有" class="screen-share-settings">
+  <p class="muted screen-share-settings-note">次に共有を始めたときから使われます</p>
 
-<SettingRow name="画面共有の画質" description="解像度と画質の目安（次に共有を始めたときから）" icon={Image}>
-  {#snippet control()}
-    <SegmentedButton label="画面共有の画質" options={qualityOptions} value={value.quality} onchange={(v) => patch('quality', v as ScreenSettingsValue['quality'])} />
-  {/snippet}
-</SettingRow>
-
-<SettingRow name="画面共有の色数" description="少ない色ほど軽くなります（次に共有を始めたときから）" icon={Camera}>
-  {#snippet control()}
-    <SegmentedButton label="画面共有の色数" options={colorOptions} value={value.color} onchange={(v) => patch('color', v as ScreenSettingsValue['color'])} />
-  {/snippet}
-</SettingRow>
-
-{#if snapshot}
-  <SettingRow name="画面のプレビュー" description="いまの画面を 1 枚だけ撮り、今の設定で見せます。共有は始まりません">
+  <SettingRow name="フレームレート" icon={Monitor}>
     {#snippet control()}
-      <Button onclick={() => void takePreview()} disabled={previewing} icon={RefreshCw}>{previewing ? '撮っています…' : preview ? '撮り直す' : 'プレビューを撮る'}</Button>
+      <SegmentedButton label="画面共有のフレームレート" options={fpsOptions} value={String(value.fps)} onchange={(v) => patch('fps', Number(v) === 20 ? 20 : 5)} />
     {/snippet}
   </SettingRow>
-  {#if previewError}
-    <p class="muted screen-share-settings-note" role="status">{previewError}</p>
-  {:else if preview}
-    <figure class="screen-share-settings-preview">
-      <img src={preview.src} alt="今の設定での見え方" draggable="false" />
-      <figcaption class="muted screen-share-settings-size" role="status">
-        {preview.width}×{preview.height}・1 枚 約 {formatBytes(preview.imageBytes)}・動き続けると約 {formatBytes(preview.bytesPerSec)}/秒{preview.capped ? '（サーバーの上限まで。間隔が空きます）' : ''}
-      </figcaption>
-    </figure>
+
+  <SettingRow name="画質" icon={Image}>
+    {#snippet control()}
+      <SegmentedButton label="画面共有の画質" options={qualityOptions} value={value.quality} onchange={(v) => patch('quality', v as ScreenSettingsValue['quality'])} />
+    {/snippet}
+  </SettingRow>
+
+  <SettingRow name="色数" icon={Camera}>
+    {#snippet control()}
+      <SegmentedButton label="画面共有の色数" options={colorOptions} value={value.color} onchange={(v) => patch('color', v as ScreenSettingsValue['color'])} />
+    {/snippet}
+  </SettingRow>
+
+  {#if snapshot}
+    <SettingRow name="プレビュー">
+      {#snippet control()}
+        <Button onclick={() => void takePreview()} disabled={previewing} icon={RefreshCw}>{previewing ? '撮っています…' : preview ? '撮り直す' : 'プレビューを撮る'}</Button>
+      {/snippet}
+    </SettingRow>
+    {#if previewError}
+      <p class="muted screen-share-settings-note" role="status">{previewError}</p>
+    {:else if preview}
+      <figure class="screen-share-settings-preview">
+        <img src={preview.src} alt="今の設定での見え方" draggable="false" />
+        <figcaption class="muted screen-share-settings-size" role="status">
+          {preview.width}×{preview.height}・1 枚 約 {formatBytes(preview.imageBytes)}・動き続けると約 {formatBytes(preview.bytesPerSec)}/秒{preview.capped ? '（サーバーの上限まで。間隔が空きます）' : ''}
+        </figcaption>
+      </figure>
+    {/if}
   {/if}
-{/if}
+</Section>
 
 <style>
   .screen-share-settings-preview {
