@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// 共有の全画面の表示: 開く・閉じる（Esc・戻る・閉じるボタン）、見る画面の切り替え、拡大・移動（ボタン・ホイール・ダブルタップ）、小窓（本体の PiP）
+// 共有の全画面の表示: 写真の拡大表示と同じ部品（LightboxView）に載る。開く・閉じる（Esc・戻る・閉じるボタン）、見る画面の切り替え、拡大・移動（ホイール・ダブルタップ）、小窓（本体の PiP）
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount, type Component } from 'svelte';
 import ScreenShareViewer from './ScreenShareViewer.svelte';
@@ -40,20 +40,14 @@ const btn = (el: HTMLElement | Document, label: string) => {
   flushSync();
   return el.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
 };
-const stageOf = (el: HTMLElement) => el.querySelector<HTMLElement>('.screen-viewer-stage')!;
+const stageOf = (el: HTMLElement) => el.querySelector<HTMLElement>('.lightbox-slide-current .image-viewer')!;
 /** 操作のあとの表示を読む（Svelte の更新を待たずに読めるよう、ここで反映させる） */
 const imgOf = (el: HTMLElement) => {
   flushSync();
-  return el.querySelector<HTMLImageElement>('.screen-viewer-image')!;
+  return el.querySelector<HTMLImageElement>('.lightbox-slide-current .image-viewer-image')!;
 };
 /** 拡大の倍率は transform の scale から読む */
 const scaleOf = (el: HTMLElement) => Number(/scale\(([\d.]+)\)/.exec(imgOf(el).style.transform)?.[1] ?? '1');
-
-function pointer(type: string, el: HTMLElement, x: number, y: number, id = 1): void {
-  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
-  Object.defineProperty(ev, 'pointerId', { value: id });
-  el.dispatchEvent(ev);
-}
 
 beforeEach(() => {
   // jsdom は寸法を持たない（舞台の大きさを与える）
@@ -113,7 +107,8 @@ describe('共有の全画面の表示', () => {
   it('映像がまだ無いときは「映像を待っています」、拡大は押せない', () => {
     const el = render({ screen: fakeScreen({ sharers: [sharer('pa', { dataUrl: null })], viewerOpen: true }), nameOf });
     expect(el.textContent).toContain('映像を待っています');
-    expect(btn(el, '拡大')!.disabled).toBe(true);
+    expect(btn(el, '小窓で見る')?.disabled ?? true).toBe(true);
+    expect(stageOf(el)).toBeNull();
   });
 
   it('2 人以上が共有しているときは、上の切り替えで見る人を選べる', () => {
@@ -126,58 +121,15 @@ describe('共有の全画面の表示', () => {
   });
 });
 
-describe('拡大・移動', () => {
-  it('+・-・0 キーで受信映像を拡大・縮小・リセットできる', () => {
+describe('拡大・移動（写真の拡大表示と同じ操作）', () => {
+  it('写真の拡大表示と同じ部品で出る（ツールバー・ビューアー・閉じるが Lightbox のもの）', () => {
     const el = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
-    const plus = new KeyboardEvent('keydown', { key: '+', cancelable: true }); window.dispatchEvent(plus);
-    expect(plus.defaultPrevented).toBe(true); expect(scaleOf(el)).toBeCloseTo(1.25);
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', cancelable: true }));
-    expect(scaleOf(el)).toBeCloseTo(1);
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: '=', cancelable: true }));
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', cancelable: true }));
-    expect(scaleOf(el)).toBe(1);
-  });
-
-  it('入力欄・既に処理済みのキーではズームせず、上の層が閉じた Esc でも閲覧を閉じ直さない', () => {
-    const s = fakeScreen({ sharers: [sharer('pa')], viewerOpen: true });
-    const el = render({ screen: s, nameOf });
-    const input = document.createElement('input'); el.append(input);
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true, cancelable: true }));
-    expect(scaleOf(el)).toBe(1);
-    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
-    handled.preventDefault(); window.dispatchEvent(handled);
-    expect(s.closeViewer).not.toHaveBeenCalled();
-  });
-
-  it('受信フレームの連続更新と画像読み込みで、拡大倍率・移動位置を等倍へ戻さない', () => {
-    const s = reactiveScreen({ sharers: [sharer('pa')], viewerOpen: true, selectedPeer: 'pa' });
-    const el = render({ screen: s, nameOf });
-    const img = imgOf(el);
-    Object.defineProperty(img, 'naturalWidth', { configurable: true, value: 1920 });
-    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 1080 });
-    img.dispatchEvent(new Event('load'));
-    btn(el, '拡大')!.click();
-    const stage = stageOf(el);
-    pointer('pointerdown', stage, 100, 100); pointer('pointermove', stage, 150, 120); pointer('pointerup', stage, 150, 120);
-    const before = imgOf(el).style.transform;
-    expect(scaleOf(el)).toBeGreaterThan(1);
-    for (let n = 0; n < 5; n++) {
-      s.sharers = [sharer('pa', { dataUrl: `data:image/jpeg;base64,/9j/FRAME${n}`, lastSeen: n })];
-      flushSync(); imgOf(el).dispatchEvent(new Event('load')); flushSync();
-      expect(imgOf(el).style.transform).toBe(before);
-    }
-  });
-
-  it('拡大・縮小・等倍のボタンで倍率が変わり、等倍に戻せる', () => {
-    const el = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
-    expect(scaleOf(el)).toBe(1);
-    btn(el, '拡大')!.click();
-    expect(scaleOf(el)).toBeCloseTo(1.25);
-    btn(el, '縮小')!.click();
-    expect(scaleOf(el)).toBeCloseTo(1);
-    btn(el, '拡大')!.click();
-    btn(el, '等倍に戻す')!.click();
-    expect(scaleOf(el)).toBe(1);
+    expect(el.querySelector('.lightbox.screen-viewer .lightbox-toolbar')).not.toBeNull();
+    expect(stageOf(el)).not.toBeNull();
+    expect(el.querySelector('.lightbox-toolbar .lightbox-close')).not.toBeNull();
+    // 映像のダウンロードや前後の切り替えは出さない
+    expect(el.querySelector('.lightbox-download')).toBeNull();
+    expect(el.querySelector('.lightbox-nav')).toBeNull();
   });
 
   it('Ctrl + ホイールで拡大（ページは止める）', () => {
@@ -188,28 +140,51 @@ describe('拡大・移動', () => {
     expect(scaleOf(el)).toBeGreaterThan(1);
   });
 
-  it('ダブルタップ（短い間隔・近い場所の二回）で拡大し、もう一度で等倍に戻る', () => {
-    const el = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
-    const st = stageOf(el);
-    pointer('pointerdown', st, 10, 10);
-    pointer('pointerup', st, 10, 10);
-    pointer('pointerdown', st, 12, 11, 2);
-    pointer('pointerup', st, 12, 11, 2);
-    expect(scaleOf(el)).toBeCloseTo(2.5);
-    pointer('pointerdown', st, 10, 10, 3);
-    pointer('pointerup', st, 10, 10, 3);
-    pointer('pointerdown', st, 10, 10, 4);
-    pointer('pointerup', st, 10, 10, 4);
+  it('受信フレームが更新されても、拡大倍率・移動位置を保つ（key が同じなので作り直さない）', () => {
+    const s = reactiveScreen({ sharers: [sharer('pa')], viewerOpen: true, selectedPeer: 'pa' });
+    const el = render({ screen: s, nameOf });
+    const first = imgOf(el);
+    stageOf(el).dispatchEvent(new WheelEvent('wheel', { deltaY: -200, ctrlKey: true, bubbles: true, cancelable: true }));
+    flushSync();
+    const before = imgOf(el).style.transform;
+    expect(scaleOf(el)).toBeGreaterThan(1);
+    for (let n = 0; n < 5; n++) {
+      s.sharers = [sharer('pa', { dataUrl: `data:image/jpeg;base64,/9j/FRAME${n}`, lastSeen: n })];
+      flushSync();
+      expect(imgOf(el)).toBe(first);
+      expect(imgOf(el).src).toContain(`FRAME${n}`);
+      expect(imgOf(el).style.transform).toBe(before);
+    }
+  });
+
+  it('見る人を替えると、拡大は等倍に戻る', () => {
+    const s = reactiveScreen({ sharers: [sharer('pa'), sharer('pb')], viewerOpen: true, selectedPeer: 'pa' });
+    const el = render({ screen: s, nameOf });
+    stageOf(el).dispatchEvent(new WheelEvent('wheel', { deltaY: -200, ctrlKey: true, bubbles: true, cancelable: true }));
+    flushSync();
+    expect(scaleOf(el)).toBeGreaterThan(1);
+    s.selectedPeer = 'pb';
+    flushSync();
     expect(scaleOf(el)).toBe(1);
   });
 
-  it('拡大していないときのドラッグでは移動しない（画面の大きさの中に収まる）', () => {
-    const el = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
-    const st = stageOf(el);
-    pointer('pointerdown', st, 0, 0);
-    pointer('pointermove', st, 200, 100);
-    pointer('pointerup', st, 200, 100);
-    expect(imgOf(el).style.transform).toBe('translate(0px, 0px) scale(1)');
+  it('矢印キーは奪わない（前後の切り替えは無い）。Esc は Lightbox ではなくここが閉じる（1 回だけ）', () => {
+    const s = fakeScreen({ sharers: [sharer('pa')], viewerOpen: true });
+    render({ screen: s, nameOf });
+    const arrow = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true });
+    window.dispatchEvent(arrow);
+    expect(arrow.defaultPrevented).toBe(false);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    expect(s.closeViewer).toHaveBeenCalledTimes(1);
+  });
+
+  it('入力欄・既に処理済みの Esc では閉じない', () => {
+    const s = fakeScreen({ sharers: [sharer('pa')], viewerOpen: true });
+    render({ screen: s, nameOf });
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    handled.preventDefault();
+    window.dispatchEvent(handled);
+    expect(s.closeViewer).not.toHaveBeenCalled();
   });
 });
 
@@ -224,8 +199,8 @@ describe('小窓（本体の PiP）', () => {
   it('小窓に入っているあいだは、上のバーを隠す（映像だけ）', () => {
     const pip = fakePip({ active: true });
     const el = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf, pip });
-    expect(el.querySelector('.screen-viewer-bar')).toBeNull();
-    expect(el.querySelector('.screen-viewer-stage')).not.toBeNull();
+    expect(el.querySelector('.lightbox-toolbar')).toBeNull();
+    expect(stageOf(el)).not.toBeNull();
   });
 });
 

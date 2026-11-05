@@ -59,7 +59,7 @@ describe('Shell の通常操作から共有映像を全画面の閲覧へ開く'
     const dialog = openFromCallView();
     expect(screen.viewerOpen).toBe(true);
     expect(target.querySelectorAll('.screen-viewer')).toHaveLength(1);
-    expect(dialog.querySelector<HTMLImageElement>('.screen-viewer-image')!.src).toContain('/9j/QUJD');
+    expect(dialog.querySelector<HTMLImageElement>('.image-viewer-image')!.src).toContain('/9j/QUJD');
   });
   it('パレットの開閉で二重表示や取り外しをせず、一つの閲覧画面を維持する', () => {
     const dialog = openFromCallView();

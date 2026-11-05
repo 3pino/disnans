@@ -7,7 +7,7 @@ import { fileUrl } from './config';
 import { attachmentRefs, bodyAttachmentNames, type AttachmentRef } from './fileLink';
 
 /** 拡大表示の 1 件。kind はビューアーの種類（lib/viewers.ts）。無ければ画像 */
-export type LightboxItem = { src: string; alt: string; downloadUrl: string; kind?: ViewerKind };
+export type LightboxItem = { src: string; alt: string; downloadUrl: string; kind?: ViewerKind; /** 同じものの src が変わり続けるとき（ライブの映像）の見分け。無ければ src */ key?: string };
 
 /** 前後をたどる一覧。呼ぶたびに今の一覧を返す */
 export type LightboxGallery = () => LightboxItem[];

@@ -1,0 +1,136 @@
+// 共通の拡大表示枠を Chromium で測る。画像・マイク・実機・スクリーンショットは使わない。
+// 実際の LightboxView（写真）と ScreenShareViewer（共有）を Chromium に載せ、CDP の setSafeAreaInsetsOverride で env() を合成して矩形だけを検査する。
+// Android 実機や OS の没入・PiP は再現しない。
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createServer } from 'vite';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const executable = process.env.CHROME ?? join(homedir(), '.cache/puppeteer/chrome-headless-shell/linux-146.0.7680.153/chrome-headless-shell-linux64/chrome-headless-shell');
+const profile = mkdtempSync(join(tmpdir(), 'disnans-viewer-frame-'));
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>body{margin:0}</style></head><body><div id="fixture"></div>
+<script type="module">
+import {mount,unmount,tick} from 'svelte';
+import '/src/app.css';
+import LightboxView from '/src/components/LightboxView.svelte';
+import ScreenShareViewer from '/src/components/ScreenShareViewer.svelte';
+const PNG = ${JSON.stringify(PNG)};
+const items = ['a','b','c'].map((n) => ({ src: PNG + '#' + n, alt: n + '.png', downloadUrl: PNG }));
+let app;
+// 実際の Lightbox の部品（写真の拡大表示 / 共有の拡大表示）を、実際のコンポーネントで描く
+window.renderFixture = async (kind) => {
+  if (app) await unmount(app);
+  document.getElementById('fixture').innerHTML = '';
+  if (kind === 'photo') {
+    app = mount(LightboxView, { target: document.getElementById('fixture'), props: { item: items[1], gallery: () => items, onchange() {}, onclose() {} } });
+  } else {
+    const screen = { sharing: false, starting: false, source: 'screen', switching: false, canSwitchCamera: false, canScreen: true, canCamera: true, localStream: null, localFrame: null,
+      sharers: [{ peer: 'p1', userId: 'u1', source: 'screen', dataUrl: PNG, lastSeen: 0 }, { peer: 'p2', userId: 'u2', source: 'screen', dataUrl: PNG, lastSeen: 0 }],
+      viewerOpen: true, selectedPeer: 'p1', settings: { value: {}, patch() {}, subscribe: () => () => {} },
+      toggleScreen: async () => {}, toggleCamera: async () => {}, switchCamera: async () => {}, stop() {}, openViewer() {}, closeViewer() {}, selectPeer() {} };
+    app = mount(ScreenShareViewer, { target: document.getElementById('fixture'), props: { screen, nameOf: (id) => id, pip: { supported: true, active: false, enter: async () => true, onChange: () => () => {} } } });
+  }
+  await tick(); await new Promise((r) => setTimeout(r, 50)); return true;
+};
+</script></body></html>`;
+const vite = await createServer({ root, server: { host: '127.0.0.1', port: 0 }, plugins: [{
+  name: 'viewer-frame-geometry-fixture',
+  configureServer(server) {
+    server.middlewares.use(async (req, res, next) => {
+      if (req.url?.split('?')[0] !== '/__viewer_frame_fixture') return next();
+      try { res.setHeader('Content-Type', 'text/html'); res.end(await server.transformIndexHtml('/__viewer_frame_fixture', html)); }
+      catch (error) { res.statusCode = 500; res.end(String(error)); }
+    });
+  },
+}] });
+let chrome;
+let ws;
+try {
+  await vite.listen();
+  const url = `http://127.0.0.1:${vite.httpServer.address().port}/__viewer_frame_fixture`;
+  chrome = spawn(executable, ['--no-sandbox', '--disable-gpu', `--user-data-dir=${profile}`, '--remote-debugging-port=0', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  const endpoint = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Chromium startup timed out')), 15_000);
+    let text = '';
+    chrome.on('error', (error) => { clearTimeout(timer); reject(error); });
+    chrome.stderr.on('data', (chunk) => {
+      text += chunk;
+      const match = /DevTools listening on (ws:\/\/\S+)/.exec(text);
+      if (match) { clearTimeout(timer); resolve(match[1]); }
+    });
+  });
+  ws = new WebSocket(endpoint);
+  await new Promise((resolve, reject) => { ws.addEventListener('open', resolve, { once: true }); ws.addEventListener('error', reject, { once: true }); });
+  let seq = 0;
+  const pending = new Map();
+  ws.addEventListener('message', ({ data }) => {
+    const message = JSON.parse(data);
+    const slot = pending.get(message.id);
+    if (!slot) return;
+    pending.delete(message.id); clearTimeout(slot.timer);
+    if (message.error) slot.reject(new Error(JSON.stringify(message.error)));
+    else slot.resolve(message.result);
+  });
+  const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
+    const id = ++seq;
+    pending.set(id, { resolve, reject, timer: setTimeout(() => { pending.delete(id); reject(new Error(`CDP timed out: ${method}`)); }, 15_000) });
+    ws.send(JSON.stringify({ id, method, params, sessionId }));
+  });
+  const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+  const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+  const S = (method, params) => send(method, params, sessionId);
+  const evaluate = async (expression) => {
+    const result = await S('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    if (result.exceptionDetails) throw new Error('Fixture evaluation failed: ' + JSON.stringify(result.exceptionDetails));
+    return result.result.value;
+  };
+  await S('Page.enable');
+  await S('Page.navigate', { url });
+  for (let i = 0; i < 100 && !(await evaluate('typeof window.renderFixture === "function"')); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.equal(await evaluate('typeof window.renderFixture'), 'function');
+  const scenarios = [
+    { name: 'portrait-notch', width: 390, height: 844, top: 44, left: 0, right: 0, bottom: 34 },
+    { name: 'landscape-notch', width: 844, height: 390, top: 0, left: 44, right: 18, bottom: 21 },
+    { name: 'immersive-zero', width: 390, height: 844, top: 0, left: 0, right: 0, bottom: 0 },
+  ];
+  let cases = 0;
+  for (const scenario of scenarios) {
+    const { width, height, top, left, right, bottom } = scenario;
+    await S('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
+    await S('Emulation.setSafeAreaInsetsOverride', { insets: { top, left, right, bottom } });
+    for (const kind of ['photo', 'screen']) {
+      await evaluate(`window.renderFixture(${JSON.stringify(kind)})`);
+      const m = await evaluate(`(() => {
+        const rect = (el) => {const r=el.getBoundingClientRect(); return {top:r.top,left:r.left,right:r.right,bottom:r.bottom,w:r.width,h:r.height};};
+        const root = document.querySelector('.lightbox');
+        const controls = [...document.querySelectorAll('.lightbox-toolbar button, .lightbox-toolbar a, .lightbox-toolbar [role=radio]')].map(rect);
+        const nav = [...document.querySelectorAll('.lightbox-nav')].map(rect);
+        return { root: !!root, usesImageViewer: !!document.querySelector('.lightbox-slide-current .image-viewer'), controls, nav, toolbar: rect(document.querySelector('.lightbox-toolbar')) };
+      })()`);
+      const label = `${scenario.name}/${kind}`;
+      assert(m.root && m.usesImageViewer, `${label}: not rendered through the real Lightbox + ImageViewer`);
+      assert(m.controls.length >= 2, `${label}: toolbar controls missing`);
+      assert(m.toolbar.top >= top, `${label}: toolbar overlaps top inset`);
+      for (const c of m.controls) {
+        assert(c.top >= top && c.bottom <= height - bottom, `${label}: control overlaps top/bottom inset`);
+        assert(c.left >= left && c.right <= width - right, `${label}: control overlaps side inset`);
+      }
+      for (const n of m.nav) assert(n.left >= left && n.right <= width - right, `${label}: nav overlaps side inset`);
+      if (kind === 'photo') assert(m.nav.length === 2, `${label}: photo gallery nav missing`);
+      else assert(m.nav.length === 0, `${label}: live view must not show gallery nav`);
+      cases++;
+    }
+  }
+  console.log(`lightbox safe-area: ${cases} geometry cases (real Lightbox photo + real screen viewer, no screenshots/media)`);
+} finally {
+  ws?.close();
+  chrome?.kill();
+  await vite.close();
+  rmSync(profile, { recursive: true, force: true });
+}
