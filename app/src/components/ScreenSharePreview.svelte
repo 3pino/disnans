@@ -2,9 +2,13 @@
   import X from '@lucide/svelte/icons/x';
   import SwitchCamera from '@lucide/svelte/icons/switch-camera';
   import IconButton from './ui/IconButton.svelte';
+  import Button from './ui/Button.svelte';
+  import ScreenImageStage from './ScreenImageStage.svelte';
+  import Maximize from '@lucide/svelte/icons/maximize-2';
   import type { ScreenShareView } from '../lib/call/screen/view';
 
-  // 通話の画面の中の表示（埋め込み）。共有されている画面（またはカメラ）を小さく出す。押すと全画面（ScreenShareViewer）で開く。
+  // 通話の画面の中の表示（埋め込み）。共有されている画面を、その場で拡大・移動できる（ScreenImageStage: Ctrl+ホイール・ピンチ・ダブルタップ・ドラッグ）。
+  // 「大きく見る」ボタンで全画面（ScreenShareViewer）を開く。カード全体は押しても開かない（拡大の操作を奪わないため）。
   // 自分が共有しているときは、自分の映像を右下に出す（カメラの切り替えと、共有を止める）
   let { screen, nameOf }: { screen: ScreenShareView; nameOf: (userId: string) => string } = $props();
 
@@ -27,14 +31,19 @@
 </script>
 
 {#if target}
-  <button type="button" class="screen-embedded" aria-label={`${targetLabel}を大きく見る`} title={`${targetLabel}を大きく見る`} onclick={() => screen.openViewer(target.peer)}>
+  <div class="screen-embedded" role="group" aria-label={targetLabel}>
     {#if target.dataUrl}
-      <img src={target.dataUrl} alt={targetLabel} draggable="false" />
+      {#key target.peer}
+        <ScreenImageStage src={target.dataUrl} alt={targetLabel} embedded />
+      {/key}
     {:else}
       <span class="muted screen-embedded-wait">映像を待っています</span>
     {/if}
     <span class="screen-embedded-name">{targetLabel}</span>
-  </button>
+    <span class="screen-embedded-big">
+      <Button variant="ghost" icon={Maximize} label={`${targetLabel}を大きく見る`} onclick={() => screen.openViewer(target.peer)}>大きく見る</Button>
+    </span>
+  </div>
 {/if}
 
 {#if screen.sharing}
@@ -66,19 +75,18 @@
     border-radius: var(--radius-md, 8px);
     background: var(--surface-2);
     color: var(--text);
-    cursor: zoom-in;
     overflow: hidden;
-  }
-  .screen-embedded img {
-    display: block;
-    max-width: 100%;
-    max-height: 60vh;
-    object-fit: contain;
   }
   .screen-embedded-wait {
     padding: var(--space-7);
   }
+  .screen-embedded-big {
+    position: absolute;
+    right: var(--space-3);
+    bottom: var(--space-3);
+  }
   .screen-embedded-name {
+    pointer-events: none;
     position: absolute;
     left: var(--space-3);
     bottom: var(--space-3);

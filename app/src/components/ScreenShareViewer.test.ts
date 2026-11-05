@@ -127,6 +127,47 @@ describe('共有の全画面の表示', () => {
 });
 
 describe('拡大・移動', () => {
+  it('+・-・0 キーで受信映像を拡大・縮小・リセットできる', () => {
+    const el = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
+    const plus = new KeyboardEvent('keydown', { key: '+', cancelable: true }); window.dispatchEvent(plus);
+    expect(plus.defaultPrevented).toBe(true); expect(scaleOf(el)).toBeCloseTo(1.25);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', cancelable: true }));
+    expect(scaleOf(el)).toBeCloseTo(1);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '=', cancelable: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', cancelable: true }));
+    expect(scaleOf(el)).toBe(1);
+  });
+
+  it('入力欄・既に処理済みのキーではズームせず、上の層が閉じた Esc でも閲覧を閉じ直さない', () => {
+    const s = fakeScreen({ sharers: [sharer('pa')], viewerOpen: true });
+    const el = render({ screen: s, nameOf });
+    const input = document.createElement('input'); el.append(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true, cancelable: true }));
+    expect(scaleOf(el)).toBe(1);
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    handled.preventDefault(); window.dispatchEvent(handled);
+    expect(s.closeViewer).not.toHaveBeenCalled();
+  });
+
+  it('受信フレームの連続更新と画像読み込みで、拡大倍率・移動位置を等倍へ戻さない', () => {
+    const s = reactiveScreen({ sharers: [sharer('pa')], viewerOpen: true, selectedPeer: 'pa' });
+    const el = render({ screen: s, nameOf });
+    const img = imgOf(el);
+    Object.defineProperty(img, 'naturalWidth', { configurable: true, value: 1920 });
+    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 1080 });
+    img.dispatchEvent(new Event('load'));
+    btn(el, '拡大')!.click();
+    const stage = stageOf(el);
+    pointer('pointerdown', stage, 100, 100); pointer('pointermove', stage, 150, 120); pointer('pointerup', stage, 150, 120);
+    const before = imgOf(el).style.transform;
+    expect(scaleOf(el)).toBeGreaterThan(1);
+    for (let n = 0; n < 5; n++) {
+      s.sharers = [sharer('pa', { dataUrl: `data:image/jpeg;base64,/9j/FRAME${n}`, lastSeen: n })];
+      flushSync(); imgOf(el).dispatchEvent(new Event('load')); flushSync();
+      expect(imgOf(el).style.transform).toBe(before);
+    }
+  });
+
   it('拡大・縮小・等倍のボタンで倍率が変わり、等倍に戻せる', () => {
     const el = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
     expect(scaleOf(el)).toBe(1);

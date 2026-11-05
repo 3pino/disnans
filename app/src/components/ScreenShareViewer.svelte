@@ -80,11 +80,16 @@
     // 登録と外すのは、この effect の依存にしない（ui の一覧を読んで書くと、effect が自分で回り続けてしまう）
     const off = untrack(() => ui.addPluginBack(() => close()));
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      // 上に重なっているもの（画像の全画面・確認・コマンドパレット）が先に閉じる。ここでは何もしない
-      if (ui.lightbox || ui.confirmReq || commandHost.paletteOpen) return;
+      // 上の層や入力欄の操作を奪わない。
+      if (e.defaultPrevented || ui.lightbox || ui.confirmReq || commandHost.paletteOpen) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (e.ctrlKey || e.metaKey || e.altKey || !current?.dataUrl) return;
+      if (e.target instanceof HTMLElement && (e.target.isContentEditable || e.target.closest('input,textarea,select'))) return;
+      if (e.key === '+' || e.key === '=') zoomTo(view.scale * 1.25, { x: 0, y: 0 });
+      else if (e.key === '-') zoomTo(view.scale / 1.25, { x: 0, y: 0 });
+      else if (e.key === '0') view = { scale: 1, x: 0, y: 0 };
+      else return;
       e.preventDefault();
-      close();
     };
     window.addEventListener('keydown', onKey);
     return () => {
