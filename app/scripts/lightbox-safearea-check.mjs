@@ -24,16 +24,24 @@ const PNG = ${JSON.stringify(PNG)};
 const items = ['a','b','c'].map((n) => ({ src: PNG + '#' + n, alt: n + '.png', downloadUrl: PNG }));
 let app;
 // 実際の Lightbox の部品（写真の拡大表示 / 共有の拡大表示）を、実際のコンポーネントで描く
+const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 300;
+const bigCtx = canvas.getContext('2d'); bigCtx.fillStyle = '#406878'; bigCtx.fillRect(0, 0, 400, 300);
+const BIG = canvas.toDataURL();
+window.__closed = 0;
 window.renderFixture = async (kind) => {
   if (app) await unmount(app);
   document.getElementById('fixture').innerHTML = '';
+  window.__closed = 0;
+  // Android: 映像の上を押すと没入（バーを隠す）、外を押すと閉じる。OS の没入は呼ばれない（Tauri ではない）
+  window.__DISNANS_PLATFORM__ = kind === 'android' ? { os: 'android', android: true, desktop: false, capabilities: null } : undefined;
   if (kind === 'photo') {
     app = mount(LightboxView, { target: document.getElementById('fixture'), props: { item: items[1], gallery: () => items, onchange() {}, onclose() {} } });
   } else {
+    const dataUrl = kind === 'android' ? BIG : PNG;
     const screen = { sharing: false, starting: false, source: 'screen', switching: false, canSwitchCamera: false, canScreen: true, canCamera: true, localStream: null, localFrame: null,
-      sharers: [{ peer: 'p1', userId: 'u1', source: 'screen', dataUrl: PNG, lastSeen: 0 }, { peer: 'p2', userId: 'u2', source: 'screen', dataUrl: PNG, lastSeen: 0 }],
+      sharers: [{ peer: 'p1', userId: 'u1', source: 'screen', dataUrl, lastSeen: 0 }, { peer: 'p2', userId: 'u2', source: 'screen', dataUrl, lastSeen: 0 }],
       viewerOpen: true, selectedPeer: 'p1', settings: { value: {}, patch() {}, subscribe: () => () => {} },
-      toggleScreen: async () => {}, toggleCamera: async () => {}, switchCamera: async () => {}, stop() {}, openViewer() {}, closeViewer() {}, selectPeer() {} };
+      toggleScreen: async () => {}, toggleCamera: async () => {}, switchCamera: async () => {}, stop() {}, openViewer() {}, closeViewer() { window.__closed++; }, selectPeer() {} };
     app = mount(ScreenShareViewer, { target: document.getElementById('fixture'), props: { screen, nameOf: (id) => id, pip: { supported: true, active: false, enter: async () => true, onChange: () => () => {} } } });
   }
   await tick(); await new Promise((r) => setTimeout(r, 50)); return true;
@@ -127,7 +135,31 @@ try {
       cases++;
     }
   }
-  console.log(`lightbox safe-area: ${cases} geometry cases (real Lightbox photo + real screen viewer, no screenshots/media)`);
+  // Android のタップ: 実際の解像度で、映像の上と外を判定する（拡大を際だけにしない）
+  await S('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await S('Emulation.setSafeAreaInsetsOverride', { insets: { top: 44, left: 0, right: 0, bottom: 34 } });
+  await S('Emulation.setTouchEmulationEnabled', { enabled: true });
+  await evaluate('window.renderFixture("android")');
+  const box = await evaluate(`(() => { const r = document.querySelector('.lightbox-slide-current .image-viewer-image').getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; })()`);
+  assert(box.r - box.l > 100 && box.b - box.t > 100, 'android: image not laid out');
+  const tap = async (x, y) => {
+    await S('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    await S('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await new Promise((r) => setTimeout(r, 450));
+  };
+  const cx = (box.l + box.r) / 2, cy = (box.t + box.b) / 2;
+  const toolbar = () => evaluate(`!!document.querySelector('.lightbox-toolbar')`);
+  assert.equal(await toolbar(), true, 'android: toolbar missing at start');
+  assert.equal(await evaluate('[...document.querySelectorAll("button")].some(b => b.getAttribute("aria-label") === "全画面")'), false, 'android: fullscreen button must not exist');
+  await tap(cx, cy);
+  assert.equal(await toolbar(), false, 'android: tap on image must hide the toolbar');
+  assert.equal(await evaluate('window.__closed'), 0, 'android: tap on image must not close');
+  await tap(cx, cy);
+  assert.equal(await toolbar(), true, 'android: second tap on image must show the toolbar');
+  assert.equal(await evaluate('window.__closed'), 0, 'android: second tap must not close');
+  await tap(box.l / 2, cy);
+  assert.equal(await evaluate('window.__closed'), 1, 'android: tap outside the image must close');
+  console.log(`lightbox safe-area: ${cases} geometry cases + android tap hit-test (real Lightbox photo + real screen viewer, no screenshots/media)`);
 } finally {
   ws?.close();
   chrome?.kill();

@@ -20,7 +20,8 @@
   import Button from './ui/Button.svelte';
   import IconButton from './ui/IconButton.svelte';
   import ScreenShareControls from './ScreenShareControls.svelte';
-  import ScreenSharePreview from './ScreenSharePreview.svelte';
+  import CallStreams from './CallStreams.svelte';
+  import { orderViews } from '../lib/call/screen/order';
   import { call } from '../lib/call/instance.svelte';
   import { longPress } from '../lib/call/longPress';
   import { normalizeDevice, statusBadges, type StatusBadge } from '../lib/call/pure';
@@ -35,6 +36,9 @@
   const badgeLabels: Record<StatusBadge, string> = { muted: 'ミュート中', deafened: 'スピーカーミュート中', 'local-muted': 'このデバイスでは消音中' };
 
   const people = $derived(call.participants);
+  // 共有されている映像（カメラも画面も）があれば、下半分に出す（上は参加者）。自分のアカウントの判別は、通話の自分の参加者から
+  const myUserId = $derived(people.find((p) => p.self)?.userId ?? null);
+  const hasStreams = $derived(call.joined && !!call.screen && orderViews(call.screen, myUserId).length > 0);
 
   function nameOf(userId: string): string {
     return client.user(userId)?.display_name || viewTexts.unknownUser;
@@ -94,7 +98,8 @@
     </h1>
   </PanelBar>
 
-  <div class="call-view-body">
+  <div class="call-view-body" class:call-view-body-split={hasStreams}>
+    <div class="call-view-people">
     {#if people.length === 0}
       <p class="muted call-view-empty">いま通話にいる人はいません</p>
     {:else}
@@ -134,16 +139,17 @@
         {/each}
       </ul>
     {/if}
-    <!-- 画面共有の表示（共有されている画面と、自分の映像）は、参加者の下に置く。押すと全画面で開く -->
-    {#if call.joined && call.screen}
-      <div class="call-view-screen">
-        <ScreenSharePreview screen={call.screen} {nameOf} />
-      </div>
-    {/if}
     <!-- プラグインの領域（画面共有など）は、参加者の下に置く -->
     {#each panels as p (p.id)}
       <section class="call-view-panel" aria-label={p.label || undefined} use:mountPanel={{ id: p.id, el: p.el }}></section>
     {/each}
+    </div>
+    <!-- 共有されている映像は、下半分（高さは画面の半分で固定）。押すと全画面で開く -->
+    {#if hasStreams && call.screen}
+      <div class="call-view-streams">
+        <CallStreams screen={call.screen} {nameOf} {myUserId} />
+      </div>
+    {/if}
   </div>
 
   <div class="call-view-controls" role="group" aria-label="通話の操作">
@@ -203,17 +209,29 @@
     color: var(--success);
   }
   .call-view-body {
+    display: grid;
     flex: 1;
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+  }
+  /* 映像があるとき、上下をちょうど半分ずつ（余白や映像の大きさで変えない） */
+  .call-view-body-split {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  /* 参加者（と、プラグインの領域）。縦にスクロールする。映像があるときは上半分 */
+  .call-view-people {
     min-height: 0;
     overflow-y: auto;
     padding: var(--space-7);
   }
-  .call-view-panel {
-    margin: var(--space-7) 0 0;
+  /* 共有されている映像。本体の下半分（高さは固定） */
+  .call-view-streams {
+    min-height: 0;
+    box-sizing: border-box;
+    padding: var(--space-4) var(--space-7) var(--space-7);
+    border-top: 1px solid var(--border);
   }
-  /* 埋め込みの表示と自分の映像は、この箱の中で位置を決める */
-  .call-view-screen {
-    position: relative;
+  .call-view-panel {
     margin: var(--space-7) 0 0;
   }
   .call-view-empty {
@@ -244,6 +262,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--fs-sm);
+    /* 名前は操作の目印で、内容ではないので選べないようにする（長押しで人を選ぶ操作と重ならない） */
+    -webkit-user-select: none;
+    user-select: none;
   }
   .call-person {
     position: relative;

@@ -1,3 +1,4 @@
+import { LOCAL_VIEW } from './types';
 import type { ScreenFrame, ScreenSettingsPort, ScreenSettingsValue, ScreenShareDeps, ScreenSource } from './types';
 import { ScreenReceiver, SCREEN_FRAME, SCREEN_QUERY, SCREEN_STATE } from './receiver.svelte';
 import { ScreenSender } from './sender';
@@ -178,6 +179,8 @@ export class ScreenShareStore {
     stopTracks(this.localStream);
     this.localStream = null;
     this.localFrame = null;
+    // 自分の映像を全画面で見ていたなら、共有が止まった時点で閉じる（ほかの人の映像へ勝手に切り替えない）
+    if (this.selectedPeer === LOCAL_VIEW) { this.closeViewer(); this.selectedPeer = null; }
     if (wasActive) this.sendState(false); // ネイティブ所有なら off もネイティブだけが送る
     this.backend = null;
     this.nativeRelay = false;
@@ -249,15 +252,19 @@ export class ScreenShareStore {
     this.queryRetries = 0;
   }
 
+  /** 見られる映像か（相手の共有、または自分の共有 LOCAL_VIEW） */
+  private hasView(peer: string | null): boolean {
+    return peer === LOCAL_VIEW ? this.sharing : this.sharers.some((s) => s.peer === peer);
+  }
   openViewer(peer?: string): void {
-    if (peer && this.sharers.some((s) => s.peer === peer)) this.selectedPeer = peer;
+    if (peer && this.hasView(peer)) this.selectedPeer = peer;
     this.fixSelection();
     this.viewerOpen = this.selectedPeer !== null;
   }
   closeViewer(): void { this.viewerOpen = false; }
-  selectPeer(peer: string): void { if (this.sharers.some((s) => s.peer === peer)) this.selectedPeer = peer; }
+  selectPeer(peer: string): void { if (this.hasView(peer)) this.selectedPeer = peer; }
   private fixSelection(): void {
-    if (!this.sharers.some((s) => s.peer === this.selectedPeer)) this.selectedPeer = this.sharers[0]?.peer ?? null;
+    if (!this.hasView(this.selectedPeer)) this.selectedPeer = this.sharers[0]?.peer ?? null;
     if (!this.selectedPeer) this.closeViewer();
   }
 

@@ -43,13 +43,11 @@ describe('画面共有の押すボタン', () => {
     expect(s.toggleScreen).toHaveBeenCalledOnce();
   });
 
-  it('カメラの共有中は、切り替えは canSwitchCamera のときだけ出る', () => {
-    const off = fakeScreen({ sharing: true, source: 'camera', canSwitchCamera: false });
-    expect(button(render(ScreenShareControls, { screen: off }), 'カメラを切り替え')).toBeNull();
-    const on = fakeScreen({ sharing: true, source: 'camera', canSwitchCamera: true });
-    const el = render(ScreenShareControls, { screen: on });
-    button(el, 'カメラを切り替え')!.click();
-    expect(on.switchCamera).toHaveBeenCalledOnce();
+  it('カメラを共有中でも、通話の操作の列にはカメラの切り替えを出さない（自分の映像の見出しと全画面に置く）', () => {
+    const s = fakeScreen({ sharing: true, source: 'camera', canSwitchCamera: true });
+    const el = render(ScreenShareControls, { screen: s });
+    expect(button(el, 'カメラを切り替え')).toBeNull();
+    expect(s.switchCamera).not.toHaveBeenCalled();
   });
 
   it('開始の途中・切り替えの途中は押せない', () => {

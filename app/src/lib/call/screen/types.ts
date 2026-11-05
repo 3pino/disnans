@@ -32,6 +32,8 @@ export type ScreenCallPort = {
   readonly participants: readonly { peer: string; userId: string; self: boolean }[];
   emit(name: string, payload: unknown): void;
 };
+/** 自分の共有（このデバイス）を、全画面の表示の対象にするときの印（相手の peer とは重ならない） */
+export const LOCAL_VIEW = '@local';
 export type ScreenSharer = { peer: string; userId: string; source: ScreenSource; dataUrl: string | null; lastSeen: number };
 export type ScreenDataEvent = { peer: string; userId: string; payload: unknown };
 export type ScreenShareDeps = {

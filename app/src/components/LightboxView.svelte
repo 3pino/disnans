@@ -6,6 +6,7 @@
   import type { Snippet } from 'svelte';
   import IconButton from './ui/IconButton.svelte';
   import { VIEWERS } from './viewers';
+  import type { TapMode } from '../lib/viewers';
   import { adjacentItem, type LightboxItem } from '../lib/lightbox';
   import { swipeOutcome, SLIDE_GAP, SWIPE_EDGE_RESISTANCE } from '../lib/lightboxSwipe';
 
@@ -26,6 +27,8 @@
     navigable = true,
     closeOnEscape = true,
     chrome = true,
+    tapMode = 'close',
+    onmediatap,
     download = true,
     class: className = '',
     title,
@@ -45,8 +48,12 @@
     /** ←→ キー・スワイプで前後へ移るか */
     navigable?: boolean;
     closeOnEscape?: boolean;
-    /** 上のバーと前後のボタンを出すか（小窓のときは映像だけ） */
+    /** 上のバーと前後のボタンを出すか（小窓のときは映像だけ）。隠しても、この部品は自分では隠さない（呼び出し側が決める） */
     chrome?: boolean;
+    /** 背景・画像のタップの扱い。'media' は画像の上のタップを onmediatap に渡し、閉じない（既定 'close'） */
+    tapMode?: TapMode;
+    /** tapMode が 'media' のとき、画像の上を 1 回タップした（ダブルタップの拡大には使わない） */
+    onmediatap?: () => void;
     download?: boolean;
     class?: string;
     /** ファイル名の代わりに出すもの（共有の見る人の切り替えなど） */
@@ -229,6 +236,8 @@
               if (s.offset === 0) zoomed = z;
             }}
             ontap={close}
+            {tapMode}
+            onimagetap={onmediatap}
           />
         </div>
       {/each}

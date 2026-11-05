@@ -47,7 +47,7 @@ afterEach(async () => {
 });
 
 function openFromCallView(): HTMLElement {
-  const button = target.querySelector<HTMLButtonElement>('.screen-embedded-bar button[aria-label="配信者の画面を大きく見る"]');
+  const button = target.querySelector<HTMLButtonElement>('.call-view-streams .screen-stage[aria-label="配信者の画面を全画面で見る"]');
   expect(button).not.toBeNull(); button!.click(); flushSync();
   const dialog = target.querySelector<HTMLElement>('.screen-viewer[role="dialog"]');
   expect(dialog).not.toBeNull(); return dialog!;

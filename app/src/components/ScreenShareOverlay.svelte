@@ -11,5 +11,5 @@
 </script>
 
 {#if call.screen}
-  <ScreenShareViewer screen={call.screen} {nameOf} pip={pipApi} />
+  <ScreenShareViewer screen={call.screen} {nameOf} pip={pipApi} myUserId={call.participants.find((p) => p.self)?.userId ?? null} />
 {/if}

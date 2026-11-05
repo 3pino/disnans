@@ -44,6 +44,26 @@ const btn = (el: HTMLElement | Document, label: string) => {
   return el.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
 };
 const stageOf = (el: HTMLElement) => el.querySelector<HTMLElement>('.lightbox-slide-current .image-viewer')!;
+/** 映像（画像）の表示矩形と外。jsdom には配置が無いので、画像の矩形だけを決めて測る */
+const IMG_BOX = { left: 100, top: 200, right: 300, bottom: 400, width: 200, height: 200, x: 100, y: 200, toJSON() {} };
+const ON_IMAGE = { x: 200, y: 300 };
+const OUTSIDE = { x: 10, y: 10 };
+function touchEv(type: string, touches: { x: number; y: number }[], changed: { x: number; y: number }[]): Event {
+  const ev = new Event(type, { bubbles: true, cancelable: true });
+  const t = (p: { x: number; y: number }) => ({ identifier: 1, clientX: p.x, clientY: p.y });
+  Object.defineProperty(ev, 'touches', { value: touches.map(t) });
+  Object.defineProperty(ev, 'changedTouches', { value: changed.map(t) });
+  return ev;
+}
+/** 指 1 本で 1 回タップ（離す）。映像の上か外かは位置で決まる（待ち時間のあとに効く） */
+function tapAt(el: HTMLElement, p: { x: number; y: number }): void {
+  const stage = el.querySelector<HTMLElement>('.lightbox-slide-current .image-viewer')!;
+  el.querySelector<HTMLImageElement>('.lightbox-slide-current .image-viewer-image')!.getBoundingClientRect = () => IMG_BOX as DOMRect;
+  stage.dispatchEvent(touchEv('touchstart', [p], [p]));
+  stage.dispatchEvent(touchEv('touchend', [], [p]));
+  flushSync();
+}
+const toolbar = (el: HTMLElement) => el.querySelector('.lightbox-toolbar');
 /** 操作のあとの表示を読む（Svelte の更新を待たずに読めるよう、ここで反映させる） */
 const imgOf = (el: HTMLElement) => {
   flushSync();
@@ -290,8 +310,8 @@ describe('Esc と重なり・フォーカス', () => {
     env.android = true;
     const s = reactiveScreen({ sharers: [sharer('pa')], viewerOpen: true });
     const el = render({ screen: s, nameOf });
-    btn(el, '全画面')!.click();
-    await vi.waitFor(() => expect(btn(el, '全画面を解く')).not.toBeNull());
+    tapAt(el, ON_IMAGE);
+    await vi.waitFor(() => expect(toolbar(el)).toBeNull());
     s.viewerOpen = false;
     flushSync();
     await vi.waitFor(() => expect(immersive.set).toHaveBeenLastCalledWith(false));
@@ -299,16 +319,35 @@ describe('Esc と重なり・フォーカス', () => {
 });
 
 describe('全画面（Android は没入モード）の後片付け', () => {
-  it('Android: 全画面にして、もう一度で解除。閉じる（アンマウント）ときも解除する', async () => {
+  it('Android: 全画面のボタンは出さない。デスクトップは従来のボタンを出す', async () => {
     env.android = true;
     const el = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
-    btn(el, '全画面')!.click();
-    await vi.waitFor(() => expect(btn(el, '全画面を解く')).not.toBeNull());
+    expect(btn(el, '全画面')).toBeNull();
+    expect(btn(el, '全画面を解く')).toBeNull();
+    env.android = false;
+    await unmount(instance!);
+    instance = undefined;
+    el.remove();
+    const desktop = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
+    expect(btn(desktop, '全画面')).not.toBeNull();
+  });
+
+  it('Android: 映像を押すとバーとシステムバーを隠し（没入）、もう一度押すと戻る。映像の外を押すと閉じる。閉じる（アンマウント）ときも解除する', async () => {
+    env.android = true;
+    const s = fakeScreen({ sharers: [sharer('pa')], viewerOpen: true });
+    const el = render({ screen: s, nameOf });
+    expect(toolbar(el)).not.toBeNull();
+    tapAt(el, ON_IMAGE);
+    await vi.waitFor(() => expect(toolbar(el)).toBeNull());
     expect(immersive.set).toHaveBeenLastCalledWith(true);
-    btn(el, '全画面を解く')!.click();
-    await vi.waitFor(() => expect(btn(el, '全画面')).not.toBeNull());
+    expect(s.closeViewer).not.toHaveBeenCalled();
+    tapAt(el, ON_IMAGE);
+    await vi.waitFor(() => expect(toolbar(el)).not.toBeNull());
     expect(immersive.set).toHaveBeenLastCalledWith(false);
-    btn(el, '全画面')!.click();
+    expect(s.closeViewer).not.toHaveBeenCalled();
+    tapAt(el, OUTSIDE);
+    await vi.waitFor(() => expect(s.closeViewer).toHaveBeenCalledOnce());
+    tapAt(el, ON_IMAGE);
     await vi.waitFor(() => expect(immersive.set).toHaveBeenCalledTimes(3));
     await unmount(instance!);
     instance = undefined;
@@ -320,7 +359,7 @@ describe('全画面（Android は没入モード）の後片付け', () => {
     let finish: (v: boolean) => void = () => {};
     immersive.set.mockImplementation((on: boolean) => (on ? new Promise<boolean>((r) => (finish = r)) : Promise.resolve(true)));
     const el = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
-    btn(el, '全画面')!.click();
+    tapAt(el, ON_IMAGE);
     await vi.waitFor(() => expect(immersive.set).toHaveBeenCalledWith(true));
     await unmount(instance!);
     instance = undefined;
@@ -338,10 +377,18 @@ describe('全画面（Android は没入モード）の後片付け', () => {
     });
     const toast = vi.spyOn(ui, 'toast');
     const el = render({ screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf });
-    btn(el, '全画面')!.click();
+    tapAt(el, ON_IMAGE);
     await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('全画面にできませんでした', 'error'));
-    expect(btn(el, '全画面')).not.toBeNull();
+    expect(toolbar(el)).not.toBeNull();
     toast.mockRestore();
+  });
+
+  it('デスクトップでは、映像を押しても没入せず、従来どおり閉じる', async () => {
+    const s = fakeScreen({ sharers: [sharer('pa')], viewerOpen: true });
+    const el = render({ screen: s, nameOf });
+    tapAt(el, ON_IMAGE);
+    await vi.waitFor(() => expect(s.closeViewer).toHaveBeenCalledOnce());
+    expect(immersive.set).not.toHaveBeenCalled();
   });
 });
 

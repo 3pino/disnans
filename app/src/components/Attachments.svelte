@@ -7,7 +7,6 @@
   import { formatSize } from '../lib/format';
   import { bodyAttachmentNames } from '../lib/fileLink';
   import { ui } from '../lib/stores/ui.svelte';
-  import { isAndroid } from '../lib/platform';
   import { chatGallery } from '../lib/chatGallery';
 
   // 本文に埋め込まれた添付は、本文の中（FileLink）で出す。ここは本文に無い添付（送信の途中の仮表示など）だけを出す
@@ -29,40 +28,29 @@
     return local[a.id] ?? fileUrl(a.id, a.has_thumb);
   }
 
-  /** 画像の行の高さ（px）。複数は、この高さに揃えて横に並べる（幅は縦横の比のまま） */
-  const ROW_H = 200;
-  /** 1 枚だけのときの長辺の上限（px） */
-  const SINGLE_MAX = 320;
-
-  /** 表示の大きさ。複数は行の高さ ROW_H、1 枚は長辺 SINGLE_MAX に収める。寸法が分からなければ正方形 */
-  function box(a: Attachment): { w: number; h: number } {
+  /**
+   * 画像の大きさは CSS が決める（テーマの変数 --chat-image-row-height / --chat-image-single-max / --chat-image-max-height。既定は app.css）。
+   * ここは縦横の比（--att-r）と、1 枚のときの元の高さ（--att-h。寸法が分かるときだけ）を渡す。寸法が分からなければ正方形。
+   */
+  function dims(a: Attachment): { ratio: number; height: number | null } {
     const known = !!a.width && !!a.height;
-    let h = ROW_H;
-    if (images.length === 1) {
-      h = known ? Math.round(a.height! * Math.min(1, SINGLE_MAX / Math.max(a.width!, a.height!))) : SINGLE_MAX;
-    }
-    const ratio = known ? a.width! / a.height! : 1;
-    return { w: Math.round(h * ratio), h };
+    return { ratio: known ? a.width! / a.height! : 1, height: known ? a.height! : null };
   }
-
-  const android = isAndroid();
 </script>
 
 {#if images.length > 0}
   <!-- 横一列。はみ出した分は横にスクロールする（横スワイプ・Shift+ホイール・トラックパッド）。枚数の上限は無い -->
   <div class="attachment-images">
     {#each images as a (a.id)}
-      {@const b = box(a)}
+      {@const d = dims(a)}
       <div class="attachment-item">
         <button
           type="button"
           class="attachment-image"
-          class:attachment-image-android={android}
-          style:width={android ? undefined : `${b.w}px`}
-          style:height={android ? undefined : `${b.h}px`}
-          style:--att-w={android ? b.w : undefined}
-          style:--att-h={android ? b.h : undefined}
-          style:aspect-ratio="{b.w} / {b.h}"
+          class:attachment-image-single={images.length === 1}
+          style:--att-r={d.ratio}
+          style:--att-h={d.height === null ? undefined : `${d.height}px`}
+          style:aspect-ratio={d.ratio}
           onclick={() => ui.openLightbox({ src: local[a.id] ?? fileUrl(a.id), alt: a.file_name, downloadUrl: fileUrl(a.id) }, chatGallery)}
           aria-label="{a.file_name} を開く"
         >
@@ -126,10 +114,20 @@
   .attachment-images > .attachment-item {
     flex: none;
   }
-  /* Android だけ、高さは画面の高さの 30%まで。縦横の比は保ったまま縮める（幅の最大はそのまま） */
-  .attachment-image-android {
-    width: min(calc(var(--att-w) * 1px), calc(30vh * var(--att-w) / var(--att-h)));
-    height: min(calc(var(--att-h) * 1px), 30vh);
+  /* 全デバイス共通。複数は行の高さ、1 枚は長辺の上限（元より大きくはしない）に収め、どちらも高さは --chat-image-max-height まで。
+     縦横の比は保つ（切り取らない）。数字はテーマの変数（app.css に既定） */
+  .attachment-image {
+    --att-fit: min(var(--chat-image-row-height), var(--chat-image-max-height));
+    height: var(--att-fit);
+    width: calc(var(--att-fit) * var(--att-r));
+  }
+  .attachment-image-single {
+    --att-fit: min(
+      var(--att-h, var(--chat-image-single-max)),
+      var(--chat-image-single-max),
+      calc(var(--chat-image-single-max) / var(--att-r)),
+      var(--chat-image-max-height)
+    );
   }
   .attachment-image {
     display: block;

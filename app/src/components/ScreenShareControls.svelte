@@ -3,12 +3,11 @@
   import MonitorOff from '@lucide/svelte/icons/monitor-off';
   import Video from '@lucide/svelte/icons/video';
   import VideoOff from '@lucide/svelte/icons/video-off';
-  import SwitchCamera from '@lucide/svelte/icons/switch-camera';
   import IconButton from './ui/IconButton.svelte';
   import type { ScreenShareView } from '../lib/call/screen/view';
 
   // 画面共有・カメラ共有の押すボタン（通話のバーと通話の画面に置く）。
-  // 押したら共有を始める・止める（エンジンの toggleScreen / toggleCamera）。カメラの共有中は、前後のカメラを切り替えられるとき（2 つ以上）に切り替えを出す
+  // 押したら共有を始める・止める（エンジンの toggleScreen / toggleCamera）。カメラの切り替えは、ここには置かない（自分の映像のカードの見出しと、自分の映像の全画面に置く）
   let { screen }: { screen: ScreenShareView } = $props();
 
   const sharingScreen = $derived(screen.sharing && screen.source === 'screen');
@@ -39,9 +38,6 @@
       disabled={busy}
       onclick={() => void screen.toggleCamera()}
     />
-  {/if}
-  {#if sharingCamera && screen.canSwitchCamera}
-    <IconButton label="カメラを切り替え" title="前と後ろのカメラを切り替える" icon={SwitchCamera} iconSize={22} disabled={busy} onclick={() => void screen.switchCamera()} />
   {/if}
 </div>
 

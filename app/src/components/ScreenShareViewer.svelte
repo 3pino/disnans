@@ -3,6 +3,7 @@
   import Maximize from '@lucide/svelte/icons/maximize';
   import Minimize from '@lucide/svelte/icons/minimize';
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture';
+  import SwitchCamera from '@lucide/svelte/icons/switch-camera';
   import IconButton from './ui/IconButton.svelte';
   import LightboxView from './LightboxView.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -14,18 +15,24 @@
   import { startWebPip, webPipAvailable, type WebPip } from '../lib/call/screen/webPip';
   import type { ScreenShareView } from '../lib/call/screen/view';
   import type { ScreenPipPort } from '../lib/call/screen/types';
+  import { orderViews, viewLabel, type ScreenViewEntry } from '../lib/call/screen/order';
 
   // 共有の全画面の表示（重ねて開く）。写真の拡大表示（Lightbox）と同じ部品（LightboxView）に、ライブの映像を載せる。
   // 拡大・移動（ピンチ・ダブルタップ・ホイール・ドラッグ）と、上のバー・端末の安全域（ノッチ）は、写真の拡大表示と同じもの。
   // 戻る（Android）と Esc で閉じる。小窓（Android は本体の PiP、デスクトップは canvas の映像）と全画面（Android は没入、ほかは Fullscreen API）。
   // 共有者が止めた・いなくなったら閉じる。映像が無いあいだは「映像を待っています」
 
-  let { screen, nameOf, pip = null }: { screen: ScreenShareView; nameOf: (userId: string) => string; pip?: ScreenPipPort | null } = $props();
+  let { screen, nameOf, pip = null, myUserId = null }: { screen: ScreenShareView; nameOf: (userId: string) => string; pip?: ScreenPipPort | null; myUserId?: string | null } = $props();
 
-  const current = $derived(screen.sharers.find((s) => s.peer === screen.selectedPeer) ?? screen.sharers[0] ?? null);
+  // 見られる映像（自分のこのデバイス > 自分の別のデバイス > ほかの人）。選ばれているもの（無ければ先頭の相手）を出す
+  const views = $derived(orderViews(screen, myUserId));
+  const current = $derived(views.find((v) => v.peer === screen.selectedPeer) ?? views.find((v) => !v.local) ?? null);
   const open = $derived(screen.viewerOpen && current !== null);
-  const kindLabel = $derived(current?.source === 'camera' ? 'カメラ' : '画面');
-  const heading = $derived(current ? `${nameOf(current.userId)}の${kindLabel}` : '');
+  const heading = $derived(current ? viewLabel(current, nameOf) : '');
+  /** 自分のカメラ（動画の要素に直接入れる。静止画の拡大表示には載らない） */
+  const localCamera = $derived(current?.local === true && screen.localStream !== null);
+  /** Android は、全画面ボタンではなく映像のタップで没入（バーを隠す）。それ以外は、従来の全画面ボタンとタップで閉じる */
+  const android = isAndroid();
 
   let root = $state<HTMLElement | null>(null);
   /** LightboxView の最上位の要素（全画面・フォーカス用） */
@@ -41,12 +48,12 @@
 
   /** 共有の映像を、拡大表示の 1 件として渡す（フレームが変わっても同じ key なので、拡大・移動は保つ） */
   const item = $derived<LightboxItem | null>(
-    current?.dataUrl ? { src: current.dataUrl, alt: heading, downloadUrl: current.dataUrl, key: `screen:${current.peer}` } : null,
+    current?.dataUrl && !localCamera ? { src: current.dataUrl, alt: heading, downloadUrl: current.dataUrl, key: `screen:${current.peer}` } : null,
   );
   /** いま表示している画像の要素（小窓の映像の元） */
   const shownImage = (): HTMLImageElement | null => root?.querySelector<HTMLImageElement>('.lightbox-slide-current .image-viewer-image') ?? null;
 
-  // 共有者が見つからなくなったら閉じる（ほかに共有者がいれば、ほかへ）
+  // 見る映像が無くなったら閉じる（ほかにあれば、ほかへ）
   $effect(() => {
     if (screen.viewerOpen && current === null) screen.closeViewer();
   });
@@ -212,6 +219,33 @@
   }
 
   const pipAvailable = $derived((pip?.supported ?? false) || webPipAvailable());
+
+  /** 見る画面の切り替えの短い名前 */
+  function tabLabel(v: ScreenViewEntry): string {
+    if (v.local) return '自分';
+    const name = nameOf(v.userId ?? '');
+    return v.mine ? `${name}（別のデバイス）` : name;
+  }
+
+  // カメラの映像は、要素に直接入れる（src ではなく srcObject）
+  function stream(el: HTMLVideoElement, s: MediaStream) {
+    el.srcObject = s;
+    void el.play().catch(() => {});
+    return {
+      update(next: MediaStream) {
+        if (el.srcObject !== next) el.srcObject = next;
+      },
+      destroy() {
+        el.srcObject = null;
+      },
+    };
+  }
+
+  /** 自分のカメラを押したとき。映像の上なら、Android は没入の切り替え、ほかは閉じる。映像の外は閉じる */
+  function onCameraTap(e: MouseEvent): void {
+    if (android && (e.target as HTMLElement).tagName === 'VIDEO') void toggleFullscreen();
+    else close();
+  }
 </script>
 
 {#if open && current}
@@ -221,24 +255,26 @@
     layer={60}
     navigable={false}
     closeOnEscape={false}
-    chrome={!pipNative}
+    chrome={!pipNative && !(android && fullscreen)}
     download={false}
     class="screen-viewer"
     tabIndex={-1}
+    tapMode={android ? 'media' : 'close'}
+    onmediatap={() => void toggleFullscreen()}
     onclose={close}
     bind:element={root}
   >
     {#snippet title()}
-      {#if screen.sharers.length > 1}
+      {#if views.length > 1}
         <div class="segmented screen-viewer-tabs" role="radiogroup" aria-label="見る画面">
-          {#each screen.sharers as s (s.peer)}
+          {#each views as v (v.peer)}
             <button
               type="button"
               role="radio"
               class="screen-viewer-tab"
-              aria-checked={s.peer === current.peer}
-              class:active={s.peer === current.peer}
-              onclick={() => screen.selectPeer(s.peer)}>{nameOf(s.userId)}</button
+              aria-checked={v.peer === current.peer}
+              class:active={v.peer === current.peer}
+              onclick={() => screen.selectPeer(v.peer)}>{tabLabel(v)}</button
             >
           {/each}
         </div>
@@ -248,17 +284,30 @@
     {/snippet}
     {#snippet actions()}
       {#if pipAvailable}
-        <IconButton label="小窓で見る" title="小窓で見る" icon={PictureInPicture} active={webPipOn} onclick={() => void togglePip()} disabled={!current.dataUrl} />
+        <IconButton label="小窓で見る" title="小窓で見る" icon={PictureInPicture} active={webPipOn} onclick={() => void togglePip()} disabled={!current.dataUrl || localCamera} />
       {/if}
-      <IconButton
-        label={fullscreen ? '全画面を解く' : '全画面'}
-        title={fullscreen ? '全画面を解く' : '全画面'}
-        icon={fullscreen ? Minimize : Maximize}
-        onclick={() => void toggleFullscreen()}
-      />
+      {#if current.local && screen.source === 'camera' && screen.canSwitchCamera}
+        <IconButton label="カメラを切り替え" title="前と後ろのカメラを切り替える" icon={SwitchCamera} disabled={screen.switching} onclick={() => void screen.switchCamera()} />
+      {/if}
+      <!-- Android は、映像を押して没入する（バーも隠す）ので、全画面のボタンは出さない -->
+      {#if !android}
+        <IconButton
+          label={fullscreen ? '全画面を解く' : '全画面'}
+          title={fullscreen ? '全画面を解く' : '全画面'}
+          icon={fullscreen ? Minimize : Maximize}
+          onclick={() => void toggleFullscreen()}
+        />
+      {/if}
     {/snippet}
     {#snippet empty()}
-      <p class="muted screen-viewer-wait">映像を待っています</p>
+      {#if localCamera && screen.localStream}
+        <!-- 自分のカメラ（動画）。映像を押すと、Android は没入、ほかは閉じる。映像の外を押すと閉じる -->
+        <div class="screen-viewer-camera" role="presentation" onclick={onCameraTap}>
+          <video class="screen-viewer-camera-video" use:stream={screen.localStream} muted playsinline aria-label="自分のカメラ"></video>
+        </div>
+      {:else}
+        <p class="muted screen-viewer-wait">映像を待っています</p>
+      {/if}
     {/snippet}
   </LightboxView>
 {/if}
@@ -275,6 +324,17 @@
     flex: 1;
     min-width: 0;
     overflow-x: auto;
+  }
+  .screen-viewer-camera {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+  }
+  .screen-viewer-camera-video {
+    max-width: calc(100vw - 32px);
+    max-height: calc(100dvh - 96px);
+    object-fit: contain;
   }
   .screen-viewer-wait {
     position: absolute;

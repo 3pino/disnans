@@ -6,7 +6,7 @@
 
   // 画像のビューアー（拡大表示の中）。ピンチ・ダブルタップ・Ctrl+ホイールで拡大し、拡大中は 1 本指（マウスのドラッグ）で動かす。
   // 等倍のときの 1 本指の左右の動きは受けない（Lightbox が前後の切り替えに使う）
-  let { src, alt, active, onzoom, ontap }: ViewerProps = $props();
+  let { src, alt, active, onzoom, ontap, tapMode = 'close', onimagetap }: ViewerProps = $props();
 
   /** 背景タップで閉じるまでの待ち時間（ダブルタップと区別するため） */
   const CLOSE_DELAY = 300;
@@ -32,6 +32,14 @@
       clearTimeout(closeTimer);
     }
   });
+
+  /** 画像（表示されている矩形）の上か。p は舞台の左上からの位置（img の矩形は、画像が表示されている大きさ） */
+  function onImage(p: Point): boolean {
+    if (!imgEl || !stageEl) return false;
+    const s = stageEl.getBoundingClientRect();
+    const r = imgEl.getBoundingClientRect();
+    return p.x >= r.left - s.left && p.x <= r.right - s.left && p.y >= r.top - s.top && p.y <= r.bottom - s.top;
+  }
 
   /** 舞台の中心を原点にした位置（zoomGesture は左上から） */
   function centered(p: Point): Point {
@@ -60,6 +68,11 @@
       if (double) {
         clearTimeout(closeTimer);
         view = fit(view.scale > MIN_ZOOM ? { ...IDENTITY_VIEW } : zoomAt(view, DOUBLE_TAP_ZOOM, centered(p)));
+        return;
+      }
+      // 'media': 画像の上のタップは閉じない（ダブルタップと区別するため、同じ待ち時間の後で onimagetap）。拡大中も同じ
+      if (tapMode === 'media' && onImage(p)) {
+        closeTimer = setTimeout(() => onimagetap?.(), CLOSE_DELAY);
         return;
       }
       // 拡大中は、タップで閉じない
