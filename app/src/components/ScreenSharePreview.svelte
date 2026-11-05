@@ -32,6 +32,10 @@
 
 {#if target}
   <div class="screen-embedded" role="group" aria-label={targetLabel}>
+    <div class="screen-embedded-bar">
+      <span class="screen-embedded-name">{targetLabel}</span>
+      <Button variant="ghost" icon={Maximize} label={`${targetLabel}を大きく見る`} onclick={() => screen.openViewer(target.peer)}>大きく見る</Button>
+    </div>
     {#if target.dataUrl}
       {#key target.peer}
         <ScreenImageStage src={target.dataUrl} alt={targetLabel} embedded />
@@ -39,10 +43,6 @@
     {:else}
       <span class="muted screen-embedded-wait">映像を待っています</span>
     {/if}
-    <span class="screen-embedded-name">{targetLabel}</span>
-    <span class="screen-embedded-big">
-      <Button variant="ghost" icon={Maximize} label={`${targetLabel}を大きく見る`} onclick={() => screen.openViewer(target.peer)}>大きく見る</Button>
-    </span>
   </div>
 {/if}
 
@@ -66,10 +66,10 @@
   .screen-embedded {
     position: relative;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     width: 100%;
-    max-height: 60vh;
     padding: 0;
     border: 1px solid var(--border);
     border-radius: var(--radius-md, 8px);
@@ -80,17 +80,23 @@
   .screen-embedded-wait {
     padding: var(--space-7);
   }
-  .screen-embedded-big {
-    position: absolute;
-    right: var(--space-3);
-    bottom: var(--space-3);
+  .screen-embedded-bar {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    box-sizing: border-box;
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
   }
   .screen-embedded-name {
-    pointer-events: none;
-    position: absolute;
-    left: var(--space-3);
-    bottom: var(--space-3);
-    max-width: calc(100% - var(--space-6));
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

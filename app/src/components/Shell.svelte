@@ -95,11 +95,9 @@
 
 {#if commandHost.paletteOpen}
   <CommandPalette onclose={() => (commandHost.paletteOpen = false)} />
-  <!-- 画面共有の全画面の表示（どのタブからでも開けるように、ここに 1 つだけ） -->
-  <ScreenShareOverlay />
-  <!-- 画面共有の全画面の表示（どのタブからでも開けるように、ここに 1 つだけ） -->
-  <ScreenShareOverlay />
 {/if}
+<!-- コマンドパレットやタブに関係なく、一つだけマウントする -->
+<ScreenShareOverlay />
 
 <style>
   .shell-root {
