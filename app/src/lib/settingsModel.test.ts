@@ -133,6 +133,7 @@ const SCOPE_OF: Record<string, 'user' | 'device' | 'local'> = {
   output: 'device',
   deviceKind: 'device',
   hideNavigationBar: 'device',
+  hapticsEnabled: 'device',
   orientation: 'device',
   pluginsDisabled: 'device',
   pluginsDevDir: 'device',

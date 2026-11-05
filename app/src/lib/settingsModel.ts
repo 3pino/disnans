@@ -35,7 +35,7 @@ export const CALL_USER_KEYS = ['joinMuted', 'micVolume', 'outVolume', 'limiter',
 export const CALL_DEVICE_KEYS = ['inputId', 'output'] as const;
 
 /** デバイスごとの項目（サーバーのデバイスの prefs のキー） */
-export const DEVICE_KEYS = ['inputId', 'output', 'deviceKind', 'hideNavigationBar', 'orientation', 'pluginsDisabled', 'pluginsDevDir', 'screenShare'] as const;
+export const DEVICE_KEYS = ['inputId', 'output', 'deviceKind', 'hideNavigationBar', 'hapticsEnabled', 'orientation', 'pluginsDisabled', 'pluginsDevDir', 'screenShare'] as const;
 
 /** ユーザー共通の既定値（crates/client-core/src/view/settings.rs の DEFINITIONS と同じ。ブラウザーの表示の補完だけに使う） */
 export function userDefaults(): Raw {
@@ -73,6 +73,7 @@ export const DEVICE_DEFAULTS: Readonly<Raw> = Object.freeze({
   output: null,
   deviceKind: null,
   hideNavigationBar: false,
+  hapticsEnabled: true,
   orientation: 'auto',
   pluginsDisabled: [],
   pluginsDevDir: null,

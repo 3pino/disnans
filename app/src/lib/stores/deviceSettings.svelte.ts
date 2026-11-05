@@ -92,6 +92,10 @@ export class DeviceSettings {
   get hideNavigationBar(): boolean {
     return this.raw.hideNavigationBar === true;
   }
+  /** Android の操作の合図（通知の振動とは別）。未設定の既定は有効。 */
+  get hapticsEnabled(): boolean {
+    return this.raw.hapticsEnabled !== false;
+  }
   get orientation(): OrientationMode {
     return this.raw.orientation as OrientationMode;
   }

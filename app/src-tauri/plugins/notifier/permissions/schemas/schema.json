@@ -571,6 +571,18 @@
           "markdownDescription": "Denies the set_audio_output command without any pre-configured scope."
         },
         {
+          "description": "Enables the set_haptics_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-haptics-enabled",
+          "markdownDescription": "Enables the set_haptics_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_haptics_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-haptics-enabled",
+          "markdownDescription": "Denies the set_haptics_enabled command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_keep_web_view command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-keep-web-view",
@@ -703,10 +715,10 @@
           "markdownDescription": "Denies the vibrate command without any pre-configured scope."
         },
         {
-          "description": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-native-call-start`\n- `allow-native-call-stop`\n- `allow-native-call-snapshot`\n- `allow-native-call-control`\n- `allow-native-call-kick`\n- `allow-native-call-emit`\n- `allow-take-call-actions`\n- `allow-list-audio-outputs`\n- `allow-set-audio-output`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-set-orientation`\n- `allow-set-keep-web-view`\n- `allow-log-call`\n- `allow-diag-log`\n- `allow-diag-read`\n- `allow-diag-clear`\n- `allow-diag-share`\n- `allow-vibrate`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-recent-images`\n- `allow-request-recent-images-permission`\n- `allow-read-image`\n- `allow-clipboard-image`\n- `allow-clipboard-peek`\n- `allow-clipboard-text`",
+          "description": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-native-call-start`\n- `allow-native-call-stop`\n- `allow-native-call-snapshot`\n- `allow-native-call-control`\n- `allow-native-call-kick`\n- `allow-native-call-emit`\n- `allow-take-call-actions`\n- `allow-list-audio-outputs`\n- `allow-set-audio-output`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-set-orientation`\n- `allow-set-keep-web-view`\n- `allow-set-haptics-enabled`\n- `allow-log-call`\n- `allow-diag-log`\n- `allow-diag-read`\n- `allow-diag-clear`\n- `allow-diag-share`\n- `allow-vibrate`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-recent-images`\n- `allow-request-recent-images-permission`\n- `allow-read-image`\n- `allow-clipboard-image`\n- `allow-clipboard-peek`\n- `allow-clipboard-text`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-native-call-start`\n- `allow-native-call-stop`\n- `allow-native-call-snapshot`\n- `allow-native-call-control`\n- `allow-native-call-kick`\n- `allow-native-call-emit`\n- `allow-take-call-actions`\n- `allow-list-audio-outputs`\n- `allow-set-audio-output`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-set-orientation`\n- `allow-set-keep-web-view`\n- `allow-log-call`\n- `allow-diag-log`\n- `allow-diag-read`\n- `allow-diag-clear`\n- `allow-diag-share`\n- `allow-vibrate`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-recent-images`\n- `allow-request-recent-images-permission`\n- `allow-read-image`\n- `allow-clipboard-image`\n- `allow-clipboard-peek`\n- `allow-clipboard-text`"
+          "markdownDescription": "通知用の常駐サービスの操作を許可する\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-start-call`\n- `allow-stop-call`\n- `allow-native-call-start`\n- `allow-native-call-stop`\n- `allow-native-call-snapshot`\n- `allow-native-call-control`\n- `allow-native-call-kick`\n- `allow-native-call-emit`\n- `allow-take-call-actions`\n- `allow-list-audio-outputs`\n- `allow-set-audio-output`\n- `allow-take-shared`\n- `allow-status`\n- `allow-request-permission`\n- `allow-open-battery-settings`\n- `allow-set-orientation`\n- `allow-set-keep-web-view`\n- `allow-set-haptics-enabled`\n- `allow-log-call`\n- `allow-diag-log`\n- `allow-diag-read`\n- `allow-diag-clear`\n- `allow-diag-share`\n- `allow-vibrate`\n- `allow-take-launch-target`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-recent-images`\n- `allow-request-recent-images-permission`\n- `allow-read-image`\n- `allow-clipboard-image`\n- `allow-clipboard-peek`\n- `allow-clipboard-text`"
         }
       ]
     }

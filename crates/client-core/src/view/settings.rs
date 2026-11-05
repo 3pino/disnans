@@ -244,6 +244,12 @@ pub const DEFINITIONS: &[Def] = &[
         default: DefaultValue::Bool(false),
     },
     Def {
+        key: "hapticsEnabled",
+        scope: Scope::Device,
+        kind: Kind::Bool,
+        default: DefaultValue::Bool(true),
+    },
+    Def {
         key: "orientation",
         scope: Scope::Device,
         kind: Kind::Choice {
@@ -640,6 +646,7 @@ mod tests {
         assert_eq!(defaults["output"], Value::Null);
         assert_eq!(defaults["deviceKind"], Value::Null);
         assert_eq!(defaults["hideNavigationBar"], false);
+        assert_eq!(defaults["hapticsEnabled"], true);
         assert_eq!(defaults["orientation"], "auto");
         assert_eq!(defaults["pluginsDisabled"], json!([]));
         assert_eq!(defaults["pluginsDevDir"], Value::Null);
@@ -654,12 +661,18 @@ mod tests {
         assert_eq!(normalize_value(def, Some(&json!("x"))), Value::Null);
         assert_eq!(normalize_value(def, Some(&json!([1]))), Value::Null);
         assert_eq!(
-            normalize_value(def, Some(&json!({"fps": 20, "quality": "p1080", "color": "gray"}))),
+            normalize_value(
+                def,
+                Some(&json!({"fps": 20, "quality": "p1080", "color": "gray"}))
+            ),
             json!({"fps": 20, "quality": "p1080", "color": "gray"})
         );
         // 外れた項目だけ既定に戻る（オブジェクトは「設定済み」のまま）
         assert_eq!(
-            normalize_value(def, Some(&json!({"fps": 7, "quality": "low", "color": "c256"}))),
+            normalize_value(
+                def,
+                Some(&json!({"fps": 7, "quality": "low", "color": "c256"}))
+            ),
             json!({"fps": 5, "quality": "p720", "color": "c256"})
         );
         assert_eq!(
@@ -684,6 +697,7 @@ mod tests {
         assert_eq!(def("micVolume").scope, Scope::User);
         assert_eq!(def("inputId").scope, Scope::Device);
         assert_eq!(def("orientation").scope, Scope::Device);
+        assert_eq!(def("hapticsEnabled").scope, Scope::Device);
         assert_eq!(def("server").scope, Scope::Local);
         // 入力機器・出力先はデバイスごと（ユーザー共通にしてはいけない）
         assert_ne!(def("inputId").scope, Scope::User);
@@ -695,6 +709,7 @@ mod tests {
         let raw = json!({
             "inputId": 3,
             "hideNavigationBar": "yes",
+            "hapticsEnabled": "no",
             "orientation": "sideways",
             "deviceKind": "toaster",
             "pluginsDisabled": ["a", 1],
@@ -703,6 +718,7 @@ mod tests {
         let out = normalize_device_prefs(&raw);
         assert_eq!(out["inputId"], "");
         assert_eq!(out["hideNavigationBar"], false);
+        assert_eq!(out["hapticsEnabled"], true);
         assert_eq!(out["orientation"], "auto");
         assert_eq!(out["deviceKind"], Value::Null);
         assert_eq!(out["pluginsDisabled"], json!([]));
@@ -715,6 +731,7 @@ mod tests {
             "inputId": "mic-1",
             "output": {"id": "spk", "kind": "speaker", "label": "Speaker"},
             "deviceKind": "tablet",
+            "hapticsEnabled": false,
             "orientation": "media",
             "pluginsDisabled": ["dice"],
             "pluginsDevDir": "/home/a/plugins",
@@ -724,6 +741,7 @@ mod tests {
         assert_eq!(out["inputId"], "mic-1");
         assert_eq!(out["output"]["id"], "spk");
         assert_eq!(out["deviceKind"], "tablet");
+        assert_eq!(out["hapticsEnabled"], false);
         assert_eq!(out["orientation"], "media");
         assert_eq!(out["pluginsDisabled"], json!(["dice"]));
         assert_eq!(out["pluginsDevDir"], "/home/a/plugins");

@@ -30,6 +30,7 @@
     "output": null,
     "deviceKind": null,
     "hideNavigationBar": false,
+    "hapticsEnabled": true,
     "orientation": "auto",
     "pluginsDisabled": [],
     "pluginsDevDir": null,

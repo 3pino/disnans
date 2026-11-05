@@ -19,6 +19,11 @@ internal class Prefs(context: Context) {
     get() = prefs.getBoolean("enabled", false)
     set(v) = prefs.edit().putBoolean("enabled", v).apply()
 
+  /** 操作の振動（タッチの合図と WebView の標準の振動）をアプリの設定で止めるか。既定はオン */
+  var hapticsEnabled: Boolean
+    get() = prefs.getBoolean("haptics_enabled", true)
+    set(v) = prefs.edit().putBoolean("haptics_enabled", v).apply()
+
   /**
    * アカウントごとの既読の位置（メッセージ ID）。通知の取り下げと、既読の通知を出さないことに使う。
    * 1 行 = アカウント・区切り・ID。アカウントは最近使った順に残す（多すぎないよう件数を絞る）。

@@ -292,6 +292,17 @@ pub const SETTINGS_PAGES: &[Page] = &[
                 title: "操作",
                 show: BOTH,
                 items: &[
+                    Item::Field {
+                        id: "hapticsEnabled",
+                        label: "操作時の振動",
+                        icon: None,
+                        key: "hapticsEnabled",
+                        control: Control::Toggle,
+                        show: Show {
+                            gui: Gui::Android,
+                            tui: false,
+                        },
+                    },
                     link("enterKeys", "入力欄のキー", "enterKeys", BOTH),
                     link(
                         "hotkeys",

@@ -3,11 +3,16 @@ package dev.disnans.notifier
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.NotificationManager
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.VibrationAttributes
@@ -99,7 +104,15 @@ class DiagShareArgs {
 
 @InvokeArg
 class VibrateArgs {
-  var ms: Long = 12
+  var ms: Long = HapticsPolicy.MS_DEFAULT
+  /** この呼び出しだけの指定。省けば有効（今の JS と同じ）。false なら鳴らさない（保存された設定とあわせて判断する） */
+  var enabled: Boolean? = null
+}
+
+@InvokeArg
+class SetHapticsArgs {
+  /** 操作の振動のアプリの設定。省けば有効 */
+  var enabled: Boolean? = null
 }
 
 @TauriPlugin(
@@ -143,6 +156,9 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
 
   override fun load(webView: WebView) {
     this.webView = webView
+    // プラグインの読み込みは、最初の前面（onResume）より後のことがあるので、ここでも受け口を付ける（二度目以降は何もしない）
+    watchHaptics()
+    applyWebViewHaptics()
     DiagLog.init(activity)
     DiagLog.i("[app] 起動しました（${DiagReport.appVersion(activity)}）")
     NotifyService.createChannels(activity)
@@ -155,6 +171,7 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
 
   override fun onDestroy() {
     DiagLog.i("[app] アクティビティを閉じます（汎用通話=${CallService.running} ネイティブ通話=${NativeCallService.running}）")
+    unwatchHaptics()
     nativeCall.close()
     webView = null
     CallService.actionSink = null
@@ -545,6 +562,7 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
    * 実験用の逃げ道: localStorage 'disnans.keepWebViewResumed'='0' なら JS が keepWebView を false にする。
    */
   override fun onPause() {
+    unwatchHaptics()
     if (!CallService.running) {
       DiagLog.i("[app] 裏に回りました")
       return
@@ -560,6 +578,8 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
 
   /** 裏から戻ったときの記録（WebView の状態は onPause のときに決めている） */
   override fun onResume() {
+    watchHaptics()
+    applyWebViewHaptics()
     if (!CallService.running) {
       DiagLog.i("[app] 前面に戻りました")
       return
@@ -590,32 +610,146 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   /**
-   * 短い振動（ms）。WebView の navigator.vibrate は長押し中（user activation が無い）に拒否されるため、ネイティブで鳴らす。
-   * 振動器が無い端末・許可が無い端末は何もしない（resolve）。
+   * 操作の合図の振動（タッチ）。WebView の navigator.vibrate は長押し中（user activation が無い）に拒否されるため、ネイティブで鳴らす。
+   * 鳴らしてよいかは HapticsPolicy が決める（アプリの設定・サイレント・集中モード。デバイスのタッチ設定は読まない）。
+   * 鳴らさないときと振動器が無いときは何もせず resolve。失敗は固定の語で reject（例外の中身は渡さない）。通知の振動は扱わない。
    */
   @Command
   fun vibrate(invoke: Invoke) {
     val args = invoke.parseArgs(VibrateArgs::class.java)
     try {
-      val ms = args.ms.coerceIn(1L, 1000L)
-      val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        (activity.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
-      } else {
-        @Suppress("DEPRECATION")
-        activity.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-      }
-      if (vibrator != null && vibrator.hasVibrator()) {
-        val effect = VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-          // タッチ操作の振動として鳴らす。端末の「タッチ操作の振動」がオフなら、システムが鳴らさない（設定に従う）
-          vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH))
-        } else {
-          vibrator.vibrate(effect)
-        }
+      val ms = HapticsPolicy.clampMs(args.ms)
+      val vibrator = vibratorOrNull()
+      val appEnabled = prefs.hapticsEnabled && HapticsPolicy.appFlagFrom(args.enabled)
+      val snapshot = HapticsPolicy.Snapshot(
+        appEnabled = appEnabled,
+        ringer = currentRinger(),
+        dnd = currentDnd(),
+        hasVibrator = vibrator != null,
+      )
+      if (HapticsPolicy.decide(snapshot) == HapticsPolicy.Decision.Vibrate && vibrator != null) {
+        vibrateOnce(vibrator, ms)
       }
       invoke.resolve()
     } catch (ex: Exception) {
-      invoke.reject(ex.message)
+      DiagLog.w("[haptics] vibrate failed")
+      invoke.reject("vibrate_failed")
+    }
+  }
+
+  /**
+   * 操作の振動のアプリの設定（JS の設定・起動時の同期から送る）。WebView の標準の振動（長押しなど）にも効く。
+   * 保存してから、WebView へ反映し終えたあとで resolve する（JS は反映の後に次の設定を送る）。省けば有効。
+   * WebView がまだ無いときは保存だけして resolve（次に画面を開いたときの反映で効く）。反映に失敗したら固定の語で reject。
+   */
+  @Command
+  fun setHapticsEnabled(invoke: Invoke) {
+    val args = invoke.parseArgs(SetHapticsArgs::class.java)
+    prefs.hapticsEnabled = HapticsPolicy.appFlagFrom(args.enabled)
+    applyWebViewHaptics { ok ->
+      if (ok) invoke.resolve() else invoke.reject("haptics_apply_failed")
+    }
+  }
+
+  private fun vibratorOrNull(): Vibrator? {
+    val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      (activity.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+    } else {
+      @Suppress("DEPRECATION")
+      activity.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    }
+    return vibrator?.takeIf { it.hasVibrator() }
+  }
+
+  /** 着信音のモード（読めなければ UNKNOWN＝鳴らさない側） */
+  private fun currentRinger(): HapticsPolicy.Ringer = try {
+    HapticsPolicy.ringerOf((activity.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)?.ringerMode)
+  } catch (ex: Exception) {
+    HapticsPolicy.Ringer.UNKNOWN
+  }
+
+  /** 集中モード（読めなければ UNKNOWN＝鳴らさない側） */
+  private fun currentDnd(): HapticsPolicy.Dnd = try {
+    HapticsPolicy.dndOf(activity.getSystemService(NotificationManager::class.java)?.currentInterruptionFilter)
+  } catch (ex: Exception) {
+    HapticsPolicy.Dnd.UNKNOWN
+  }
+
+  /**
+   * WebView の標準の振動（長押しなど）を、今の判断に合わせる。
+   * 判断（設定・着信音・集中モード）は、UI のスレッドで反映するときに読む（投げる前の古い値を使わない）。
+   * 永久に止めるのではなく、設定・着信音・集中モードが変わるたびに決め直す（許可に戻れば、また鳴る）。
+   * [onDone] は反映のあと（UI のスレッド）に 1 度だけ呼ぶ。true は反映できた（または WebView が無い）、false は失敗。
+   */
+  private fun applyWebViewHaptics(onDone: (Boolean) -> Unit = {}) {
+    val view = webView
+    if (view == null) {
+      onDone(true)
+      return
+    }
+    val posted = view.post {
+      val ok = try {
+        view.isHapticFeedbackEnabled = HapticsPolicy.allowed(prefs.hapticsEnabled, currentRinger(), currentDnd())
+        true
+      } catch (ex: Exception) {
+        DiagLog.w("[haptics] apply failed")
+        false
+      }
+      onDone(ok)
+    }
+    // 投げられなかった（画面が無い）ときも、待たせない
+    if (!posted) onDone(false)
+  }
+
+  /** 前面にいるあいだだけ、着信音・集中モードの変化を受けて WebView の振動を決め直す */
+  private val hapticsReceiver = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      applyWebViewHaptics()
+    }
+  }
+  private var hapticsReceiverOn = false
+
+  private fun watchHaptics() {
+    if (hapticsReceiverOn) return
+    try {
+      val filter = IntentFilter().apply {
+        addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
+        addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+      }
+      // デバイスの状態の変化（システムの放送）だけを受ける。外からは受けない
+      ContextCompat.registerReceiver(activity, hapticsReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+      hapticsReceiverOn = true
+    } catch (ex: Exception) {
+      DiagLog.w("[haptics] watch failed")
+    }
+  }
+
+  private fun unwatchHaptics() {
+    if (!hapticsReceiverOn) return
+    hapticsReceiverOn = false
+    try {
+      activity.unregisterReceiver(hapticsReceiver)
+    } catch (ex: IllegalArgumentException) {
+      // すでに外れている
+    }
+  }
+
+  private fun vibrateOnce(vibrator: Vibrator, ms: Long) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      // タッチ操作として鳴らす（通知・通話・アラームの用途にはしない）
+      val effect = VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)
+      vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH))
+    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      // Android 8〜12: 用途の指定は AudioAttributes。タッチの合図に近い「操作の音（ソニフィケーション）」にする（通知・通話・アラームにはしない）
+      val attributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
+      vibrator.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE), attributes)
+    } else {
+      // Android 7 以前（minSdk は 24）。VibrationEffect は 26 から
+      @Suppress("DEPRECATION")
+      vibrator.vibrate(ms)
     }
   }
 

@@ -28,6 +28,7 @@ const COMMANDS: &[&str] = &[
     "clipboard_text",
     "set_orientation",
     "set_keep_web_view",
+    "set_haptics_enabled",
     "log_call",
     "diag_log",
     "diag_read",

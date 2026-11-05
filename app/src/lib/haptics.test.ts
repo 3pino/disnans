@@ -2,11 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { VIBRATE_COMMAND, vibrate } from './haptics';
+import { deviceSettings } from './stores/deviceSettings.svelte';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
 type Win = Window & { __TAURI_INTERNALS__?: unknown; __DISNANS_PLATFORM__?: unknown };
 const win = window as Win;
+const initialSettings = deviceSettings.raw;
 
 function setNavigatorVibrate(fn: ((ms: number) => boolean) | undefined) {
   Object.defineProperty(navigator, 'vibrate', { configurable: true, value: fn });
@@ -19,15 +21,54 @@ function tauriAndroid() {
 }
 
 beforeEach(() => {
+  deviceSettings.raw = { ...initialSettings, hapticsEnabled: true };
   vi.mocked(invoke).mockReset();
 });
 afterEach(() => {
+  deviceSettings.raw = initialSettings;
   delete win.__TAURI_INTERNALS__;
   delete win.__DISNANS_PLATFORM__;
   setNavigatorVibrate(undefined);
 });
 
 describe('vibrate（操作の合図の振動）', () => {
+  it('Android の設定がオフなら、ネイティブも WebView の振動も呼ばない', async () => {
+    tauriAndroid();
+    deviceSettings.raw = { ...deviceSettings.raw, hapticsEnabled: false };
+    const nav = vi.fn(() => true);
+    setNavigatorVibrate(nav);
+    vibrate(12);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(invoke).not.toHaveBeenCalled();
+    expect(nav).not.toHaveBeenCalled();
+  });
+
+  it('ネイティブの読み込みを待つ間にオフになっても、遅れて振動しない', async () => {
+    tauriAndroid();
+    vibrate(12);
+    deviceSettings.raw = { ...deviceSettings.raw, hapticsEnabled: false };
+    await new Promise((r) => setTimeout(r, 0));
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('オフからオンへ変えると、次の操作から振動する', async () => {
+    tauriAndroid();
+    deviceSettings.raw = { ...deviceSettings.raw, hapticsEnabled: false };
+    vibrate(12);
+    deviceSettings.raw = { ...deviceSettings.raw, hapticsEnabled: true };
+    vibrate(12);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+  });
+
+  it('Android 以外の既存経路には Android の設定を適用しない', () => {
+    win.__DISNANS_PLATFORM__ = { os: 'linux', desktop: true, android: false, capabilities: null };
+    deviceSettings.raw = { ...deviceSettings.raw, hapticsEnabled: false };
+    const nav = vi.fn(() => true);
+    setNavigatorVibrate(nav);
+    vibrate(12);
+    expect(nav).toHaveBeenCalledWith(12);
+  });
+
   it('Tauri の Android では、ネイティブの振動コマンドを { ms } で呼び、WebView の振動は使わない', async () => {
     tauriAndroid();
     vi.mocked(invoke).mockResolvedValue(undefined);

@@ -22,6 +22,7 @@ permissions = [
   "allow-open-battery-settings",
   "allow-set-orientation",
   "allow-set-keep-web-view",
+  "allow-set-haptics-enabled",
   "allow-log-call",
   "allow-diag-log",
   "allow-diag-read",

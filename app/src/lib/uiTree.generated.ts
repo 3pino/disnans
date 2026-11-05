@@ -126,6 +126,20 @@ export const SETTINGS_PAGES: readonly UiPage[] = [
         "title": "操作",
         "items": [
           {
+            "type": "field",
+            "id": "hapticsEnabled",
+            "label": "操作時の振動",
+            "icon": null,
+            "key": "hapticsEnabled",
+            "control": {
+              "type": "toggle"
+            },
+            "show": {
+              "gui": "android",
+              "tui": false
+            }
+          },
+          {
             "type": "link",
             "id": "enterKeys",
             "label": "入力欄のキー",

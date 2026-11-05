@@ -50,6 +50,8 @@ describe('設定の木（core の view::ui の生成物）', () => {
   it('出し分け: Android だけの項目・TUI だけの項目', () => {
     const ids = (env: GuiEnv) => guiSections(settingsPage(SETTINGS_TOP)!, env).flatMap((s) => s.items.map((i) => i.id));
     expect(ids(ENVS[1])).toContain('orientation');
+    expect(ids(ENVS[1])).toContain('hapticsEnabled');
+    for (const env of [ENVS[0], ENVS[2], ENVS[3]]) expect(ids(env)).not.toContain('hapticsEnabled');
     expect(ids(ENVS[0])).not.toContain('orientation');
     expect(ids(ENVS[0])).toContain('hotkeys');
     expect(ids(ENVS[1])).not.toContain('hotkeys');

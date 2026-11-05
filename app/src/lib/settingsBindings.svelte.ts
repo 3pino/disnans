@@ -10,6 +10,7 @@ import type { OrientationMode } from './orientation';
 import type { ThemeChoice } from './settingsModel';
 import type { GuiEnv, UiField } from './uiTree';
 import { prefs } from './stores/prefs.svelte';
+import { deviceSettings } from './stores/deviceSettings.svelte';
 import { ui } from './stores/ui.svelte';
 import { orientation } from './stores/orientation.svelte';
 import { callSettings } from './call/settings.svelte';
@@ -47,6 +48,7 @@ const BINDINGS: Record<string, FieldBinding> = {
   theme: { get: () => prefs.theme, set: (v) => prefs.setTheme(v as ThemeChoice) },
   orientation: { get: () => orientation.mode, set: (v) => orientation.set(v as OrientationMode) },
   hideNavigationBar: { get: () => ui.hideNavigationBar, set: (v) => ui.setHideNavigationBar(!!v) },
+  hapticsEnabled: { get: () => deviceSettings.hapticsEnabled, set: (v) => deviceSettings.set('hapticsEnabled', !!v) },
   joinMuted: { get: () => callSettings.value.joinMuted, set: (v) => callSettings.patch({ joinMuted: !!v }) },
   micVolume: volume('micVolume'),
   outVolume: volume('outVolume'),

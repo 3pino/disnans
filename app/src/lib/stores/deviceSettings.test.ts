@@ -54,6 +54,16 @@ describe('defaultDeviceName', () => {
 });
 
 describe('DeviceSettings（手元の値: キャッシュと取り込み。起動の前・オフラインでも値が出る）', () => {
+  it('操作時の振動は既定で有効。オフを保存すると、起動直後もオフのまま', () => {
+    const local = memory();
+    const s = new DeviceSettings(deps({ local }).d);
+    expect(s.hapticsEnabled).toBe(true);
+    s.set('hapticsEnabled', false);
+    expect(s.hapticsEnabled).toBe(false);
+    expect(JSON.parse(local.m.get(DEVICE_CACHE_KEY) ?? '{}')).toMatchObject({ hapticsEnabled: false });
+    expect(new DeviceSettings(deps({ local }).d).hapticsEnabled).toBe(false);
+  });
+
   it('以前の localStorage の値を、キャッシュが無いときに一度取り込む', () => {
     const local = memory({ 'disnans.hideNavigationBar': '1', 'disnans.deviceKind': 'tablet' });
     const { d } = deps({ local });

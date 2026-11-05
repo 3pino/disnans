@@ -25,6 +25,7 @@
   import { startDropGuard } from './lib/dropGuard';
   import { startContextMenuGuard } from './lib/contextMenu';
   import { startUpdateWatch } from './lib/updateWatch';
+  import { startHapticsPreferences } from './lib/haptics';
 
   const desktopStorageEnabled = isDesktopStorageSupported();
   let bootReady = $state(!desktopStorageEnabled);
@@ -42,6 +43,9 @@
     void notifications.init();
     void startShareReceiver();
   });
+
+  // WebView 自身の長押しの振動も含め、操作時の振動の設定をネイティブへ同期する。
+  onMount(() => startHapticsPreferences());
 
   // ウィンドウに戻ったら、ほかの口（CLI など）で変わった設定を読み直す（間引きは各 store の中）
   onMount(() => onForeground(() => {

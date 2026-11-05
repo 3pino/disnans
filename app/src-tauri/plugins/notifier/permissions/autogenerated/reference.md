@@ -23,6 +23,7 @@
 - `allow-open-battery-settings`
 - `allow-set-orientation`
 - `allow-set-keep-web-view`
+- `allow-set-haptics-enabled`
 - `allow-log-call`
 - `allow-diag-log`
 - `allow-diag-read`
@@ -642,6 +643,32 @@ Enables the set_audio_output command without any pre-configured scope.
 <td>
 
 Denies the set_audio_output command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:allow-set-haptics-enabled`
+
+</td>
+<td>
+
+Enables the set_haptics_enabled command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifier:deny-set-haptics-enabled`
+
+</td>
+<td>
+
+Denies the set_haptics_enabled command without any pre-configured scope.
 
 </td>
 </tr>
