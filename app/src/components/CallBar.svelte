@@ -17,8 +17,6 @@
   import Avatar from './Avatar.svelte';
   import Button from './ui/Button.svelte';
   import IconButton from './ui/IconButton.svelte';
-  import ScreenShareControls from './ScreenShareControls.svelte';
-  import ScreenShareEntrance from './ScreenShareEntrance.svelte';
   import { call } from '../lib/call/instance.svelte';
   import { longPress } from '../lib/call/longPress';
   import { normalizeDevice, statusBadges, type StatusBadge } from '../lib/call/pure';
@@ -92,10 +90,6 @@
   {#if call.joined}
     <div class="call-controls">
       <IconButton label="通話を全画面で開く" title="通話を全画面で開く" icon={Maximize} onclick={() => ui.openCall()} />
-      {#if call.screen}
-        <ScreenShareEntrance screen={call.screen} {nameOf} />
-        <ScreenShareControls screen={call.screen} />
-      {/if}
       {#each call.topBarButtons as b (b.id)}
         <IconButton
           class={b.active ? 'call-active' : ''}
