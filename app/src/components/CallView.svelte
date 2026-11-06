@@ -212,6 +212,8 @@
     display: grid;
     flex: 1;
     grid-template-rows: minmax(0, 1fr);
+    /* 列も画面の幅に固定する（映像の列が横に長くても、画面ごと横に広がらず、列の中でスクロールする） */
+    grid-template-columns: minmax(0, 1fr);
     min-height: 0;
   }
   /* 映像があるとき、上下をちょうど半分ずつ（余白や映像の大きさで変えない） */

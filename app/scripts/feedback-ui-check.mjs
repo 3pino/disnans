@@ -114,9 +114,27 @@ try{
  assert(tiles.every(t=>Math.abs(t.w-t.h)<1.5&&Math.abs(t.top-tiles[0].top)<1),'stages must be equal squares in one row');
  assert(tiles.every((t,i)=>i===0||t.left>=tiles[i-1].left+tiles[i-1].w-0.5),'stages overlap horizontally');
  assert.equal(await evaluate(`(()=>{const e=document.querySelector('.call-streams-strip');return getComputedStyle(e).overflowX+'/'+getComputedStyle(e).overflowY;})()`),'auto/hidden','strip must scroll horizontally only');
+ // 映像の列は、画面の幅に収まり、列の中で横にスクロールできる（画面ごと横に広がらない。縦のなぞりは奪わず、横は列が受ける）。
+ // 指のなぞりそのものは、この Chromium の合成ジェスチャーでは普通のスクロール枠でも動かないので、スクロールできる条件を測る
+ const strip=await evaluate(`(()=>{const e=document.querySelector('.call-streams-strip'),c=getComputedStyle(e);return{sw:e.scrollWidth,cw:e.clientWidth,ox:c.overflowX,oy:c.overflowY,ta:c.touchAction,page:document.documentElement.scrollWidth,vw:innerWidth};})()`);
+ assert(strip.sw>strip.cw+100,'streams strip must overflow inside itself ('+JSON.stringify(strip)+')');assert.equal(strip.ox,'auto');assert(strip.page<=strip.vw,'page must not widen horizontally ('+JSON.stringify(strip)+')');assert(/pan-x/.test(strip.ta),'strip must allow horizontal panning');
+ await evaluate(`(()=>{const e=document.querySelector('.call-streams-strip');e.scrollLeft=200;})()`);assert((await evaluate(`document.querySelector('.call-streams-strip').scrollLeft`))>100,'strip must be scrollable');
  await evaluate(`document.querySelector('.screen-stage[data-peer="o3"]').click()`);
  assert.equal(await evaluate('window.__opened'),'o3','tapping a stage opens that stream full screen');
+ // 設定の押せる行: タッチのデバイス（hover: none）では、押したあと :hover が残っても明るい色にしない。マウス（hover: hover）では従来どおり色をつける
  await evaluate('window.renderFixture("settings")');
+ await S('DOM.enable');await S('CSS.enable');
+ const doc=await S('DOM.getDocument',{depth:-1});
+ const rowNode=(await S('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'button.setting-row-button'})).nodeId;assert(rowNode,'no pressable settings row');
+ const rowBg=async()=>evaluate(`getComputedStyle(document.querySelector('button.setting-row-button')).backgroundColor`);
+ for(const [hover,expectTint] of [['none',false],['hover',true]]){
+  await S('Emulation.setEmulatedMedia',{features:[{name:'hover',value:hover}]});
+  await S('CSS.forcePseudoState',{nodeId:rowNode,forcedPseudoClasses:[]});const base=await rowBg();
+  await S('CSS.forcePseudoState',{nodeId:rowNode,forcedPseudoClasses:['hover']});const hovered=await rowBg();
+  await S('CSS.forcePseudoState',{nodeId:rowNode,forcedPseudoClasses:[]});
+  assert.equal(hovered!==base,expectTint,`pressable row hover tint with hover:${hover} (base ${base}, hovered ${hovered})`);
+ }
+ await S('Emulation.setEmulatedMedia',{features:[]});
  const blank=await evaluate(`[...document.querySelectorAll('.settings-blank-bar')].map(e=>getComputedStyle(e).display)`);assert.equal(blank.length,2,'actual settings headers missing');assert(blank.every(v=>v!=='none'),'no-call headers removed');
  await evaluate(`document.querySelector('.top-slot').innerHTML='<div class="call-bar"></div>'`);
  assert.equal(await evaluate(`[...document.querySelectorAll('.settings-blank-bar')].every(e=>getComputedStyle(e).display==='none')`),true,'call leaves empty headers');

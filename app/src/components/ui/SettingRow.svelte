@@ -56,8 +56,17 @@
   {/if}
 {/snippet}
 
+<!-- ポインターで押したときはフォーカスを外す（サブページへ行って戻ったとき、行が明るい色のままにならないように）。キーボードの操作（detail 0）では外さない -->
 {#if onclick}
-  <button type="button" class="setting-row setting-row-button {className}" aria-label={name} {onclick}>
+  <button
+    type="button"
+    class="setting-row setting-row-button {className}"
+    aria-label={name}
+    onclick={(e) => {
+      if (e.detail > 0) e.currentTarget.blur();
+      onclick();
+    }}
+  >
     {@render content()}
   </button>
 {:else}

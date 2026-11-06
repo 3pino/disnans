@@ -135,13 +135,11 @@ describe('共有の全画面の表示', () => {
     expect(stageOf(el)).toBeNull();
   });
 
-  it('2 人以上が共有しているときは、上の切り替えで見る人を選べる', () => {
+  it('2 人以上が共有していても、全画面の中には見る画面の切り替え（segmented）を置かない。選び直しは通話画面の映像の列から', () => {
     const s = fakeScreen({ sharers: [sharer('pa'), sharer('pb')], viewerOpen: true, selectedPeer: 'pa' });
     const el = render({ screen: s, nameOf });
-    const tabs = el.querySelectorAll<HTMLButtonElement>('[role="radio"]');
-    expect(tabs.length).toBe(2);
-    tabs[1]!.click();
-    expect(s.selectPeer).toHaveBeenCalledWith('pb');
+    expect(el.querySelector('[role="radio"], [role="radiogroup"], .segmented')).toBeNull();
+    expect(el.querySelector('.screen-viewer-title')!.textContent).toBe('Aさんの画面');
   });
 });
 

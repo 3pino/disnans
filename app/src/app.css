@@ -23,6 +23,12 @@
   column-gap: var(--space-6);
   row-gap: var(--space-3);
 }
+/* タッチのデバイスでは、押した行が、前の画面へ戻ったあとも :hover の明るい色のまま残る（最後に触った要素を hover とみなす）。押している間（:active）だけ色をつける */
+@media (hover: none) {
+  .setting-row-button:hover:not(:active):not(:focus-visible) {
+    background: transparent;
+  }
+}
 .setting-row > .setting-row-icon {
   flex: none;
 }

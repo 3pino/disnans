@@ -182,6 +182,37 @@ describe('標準の共有は CallStore が直接所有する', () => {
     expect(getUserMedia.mock.calls.every(([args]) => args.audio === false)).toBe(true);
   });
 
+  it('カメラの切り替え中に端末が今のカメラを手放しても、共有を終えず、新しいカメラに切り替わる', async () => {
+    const h = make(); await joined(h);
+    const old = videoStream(); const fresh = videoStream(); const gate = deferred<MediaStream>();
+    const getUserMedia = vi.fn().mockResolvedValueOnce(old.stream).mockImplementationOnce(() => gate.promise);
+    vi.stubGlobal('navigator', { userAgent: 'fake', mediaDevices: { getUserMedia,
+      getSupportedConstraints: () => ({ facingMode: true }), enumerateDevices: async () => [{ kind: 'videoinput' }, { kind: 'videoinput' }] } });
+    await h.store.screen!.toggleCamera(); await flush();
+    const switching = h.store.screen!.switchCamera(); await flush();
+    old.track.dispatchEvent(new Event('ended'));
+    expect(h.store.screen!.sharing).toBe(true);
+    gate.resolve(fresh.stream); await switching;
+    expect(h.store.screen!.sharing).toBe(true);
+    expect(h.store.screen!.localStream).toBe(fresh.stream);
+    expect(h.store.screen!.switching).toBe(false);
+  });
+
+  it('切り替えに失敗し、しかも今のカメラも終わっていたら、知らせて共有を終える（死んだ映像を残さない）', async () => {
+    const h = make(); await joined(h);
+    const old = videoStream(); const gate = deferred<MediaStream>();
+    const getUserMedia = vi.fn().mockResolvedValueOnce(old.stream).mockImplementationOnce(() => gate.promise);
+    vi.stubGlobal('navigator', { userAgent: 'fake', mediaDevices: { getUserMedia,
+      getSupportedConstraints: () => ({ facingMode: true }), enumerateDevices: async () => [{ kind: 'videoinput' }, { kind: 'videoinput' }] } });
+    await h.store.screen!.toggleCamera(); await flush();
+    const switching = h.store.screen!.switchCamera(); await flush();
+    (old.track as unknown as { readyState: string }).readyState = 'ended';
+    old.track.dispatchEvent(new Event('ended'));
+    gate.reject(new Error('NotReadableError')); await switching;
+    expect(h.store.screen!.sharing).toBe(false);
+    expect(h.toast).toHaveBeenCalledWith('カメラを切り替えられず、共有を終えました', 'error');
+  });
+
   it('カメラ切替失敗では元の映像を保ち、古い track 終了は新しい共有へ作用しない', async () => {
     const h = make(); await joined(h);
     const camera = videoStream(); const display = videoStream();

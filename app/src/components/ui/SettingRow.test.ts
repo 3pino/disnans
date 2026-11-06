@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
 import SettingRow from './SettingRow.svelte';
 
@@ -85,5 +85,32 @@ describe('SettingRow の編集モード', () => {
     const row = renderDeleting({ deleting: true });
     expect(row.querySelector('.setting-row-control-hidden .ctl')).not.toBeNull();
     expect(row.querySelector('.setting-row-delete')).toBeNull();
+  });
+});
+
+describe('押せる行のフォーカス（サブページから戻っても明るい色のまま残さない）', () => {
+  function renderButton(onclick: () => void) {
+    target = document.createElement('div');
+    document.body.appendChild(target);
+    instance = mount(SettingRow, { target, props: { name: '入力欄のキー', onclick } });
+    flushSync();
+    return target.querySelector<HTMLButtonElement>('button.setting-row-button')!;
+  }
+  it('ポインター（指・マウス）で押したら、押した処理を呼んでフォーカスを外す', () => {
+    const onclick = vi.fn();
+    const b = renderButton(onclick);
+    b.focus();
+    expect(document.activeElement).toBe(b);
+    b.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(onclick).toHaveBeenCalledOnce();
+    expect(document.activeElement).not.toBe(b);
+  });
+  it('キーボード（detail 0）で押したら、フォーカスを保つ', () => {
+    const onclick = vi.fn();
+    const b = renderButton(onclick);
+    b.focus();
+    b.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+    expect(onclick).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(b);
   });
 });

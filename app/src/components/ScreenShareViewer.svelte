@@ -15,7 +15,8 @@
   import { startWebPip, webPipAvailable, type WebPip } from '../lib/call/screen/webPip';
   import type { ScreenShareView } from '../lib/call/screen/view';
   import type { ScreenPipPort } from '../lib/call/screen/types';
-  import { orderViews, viewLabel, type ScreenViewEntry } from '../lib/call/screen/order';
+  import { orderViews, viewLabel } from '../lib/call/screen/order';
+  import { videoStream } from '../lib/call/screen/videoStream';
 
   // 共有の全画面の表示（重ねて開く）。写真の拡大表示（Lightbox）と同じ部品（LightboxView）に、ライブの映像を載せる。
   // 拡大・移動（ピンチ・ダブルタップ・ホイール・ドラッグ）と、上のバー・端末の安全域（ノッチ）は、写真の拡大表示と同じもの。
@@ -220,27 +221,6 @@
 
   const pipAvailable = $derived((pip?.supported ?? false) || webPipAvailable());
 
-  /** 見る画面の切り替えの短い名前 */
-  function tabLabel(v: ScreenViewEntry): string {
-    if (v.local) return '自分';
-    const name = nameOf(v.userId ?? '');
-    return v.mine ? `${name}（別のデバイス）` : name;
-  }
-
-  // カメラの映像は、要素に直接入れる（src ではなく srcObject）
-  function stream(el: HTMLVideoElement, s: MediaStream) {
-    el.srcObject = s;
-    void el.play().catch(() => {});
-    return {
-      update(next: MediaStream) {
-        if (el.srcObject !== next) el.srcObject = next;
-      },
-      destroy() {
-        el.srcObject = null;
-      },
-    };
-  }
-
   /** 自分のカメラを押したとき。映像の上なら、Android は没入の切り替え、ほかは閉じる。映像の外は閉じる */
   function onCameraTap(e: MouseEvent): void {
     if (android && (e.target as HTMLElement).tagName === 'VIDEO') void toggleFullscreen();
@@ -265,22 +245,8 @@
     bind:element={root}
   >
     {#snippet title()}
-      {#if views.length > 1}
-        <div class="segmented screen-viewer-tabs" role="radiogroup" aria-label="見る画面">
-          {#each views as v (v.peer)}
-            <button
-              type="button"
-              role="radio"
-              class="screen-viewer-tab"
-              aria-checked={v.peer === current.peer}
-              class:active={v.peer === current.peer}
-              onclick={() => screen.selectPeer(v.peer)}>{tabLabel(v)}</button
-            >
-          {/each}
-        </div>
-      {:else}
-        <span class="screen-viewer-title">{heading}</span>
-      {/if}
+      <!-- 見る画面の選び直しは、通話画面の映像の列からする。ここには切り替えを置かない -->
+      <span class="screen-viewer-title">{heading}</span>
     {/snippet}
     {#snippet actions()}
       {#if pipAvailable}
@@ -303,7 +269,7 @@
       {#if localCamera && screen.localStream}
         <!-- 自分のカメラ（動画）。映像を押すと、Android は没入、ほかは閉じる。映像の外を押すと閉じる -->
         <div class="screen-viewer-camera" role="presentation" onclick={onCameraTap}>
-          <video class="screen-viewer-camera-video" use:stream={screen.localStream} muted playsinline aria-label="自分のカメラ"></video>
+          <video class="screen-viewer-camera-video" use:videoStream={screen.localStream} muted playsinline aria-label="自分のカメラ"></video>
         </div>
       {:else}
         <p class="muted screen-viewer-wait">映像を待っています</p>
@@ -319,11 +285,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .screen-viewer-tabs {
-    flex: 1;
-    min-width: 0;
-    overflow-x: auto;
   }
   .screen-viewer-camera {
     position: absolute;

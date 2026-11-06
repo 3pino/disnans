@@ -5,6 +5,7 @@ import { flushSync, mount, unmount } from 'svelte';
 import CallStreams from './CallStreams.svelte';
 import { LOCAL_VIEW } from '../lib/call/screen/types';
 import { fakeScreen, sharer } from './testing/screenFake';
+import { reactiveScreen } from './testing/reactiveScreen.svelte';
 
 let instance: ReturnType<typeof mount> | undefined;
 let target: HTMLElement | undefined;
@@ -67,5 +68,24 @@ describe('共有されている映像の並び', () => {
     instance = undefined;
     frame.remove();
     expect(render(fakeScreen({ sharing: true })).textContent).toContain('映像を待っています');
+  });
+});
+
+describe('カメラを切り替えたとき（新しいストリームに替わる）', () => {
+  it('サムネイルも新しいストリームを入れて再生し直す（映像が消えない）', async () => {
+    const play = vi.fn(async () => {});
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value: play });
+    const a = {} as MediaStream;
+    const b = {} as MediaStream;
+    const s = reactiveScreen({ sharing: true, source: 'camera', localStream: a });
+    const el = render(s as never);
+    const video = el.querySelector<HTMLVideoElement>('video')!;
+    expect(video.srcObject).toBe(s.localStream);
+    const before = play.mock.calls.length;
+    s.localStream = b;
+    flushSync();
+    expect(el.querySelector<HTMLVideoElement>('video')!.srcObject).toBe(s.localStream);
+    expect(s.localStream).not.toBe(a);
+    expect(play.mock.calls.length).toBeGreaterThan(before);
   });
 });

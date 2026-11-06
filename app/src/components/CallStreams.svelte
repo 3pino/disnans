@@ -1,5 +1,6 @@
 <script lang="ts">
   import { orderViews, viewLabel, type ScreenViewEntry } from '../lib/call/screen/order';
+  import { videoStream } from '../lib/call/screen/videoStream';
   import type { ScreenShareView } from '../lib/call/screen/view';
 
   // 通話の画面の下半分に並べる、共有されている映像（カメラも画面も）。Zoom のように、上は参加者、下は映像。
@@ -9,20 +10,6 @@
 
   const views = $derived(orderViews(screen, myUserId));
 
-  // カメラの映像は、要素に直接入れる（src ではなく srcObject）
-  function stream(el: HTMLVideoElement, s: MediaStream) {
-    el.srcObject = s;
-    void el.play().catch(() => {});
-    return {
-      update(next: MediaStream) {
-        if (el.srcObject !== next) el.srcObject = next;
-      },
-      destroy() {
-        el.srcObject = null;
-      },
-    };
-  }
-
   const labelOf = (v: ScreenViewEntry) => viewLabel(v, nameOf);
 </script>
 
@@ -31,7 +18,7 @@
     <li class="call-streams-item">
       <button type="button" class="screen-stage" data-peer={v.peer} aria-label="{labelOf(v)}を全画面で見る" onclick={() => screen.openViewer(v.peer)}>
         {#if v.local && screen.localStream}
-          <video class="screen-stage-media" use:stream={screen.localStream} muted playsinline aria-hidden="true"></video>
+          <video class="screen-stage-media" use:videoStream={screen.localStream} muted playsinline aria-hidden="true"></video>
         {:else if v.dataUrl}
           <img class="screen-stage-media" src={v.dataUrl} alt="" draggable="false" />
         {:else}
