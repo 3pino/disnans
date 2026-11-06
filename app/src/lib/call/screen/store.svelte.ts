@@ -140,8 +140,7 @@ export class ScreenShareStore {
 
   private trackEnd(stream: MediaStream, epoch: number): void {
     for (const track of stream.getVideoTracks()) track.addEventListener('ended', () => {
-      // カメラの切り替え中は、端末が今のカメラを手放すことがある（一度に 1 つしか開けないとき）。切り替えの結果を見てから決める
-      if (this.current(epoch) && this.localStream === stream && !this.switching) this.stop();
+      if (this.current(epoch) && this.localStream === stream) this.stop();
     });
   }
 
@@ -163,12 +162,7 @@ export class ScreenShareStore {
       stopTracks(old);
     } catch {
       stopTracks(fresh);
-      if (this.current(epoch)) {
-        // 切り替え中に今のカメラも終わっていたら、続けられないので共有を終える
-        const alive = old.getVideoTracks().some((t) => t.readyState !== 'ended');
-        if (alive) this.deps.toast('カメラを切り替えられませんでした。いまのカメラのまま続けます', 'error');
-        else { this.deps.toast('カメラを切り替えられず、共有を終えました', 'error'); this.stop(); }
-      }
+      if (this.current(epoch)) this.deps.toast('カメラを切り替えられませんでした。いまのカメラのまま続けます', 'error');
     } finally { if (this.current(epoch)) this.switching = false; }
   }
 
