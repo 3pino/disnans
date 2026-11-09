@@ -107,6 +107,7 @@ pub fn candidate_name(name: &str, n: u32) -> String {
 }
 
 /// ファイル名からの型（MIME）。分からないものは application/octet-stream
+#[cfg(any(target_os = "android", test))]
 pub fn mime_for(name: &str) -> &'static str {
     let (_, ext) = split_extension(name);
     match ext.to_ascii_lowercase().as_str() {
