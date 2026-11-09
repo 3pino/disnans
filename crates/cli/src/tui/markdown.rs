@@ -169,7 +169,9 @@ pub fn embed_paths(body: &str) -> Vec<String> {
                 | Inline::Italic { children }
                 | Inline::Underline { children }
                 | Inline::Strike { children }
-                | Inline::Highlight { children } => inlines(children, out),
+                | Inline::Highlight { children }
+                | Inline::Sub { children }
+                | Inline::Sup { children } => inlines(children, out),
                 _ => {}
             }
         }
@@ -222,6 +224,10 @@ fn inline_cells(items: &[Inline], deco: Deco, name_of: &dyn Fn(&str) -> String) 
             }
             Inline::Highlight { children } => {
                 out.extend(inline_cells(children, deco.with(Deco::HIGHLIGHT), name_of));
+            }
+            // 下付き・上付きは、端末では文字の大きさを変えられないので、中身をそのまま出す（書式は足さない）
+            Inline::Sub { children } | Inline::Sup { children } => {
+                out.extend(inline_cells(children, deco, name_of));
             }
             Inline::Code { text } => out.extend(cells(
                 &sanitize::escape_text(text, false),

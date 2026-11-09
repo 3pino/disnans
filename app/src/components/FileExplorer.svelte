@@ -52,6 +52,7 @@ import { TRASH_ROOT, displayEntry, entryLabel, trashItemOf, trashPlace, virtualD
   import { PDF_THUMB_MAX_BYTES } from '../lib/pdfThumb';
   import PdfThumb from './PdfThumb.svelte';
   import { formatSize, formatStamp } from '../lib/format';
+  import { downloadFile, interceptDownload } from '../lib/download';
   import type { SharedEntry } from '../lib/protocol/SharedEntry';
 
   // 共有フォルダの中身を見るパネル（閲覧だけ。書き込み・削除はしない）。見た目は仮（利用者の確認を取る）。
@@ -925,14 +926,7 @@ import { TRASH_ROOT, displayEntry, entryLabel, trashItemOf, trashPlace, virtualD
   }
 
   function downloadEntry(e: SharedEntry): void {
-    const a = document.createElement('a');
-    a.href = href(e);
-    a.download = e.name;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    void downloadFile({ url: href(e), name: e.name });
   }
 
   /**
@@ -1642,7 +1636,7 @@ import { TRASH_ROOT, displayEntry, entryLabel, trashItemOf, trashPlace, virtualD
             {:else if action !== 'file'}
               <button type="button" class="file-explorer-row" onclick={(ev) => rowClick(ev, e, () => openViewer(e))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</button>
             {:else}
-              <a class="file-explorer-row" href={href(e)} download={e.name} target="_blank" rel="noopener" onclick={(ev) => rowClick(ev, e, () => {})} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</a>
+              <a class="file-explorer-row" href={href(e)} download={e.name} target="_blank" rel="noopener" onclick={(ev) => rowClick(ev, e, () => interceptDownload(ev, { url: href(e), name: e.name }))} onkeydown={(ev) => rowKey(ev, e)}>{@render row()}</a>
             {/if}
             <!-- 「…」（プロパティ）は、選択中も含めて常に見せる -->
             <SharedEntryActions entry={e} placement={dirView.view === 'grid' ? 'overlay' : 'inline'} />

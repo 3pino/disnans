@@ -9,6 +9,9 @@ export type Inline =
   | { type: 'underline'; children: Inline[] }
   | { type: 'strike'; children: Inline[] }
   | { type: 'highlight'; children: Inline[] }
+  /** 下付き（`<sub>`）・上付き（`<sup>`）。HTML の属性は無い */
+  | { type: 'sub'; children: Inline[] }
+  | { type: 'sup'; children: Inline[] }
   | { type: 'code'; text: string }
   | { type: 'link'; href: string; text: string }
   /** 共有フォルダのファイル（`[別名](パス)`・`[[パス|別名]]`）。embed は先頭に `!` が付いたもの。alias は省略されたら null */

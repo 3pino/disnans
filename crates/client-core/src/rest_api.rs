@@ -339,8 +339,14 @@ impl RestClient {
 
     /// ファイルを取得する（`GET /api/shared/{path}`）。全体の時間制限は無い。
     pub async fn shared_get(&self, path: &str) -> Result<SharedDownload, ReadFailure> {
+        self.download(&shared_url_path(path)).await
+    }
+
+    /// 任意の GET の本文を、断片で読めるように返す（時間制限なし・開発用ヘッダーあり）。
+    /// `path` は符号化済みの API のパス（`/api/files/{id}`、`/api/shared/...`）。保存は呼び出し側が行う。
+    pub async fn download(&self, path: &str) -> Result<SharedDownload, ReadFailure> {
         let response = self
-            .upload_request(reqwest::Method::GET, &shared_url_path(path))
+            .upload_request(reqwest::Method::GET, path)
             .send()
             .await
             .map_err(|err| transport_failure(&err, None))?;

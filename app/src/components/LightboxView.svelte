@@ -8,6 +8,7 @@
   import { VIEWERS } from './viewers';
   import type { TapMode } from '../lib/viewers';
   import { adjacentItem, type LightboxItem } from '../lib/lightbox';
+  import { interceptDownload } from '../lib/download';
   import { swipeOutcome, SLIDE_GAP, SWIPE_EDGE_RESISTANCE } from '../lib/lightboxSwipe';
 
   // 拡大表示の本体（全画面）。写真の拡大表示（Lightbox.svelte）と、ライブの共有映像（ScreenShareViewer.svelte）が同じ部品を使う。
@@ -255,7 +256,7 @@
         {#if title}{@render title()}{:else}<span class="lightbox-file-name">{lb?.alt ?? ''}</span>{/if}
         {#if actions}{@render actions()}{/if}
         {#if download && lb}
-          <a class="icon-btn lightbox-download" href={lb.downloadUrl} download={lb.alt} target="_blank" rel="noopener" aria-label="ダウンロード"
+          <a class="icon-btn lightbox-download" href={lb.downloadUrl} download={lb.alt} target="_blank" rel="noopener" aria-label="ダウンロード" onclick={(ev) => interceptDownload(ev, { url: lb.downloadUrl, name: lb.alt })}
             ><Download size={20} /></a
           >
         {/if}

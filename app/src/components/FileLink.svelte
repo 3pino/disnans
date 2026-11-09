@@ -9,6 +9,7 @@
   import { ui } from '../lib/stores/ui.svelte';
   import { deletedAttachmentNames, fileLinkView } from '../lib/fileLink';
   import { formatSize } from '../lib/format';
+  import { interceptDownload } from '../lib/download';
   import { parentOf } from '../lib/sharedPath';
   import { chatGallery } from '../lib/chatGallery';
 
@@ -39,7 +40,7 @@
 {:else if view.kind === 'folder'}
   <span class="file-link-folder"><Folder size={14} />{view.text}</span>
 {:else if view.kind === 'link'}
-  <a class="file-link inline-link" href={view.href} download={view.name} target="_blank" rel="noopener">{view.text}</a>
+  <a class="file-link inline-link" href={view.href} download={view.name} target="_blank" rel="noopener" onclick={(ev) => interceptDownload(ev, { url: view.href, name: view.name })}>{view.text}</a>
 {:else if view.kind === 'image'}
   <button type="button" class="file-link file-link-button" onclick={() => ui.openLightbox({ src: view.src, alt: view.alt, downloadUrl: view.src }, chatGallery)}>{view.text}</button>
 {:else if view.kind === 'embedImage'}
@@ -52,7 +53,7 @@
     <img class="file-link-embed-image-img" src={view.src} alt={view.alt} loading="lazy" decoding="async" onerror={() => (broken = true)} />
   </button>
 {:else if view.kind === 'embedFile'}
-  <a class="file-link-card" href={view.href} download={view.name} target="_blank" rel="noopener">
+  <a class="file-link-card" href={view.href} download={view.name} target="_blank" rel="noopener" onclick={(ev) => interceptDownload(ev, { url: view.href, name: view.name })}>
     <FileIcon size={18} />
     <span class="file-link-card-name">{view.name}</span>
     <span class="file-link-card-size">{formatSize(view.size)}</span>

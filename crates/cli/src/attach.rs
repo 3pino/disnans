@@ -17,7 +17,9 @@ pub fn linked_names(body: &str) -> Vec<String> {
                 | Inline::Italic { children }
                 | Inline::Underline { children }
                 | Inline::Strike { children }
-                | Inline::Highlight { children } => inlines(children, out),
+                | Inline::Highlight { children }
+                | Inline::Sub { children }
+                | Inline::Sup { children } => inlines(children, out),
                 _ => {}
             }
         }

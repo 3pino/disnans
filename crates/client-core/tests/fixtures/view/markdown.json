@@ -268,13 +268,11 @@
       ]
     },
     {
-      "name": "raw_html_is_text",
+      "name": "known_tags_work_unknown_html_is_text",
       "input": "<b>x</b> <script>a</script>",
       "expected": [
-        {
-          "type": "text",
-          "text": "<b>x</b> <script>a</script>"
-        }
+        { "type": "bold", "children": [{ "type": "text", "text": "x" }] },
+        { "type": "text", "text": " <script>a</script>" }
       ]
     },
     {
@@ -1196,6 +1194,49 @@
           "href": "https://a.com",
           "text": "<b>x</b>"
         }
+      ]
+    },
+    {
+      "name": "html_tags_make_the_markdown_nodes",
+      "input": "<b>x</b> <STRONG>y</strong>",
+      "expected": [
+        {
+          "type": "bold",
+          "children": [{ "type": "text", "text": "x" }]
+        },
+        { "type": "text", "text": " " },
+        {
+          "type": "bold",
+          "children": [{ "type": "text", "text": "y" }]
+        }
+      ]
+    },
+    {
+      "name": "sub_and_sup",
+      "input": "H<sub>2</sub>O x<sup>n</sup>",
+      "expected": [
+        { "type": "text", "text": "H" },
+        { "type": "sub", "children": [{ "type": "text", "text": "2" }] },
+        { "type": "text", "text": "O x" },
+        { "type": "sup", "children": [{ "type": "text", "text": "n" }] }
+      ]
+    },
+    {
+      "name": "html_unclosed_stays_text",
+      "input": "<b>x</i>",
+      "expected": [{ "type": "text", "text": "<b>x</i>" }]
+    },
+    {
+      "name": "html_escaped_stays_text",
+      "input": "\\<b>x\\</b>",
+      "expected": [{ "type": "text", "text": "<b>x</b>" }]
+    },
+    {
+      "name": "bare_url_leaves_out_closing_bracket",
+      "input": "https://a.com/x」",
+      "expected": [
+        { "type": "link", "href": "https://a.com/x", "text": "https://a.com/x" },
+        { "type": "text", "text": "」" }
       ]
     }
   ],

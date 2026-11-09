@@ -18,6 +18,7 @@
 - [design/settings-storage.md](design/settings-storage.md): 設定の保存先
 - [design/android-call.md](design/android-call.md): Android の通話の所有者・プロセス終了からの復帰・試験の範囲
 - [design/call-screen.md](design/call-screen.md): 標準の画面共有・通話との所有関係・旧プラグインからの移行
+- [design/file-download.md](design/file-download.md): ファイルの保存（ダウンロード）の経路・保存先・開く操作
 - [design/tui.md](design/tui.md): TUI の部品・色の対応
 - [design/ui-tree.md](design/ui-tree.md): 設定画面とナビバーの、GUI と TUI の共通の木
 - [crates/client-core/README.md](../crates/client-core/README.md): クレートの境界

@@ -16,6 +16,7 @@ const html = `<!doctype html><html><head><meta name="viewport" content="width=de
 import { mount, unmount, tick } from 'svelte';
 import '/src/app.css';
 import Attachments from '/src/components/Attachments.svelte';
+import Markdown from '/src/components/Markdown.svelte';
 import FileLink from '/src/components/FileLink.svelte';
 import CallView from '/src/components/CallView.svelte';
 import { fixtureState } from '/scripts/feedback-call-fixture.svelte.ts';
@@ -40,6 +41,15 @@ window.renderFixture=async(kind,android=true)=>{
   const mk=(id,w,h)=>({id,file_name:id+'.png',mime:'image/png',size:1,has_thumb:false,width:w,height:h,deleted:false});
   const local=Object.fromEntries(['wide','small','unknown','a','b'].map(id=>[id,png]));
   for(const group of [[mk('wide',1600,400)],[mk('small',40,20)],[{...mk('unknown',0,0),width:null,height:null}],[mk('a',300,300),mk('b',600,300)]])apps.push(mount(Attachments,{target,props:{attachments:group,body:'',local}}));
+ }else if(kind==='embedRow'){
+  // 本文の画像の埋め込み（実際の Markdown）。1 段落目は 4 枚が続く横一列、2・3・4 段落目は横一列にならない形
+  const E=(path)=>({type:'fileLink',path,alias:null,embed:true});const T=(t)=>({type:'text',text:t});
+  apps.push(mount(Markdown,{target,props:{body:'',markdown:[
+   {type:'paragraph',lines:[[E('e1.png'),T(' '),E('e2.png'),T(' '),E('e3.png'),T(' '),E('e4.png')]]},
+   {type:'paragraph',lines:[[E('e1.png'),T('と'),E('e3.png')]]},
+   {type:'paragraph',lines:[[E('e3.png')]]},
+   {type:'paragraph',lines:[[E('e1.png'),T(' '),{type:'fileLink',path:'doc.pdf',alias:null,embed:true},T(' '),E('e2.png')]]},
+  ]}}));
  }else if(kind==='call'){
   // 本物の CallView。通話の状態だけが偽物（lib/call/instance.svelte を差し替えている）
   const person=(peer,userId,self)=>({peer,userId,self,connected:true,muted:false,speaking:false,localMuted:false,device:null});
@@ -61,7 +71,8 @@ const vite = await createServer({ root, server: { host: '127.0.0.1', port: 0 }, 
     const path=req.url?.split('?')[0];
     if(path==='/__feedback_ui_fixture'){res.setHeader('Content-Type','text/html');res.end(await server.transformIndexHtml(path,html));return;}
     if(path==='/api/shared/long.png'){res.setHeader('Content-Type','image/svg+xml');res.end('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="1280"><rect width="320" height="1280" fill="#406878"/></svg>');return;}
-    if(path?.startsWith('/api/shared')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({path:'',entries:[{name:'long.png',path:'long.png',kind:'file',mime:'image/png',size:1,modified_ms:0,file_id:null}]}));return;}
+    const em=/^\/api\/shared\/(e[1-4]\.png)$/.exec(path??'');if(em){const [w,h]={'e1.png':[320,1280],'e2.png':[1600,400],'e3.png':[400,400],'e4.png':[400,300]}[em[1]];res.setHeader('Content-Type','image/svg+xml');res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#406878"/></svg>`);return;}
+    if(path?.startsWith('/api/shared')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({path:'',entries:[{name:'long.png',path:'long.png',kind:'file',mime:'image/png',size:1,modified_ms:0,file_id:null},...['e1.png','e2.png','e3.png','e4.png','doc.pdf'].map(name=>({name,path:name,kind:'file',mime:name.endsWith('.pdf')?'application/pdf':'image/png',size:1,modified_ms:0,file_id:null}))]}));return;}
     if(path?.startsWith('/api/')){res.statusCode=404;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({code:'not_found',message:'fixture'}));return;}
     next();
   });
@@ -97,6 +108,30 @@ try{
  assert(Math.abs(small.w-40)<1&&Math.abs(small.h-20)<1,'small image is upscaled');
  assert(Math.abs(unknown.w-unknown.h)<1&&unknown.h<=210.1,'unknown image is not a bounded square');
  assert(rowA&&rowB&&Math.abs(rowA.h-rowB.h)<0.5&&rowA.h<=200.1,'multi-image row height not shared');
+ // 本文の画像の埋め込み: 続く画像は 1 つの横一列（高さはテーマの行の高さ、列は段落の幅に収まり、はみ出しは列の中で横に動く）。文字・カードをはさむと横一列にならない。1 枚は今までどおり
+ await evaluate(`window.renderFixture('embedRow',false)`);
+ for(let i=0;i<60&&!(await evaluate(`[...document.querySelectorAll('.file-link-embed-image-img')].every(i=>i.complete&&i.naturalWidth>0)`));i++)await new Promise(r=>setTimeout(r,50));
+ const embedGeo=`(()=>{const rows=[...document.querySelectorAll('.embed-row')];const r=rows[0];if(!r)return{rows:0};const cs=getComputedStyle(r);const items=[...r.children].map(e=>e.getBoundingClientRect());const p=r.parentElement.getBoundingClientRect(),rb=r.getBoundingClientRect();return{rows:rows.length,count:items.length,tops:items.map(b=>b.top),itemH:items.map(b=>b.height),imgH:[...r.querySelectorAll('img')].map(i=>i.getBoundingClientRect().height),rowH:rb.height,clientH:r.clientHeight,rowW:rb.width,pW:p.width,clientW:r.clientWidth,scrollW:r.scrollWidth,ox:cs.overflowX,oy:cs.overflowY,ob:cs.overscrollBehaviorX,ta:cs.touchAction,pageW:document.documentElement.scrollWidth,vw:innerWidth};})()`;
+ const er=await evaluate(embedGeo);
+ assert.equal(er.rows,1,'exactly one row (the four-image paragraph) '+JSON.stringify(er));
+ assert.equal(er.count,4,'all four images in the row');
+ assert(er.tops.every(t=>Math.abs(t-er.tops[0])<0.5),'row items must be on one line');
+ assert(er.imgH.every(h=>Math.abs(h-200)<1),'row height must follow --chat-image-row-height (200px) '+JSON.stringify(er.imgH));
+ assert(er.clientH<=202.5,'row is more than one line high (its own height, without the scrollbar; 200 image + 1px border each side) '+JSON.stringify(er));
+ assert(er.rowW<=er.pW+0.5,'row wider than its container');
+ assert(Math.abs(er.rowW-er.pW)<1,'row must fill its container width');
+ assert(er.scrollW>er.clientW+100,'row must overflow inside itself '+JSON.stringify(er));
+ assert.equal(er.ox,'auto');assert.equal(er.oy,'hidden');assert.equal(er.ob,'contain');assert(/pan-x/.test(er.ta),'row must allow horizontal panning');
+ assert(er.pageW<=er.vw,'page must not widen horizontally');
+ await evaluate(`document.querySelector('.embed-row').scrollLeft=200`);
+ assert((await evaluate(`document.querySelector('.embed-row').scrollLeft`))>100,'row must scroll horizontally');
+ // 文字をはさむ段落・1 枚の段落・カードをはさむ段落は横一列にならない（段落の中に並ぶ）
+ const plain=await evaluate(`(()=>{const ps=[...document.querySelectorAll('.markdown-body p')];const withText=ps.find(p=>p.textContent.includes('と'));const lone=[...document.querySelectorAll('.file-link-embed-image-img')].find(i=>i.closest('p')&&i.closest('p').querySelectorAll('.file-link-embed-image').length===1&&!i.closest('.embed-row'));const card=document.querySelector('.file-link-card');return{rowsOutsideFirst:document.querySelectorAll('.embed-row').length,textImages:withText?withText.querySelectorAll('.file-link-embed-image').length:-1,textRows:withText?withText.querySelectorAll('.embed-row').length:-1,loneH:lone?lone.getBoundingClientRect().height:-1,cards:document.querySelectorAll('.file-link-card').length,cardRows:card?card.closest('.embed-row')?1:0:-1};})()`);
+ assert.equal(plain.rowsOutsideFirst,1,'only the first paragraph has a row');assert.equal(plain.textImages,2,'text between images: both images stay in the text paragraph');assert.equal(plain.textRows,0,'text between images breaks the row');assert(plain.loneH>0&&Math.abs(plain.loneH-210)<1,'lone embed keeps the old height (min(320px, 30vh) at 700px)');assert.equal(plain.cards,1,'card kept as a card');assert.equal(plain.cardRows,0,'card is not in a row');
+ // テーマの変数（行の高さ）で、横一列の高さが変わる
+ await evaluate(`document.documentElement.style.setProperty('--chat-image-row-height','120px')`);
+ assert(Math.abs((await evaluate(`[...document.querySelectorAll('.embed-row img')].map(i=>i.getBoundingClientRect().height)`))[0]-120)<1,'theme variable --chat-image-row-height ignored in a row');
+ await evaluate(`document.documentElement.style.removeProperty('--chat-image-row-height')`);
  // 通話画面: 映像が無いときは今までどおり。あるときは下半分に正方形で横に並べ、自分の今のデバイス > 自分の別のデバイス > ほかの人
  await evaluate('window.renderFixture("call","none")');
  assert.equal(await evaluate(`document.querySelectorAll('.call-view-streams').length`),0,'streams area must not exist without shares');
@@ -127,14 +162,17 @@ try{
  const doc=await S('DOM.getDocument',{depth:-1});
  const rowNode=(await S('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'button.setting-row-button'})).nodeId;assert(rowNode,'no pressable settings row');
  const rowBg=async()=>evaluate(`getComputedStyle(document.querySelector('button.setting-row-button')).backgroundColor`);
- for(const [hover,expectTint] of [['none',false],['hover',true]]){
-  await S('Emulation.setEmulatedMedia',{features:[{name:'hover',value:hover}]});
-  await S('CSS.forcePseudoState',{nodeId:rowNode,forcedPseudoClasses:[]});const base=await rowBg();
-  await S('CSS.forcePseudoState',{nodeId:rowNode,forcedPseudoClasses:['hover']});const hovered=await rowBg();
-  await S('CSS.forcePseudoState',{nodeId:rowNode,forcedPseudoClasses:[]});
-  assert.equal(hovered!==base,expectTint,`pressable row hover tint with hover:${hover} (base ${base}, hovered ${hovered})`);
- }
- await S('Emulation.setEmulatedMedia',{features:[]});
+ // この Chromium は常に hover:none を返す（hover の emulation は効かない）ので、タッチ（hover:none）は実際の計算で、マウス（hover:hover）は CSS の規則の置き場所で見る
+ await S('CSS.forcePseudoState',{nodeId:rowNode,forcedPseudoClasses:[]});const baseBg=await rowBg();
+ await S('CSS.forcePseudoState',{nodeId:rowNode,forcedPseudoClasses:['hover']});const hoveredBg=await rowBg();
+ await S('CSS.forcePseudoState',{nodeId:rowNode,forcedPseudoClasses:[]});
+ assert.equal(await evaluate('matchMedia("(hover: none)").matches'),true,'fixture must be a touch (hover:none) device');
+ assert.equal(hoveredBg,baseBg,`touch: forced :hover must not tint the pressable row (base ${baseBg}, hovered ${hoveredBg})`);
+ const rules=await evaluate(`(()=>{const out=[];const walk=(list,media)=>{for(const r of list){if(r.cssRules&&r.type===CSSRule.MEDIA_RULE)walk(r.cssRules,r.conditionText);else if(r.selectorText&&r.selectorText.includes('.setting-row-button:hover'))out.push({sel:r.selectorText,media,bg:r.style.background});}};for(const s of document.styleSheets){try{walk(s.cssRules,'')}catch{}}return out;})()`);
+ const base=rules.filter((r)=>r.media===''),touch=rules.filter((r)=>/hover:\s*none/.test(r.media));
+ assert(base.some((r)=>/--hover/.test(r.bg)),'mouse: the base :hover rule must still tint the row ('+JSON.stringify(rules)+')');
+ assert(touch.length===1&&/transparent/.test(touch[0].bg),'the transparent override must exist only inside (hover: none) ('+JSON.stringify(rules)+')');
+ assert(!base.some((r)=>/transparent/.test(r.bg)),'the transparent override must not apply outside (hover: none)');
  const blank=await evaluate(`[...document.querySelectorAll('.settings-blank-bar')].map(e=>getComputedStyle(e).display)`);assert.equal(blank.length,2,'actual settings headers missing');assert(blank.every(v=>v!=='none'),'no-call headers removed');
  await evaluate(`document.querySelector('.top-slot').innerHTML='<div class="call-bar"></div>'`);
  assert.equal(await evaluate(`[...document.querySelectorAll('.settings-blank-bar')].every(e=>getComputedStyle(e).display==='none')`),true,'call leaves empty headers');

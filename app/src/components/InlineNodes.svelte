@@ -13,6 +13,8 @@
     >{:else if n.type === 'underline'}<u><InlineNodes nodes={n.children} /></u
     >{:else if n.type === 'strike'}<s><InlineNodes nodes={n.children} /></s
     >{:else if n.type === 'highlight'}<mark class="inline-highlight"><InlineNodes nodes={n.children} /></mark
+    >{:else if n.type === 'sub'}<sub><InlineNodes nodes={n.children} /></sub
+    >{:else if n.type === 'sup'}<sup><InlineNodes nodes={n.children} /></sup
     >{:else if n.type === 'code'}<code class="inline-code">{n.text}</code
     >{:else if n.type === 'link'}<a
       class="inline-link"

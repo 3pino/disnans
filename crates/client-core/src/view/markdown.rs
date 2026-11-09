@@ -35,6 +35,14 @@ pub enum Inline {
     Highlight {
         children: Vec<Inline>,
     },
+    /// 下付き文字（`<sub>…</sub>`）
+    Sub {
+        children: Vec<Inline>,
+    },
+    /// 上付き文字（`<sup>…</sup>`）
+    Sup {
+        children: Vec<Inline>,
+    },
     Code {
         text: String,
     },
@@ -459,7 +467,8 @@ fn raw_url_end(s: &str, i: usize) -> Option<usize> {
     }
 }
 
-/// URL の末尾の句読点や、対応しない閉じ括弧は URL に含めない
+/// URL の末尾の句読点や、対応しない閉じ括弧は URL に含めない。
+/// 閉じ括弧は、同じ種類の開きより多いときだけ外す（`(…)` `[…]` `（…）`）。`」` `』` `】` `〉` は URL に使わないので外す
 fn trim_url(url: &str) -> &str {
     let mut u = url;
     loop {
@@ -468,16 +477,36 @@ fn trim_url(url: &str) -> &str {
         };
         if matches!(
             last,
-            '.' | ',' | ':' | ';' | '!' | '?' | '。' | '、' | '！' | '？' | '\'' | '"'
+            '.' | ','
+                | ':'
+                | ';'
+                | '!'
+                | '?'
+                | '。'
+                | '、'
+                | '！'
+                | '？'
+                | '\''
+                | '"'
+                | '」'
+                | '』'
+                | '】'
+                | '〉'
         ) {
             u = &u[..u.len() - last.len_utf8()];
             continue;
         }
-        if last == ')' {
-            let open = u.matches('(').count();
-            let close = u.matches(')').count();
+        let pair = match last {
+            ')' => Some(('(', ')')),
+            ']' => Some(('[', ']')),
+            '）' => Some(('（', '）')),
+            _ => None,
+        };
+        if let Some((open_c, close_c)) = pair {
+            let open = u.matches(open_c).count();
+            let close = u.matches(close_c).count();
             if close > open {
-                u = &u[..u.len() - 1];
+                u = &u[..u.len() - last.len_utf8()];
                 continue;
             }
         }
@@ -516,7 +545,127 @@ impl Atom {
     }
 }
 
-fn atom_at(s: &str, i: usize) -> Option<Atom> {
+/// 書式のタグ（属性なし・小文字と大文字を区別しない）の種類
+#[derive(Clone, Copy)]
+enum Html {
+    Bold,
+    Italic,
+    Underline,
+    Strike,
+    Highlight,
+    Sub,
+    Sup,
+    Code,
+}
+
+fn html_kind(name: &str) -> Option<Html> {
+    Some(match name {
+        "b" | "strong" => Html::Bold,
+        "i" | "em" => Html::Italic,
+        "u" => Html::Underline,
+        "s" | "del" | "strike" => Html::Strike,
+        "mark" => Html::Highlight,
+        "sub" => Html::Sub,
+        "sup" => Html::Sup,
+        "code" => Html::Code,
+        _ => return None,
+    })
+}
+
+/// 書式のタグの入れ子の上限（強調の入れ子と同じ）
+const HTML_DEPTH_MAX: usize = 8;
+
+/// `<名前>` を位置 i（`<`）で読む。種類と、名前の長さ、開きの次の位置を返す。属性（空白など）があれば読まない
+fn html_open(s: &str, i: usize) -> Option<(Html, usize, usize)> {
+    let rest = s.as_bytes().get(i + 1..)?;
+    let name_len = rest.iter().take_while(|b| b.is_ascii_alphabetic()).count();
+    if !(1..=6).contains(&name_len) || rest.get(name_len) != Some(&b'>') {
+        return None;
+    }
+    let name = s.get(i + 1..i + 1 + name_len)?.to_ascii_lowercase();
+    Some((html_kind(&name)?, name_len, i + name_len + 2))
+}
+
+/// 開きの次の位置 from から、同じ名前の閉じ `</名前>` を探す（同じ名前の入れ子は数える）。
+/// 閉じの始まりと、閉じの次の位置を返す。見つからなければ None（タグは文字のまま）
+fn html_close(s: &str, from: usize, name: &str) -> Option<(usize, usize)> {
+    let bytes = s.as_bytes();
+    let n = name.len();
+    let name_at = |at: usize| {
+        bytes
+            .get(at..at + n)
+            .is_some_and(|b| b.eq_ignore_ascii_case(name.as_bytes()))
+    };
+    let mut depth = 0usize;
+    let mut k = from;
+    while k < bytes.len() {
+        if bytes[k] == b'<' {
+            if bytes.get(k + 1) == Some(&b'/')
+                && name_at(k + 2)
+                && bytes.get(k + 2 + n) == Some(&b'>')
+            {
+                if depth == 0 {
+                    return Some((k, k + n + 3));
+                }
+                depth -= 1;
+                k += n + 3;
+                continue;
+            }
+            if name_at(k + 1) && bytes.get(k + 1 + n) == Some(&b'>') {
+                depth += 1;
+                k += n + 2;
+                continue;
+            }
+        }
+        k += 1;
+    }
+    None
+}
+
+/// `<名前>中身</名前>` の書式を位置 i（`<`）で読む。中身は空でないこと（空なら文字のまま）。
+/// 中身は強調などと同じく読む。`<code>` の中身は文字のまま（コード）
+fn html_at(s: &str, i: usize, depth: usize) -> Option<Atom> {
+    if depth >= HTML_DEPTH_MAX {
+        return None;
+    }
+    let (kind, name_len, open_end) = html_open(s, i)?;
+    let name = s.get(i + 1..i + 1 + name_len)?.to_ascii_lowercase();
+    let (close, end) = html_close(s, open_end, &name)?;
+    if close == open_end {
+        return None;
+    }
+    let inner = &s[open_end..close];
+    let children = || parse_inline(inner, depth + 1);
+    let node = match kind {
+        Html::Bold => Inline::Bold {
+            children: children(),
+        },
+        Html::Italic => Inline::Italic {
+            children: children(),
+        },
+        Html::Underline => Inline::Underline {
+            children: children(),
+        },
+        Html::Strike => Inline::Strike {
+            children: children(),
+        },
+        Html::Highlight => Inline::Highlight {
+            children: children(),
+        },
+        Html::Sub => Inline::Sub {
+            children: children(),
+        },
+        Html::Sup => Inline::Sup {
+            children: children(),
+        },
+        Html::Code => Inline::Code {
+            text: inner.to_owned(),
+        },
+    };
+    Some(Atom::Node { len: end - i, node })
+}
+
+fn atom_at(s: &str, i: usize, depth: usize) -> Option<Atom> {
     let bytes = s.as_bytes();
     match bytes[i] {
         b'\\' => {
@@ -552,15 +701,15 @@ fn atom_at(s: &str, i: usize) -> Option<Atom> {
             let (len, node) = bracket_at(s, i + 1, true)?;
             Some(Atom::Node { len: len + 1, node })
         }
-        b'<' => {
-            let (id, end) = mention_at(s, i)?;
-            Some(Atom::Node {
+        b'<' => match mention_at(s, i) {
+            Some((id, end)) => Some(Atom::Node {
                 len: end - i,
                 node: Inline::Mention {
                     user_id: id.to_owned(),
                 },
-            })
-        }
+            }),
+            None => html_at(s, i, depth),
+        },
         b'h' | b'H' => {
             if i > 0 && bytes[i - 1].is_ascii_alphanumeric() {
                 return None;
@@ -732,10 +881,10 @@ fn close_ok(s: &str, k: usize, delim: &str) -> bool {
 }
 
 /// 強調の閉じを探す。見つからなければ None
-fn find_close(s: &str, from: usize, delim: &str) -> Option<usize> {
+fn find_close(s: &str, from: usize, delim: &str, depth: usize) -> Option<usize> {
     let mut k = from;
     while k < s.len() {
-        if let Some(atom) = atom_at(s, k) {
+        if let Some(atom) = atom_at(s, k, depth) {
             k += atom.len();
             continue;
         }
@@ -787,7 +936,7 @@ pub fn parse_inline(s: &str, depth: usize) -> Vec<Inline> {
     let bytes = s.as_bytes();
     let mut i = 0;
     'outer: while i < s.len() {
-        if let Some(atom) = atom_at(s, i) {
+        if let Some(atom) = atom_at(s, i, depth) {
             match atom {
                 Atom::Node { len, node } => {
                     flush(&mut buf, &mut out);
@@ -815,7 +964,7 @@ pub fn parse_inline(s: &str, depth: usize) -> Vec<Inline> {
                 if delim == "__" && char_before(s, i).is_some_and(is_word) {
                     continue;
                 }
-                let Some(j) = find_close(s, i + delim.len(), delim) else {
+                let Some(j) = find_close(s, i + delim.len(), delim, depth) else {
                     continue;
                 };
                 flush(&mut buf, &mut out);
@@ -832,7 +981,7 @@ pub fn parse_inline(s: &str, depth: usize) -> Vec<Inline> {
                 && (c != b'_' || i == 0 || !char_before(s, i).is_some_and(is_word))
             {
                 let delim = if c == b'_' { "_" } else { "*" };
-                if let Some(j) = find_close(s, i + 1, delim) {
+                if let Some(j) = find_close(s, i + 1, delim, depth) {
                     flush(&mut buf, &mut out);
                     out.push(Inline::Italic {
                         children: parse_inline(&s[i + 1..j], depth + 1),
@@ -1090,6 +1239,262 @@ mod file_link_tests {
         assert_eq!(
             serde_json::to_value(file("attachments/p.png", Some("p"), true)).unwrap(),
             json!({"type": "fileLink", "path": "attachments/p.png", "alias": "p", "embed": true})
+        );
+    }
+}
+
+#[cfg(test)]
+mod html_and_url_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn text(t: &str) -> Inline {
+        Inline::Text { text: t.to_owned() }
+    }
+
+    fn link(url: &str) -> Inline {
+        Inline::Link {
+            href: url.into(),
+            text: url.into(),
+        }
+    }
+
+    #[test]
+    fn basic_tags_make_the_same_nodes_as_markdown() {
+        assert_eq!(
+            parse_inline("<b>x</b>", 0),
+            vec![Inline::Bold {
+                children: vec![text("x")]
+            }]
+        );
+        assert_eq!(
+            parse_inline("<strong>x</strong><em>y</em><u>z</u>", 0),
+            vec![
+                Inline::Bold {
+                    children: vec![text("x")]
+                },
+                Inline::Italic {
+                    children: vec![text("y")]
+                },
+                Inline::Underline {
+                    children: vec![text("z")]
+                },
+            ]
+        );
+        assert_eq!(
+            parse_inline("<s>a</s><del>b</del><strike>c</strike><mark>d</mark>", 0),
+            vec![
+                Inline::Strike {
+                    children: vec![text("a")]
+                },
+                Inline::Strike {
+                    children: vec![text("b")]
+                },
+                Inline::Strike {
+                    children: vec![text("c")]
+                },
+                Inline::Highlight {
+                    children: vec![text("d")]
+                },
+            ]
+        );
+        assert_eq!(
+            parse_inline("<code>a **b**</code>", 0),
+            vec![Inline::Code {
+                text: "a **b**".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn sub_and_sup_are_nodes_with_children() {
+        assert_eq!(
+            parse_inline("H<sub>2</sub>O x<sup>n</sup>", 0),
+            vec![
+                text("H"),
+                Inline::Sub {
+                    children: vec![text("2")]
+                },
+                text("O x"),
+                Inline::Sup {
+                    children: vec![text("n")]
+                },
+            ]
+        );
+        assert_eq!(
+            serde_json::to_value(Inline::Sub {
+                children: vec![text("2")]
+            })
+            .unwrap(),
+            json!({"type": "sub", "children": [{"type": "text", "text": "2"}]})
+        );
+        assert_eq!(
+            serde_json::to_value(Inline::Sup { children: vec![] }).unwrap(),
+            json!({"type": "sup", "children": []})
+        );
+    }
+
+    #[test]
+    fn tag_names_are_case_insensitive() {
+        assert_eq!(
+            parse_inline("<SUB>2</Sub><B>x</b>", 0),
+            vec![
+                Inline::Sub {
+                    children: vec![text("2")]
+                },
+                Inline::Bold {
+                    children: vec![text("x")]
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn tags_nest_with_markdown_and_each_other() {
+        assert_eq!(
+            parse_inline("**a<sub>2</sub>**", 0),
+            vec![Inline::Bold {
+                children: vec![
+                    text("a"),
+                    Inline::Sub {
+                        children: vec![text("2")]
+                    },
+                ],
+            }]
+        );
+        assert_eq!(
+            parse_inline("<b>a<i>b</i></b>", 0),
+            vec![Inline::Bold {
+                children: vec![
+                    text("a"),
+                    Inline::Italic {
+                        children: vec![text("b")]
+                    },
+                ],
+            }]
+        );
+    }
+
+    #[test]
+    fn same_name_nests_by_counting() {
+        assert_eq!(
+            parse_inline("<b><b>x</b>y</b>", 0),
+            vec![Inline::Bold {
+                children: vec![
+                    Inline::Bold {
+                        children: vec![text("x")]
+                    },
+                    text("y"),
+                ],
+            }]
+        );
+    }
+
+    #[test]
+    fn unclosed_mismatched_empty_and_unknown_tags_stay_literal() {
+        for input in [
+            "<b>x",
+            "<b>x</i>",
+            "x</b>",
+            "<b></b>",
+            "<br>",
+            "<script>x</script>",
+            "<b class=x>y</b>",
+            "<b x>y</b>",
+            "<sub 2>y</sub>",
+            "<bb>y</bb>",
+            "a<b",
+            "a < b > c",
+        ] {
+            assert_eq!(parse_inline(input, 0), vec![text(input)], "{input}");
+        }
+    }
+
+    #[test]
+    fn escaped_tags_are_literal() {
+        assert_eq!(parse_inline("\\<b>x\\</b>", 0), vec![text("<b>x</b>")]);
+    }
+
+    #[test]
+    fn mentions_still_work_next_to_tags() {
+        assert_eq!(
+            parse_inline("<b><@user1></b> <@u-2>", 0),
+            vec![
+                Inline::Bold {
+                    children: vec![Inline::Mention {
+                        user_id: "user1".into()
+                    }],
+                },
+                text(" "),
+                Inline::Mention {
+                    user_id: "u-2".into()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn code_tag_keeps_file_link_syntax_as_text() {
+        assert_eq!(
+            parse_inline("<code>[[attachments/x]]</code>", 0),
+            vec![Inline::Code {
+                text: "[[attachments/x]]".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn deep_tag_nesting_does_not_recurse_forever() {
+        let input = "<b>".repeat(40) + "x" + &"</b>".repeat(40);
+        // 例外なく返る（深い入れ子は文字のままになる）
+        let _ = parse_inline(&input, 0);
+        let _ = parse(&input);
+    }
+
+    #[test]
+    fn bare_urls_link_and_trailing_punctuation_is_left_out() {
+        assert_eq!(
+            parse_inline("https://www.sample.com", 0),
+            vec![link("https://www.sample.com")]
+        );
+        assert_eq!(
+            parse_inline("(https://www.sample.com)", 0),
+            vec![text("("), link("https://www.sample.com"), text(")")]
+        );
+        assert_eq!(
+            parse_inline("https://a.com/x」。", 0),
+            vec![link("https://a.com/x"), text("」。")]
+        );
+        assert_eq!(
+            parse_inline("[https://a.com/x]", 0),
+            vec![text("["), link("https://a.com/x"), text("]")]
+        );
+        assert_eq!(
+            parse_inline("https://a.com/x_(y).", 0),
+            vec![link("https://a.com/x_(y)"), text(".")]
+        );
+    }
+
+    #[test]
+    fn bare_urls_inside_tags_and_code_follow_the_same_rules() {
+        assert_eq!(
+            parse_inline("<b>https://a.com</b>", 0),
+            vec![Inline::Bold {
+                children: vec![link("https://a.com")]
+            }]
+        );
+        assert_eq!(
+            parse_inline("`https://a.com`", 0),
+            vec![Inline::Code {
+                text: "https://a.com".into()
+            }]
+        );
+        assert_eq!(
+            parse_inline("[https://a.com](https://a.com)", 0),
+            vec![Inline::Link {
+                href: "https://a.com".into(),
+                text: "https://a.com".into(),
+            }]
         );
     }
 }

@@ -63,6 +63,11 @@ fn rewrite_line<E>(
                 Some(k) if k > 0 => i = i + 1 + k + 1,
                 _ => i += 1,
             },
+            // `<code>…</code>` の中は読まない（core の html と同じ）。ほかのタグは中身を読む（書式の中のパスも同じ）
+            b'<' => match html_code_end(line, i) {
+                Some(end) => i = end,
+                None => i += 1,
+            },
             b'[' => {
                 let wiki = bytes.get(i + 1) == Some(&b'[');
                 let read = if wiki {
@@ -85,6 +90,44 @@ fn rewrite_line<E>(
     }
     out.push_str(&line[copied..]);
     Ok(out)
+}
+
+/// `<code>中身</code>` の位置 i（`<`）で読む。閉じの次の位置を返す。core の `view::markdown` と同じ:
+/// 属性なし・大文字小文字は問わない・同じ名前の入れ子は数える・中身が空なら文字のまま（None）。
+fn html_code_end(line: &str, i: usize) -> Option<usize> {
+    let open = line.get(i..i + 6)?;
+    if !open.eq_ignore_ascii_case("<code>") {
+        return None;
+    }
+    let body_start = i + 6;
+    let bytes = line.as_bytes();
+    let mut depth = 0usize;
+    let mut k = body_start;
+    while k < bytes.len() {
+        if bytes[k] == b'<' {
+            if line
+                .get(k..k + 7)
+                .is_some_and(|t| t.eq_ignore_ascii_case("</code>"))
+            {
+                if depth == 0 {
+                    return (k > body_start).then_some(k + 7);
+                }
+                depth -= 1;
+                k += 7;
+                continue;
+            }
+            if line
+                .get(k..k + 6)
+                .is_some_and(|t| t.eq_ignore_ascii_case("<code>"))
+            {
+                depth += 1;
+                k += 6;
+                continue;
+            }
+        }
+        k += 1;
+    }
+    None
 }
 
 /// core の fence_rest: 行頭の空白（最大 3 つ）の後ろの ```。
@@ -702,6 +745,30 @@ mod tests {
             attachment_paths("``` rust x\n[a](attachments/x.png)\n```"),
             vec!["x.png"],
             "言語の後ろに余分な語があるとフェンスではない"
+        );
+    }
+
+    #[test]
+    fn html_code_tags_are_not_links_but_other_tags_are() {
+        assert!(
+            attachment_paths("<code>[a](attachments/x.png)</code>").is_empty(),
+            "<code> の中は読まない"
+        );
+        assert!(attachment_paths("<CODE>[[attachments/x.png]]</Code>").is_empty());
+        assert_eq!(
+            attachment_paths("<b>[[attachments/x.png]]</b>"),
+            vec!["x.png"],
+            "強調のタグの中は読む"
+        );
+        assert_eq!(
+            attachment_paths("<code></code>[[attachments/x.png]]"),
+            vec!["x.png"],
+            "空の code は文字のまま"
+        );
+        assert_eq!(
+            attachment_paths("<code>a [[attachments/x.png]]"),
+            vec!["x.png"],
+            "閉じていなければ文字のまま"
         );
     }
 

@@ -40,6 +40,7 @@ mod snapshot;
 // デスクトップの通知（Windows・Linux は押したらウィンドウを前面に出す）
 #[cfg(desktop)]
 mod desktop_notify;
+mod downloads;
 
 // OS からのドロップ（ドロップされたファイル・フォルダだけを読む。任意のパスは読まない）
 #[cfg(desktop)]
@@ -196,6 +197,8 @@ pub fn run() {
 
     builder = builder.plugin(platform::plugin());
     builder = builder.plugin(tauri_plugin_opener::init());
+    // 添付・共有フォルダのファイルの直接保存（downloads.rs）。この実行で保存したものだけを開く
+    builder = builder.manage(downloads::DownloadRegistry::default());
 
     // アップデート: デスクトップは公式の updater、Android は自前のプラグイン
     // 通知: デスクトップは公式の notification、Android は常駐サービスを持つ自前のプラグイン
@@ -238,6 +241,8 @@ pub fn run() {
                 api_bridge::api_clear_avatar,
                 api_bridge::api_set_avatar,
                 api_bridge::api_set_prefs,
+                downloads::api_download,
+                downloads::api_download_open,
                 api_bridge::api_device_register,
                 api_bridge::api_settings_definitions,
                 api_bridge::api_markdown_tree,
@@ -295,6 +300,8 @@ pub fn run() {
                     api_bridge::api_clear_avatar,
                     api_bridge::api_set_avatar,
                     api_bridge::api_set_prefs,
+                    downloads::api_download,
+                    downloads::api_download_open,
                     api_bridge::api_device_register,
                     api_bridge::api_settings_definitions,
                     api_bridge::api_markdown_tree,
@@ -338,6 +345,8 @@ pub fn run() {
                 api_bridge::api_clear_avatar,
                 api_bridge::api_set_avatar,
                 api_bridge::api_set_prefs,
+                downloads::api_download,
+                downloads::api_download_open,
                 api_bridge::api_device_register,
                 api_bridge::api_settings_definitions,
                 api_bridge::api_markdown_tree,

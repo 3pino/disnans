@@ -4,6 +4,7 @@
   import Download from '@lucide/svelte/icons/download';
   import type { Attachment } from '../lib/protocol/Attachment';
   import { fileUrl } from '../lib/config';
+  import { interceptDownload } from '../lib/download';
   import { formatSize } from '../lib/format';
   import { bodyAttachmentNames } from '../lib/fileLink';
   import { ui } from '../lib/stores/ui.svelte';
@@ -65,7 +66,7 @@
   <div class="attachment-files">
     {#each files as a (a.id)}
       <div class="attachment-item">
-        <a class="attachment-file" href={fileUrl(a.id)} download={a.file_name} target="_blank" rel="noopener">
+        <a class="attachment-file" href={fileUrl(a.id)} download={a.file_name} target="_blank" rel="noopener" onclick={(ev) => interceptDownload(ev, { url: fileUrl(a.id), name: a.file_name })}>
           <FileIcon size={18} />
           <span class="attachment-file-name">{a.file_name}</span>
           <span class="attachment-file-size">{formatSize(a.size)}</span>

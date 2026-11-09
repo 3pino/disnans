@@ -26,6 +26,8 @@ const INLINE_KEYS: Record<string, string[]> = {
   underline: ['children'],
   strike: ['children'],
   highlight: ['children'],
+  sub: ['children'],
+  sup: ['children'],
   code: ['text'],
   link: ['href', 'text'],
   fileLink: ['path', 'alias', 'embed'],
