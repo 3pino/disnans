@@ -204,6 +204,13 @@
     onclose?.();
   }
 
+  /** ダウンロードを押したら、拡大表示を閉じる。アプリが直接保存するとき（Tauri）はすぐ閉じ、ブラウザーの既定の保存は、押しの処理が終わってから閉じる */
+  function onDownload(ev: MouseEvent, item: LightboxItem): void {
+    const intercepted = interceptDownload(ev, { url: item.downloadUrl, name: item.alt });
+    if (intercepted) close();
+    else setTimeout(close, 0);
+  }
+
   // 閉じたら、途中の切り替えを捨てる
   $effect(() => {
     if (open) return;
@@ -256,7 +263,7 @@
         {#if title}{@render title()}{:else}<span class="lightbox-file-name">{lb?.alt ?? ''}</span>{/if}
         {#if actions}{@render actions()}{/if}
         {#if download && lb}
-          <a class="icon-btn lightbox-download" href={lb.downloadUrl} download={lb.alt} target="_blank" rel="noopener" aria-label="ダウンロード" onclick={(ev) => interceptDownload(ev, { url: lb.downloadUrl, name: lb.alt })}
+          <a class="icon-btn lightbox-download" href={lb.downloadUrl} download={lb.alt} target="_blank" rel="noopener" aria-label="ダウンロード" onclick={(ev) => onDownload(ev, lb)}
             ><Download size={20} /></a
           >
         {/if}

@@ -41,3 +41,8 @@ export function swipeTriggered(dx: number): boolean {
 export function swipeProgress(dx: number): number {
   return Math.min(1, Math.max(0, -dx) / SWIPE_TRIGGER_PX);
 }
+
+/** 横スクロールする行（画像の横並び）が、右の端まで動いているか。端まで行っていない間は、左の動きは行のスクロールに譲る。あふれていない行は端にある */
+export function atScrollEnd(el: { scrollLeft: number; clientWidth: number; scrollWidth: number }): boolean {
+  return el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+}

@@ -10,6 +10,7 @@ import type { LightboxItem } from '../lib/lightbox';
 // jsdom には配置が無いので、画像の矩形だけを決めて測る（実際の見え方は未検証）。
 
 const h = vi.hoisted(() => ({
+  intercept: vi.fn((_ev: MouseEvent, _req: unknown) => false),
   getDocument: vi.fn(() => ({
     promise: Promise.resolve({
       numPages: 1,
@@ -21,6 +22,7 @@ const h = vi.hoisted(() => ({
     destroy: async () => {},
   })),
 }));
+vi.mock('../lib/download', () => ({ interceptDownload: (ev: MouseEvent, req: unknown) => h.intercept(ev, req) }));
 vi.mock('../lib/pdfjs', () => ({ loadPdfjs: async () => ({ getDocument: h.getDocument }) }));
 
 /** 画像の表示矩形（舞台の左上からの座標。jsdom の舞台は (0,0) 起点） */
@@ -207,5 +209,28 @@ describe('PDF は tapMode に関係なく、画像のタップとして扱わな
     wait(1000);
     expect(a.close).not.toHaveBeenCalled();
     expect(a.mediatap).not.toHaveBeenCalled();
+  });
+});
+
+describe('ダウンロードのボタン', () => {
+  it('押したら、拡大表示を閉じる（ブラウザーの既定の保存は、押しの処理のあとで閉じる）', () => {
+    h.intercept.mockReturnValue(false);
+    const a = render(PHOTO);
+    const link = target!.querySelector<HTMLAnchorElement>('.lightbox-download')!;
+    link.addEventListener('click', (e) => e.preventDefault()); // jsdom で遷移させない
+    link.click();
+    expect(a.close).not.toHaveBeenCalled();
+    wait(0);
+    expect(a.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('アプリが直接保存するとき（横取りしたとき）は、すぐ閉じる', () => {
+    h.intercept.mockReturnValue(true);
+    const a = render(PHOTO);
+    const link = target!.querySelector<HTMLAnchorElement>('.lightbox-download')!;
+    link.addEventListener('click', (e) => e.preventDefault());
+    link.click();
+    expect(h.intercept).toHaveBeenCalledWith(expect.anything(), { url: 'a.png', name: 'a.png' });
+    expect(a.close).toHaveBeenCalledTimes(1);
   });
 });

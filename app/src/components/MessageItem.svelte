@@ -30,7 +30,7 @@
   import { resolveMessageActions, type MessageActionContext } from '../lib/messageActions.svelte';
   import { registerCoreMessageActions, removeMessage } from '../lib/messageActionsCore';
   import { timelinePanels } from '../lib/stores/timelinePanel.svelte';
-  import { swipeAxis, swipeOffset, swipeProgress, swipeTriggered, type SwipeAxis } from '../lib/swipe';
+  import { atScrollEnd, swipeAxis, swipeOffset, swipeProgress, swipeTriggered, type SwipeAxis } from '../lib/swipe';
   import { vibrate } from '../lib/haptics';
 
   let {
@@ -81,6 +81,10 @@
   // ---- スワイプ（左へ動かして返信）。指の追跡は非リアクティブに持ち、描画に要る値だけ state にする ----
   let swipeFrom: { x: number; y: number } | null = null;
   let swipeAxisNow: SwipeAxis | null = null;
+  /** 指を置いたのが、横スクロールする画像の行の上なら、その行 */
+  let swipeRow: HTMLElement | null = null;
+  /** 行の前回の scrollLeft（動いているあいだは、まだ行のスクロール） */
+  let swipeRowLeft = 0;
   /** 指が開始点から横へ動いた量（左が負） */
   let dragDx = $state(0);
   let swiping = $state(false);
@@ -158,6 +162,7 @@
   function resetSwipe() {
     swipeFrom = null;
     swipeAxisNow = null;
+    swipeRow = null;
     swiping = false;
     dragDx = 0;
   }
@@ -165,9 +170,10 @@
   function onTouchStart(e: TouchEvent) {
     startPress(e);
     const t = e.touches[0];
-    // 画像の行の上では、横の動きは行の横スクロールに譲る（返信のスワイプにしない）
-    const inImageRow = e.target instanceof Element && !!e.target.closest('.attachment-images');
-    swipeFrom = e.touches.length === 1 && t && canSwipe && !inImageRow ? { x: t.clientX, y: t.clientY } : null;
+    // 画像の行の上では、行が右の端まで動くまでは、横の動きを行の横スクロールに譲る（onTouchMove）
+    swipeRow = e.target instanceof Element ? e.target.closest<HTMLElement>('.attachment-images, .embed-row') : null;
+    swipeRowLeft = swipeRow?.scrollLeft ?? 0;
+    swipeFrom = e.touches.length === 1 && t && canSwipe ? { x: t.clientX, y: t.clientY } : null;
     swipeAxisNow = null;
     dragDx = 0;
     swiping = false;
@@ -177,6 +183,15 @@
     cancelPress();
     const t = e.touches[0];
     if (!swipeFrom || e.touches.length !== 1 || !t) return;
+    // 行がまだ右の端に着いていない（または今も動いている）あいだは、動きは行のスクロール。起点を今の位置に取り直し、端に着いてからさらに左へ動いたときだけ返信にする
+    if (swipeRow && (!atScrollEnd(swipeRow) || swipeRow.scrollLeft !== swipeRowLeft)) {
+      swipeRowLeft = swipeRow.scrollLeft;
+      swipeFrom = { x: t.clientX, y: t.clientY };
+      swipeAxisNow = null;
+      swiping = false;
+      dragDx = 0;
+      return;
+    }
     const dx = t.clientX - swipeFrom.x;
     const dy = t.clientY - swipeFrom.y;
     if (swipeAxisNow === null) {
