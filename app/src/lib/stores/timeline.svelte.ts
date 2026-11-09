@@ -136,6 +136,10 @@ export class Timeline {
     if (clientId) this.discardPending(clientId);
     const idx = this.messages.findIndex((m) => m.id === msg.id);
     if (idx !== -1) {
+      // 構文木の無い同じ本文で置き換えるときは、今ある木を残す（確定の結果と echo のどちらが後に届いても、リンクや埋め込みが消えない）
+      const old = this.messages[idx] as { body: string; markdown?: Block[] };
+      const next = msg as { body: string; markdown?: Block[] };
+      if (next.markdown === undefined && old.markdown !== undefined && old.body === next.body) next.markdown = old.markdown;
       this.messages[idx] = msg;
       return;
     }

@@ -86,6 +86,17 @@ fn serialize_event<S: serde::Serializer>(event: &ServerEvent, s: S) -> Result<S:
     value.serialize(s)
 }
 
+/// メッセージを JSON にして、本文の構文木 `markdown` を足す（`serialize_event` と同じ。GUI の描画用）。
+fn serialize_message_with_tree<S: serde::Serializer>(
+    message: &Message,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::Error;
+    let mut value = serde_json::to_value(message).map_err(S::Error::custom)?;
+    disnans_client_core::view::markdown::add_to_message(&mut value);
+    value.serialize(s)
+}
+
 impl From<WatchItem> for ChatItem {
     fn from(item: WatchItem) -> Self {
         match item {
@@ -162,6 +173,9 @@ impl MessageDraft {
 pub enum SendResult {
     Confirmed {
         client_id: String,
+        // 確定したメッセージにも、本文の構文木（`markdown`）を付ける。付けないと、確定の結果が echo（message.created）の
+        // 後に届いたとき、構文木のないメッセージで置き換わり、アプリを再起動するまでリンクや埋め込みが効かなくなる
+        #[serde(serialize_with = "serialize_message_with_tree")]
         message: Message,
     },
     Rejected {
@@ -836,6 +850,29 @@ mod tests {
             })["httpStatus"],
             serde_json::Value::Null
         );
+    }
+
+    #[test]
+    fn a_confirmed_send_carries_the_markdown_tree_so_it_cannot_erase_the_echo_tree() {
+        let message = serde_json::from_value::<Message>(serde_json::json!({
+            "id": "m1", "author_id": "u1", "reply_to": null, "reply_preview": null,
+            "body": "see https://example.com ![[a.png]]", "attachments": [], "reactions": [], "created_at": 1,
+            "edited_at": null, "card": null, "bot": null
+        }))
+        .unwrap();
+        let v = serde_json::to_value(SendResult::from(SendOutcome::Confirmed {
+            client_id: "c1".into(),
+            message,
+        }))
+        .unwrap();
+        assert_eq!(v["outcome"], "confirmed");
+        assert_eq!(v["clientId"], "c1");
+        assert_eq!(v["message"]["body"], "see https://example.com ![[a.png]]");
+        assert_eq!(
+            v["message"]["markdown"],
+            disnans_client_core::view::markdown::blocks_value("see https://example.com ![[a.png]]")
+        );
+        assert_eq!(v["message"]["markdown"][0]["type"], "paragraph");
     }
 
     #[test]
