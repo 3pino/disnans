@@ -126,6 +126,8 @@ export async function downloadFile(req: DownloadRequest): Promise<void> {
   }
   if (inflight.has(path)) return;
   inflight.add(path);
+  // 取得のあいだ「ダウンロード中」を出し続ける（終わったら消して、結果を出す）
+  const progress = ui.toast(`ダウンロード中: ${req.name}`, 'info', undefined, null);
   try {
     const done = await invokeTauri<{ handle: string; name: string }>('api_download', {
       args: { server, devUser, path, name: req.name },
@@ -134,6 +136,7 @@ export async function downloadFile(req: DownloadRequest): Promise<void> {
   } catch (err) {
     ui.toast(downloadFailureText(err), 'error');
   } finally {
+    ui.dismiss(progress);
     inflight.delete(path);
   }
 }

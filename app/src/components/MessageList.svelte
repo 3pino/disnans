@@ -64,8 +64,17 @@
     atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < STICK_PX;
   }
 
+  /**
+   * 隠れている間（display: none や高さ 0）の記録。隠れたスクロール箱は scrollTop が 0 と読める。
+   * その 0 を「上まで来た」と取って過去を読み込んでしまい（戻ると、さらに過去が出ていた）、隠れている間の動きは無視する。
+   */
+  let hidden = false;
+  /** 見えていたときの最後の scrollTop（下に張り付いていなかったときだけ使う） */
+  let savedTop = 0;
+
   function onscroll() {
-    if (!scroller) return;
+    if (!scroller || hidden || scroller.clientHeight === 0) return;
+    savedTop = scroller.scrollTop;
     updateAtBottom();
     if (scroller.scrollTop < 400) void loadOlder();
   }
@@ -94,8 +103,20 @@
   $effect(() => {
     if (!content || !scroller) return;
     const ro = new ResizeObserver(() => {
+      if (!scroller) return;
+      if (scroller.clientHeight === 0) {
+        hidden = true; // 隠れた。見えている間の位置（savedTop）は、そのまま残す
+        return;
+      }
+      if (hidden) {
+        // 戻ってきた。下に張り付いていたなら下へ、そうでなければ隠れる前の位置へ。ここでは過去を読み込まない
+        hidden = false;
+        if (atBottom) scrollToBottom();
+        else if (scroller.scrollTop === 0) scroller.scrollTop = savedTop; // 位置が失われた環境でだけ戻す（Chromium は保つ）
+        return;
+      }
       if (atBottom) scrollToBottom();
-      else if (scroller && scroller.scrollTop < 400) void loadOlder();
+      else if (scroller.scrollTop < 400) void loadOlder();
     });
     ro.observe(content);
     ro.observe(scroller);

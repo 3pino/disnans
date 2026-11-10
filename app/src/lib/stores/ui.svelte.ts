@@ -288,10 +288,12 @@ class Ui {
     };
   }
 
-  toast(text: string, kind: Toast['kind'] = 'info', action?: Toast['action'], ms = 5000, avatar?: ToastAvatar): void {
+  /** 通知を出して、その id を返す。ms が null なら自分では消えない（dismiss するまで。進行中の通知など） */
+  toast(text: string, kind: Toast['kind'] = 'info', action?: Toast['action'], ms: number | null = 5000, avatar?: ToastAvatar): number {
     const id = ++this.toastSeq;
     this.toasts.push({ id, text, kind, action, avatar });
-    setTimeout(() => this.dismiss(id), ms);
+    if (ms !== null) setTimeout(() => this.dismiss(id), ms);
+    return id;
   }
 
   dismiss(id: number): void {

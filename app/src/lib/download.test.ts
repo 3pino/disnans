@@ -102,6 +102,30 @@ describe('downloadFile（Tauri）', () => {
     expect(ui.toasts[0].action).toBeUndefined();
   });
 
+  it('取得のあいだは「ダウンロード中」を出し続け、終わったら消して結果だけを出す', async () => {
+    vi.useFakeTimers();
+    try {
+      let finish: (v: unknown) => void = () => {};
+      h.invoke.mockReturnValueOnce(new Promise((r) => (finish = r)));
+      const p = downloadFile({ url: FILE, name: 'big.zip' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(ui.toasts.map((t) => t.text)).toEqual(['ダウンロード中: big.zip']);
+      await vi.advanceTimersByTimeAsync(60_000); // 時間では消えない
+      expect(ui.toasts.map((t) => t.text)).toEqual(['ダウンロード中: big.zip']);
+      finish({ handle: 'dl9', name: 'big.zip' });
+      await p;
+      expect(ui.toasts.map((t) => t.text)).toEqual(['ダウンロードしました: big.zip']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('失敗したときも「ダウンロード中」は消える', async () => {
+    h.invoke.mockRejectedValueOnce({ code: 'network', message: 'x' });
+    await downloadFile({ url: FILE, name: 'x.png' });
+    expect(ui.toasts.map((t) => t.text)).toEqual(['ダウンロードできませんでした: ネットワークに接続できませんでした']);
+  });
+
   it('同じパスの取得中は、2 回目を受けない（ダブルタップ）', async () => {
     let finish: (v: unknown) => void = () => {};
     h.invoke.mockReturnValueOnce(new Promise((r) => (finish = r)));
