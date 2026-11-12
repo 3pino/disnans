@@ -13,7 +13,7 @@
 const MAX_EDGE: u32 = 1920;
 
 /// 撮った 1 枚（縮小済みの RGBA）
-#[allow(dead_code)]
+#[cfg(any(windows, target_os = "linux"))]
 struct Shot {
     width: u32,
     height: u32,
@@ -22,7 +22,7 @@ struct Shot {
     rgba: Vec<u8>,
 }
 
-#[allow(dead_code)]
+#[cfg(any(windows, target_os = "linux"))]
 impl Shot {
     fn into_bytes(self) -> Vec<u8> {
         let mut out = Vec::with_capacity(12 + self.rgba.len());
@@ -42,7 +42,7 @@ impl Shot {
 }
 
 /// 長辺が `MAX_EDGE` 以下になる大きさ（縦横比は保つ）
-#[allow(dead_code)]
+#[cfg(any(windows, target_os = "linux"))]
 fn fit(w: u32, h: u32) -> (u32, u32) {
     let long = w.max(h);
     if long <= MAX_EDGE || long == 0 {
@@ -53,10 +53,18 @@ fn fit(w: u32, h: u32) -> (u32, u32) {
 }
 
 /// 画面の静止画を 1 枚撮る。選択や許可のダイアログは出さない
+#[cfg(any(windows, target_os = "linux"))]
 #[tauri::command]
 pub async fn screen_snapshot(window: tauri::WebviewWindow) -> Result<tauri::ipc::Response, String> {
     let shot = capture(window).await?;
     Ok(tauri::ipc::Response::new(shot.into_bytes()))
+}
+
+/// Windows・Linux 以外では、画面を撚れない（常にエラー）
+#[cfg(not(any(windows, target_os = "linux")))]
+#[tauri::command]
+pub async fn screen_snapshot(_window: tauri::WebviewWindow) -> Result<tauri::ipc::Response, String> {
+    Err("この環境では画面を撮れません".into())
 }
 
 #[cfg(windows)]
@@ -76,10 +84,6 @@ async fn capture(window: tauri::WebviewWindow) -> Result<Shot, String> {
     rx.recv().await.unwrap_or_else(|| Err("画面を撮れませんでした".into()))
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
-async fn capture(_window: tauri::WebviewWindow) -> Result<Shot, String> {
-    Err("この環境では画面を撮れません".into())
-}
 
 #[cfg(target_os = "linux")]
 mod linux {

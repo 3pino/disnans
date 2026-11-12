@@ -387,11 +387,11 @@ fn check_dev_user(user: Option<&str>) -> Result<(), ReadFailure> {
 
 // 中身は wire の型そのもの（Message / ServerEvent）なので、サイズの差は受け入れる（core と同じ）
 /// 背景タスクの停止・再接続の要求（制御チャンネル）。
-#[allow(clippy::large_enum_variant)]
 enum Step {
     /// `Some(())` は再接続、`None` は停止（送り手がいなくなった）。
     Control(Option<()>),
-    Item(WatchItem),
+    /// 大きいので箱に入れる（enum の大きさを揃える）
+    Item(Box<WatchItem>),
 }
 
 /// 受信を順に `sink` へ流す。停止・送り先の消滅・終端（`Failed`）で `close()` して終わる。
@@ -411,7 +411,7 @@ async fn pump<S: ItemSink>(
                 if let Poll::Ready(signal) = control.poll_recv(cx) {
                     return Poll::Ready(Step::Control(signal));
                 }
-                next.as_mut().poll(cx).map(Step::Item)
+                next.as_mut().poll(cx).map(|item| Step::Item(Box::new(item)))
             })
             .await
         };
@@ -419,8 +419,8 @@ async fn pump<S: ItemSink>(
             Step::Control(Some(())) => session.reconnect_now(),
             Step::Control(None) => break,
             Step::Item(item) => {
-                let terminal = matches!(item, WatchItem::Failed { .. });
-                if !sink.deliver(ChatItem::from(item)) || terminal {
+                let terminal = matches!(*item, WatchItem::Failed { .. });
+                if !sink.deliver(ChatItem::from(*item)) || terminal {
                     break;
                 }
             }

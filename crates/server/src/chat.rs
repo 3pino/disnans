@@ -3,7 +3,7 @@
 //! WebSocket の `ClientEvent` から呼ばれる。DB を書き換えたあと、結果を全員に配信し、
 //! 必要なら通知を送る。
 
-use disnans_shared::limits::MAX_BODY_CHARS;
+use disnans_shared::limits::{BodyError, MAX_BODY_CHARS};
 use disnans_shared::{Id, Message, PluginInfo, PluginPostMessage, ServerEvent, User};
 
 use crate::db;
@@ -415,16 +415,14 @@ async fn names_of(conn: &mut sqlx::SqliteConnection, ids: &[String]) -> AppResul
 }
 
 fn validate_body(body: &str, has_attachments: bool) -> AppResult<()> {
-    if body.trim().is_empty() && !has_attachments {
-        return Err(AppError::bad_request("empty_message", "本文が空です"));
-    }
-    if body.chars().count() > MAX_BODY_CHARS {
-        return Err(AppError::bad_request(
+    match disnans_shared::limits::validate_body(body, has_attachments) {
+        Ok(()) => Ok(()),
+        Err(BodyError::Empty) => Err(AppError::bad_request("empty_message", "本文が空です")),
+        Err(BodyError::TooLong) => Err(AppError::bad_request(
             "body_too_long",
             format!("本文は {MAX_BODY_CHARS} 文字までです"),
-        ));
+        )),
     }
-    Ok(())
 }
 
 fn validate_emoji(emoji: &str) -> AppResult<&str> {

@@ -2,7 +2,7 @@
 
 use std::io::Read;
 
-use disnans_shared::limits::MAX_BODY_CHARS;
+use disnans_shared::limits::{self as shared, MAX_BODY_CHARS};
 
 /// 標準入力から読むバイト数の上限。巨大な入力でメモリを使い切らない。
 const MAX_STDIN_BYTES: u64 = (MAX_BODY_CHARS as u64) * 4 + 4;
@@ -56,13 +56,11 @@ pub fn read_stdin_body(mut input: impl Read, is_terminal: bool) -> Result<String
 
 /// 引数または標準入力の本文を送信前に検証する（内部の改行・空白は保持）。
 pub fn validate_body(text: String) -> Result<String, BodyError> {
-    if text.trim().is_empty() {
-        return Err(BodyError::Empty);
+    match disnans_shared::limits::validate_body(&text, false) {
+        Ok(()) => Ok(text),
+        Err(shared::BodyError::Empty) => Err(BodyError::Empty),
+        Err(shared::BodyError::TooLong) => Err(BodyError::TooLong),
     }
-    if text.chars().count() > MAX_BODY_CHARS {
-        return Err(BodyError::TooLong);
-    }
-    Ok(text)
 }
 
 #[cfg(test)]

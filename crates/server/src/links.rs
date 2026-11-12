@@ -16,6 +16,10 @@ use crate::error::{AppError, AppResult};
 /// 保存する表記（添付の ID）の接頭辞。
 pub const ID_PREFIX: &str = "disnans:file/";
 /// 表示する表記（今の名前）の接頭辞。
+use disnans_shared::markdown_lines::{
+    cols_of, fence_lang, indent_of, is_fence_close, quote_inner, strip_indent,
+};
+
 const PATH_PREFIX: &str = "attachments/";
 
 /// パスの位置を順に見て、`f` の戻り値で置き換える。`f` が `Err` を返したら止める。
@@ -128,29 +132,6 @@ fn html_code_end(line: &str, i: usize) -> Option<usize> {
         k += 1;
     }
     None
-}
-
-/// core の fence_rest: 行頭の空白（最大 3 つ）の後ろの ```。
-fn fence_rest(line: &str) -> Option<&str> {
-    let spaces = line.bytes().take_while(|b| *b == b' ').count();
-    if spaces > 3 {
-        return None;
-    }
-    line[spaces..].strip_prefix("```")
-}
-
-/// 開きのフェンス: ``` の後ろに言語（空白と ` を含まない）だけ。core の fence_lang と同じ。
-fn fence_lang(line: &str) -> Option<&str> {
-    let rest = fence_rest(line)?.trim_start();
-    let end = rest
-        .find(|c: char| c == '`' || c.is_whitespace())
-        .unwrap_or(rest.len());
-    rest[end..].trim().is_empty().then_some(&rest[..end])
-}
-
-/// 閉じのフェンス: ``` の後ろが空白だけ。
-fn is_fence_close(line: &str) -> bool {
-    fence_rest(line).is_some_and(|rest| rest.trim().is_empty())
 }
 
 /// 各行が、コードブロック（フェンスの行と中身）の中か。core の `view::markdown` の区切りと同じ:
@@ -292,50 +273,6 @@ fn list_match(line: &str) -> Option<ListLine> {
         gap: after[..gap_len].to_owned(),
         ordered,
     })
-}
-
-/// `^ {0,3}>( ?)(.*)$` の中身（`>` の後の空白は 1 つ除く）。core の quote_inner と同じ。
-fn quote_inner(line: &str) -> Option<String> {
-    let spaces = line.bytes().take_while(|b| *b == b' ').count();
-    if spaces > 3 {
-        return None;
-    }
-    let rest = line[spaces..].strip_prefix('>')?;
-    Some(rest.strip_prefix(' ').unwrap_or(rest).to_owned())
-}
-
-/// タブは 4 桁として数える（core の cols_of）
-fn cols_of(ws: &str) -> usize {
-    ws.chars().map(|c| if c == '\t' { 4usize } else { 1 }).sum()
-}
-
-fn indent_of(line: &str) -> &str {
-    let len = line
-        .bytes()
-        .take_while(|b| *b == b' ' || *b == b'\t')
-        .count();
-    &line[..len]
-}
-
-/// 行頭から最大 n 桁ぶんの空白を取り除く（core の strip_indent）
-fn strip_indent(line: &str, n: usize) -> String {
-    let bytes = line.as_bytes();
-    let mut col = 0;
-    let mut k = 0;
-    while k < bytes.len() && col < n {
-        match bytes[k] {
-            b' ' => col += 1,
-            b'\t' => {
-                if col + 4 > n {
-                    return format!("{}{}", " ".repeat(col + 4 - n), &line[k + 1..]);
-                }
-                col += 4;
-            }
-            _ => break,
-        }
-        k += 1;
-    }
-    line[k..].to_owned()
 }
 
 /// 本文が参照している添付の ID（順番どおり、重複なし）。コードの中は数えない。

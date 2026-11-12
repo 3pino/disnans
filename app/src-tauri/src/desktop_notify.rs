@@ -2,6 +2,7 @@
 //! 通知を押すとメインウィンドウを前面に出し、フロントに知らせる（アプリが動いているときだけ。終了していれば何も起きない）。
 //! Android の通知は notifier（Kotlin）が出す。
 
+#[cfg(any(windows, test))]
 use std::path::Path;
 
 use tauri::AppHandle;
@@ -11,7 +12,7 @@ use tauri::{Emitter, Manager};
 
 /// 通知を押したあと、フロントに送るイベント名（src/lib/systemNotify.ts と同じ値）。
 /// フロントは、Android の notifier の open と同じ動作（チャットを表示する）をこれで行う
-#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
+#[cfg(any(windows, target_os = "linux", test))]
 const CLICKED_EVENT: &str = "desktop-notification-clicked";
 
 /// Linux で、通知の本体を押したときのアクション名（通知仕様の既定の動作）
@@ -43,7 +44,7 @@ fn on_clicked(app: &AppHandle) {
 
 /// 実行ファイルのフォルダが cargo の出力（target/debug か target/release）か。
 /// Windows の通知は、開発用のときは別の AppUserModelID を使う（プラグインと同じ決め方）
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(any(windows, test))]
 fn is_dev_exe_dir(dir: &Path) -> bool {
     // 末尾から見る: 1つ目が debug / release、2つ目が target
     let mut parts = dir

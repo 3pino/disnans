@@ -82,7 +82,7 @@ pub fn valid_segment(s: &str) -> bool {
 }
 
 /// 根の表示名: 決まりに合わない文字は `_` に置き換える（根の名前は rel の先頭になるため）
-fn sanitize_name(base: &str) -> String {
+fn sanitize_root_name(base: &str) -> String {
     let s: String = base
         .chars()
         .map(|c| {
@@ -137,7 +137,7 @@ pub fn prepare_roots(paths: &[PathBuf]) -> Result<(Vec<Root>, Vec<String>), Walk
             skipped.push(base);
             continue;
         }
-        let name = unique_name(&used, &sanitize_name(&base), dir);
+        let name = unique_name(&used, &sanitize_root_name(&base), dir);
         used.insert(name.clone());
         roots.push(Root { name, path, dir });
     }

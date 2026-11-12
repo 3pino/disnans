@@ -4,6 +4,7 @@
 //! `app/src/lib/protocol/` に書き出される（ts-rs）。
 
 pub mod limits;
+pub mod markdown_lines;
 pub mod mime;
 pub mod version;
 
