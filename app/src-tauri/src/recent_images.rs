@@ -143,8 +143,9 @@ fn local_image_mime(ext: &str) -> Option<&'static str> {
 
 fn mime_of(path: &Path) -> &'static str {
     let ext = extension(path).unwrap_or_default();
+    // 画像の一覧なので、画像の型だけを付ける（共有の表の文書の型は使わない。以前と同じ）
     local_image_mime(&ext)
-        .or_else(|| disnans_shared::mime::for_extension(&ext))
+        .or_else(|| disnans_shared::mime::for_extension(&ext).filter(|m| m.starts_with("image/")))
         .unwrap_or("application/octet-stream")
 }
 
