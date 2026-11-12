@@ -149,20 +149,6 @@ fn mime_of(path: &Path) -> &'static str {
         .unwrap_or("application/octet-stream")
 }
 
-#[cfg(test)]
-mod mime_tests {
-    use super::*;
-
-    #[test]
-    fn svg_and_other_list_only_formats_keep_their_mime() {
-        assert_eq!(mime_of(Path::new("a.svg")), "image/svg+xml");
-        assert_eq!(mime_of(Path::new("a.HEIC")), "image/heic");
-        assert_eq!(mime_of(Path::new("a.jfif")), "image/jpeg");
-        assert_eq!(mime_of(Path::new("a.png")), "image/png");
-        assert_eq!(mime_of(Path::new("a.txt")), "application/octet-stream");
-    }
-}
-
 /// 縮小できない形式か（拡張子で判断する）
 fn thumbless(path: &Path) -> bool {
     extension(path).is_some_and(|e| THUMBLESS.contains(&e.as_str()))
@@ -215,4 +201,18 @@ fn thumb_of(path: &Path) -> Option<(u32, u32, String)> {
         .ok()?;
     let data = base64::engine::general_purpose::STANDARD.encode(jpeg.into_inner());
     Some((width, height, format!("data:image/jpeg;base64,{data}")))
+}
+
+#[cfg(test)]
+mod mime_tests {
+    use super::*;
+
+    #[test]
+    fn svg_and_other_list_only_formats_keep_their_mime() {
+        assert_eq!(mime_of(Path::new("a.svg")), "image/svg+xml");
+        assert_eq!(mime_of(Path::new("a.HEIC")), "image/heic");
+        assert_eq!(mime_of(Path::new("a.jfif")), "image/jpeg");
+        assert_eq!(mime_of(Path::new("a.png")), "image/png");
+        assert_eq!(mime_of(Path::new("a.txt")), "application/octet-stream");
+    }
 }
