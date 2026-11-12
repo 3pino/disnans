@@ -93,7 +93,7 @@ describe('Prefs（ユーザーごとの設定）', () => {
 
   it('サーバーに値があれば、以前のデバイスの値は使わない（保存もしない）', async () => {
     localStorage.setItem('disnans.theme', 'dark');
-    apiMock.prefs.mockResolvedValue(res({ ...BASE, theme: 'light', joinMuted: true }));
+    apiMock.prefs.mockResolvedValue(res({ ...BASE, theme: 'light', joinMode: 'speaker' }));
     const p = new Prefs();
     await LOAD(p);
     expect(p.theme).toBe('light');
@@ -107,10 +107,18 @@ describe('Prefs（ユーザーごとの設定）', () => {
     await LOAD(p);
     await vi.waitFor(() => expect(apiMock.setPrefs).toHaveBeenCalled());
     const saved = apiMock.setPrefs.mock.calls.at(-1)![0] as Record<string, unknown>;
-    expect(saved).toMatchObject({ joinMuted: true, micVolume: 0.5 });
+    // 旧い joinMuted: true は、参加の状態 mic に取り込む（消さない）
+    expect(saved).toMatchObject({ joinMode: 'mic', micVolume: 0.5 });
     // 機器の項目はユーザーごとには入れない
     expect(saved).not.toHaveProperty('inputId');
-    expect(p.callUser.joinMuted).toBe(true);
+    expect(p.callUser.joinMode).toBe('mic');
+  });
+
+  it('サーバーに旧い joinMuted: true だけがあるとき、表示は mic（ブラウザーでも Rust でも同じ）', async () => {
+    apiMock.prefs.mockResolvedValue(res({ ...BASE, joinMuted: true }));
+    const p = new Prefs();
+    await LOAD(p);
+    expect(p.callUser.joinMode).toBe('mic');
   });
 
   it('表示は view の値（Rust が正規化したもの）をそのまま読む。足りない項目は既定で埋まる', async () => {

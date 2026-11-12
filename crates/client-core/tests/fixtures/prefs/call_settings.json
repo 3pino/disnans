@@ -1,36 +1,42 @@
 {
   "schema": 1,
-  "note": "通話の設定の読み方（機器・ユーザー共通の項目）。expected は TS の parseCallSettings（削除前の旧実装）の出力を記録したもの。Rust の normalize_value が同じ値を返すことを tests/prefs_fixtures.rs で確かめる。",
+  "note": "通話の設定の読み方（機器・ユーザー共通の項目）。joinMode は選びの値（旧い真偽値の読み替えは settings.rs の join_mode_from_legacy と、TS の joinModeOf で確かめる）。expected は TS の parseCallSettings（削除前の旧実装）の出力を記録したもの。Rust の normalize_value が同じ値を返すことを tests/prefs_fixtures.rs で確かめる。",
   "cases": [
     {
-      "key": "joinMuted",
-      "name": "joinMuted / true",
+      "key": "joinMode",
+      "name": "joinMode / \"none\"",
+      "input": "none",
+      "expected": "none"
+    },
+    {
+      "key": "joinMode",
+      "name": "joinMode / \"mic\"",
+      "input": "mic",
+      "expected": "mic"
+    },
+    {
+      "key": "joinMode",
+      "name": "joinMode / \"speaker\"",
+      "input": "speaker",
+      "expected": "speaker"
+    },
+    {
+      "key": "joinMode",
+      "name": "joinMode / \"loud\"",
+      "input": "loud",
+      "expected": "none"
+    },
+    {
+      "key": "joinMode",
+      "name": "joinMode / true (old boolean value is not a mode)",
       "input": true,
-      "expected": true
+      "expected": "none"
     },
     {
-      "key": "joinMuted",
-      "name": "joinMuted / false",
-      "input": false,
-      "expected": false
-    },
-    {
-      "key": "joinMuted",
-      "name": "joinMuted / \"yes\"",
-      "input": "yes",
-      "expected": false
-    },
-    {
-      "key": "joinMuted",
-      "name": "joinMuted / null",
+      "key": "joinMode",
+      "name": "joinMode / null",
       "input": null,
-      "expected": false
-    },
-    {
-      "key": "joinMuted",
-      "name": "joinMuted / 1",
-      "input": 1,
-      "expected": false
+      "expected": "none"
     },
     {
       "key": "micVolume",

@@ -100,6 +100,12 @@ pub struct Def {
 pub const ORIENTATION_OPTIONS: &[&str] = &["portrait", "media", "auto"];
 pub const DEVICE_KIND_OPTIONS: &[&str] = &["smartphone", "tablet", "laptop", "monitor"];
 pub const THEME_OPTIONS: &[&str] = &["system", "light", "dark"];
+/// 通話に参加したときの状態: なし（既定）・ミュート（マイクを止める）・スピーカーミュート（相手の音も止める）。
+/// 旧い真偽値の `joinMuted` は、`joinMode` が無いときだけ読み替える（`join_mode_from_legacy`）
+pub const JOIN_MODE_KEY: &str = "joinMode";
+pub const JOIN_MODE_OPTIONS: &[&str] = &["none", "mic", "speaker"];
+/// 旧い真偽値の参加時のミュート（読み替えの元。残す。消さない）
+const JOIN_MUTED_LEGACY_KEY: &str = "joinMuted";
 /// Enter キーの動作（`enterKeys.ts` の ACTIONS）と組み合わせ
 const ENTER_ACTIONS: &[&str] = &["send", "newline", "none"];
 const ENTER_COMBOS: &[&str] = &["enter", "shift", "ctrl", "alt"];
@@ -153,10 +159,13 @@ pub const DEFINITIONS: &[Def] = &[
         default: DefaultValue::EmptyObject,
     },
     Def {
-        key: "joinMuted",
+        key: JOIN_MODE_KEY,
         scope: Scope::User,
-        kind: Kind::Bool,
-        default: DefaultValue::Bool(false),
+        kind: Kind::Choice {
+            options: JOIN_MODE_OPTIONS,
+            nullable: false,
+        },
+        default: DefaultValue::Text("none"),
     },
     Def {
         key: "micVolume",
@@ -564,10 +573,21 @@ pub fn normalize_user_prefs(raw: &Value) -> Value {
         _ => Map::new(),
     };
     for def in user_definitions() {
-        let value = normalize_value(def, raw.get(def.key));
+        let value = match (def.key, raw.get(def.key)) {
+            // 旧い版の保存（joinMuted の真偽値）から読み替える。joinMode が無い・null のときだけ（選び直したあとは、その値を使う）
+            (JOIN_MODE_KEY, None | Some(Value::Null)) => join_mode_from_legacy(raw),
+            _ => normalize_value(def, raw.get(def.key)),
+        };
         out.insert(def.key.to_owned(), value);
     }
     Value::Object(out)
+}
+
+/// 旧い `joinMuted`（真偽値）からの読み替え: true は「ミュート」、それ以外（false・無い・型が違う）は「なし」。
+/// 読むだけで、元の `joinMuted` は消さない（保存のオブジェクトに残す）
+pub fn join_mode_from_legacy(raw: &Value) -> Value {
+    let muted = raw.get(JOIN_MUTED_LEGACY_KEY) == Some(&Value::Bool(true));
+    Value::String(if muted { "mic" } else { "none" }.to_owned())
 }
 
 /// 保存する値の検査用に、定義の一覧を JSON にする（GUI が起動時に一度読む想定）
@@ -684,7 +704,7 @@ mod tests {
     #[test]
     fn user_defaults_match_the_call_defaults() {
         // DEFAULT_CALL_SETTINGS（call/pure.ts）と同じ
-        assert_eq!(def("joinMuted").default.to_value(), json!(false));
+        assert_eq!(def("joinMode").default.to_value(), json!("none"));
         assert_eq!(def("micVolume").default.to_value(), json!(1.0));
         assert_eq!(def("outVolume").default.to_value(), json!(1.0));
         assert_eq!(def("limiter").default.to_value(), json!(true));
@@ -788,6 +808,66 @@ mod tests {
         for d in user_definitions() {
             assert!(out.get(d.key).is_some(), "{} is filled", d.key);
         }
+    }
+
+    #[test]
+    fn join_mode_has_three_choices_and_defaults_to_none() {
+        let d = def("joinMode");
+        assert_eq!(d.scope, Scope::User);
+        assert_eq!(
+            d.kind,
+            Kind::Choice {
+                options: &["none", "mic", "speaker"],
+                nullable: false,
+            }
+        );
+        assert!(DEFINITIONS.iter().all(|x| x.key != "joinMuted"), "joinMuted is replaced");
+    }
+
+    #[test]
+    fn each_join_mode_is_kept_as_chosen() {
+        for mode in ["none", "mic", "speaker"] {
+            let out = normalize_user_prefs(&json!({"joinMode": mode}));
+            assert_eq!(out["joinMode"], mode);
+        }
+    }
+
+    #[test]
+    fn old_join_muted_true_reads_as_mic() {
+        let out = normalize_user_prefs(&json!({"joinMuted": true}));
+        assert_eq!(out["joinMode"], "mic");
+    }
+
+    #[test]
+    fn old_join_muted_false_or_absent_reads_as_none() {
+        for raw in [json!({"joinMuted": false}), json!({}), json!({"joinMuted": "yes"}), json!({"joinMuted": 1}), json!({"joinMuted": null})] {
+            let out = normalize_user_prefs(&raw);
+            assert_eq!(out["joinMode"], "none", "input {raw}");
+        }
+    }
+
+    #[test]
+    fn a_saved_join_mode_wins_over_the_old_boolean() {
+        let out = normalize_user_prefs(&json!({"joinMuted": true, "joinMode": "speaker"}));
+        assert_eq!(out["joinMode"], "speaker");
+        let out = normalize_user_prefs(&json!({"joinMuted": true, "joinMode": "none"}));
+        assert_eq!(out["joinMode"], "none", "choosing none after an old true stays none");
+    }
+
+    #[test]
+    fn unknown_join_mode_is_none_not_the_old_boolean() {
+        // 知らない値は安全な側（ミュートなし）。古い真偽値があっても、選ばれた値が優先されて既定に戻る
+        for raw in [json!({"joinMode": "loud"}), json!({"joinMode": true, "joinMuted": true}), json!({"joinMode": 1, "joinMuted": true})] {
+            let out = normalize_user_prefs(&raw);
+            assert_eq!(out["joinMode"], "none", "input {raw}");
+        }
+    }
+
+    #[test]
+    fn migration_keeps_the_old_boolean_in_the_object() {
+        // 読み替えても消さない（保存の元のオブジェクトに残る）
+        let out = normalize_user_prefs(&json!({"joinMuted": true}));
+        assert_eq!(out["joinMuted"], true);
     }
 
     #[test]

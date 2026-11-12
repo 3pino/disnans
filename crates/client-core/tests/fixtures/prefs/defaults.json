@@ -9,7 +9,7 @@
       "app:open-settings"
     ],
     "navBarLabels": {},
-    "joinMuted": false,
+    "joinMode": "none",
     "micVolume": 1,
     "outVolume": 1,
     "limiter": true,

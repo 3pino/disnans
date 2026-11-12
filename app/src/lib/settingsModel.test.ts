@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEVICE_DEFAULTS, LEGACY, fillDeviceDefaults, fillUserDefaults, legacyDeviceValues, legacyScreenShare, legacyUserValues, prefsResultOf } from './settingsModel';
+import { DEVICE_DEFAULTS, LEGACY, fillDeviceDefaults, fillUserDefaults, joinModeOf, legacyDeviceValues, legacyScreenShare, legacyUserValues, prefsResultOf } from './settingsModel';
 
 /** 手元の localStorage の代わり */
 function store(entries: Record<string, string>) {
@@ -32,8 +32,22 @@ describe('legacyUserValues（以前の localStorage からユーザーごとの�
 
   it('通話の値は、ユーザーごとのものだけ（型も範囲もそのまま。表示は Rust が直す）', () => {
     const v = legacyUserValues(store({ [LEGACY.call]: JSON.stringify({ joinMuted: true, micVolume: 9, limitDb: -100, inputId: 'mic1', output: null }) }));
-    expect(v).toEqual({ joinMuted: true, micVolume: 9, limitDb: -100 });
+    expect(v).toEqual({ joinMode: 'mic', micVolume: 9, limitDb: -100 });
     expect(v).not.toHaveProperty('inputId');
+    expect(v).not.toHaveProperty('joinMuted');
+  });
+
+  it('旧い joinMuted（真偽値）は、参加の状態に読み替える（true → ミュート、false・無い → ミュートなし）', () => {
+    expect(legacyUserValues(store({ [LEGACY.call]: JSON.stringify({ joinMuted: true }) })).joinMode).toBe('mic');
+    expect(legacyUserValues(store({ [LEGACY.call]: JSON.stringify({ joinMuted: false }) })).joinMode).toBe('none');
+    expect(legacyUserValues(store({ [LEGACY.call]: JSON.stringify({ micVolume: 0.5 }) }))).not.toHaveProperty('joinMode');
+  });
+
+  it('新しい joinMode があれば、旧い joinMuted より優先する。知らない値は なし（安全な側）', () => {
+    const both = legacyUserValues(store({ [LEGACY.call]: JSON.stringify({ joinMode: 'speaker', joinMuted: true }) }));
+    expect(both.joinMode).toBe('speaker');
+    const unknown = legacyUserValues(store({ [LEGACY.call]: JSON.stringify({ joinMode: 'loud', joinMuted: true }) }));
+    expect(unknown.joinMode).toBe('none');
   });
 
   it('通話の旧い保存先（voice）は、新しいものが無いときだけ引き継ぐ', () => {
@@ -120,7 +134,7 @@ const SCOPE_OF: Record<string, 'user' | 'device' | 'local'> = {
   customTheme: 'user',
   navBarItems: 'user',
   navBarLabels: 'user',
-  joinMuted: 'user',
+  joinMode: 'user',
   micVolume: 'user',
   outVolume: 'user',
   limiter: 'user',
@@ -150,7 +164,7 @@ const TS_DEFAULTS: Record<string, unknown> = {
   customTheme: null,
   navBarItems: DEFAULT_NAV_ITEMS,
   navBarLabels: {},
-  joinMuted: DEFAULT_CALL_SETTINGS.joinMuted,
+  joinMode: DEFAULT_CALL_SETTINGS.joinMode,
   micVolume: DEFAULT_CALL_SETTINGS.micVolume,
   outVolume: DEFAULT_CALL_SETTINGS.outVolume,
   limiter: DEFAULT_CALL_SETTINGS.limiter,
@@ -211,5 +225,33 @@ describe('legacyScreenShare（旧い画面共有プラグインの保存先か�
   it('外れた項目は既定（fps 5・p720・full）。fps の 5 と 20 以外は 5', () => {
     expect(legacyScreenShare(store({ [key]: '{"fps":7,"quality":"x","color":"sepia"}' }))).toEqual({ fps: 5, quality: 'p720', color: 'full' });
     expect(legacyScreenShare(store({ [key]: '{"fps":"20"}' }))).toEqual({ fps: 5, quality: 'p720', color: 'full' });
+  });
+});
+
+describe('joinMode（参加時の状態）の読み方（サーバーの保存・Rust の normalize_user_prefs と同じ）', () => {
+  it('サーバーの旧い joinMuted: true は mic、false・無いものは none', () => {
+    expect(joinModeOf({ joinMuted: true })).toBe('mic');
+    expect(joinModeOf({ joinMuted: false })).toBe('none');
+    expect(joinModeOf({})).toBe('none');
+    expect(joinModeOf({ joinMuted: 'yes' })).toBe('none');
+  });
+
+  it('joinMode が有効な値なら、それを使う（mic と speaker も、古い joinMuted より優先）', () => {
+    expect(joinModeOf({ joinMode: 'none', joinMuted: true })).toBe('none');
+    expect(joinModeOf({ joinMode: 'mic' })).toBe('mic');
+    expect(joinModeOf({ joinMode: 'speaker', joinMuted: false })).toBe('speaker');
+  });
+
+  it('joinMode が null なら旧い値から読む。知らない値は none（安全な側）', () => {
+    expect(joinModeOf({ joinMode: null, joinMuted: true })).toBe('mic');
+    expect(joinModeOf({ joinMode: 'loud', joinMuted: true })).toBe('none');
+    expect(joinModeOf({ joinMode: true, joinMuted: true })).toBe('none');
+  });
+
+  it('ブラウザーの表示（Rust を通さない）でも、サーバーの旧い joinMuted から mic になる', () => {
+    const view = prefsResultOf({ joinMuted: true }).view;
+    expect(view.joinMode).toBe('mic');
+    expect(prefsResultOf({}).view.joinMode).toBe('none');
+    expect(fillUserDefaults({ joinMode: 'speaker' }).joinMode).toBe('speaker');
   });
 });

@@ -12,7 +12,7 @@ const { fakeCall, listInputs, settingsPatch, settingsValue } = vi.hoisted(() => 
   },
   listInputs: vi.fn(async () => [{ id: 'web-1', label: 'Web の入力', selected: false }]),
   settingsPatch: vi.fn(),
-  settingsValue: { inputId: 'web-dev-saved', output: null, micVolume: 1, outVolume: 1, joinMuted: false, limiter: true, limitDb: -3 },
+  settingsValue: { inputId: 'web-dev-saved', output: null, micVolume: 1, outVolume: 1, joinMode: 'none', limiter: true, limitDb: -3 },
 }));
 
 vi.mock('../lib/call/instance.svelte', () => ({ call: fakeCall }));

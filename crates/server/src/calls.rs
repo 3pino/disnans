@@ -26,6 +26,8 @@ pub const ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 /// `call.emit` の payload の上限。
 const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 const MAX_EVENT_NAME_CHARS: usize = 64;
+/// 通話の音声のイベント名（クライアントの `EV_AUDIO`）。映像より優先して届ける
+const AUDIO_EVENT: &str = "audio";
 const MAX_PEER_CHARS: usize = 64;
 const MAX_DEVICE_CHARS: usize = 32;
 
@@ -278,6 +280,7 @@ impl Calls {
         if !me.bucket.allow(Instant::now(), size) {
             return Ok(());
         }
+        let name_is_audio = name == AUDIO_EVENT;
         let event = ServerEvent::CallEvent {
             peer: me.peer.clone(),
             from: me.user_id.clone(),
@@ -285,7 +288,12 @@ impl Calls {
             payload,
         };
         let targets: Vec<ConnId> = members.keys().copied().filter(|c| *c != conn).collect();
-        hub.send_lossy_to_conns(&targets, &event);
+        // 音声は映像より後まで残す（同じ受け手が詰まっても、映像の大きなかけらより先に捨てない）
+        if name_is_audio {
+            hub.send_audio_to_conns(&targets, &event);
+        } else {
+            hub.send_lossy_to_conns(&targets, &event);
+        }
         Ok(())
     }
 }

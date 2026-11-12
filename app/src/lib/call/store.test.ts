@@ -564,12 +564,33 @@ describe('参加と音声', () => {
     expect(a.store.participants[0]).toMatchObject({ muted: true, deafened: true });
   });
 
-  it('参加したときミュートにする設定が効く', async () => {
+  it('参加した時点でのモード: ミュートなし（既定）は、マイクもスピーカーも入れない', async () => {
     const a = makeClient('u1');
-    a.store['deps'].settings.patch({ joinMuted: true });
+    await a.store.join();
+    expect(a.store.muted).toBe(false);
+    expect(a.store.deafened).toBe(false);
+    expect(a.sent.find((e) => e.type === 'call.join')).toMatchObject({ status: { muted: false, deafened: false } });
+  });
+
+  it('参加した時点でのモード: ミュートは、マイクだけ止めて入る（スピーカーは止めない）', async () => {
+    const a = makeClient('u1');
+    a.store['deps'].settings.patch({ joinMode: 'mic' });
     await a.store.join();
     expect(a.store.muted).toBe(true);
-    expect(a.sent.find((e) => e.type === 'call.join')).toMatchObject({ status: { muted: true } });
+    expect(a.store.deafened).toBe(false);
+    expect(a.sent.find((e) => e.type === 'call.join')).toMatchObject({ status: { muted: true, deafened: false } });
+  });
+
+  it('参加した時点でのモード: スピーカーミュートは、相手の音も止めて入り、外すとマイクも戻る', async () => {
+    const a = makeClient('u1');
+    a.store['deps'].settings.patch({ joinMode: 'speaker' });
+    await a.store.join();
+    expect(a.store.muted).toBe(true);
+    expect(a.store.deafened).toBe(true);
+    expect(a.sent.find((e) => e.type === 'call.join')).toMatchObject({ status: { muted: true, deafened: true } });
+    a.store.toggleDeafen();
+    expect(a.store.deafened).toBe(false);
+    expect(a.store.muted).toBe(false);
   });
 
   it('つなぎ直す（hello）で新しい peer ID で入り直し、また声が届く', async () => {

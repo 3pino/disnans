@@ -6,7 +6,7 @@ import type { ServerEvent } from '../protocol/ServerEvent';
 import { CallSettings, createCallSource } from './settings.svelte';
 import { CallStore, type CallDeps } from './store.svelte';
 import { FakeNativePort, snap } from './nativeFake';
-import { DEFAULT_CALL_SETTINGS } from './pure';
+import { DEFAULT_CALL_SETTINGS, type JoinMode } from './pure';
 
 type Harness = {
   store: CallStore;
@@ -23,14 +23,14 @@ const names: Record<string, string> = { u1: 'たろう', me: '自分' };
 /** いま選ばれている接続先（テストから変える） */
 let serverNow = 'http://srv.test';
 
-function make(over: { joinMuted?: boolean; confirmOk?: boolean } = {}): Harness {
+function make(over: { joinMode?: JoinMode; confirmOk?: boolean } = {}): Harness {
   const port = new FakeNativePort();
   const send = vi.fn<(ev: ClientEvent) => void>();
   const toast = vi.fn();
   const confirm = vi.fn(async () => over.confirmOk ?? true);
   const hold = vi.fn(async () => Object.assign(() => {}, { update: () => {} }));
   const attach = vi.fn(() => () => {});
-  const settings = new CallSettings(createCallSource({ ...DEFAULT_CALL_SETTINGS, joinMuted: over.joinMuted ?? false }));
+  const settings = new CallSettings(createCallSource({ ...DEFAULT_CALL_SETTINGS, joinMode: over.joinMode ?? 'none' }));
   const deps: CallDeps = {
     native: port,
     serverUrl: () => serverNow,
@@ -114,10 +114,22 @@ describe('ネイティブ所有の通話: JS は、マイク・音・チャッ�
     expect(h.port.starts).toHaveLength(1);
   });
 
-  it('joinMuted の設定は、参加の頼みに渡す（ネイティブがミュートで始める）', async () => {
-    h = make({ joinMuted: true });
+  it('参加時の状態: 既定（ミュートなし）は、ミュートもスピーカーミュートも頼まない', async () => {
+    h = make();
     await h.store.join();
-    expect(h.port.starts[0]!.status.muted).toBe(true);
+    expect(h.port.starts[0]!.status).toMatchObject({ muted: false, deafened: false });
+  });
+
+  it('参加時の状態: ミュートは、マイクだけ止めて始める頼みにする', async () => {
+    h = make({ joinMode: 'mic' });
+    await h.store.join();
+    expect(h.port.starts[0]!.status).toMatchObject({ muted: true, deafened: false });
+  });
+
+  it('参加時の状態: スピーカーミュートは、相手の音も止めて始める頼みにする（ネイティブもマイクを止める）', async () => {
+    h = make({ joinMode: 'speaker' });
+    await h.store.join();
+    expect(h.port.starts[0]!.status).toMatchObject({ muted: true, deafened: true });
   });
 });
 

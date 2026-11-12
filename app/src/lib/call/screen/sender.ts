@@ -342,11 +342,20 @@ export class ScreenSender {
     return nextInterval({ fps: settings.fps, weight: frameWeight(out.b64.length, chunks), budgetKBps: SERVER_BUDGET_KBPS });
   }
 
-  /** 符号化したフレームを分割して送る。分割数を返す */
+  /**
+   * 符号化したフレームを分割して送る。分割数を返す。
+   * 通話の送信（1 本の WebSocket の順に出る）は音声と共有なので、映像のかけらは、送信待ちが上限を超えたら残りを捨てる。
+   * 音声（別の送り手）は、ここでは止めない。捨てたフレームは受け手で組み立てられず、次のフレームで取り直す。
+   */
   #emitFrame(b64: string): number {
     const chunks = splitFrame(nextFrameId(), b64);
-    for (const c of chunks) this.#call.emit(EVENT_FRAME, c);
-    return chunks.length;
+    let sent = 0;
+    for (const c of chunks) {
+      if ((this.#call.bufferedAmount ?? 0) > BACKLOG_LIMIT) break;
+      this.#call.emit(EVENT_FRAME, c);
+      sent += 1;
+    }
+    return sent;
   }
 
   #flushNative(): void {

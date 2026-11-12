@@ -6,7 +6,7 @@
   import { fileUrl } from '../lib/config';
   import { interceptDownload } from '../lib/download';
   import { formatSize } from '../lib/format';
-  import { bodyAttachmentNames } from '../lib/fileLink';
+  import { bodyAttachmentNames, isImage } from '../lib/fileLink';
   import { ui } from '../lib/stores/ui.svelte';
   import { chatGallery } from '../lib/chatGallery';
 
@@ -22,8 +22,9 @@
   // 削除された添付は名前だけ出し、開けない。残りが今ある添付
   const live = $derived(unlinked.filter((a) => !a.deleted));
   const gone = $derived(unlinked.filter((a) => a.deleted));
-  const images = $derived(live.filter((a) => a.mime.startsWith('image/')));
-  const files = $derived(live.filter((a) => !a.mime.startsWith('image/')));
+  // 画像かどうかは mime と拡張子で決める（isImage）。mime が汎用のままの画像も、画像として出す
+  const images = $derived(live.filter((a) => isImage(a.file_name, a.mime)));
+  const files = $derived(live.filter((a) => !isImage(a.file_name, a.mime)));
 
   function thumbSrc(a: Attachment): string {
     return local[a.id] ?? fileUrl(a.id, a.has_thumb);

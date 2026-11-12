@@ -237,7 +237,7 @@ fn app_err(e: crate::error::AppError) -> FsError {
     }
 }
 
-/// 拡張子から種類を決める（WebDAV で作ったファイル用。分からなければ octet-stream）。
+/// 拡張子から種類を決める（WebDAV で作ったファイル・送り手が種類を付けなかった添付用。分からなければ octet-stream）。
 pub fn guess_mime(name: &str) -> String {
     let ext = name
         .rsplit_once('.')
@@ -252,6 +252,8 @@ pub fn guess_mime(name: &str) -> String {
         "jpg" | "jpeg" => "image/jpeg",
         "gif" => "image/gif",
         "webp" => "image/webp",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
         "mp4" => "video/mp4",
         "mp3" => "audio/mpeg",
         "zip" => "application/zip",
@@ -1192,6 +1194,7 @@ mod tests {
     #[test]
     fn mime_is_guessed_from_the_extension() {
         assert_eq!(guess_mime("a.PNG"), "image/png");
+        assert_eq!(guess_mime("photo.avif"), "image/avif");
         assert_eq!(guess_mime("noext"), "application/octet-stream");
     }
 }

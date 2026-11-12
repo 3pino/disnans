@@ -5,7 +5,7 @@
 import { devUser } from './config';
 import { isAndroid, isTauri } from './platform';
 import { ENTER_COMBOS, enterComboLabel, type EnterAction, type EnterCombo } from './enterKeys';
-import { limiterStrength, limiterStrengthPatch, type LimiterStrength } from './call/pure';
+import { JOIN_MODES, limiterStrength, limiterStrengthPatch, type JoinMode, type LimiterStrength } from './call/pure';
 import type { OrientationMode } from './orientation';
 import type { ThemeChoice } from './settingsModel';
 import type { GuiEnv, UiField } from './uiTree';
@@ -49,7 +49,11 @@ const BINDINGS: Record<string, FieldBinding> = {
   orientation: { get: () => orientation.mode, set: (v) => orientation.set(v as OrientationMode) },
   hideNavigationBar: { get: () => ui.hideNavigationBar, set: (v) => ui.setHideNavigationBar(!!v) },
   hapticsEnabled: { get: () => deviceSettings.hapticsEnabled, set: (v) => deviceSettings.set('hapticsEnabled', !!v) },
-  joinMuted: { get: () => callSettings.value.joinMuted, set: (v) => callSettings.patch({ joinMuted: !!v }) },
+  joinMode: {
+    get: () => callSettings.value.joinMode,
+    // 知らない値は、ミュートなし（Rust の正規化と同じ）
+    set: (v) => callSettings.patch({ joinMode: (JOIN_MODES as readonly unknown[]).includes(v) ? (v as JoinMode) : 'none' }),
+  },
   micVolume: volume('micVolume'),
   outVolume: volume('outVolume'),
   limiterStrength: {

@@ -24,14 +24,22 @@
   const EDGE = 8;
 
   // 開いたとき（マウントしたとき）に一度だけ測る。既定の位置で画面の下端を超えるなら上に出す。
-  // 左右の端を超えるなら（左端のボタンから右揃えで開いたときなど）、画面に収まるよう横にずらす
+  // 左右の端を超えるなら（左端のボタンから右揃えで開いたときなど）、使える範囲に収まるよう横にずらす。
+  // 使える範囲は画面ではなくシェルの中身（広い画面で左に縦に並ぶナビバーは含めない。ナビバーの上に出ない）。
+  // シェルの外（モバイルのナビバーは下で、横の範囲を取らない）では、従来どおり画面の幅
+  function usableX(): { left: number; right: number } {
+    const vw = document.documentElement.clientWidth || window.innerWidth;
+    const shell = el?.closest('.shell');
+    const nav = shell?.querySelector(':scope > .nav-bar-side');
+    return { left: nav ? Math.max(0, nav.getBoundingClientRect().right) : 0, right: vw };
+  }
   $effect(() => {
     if (!el) return;
     const r = el.getBoundingClientRect();
     up = r.bottom > window.innerHeight;
-    const vw = document.documentElement.clientWidth || window.innerWidth;
-    if (r.left < EDGE) shift = EDGE - r.left;
-    else if (r.right > vw - EDGE) shift = Math.max(EDGE - r.left, vw - EDGE - r.right);
+    const { left, right } = usableX();
+    if (r.left < left + EDGE) shift = left + EDGE - r.left;
+    else if (r.right > right - EDGE) shift = Math.max(left + EDGE - r.left, right - EDGE - r.right);
   });
 </script>
 

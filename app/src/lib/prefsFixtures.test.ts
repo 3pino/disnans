@@ -14,7 +14,7 @@ describe('fixtures (V5): defaults', () => {
 
   it('call settings（ユーザー共通と機器の項目）', () => {
     expect({
-      joinMuted: DEFAULT_CALL_SETTINGS.joinMuted,
+      joinMode: DEFAULT_CALL_SETTINGS.joinMode,
       micVolume: DEFAULT_CALL_SETTINGS.micVolume,
       outVolume: DEFAULT_CALL_SETTINGS.outVolume,
       limiter: DEFAULT_CALL_SETTINGS.limiter,
@@ -22,7 +22,7 @@ describe('fixtures (V5): defaults', () => {
       inputId: DEFAULT_CALL_SETTINGS.inputId,
       output: DEFAULT_CALL_SETTINGS.output,
     }).toEqual({
-      joinMuted: d.joinMuted,
+      joinMode: d.joinMode,
       micVolume: d.micVolume,
       outVolume: d.outVolume,
       limiter: d.limiter,

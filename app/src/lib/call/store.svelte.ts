@@ -34,6 +34,7 @@ import {
   diffPeers,
   floatToInt16,
   int16ToFloat,
+  joinStateOf,
   notificationContent,
   pcmToBase64,
   pickOutput,
@@ -849,9 +850,11 @@ export class CallStore {
         this.rejoinRetried = false;
         this.autoRejoinUsed = false;
         this.aliveAt = this.deps.now();
-        this.muted = this.settings.joinMuted;
-        this.deafened = false;
-        this.muteByDeafen = false;
+        // 参加時の状態。mic はミュート（旧い joinMuted と同じ）、speaker はスピーカーミュート（ミュートも入り、外すと一緒に外れる）
+        const join = joinStateOf(this.settings.joinMode);
+        this.muted = join.muted;
+        this.deafened = join.deafened;
+        this.muteByDeafen = join.deafened;
         this.applyMute();
         this.diag.reset(this.deps.now());
         this.joined = true;
@@ -895,7 +898,7 @@ export class CallStore {
         serverUrl: this.deps.serverUrl?.() ?? '',
         expectedUserId: me,
         devUser: this.deps.devUser?.() ?? null,
-        status: { muted: this.settings.joinMuted, deafened: false, device: this.deps.deviceKind() },
+        status: { ...joinStateOf(this.settings.joinMode), device: this.deps.deviceKind() },
         settings: this.nativeSettings(),
         localMuted: [],
       });

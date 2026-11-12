@@ -21,9 +21,19 @@ const none = new Set<string>();
 describe('isImage', () => {
   it('mime があればそれで、なければ拡張子で見る', () => {
     expect(isImage('a.bin', 'image/png')).toBe(true);
-    expect(isImage('a.png', 'application/octet-stream')).toBe(false);
+    expect(isImage('a.txt', 'image/png')).toBe(true);
     expect(isImage('photo.JPG')).toBe(true);
     expect(isImage('doc.pdf', null)).toBe(false);
+  });
+
+  it('mime が汎用（application/octet-stream）なら、拡張子で見る（AVIF などを画像として出す）', () => {
+    expect(isImage('photo.avif', 'application/octet-stream')).toBe(true);
+    expect(isImage('a.png', 'application/octet-stream')).toBe(true);
+    expect(isImage('data.bin', 'application/octet-stream')).toBe(false);
+  });
+
+  it('mime が画像でなければ、拡張子が画像でも画像にしない（送り手の種類を優先）', () => {
+    expect(isImage('a.png', 'text/plain')).toBe(false);
   });
 });
 

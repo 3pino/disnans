@@ -576,12 +576,29 @@ export const SETTINGS_PAGES: readonly UiPage[] = [
         "items": [
           {
             "type": "field",
-            "id": "joinMuted",
-            "label": "参加したときミュートにする",
+            "id": "joinMode",
+            "label": "参加した時点でのモード",
             "icon": "mic-off",
-            "key": "joinMuted",
+            "key": "joinMode",
             "control": {
-              "type": "toggle"
+              "type": "segmented",
+              "options": [
+                {
+                  "value": "none",
+                  "label": "ミュートなし",
+                  "icon": null
+                },
+                {
+                  "value": "mic",
+                  "label": "ミュート",
+                  "icon": null
+                },
+                {
+                  "value": "speaker",
+                  "label": "スピーカーミュート",
+                  "icon": null
+                }
+              ]
             },
             "show": {
               "gui": "always",

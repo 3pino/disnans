@@ -361,3 +361,31 @@ async fn upload_requires_file_field() {
     assert_eq!(res.status(), 400);
     assert_eq!(res.json::<ApiError>().await.unwrap().code, "missing_file");
 }
+
+#[tokio::test]
+async fn a_generic_upload_type_is_guessed_from_the_name() {
+    let server = TestServer::start().await;
+    // 送り手が種類を付けなかったとき（octet-stream）は、ファイル名の拡張子で決める（AVIF は画像として扱えるように）
+    let avif = upload(
+        &server,
+        ALICE,
+        "photo.avif",
+        "application/octet-stream",
+        b"not decoded here".to_vec(),
+    )
+    .await;
+    assert_eq!(avif.mime, "image/avif");
+    // 拡張子でも分からなければ、そのまま octet-stream
+    let bin = upload(
+        &server,
+        ALICE,
+        "data.bin",
+        "application/octet-stream",
+        b"xyz".to_vec(),
+    )
+    .await;
+    assert_eq!(bin.mime, "application/octet-stream");
+    // 送り手が種類を付けていれば、それを使う
+    let txt = upload(&server, ALICE, "photo.avif", "text/plain", b"x".to_vec()).await;
+    assert_eq!(txt.mime, "text/plain");
+}

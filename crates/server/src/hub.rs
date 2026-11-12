@@ -23,6 +23,10 @@ const QUEUE_SIZE: usize = 1024;
 /// キューの半分（512 件）まで待たずに、少しでも詰まったら捨てる。
 const LOSSY_BACKLOG: usize = 32;
 
+/// 通話の音声（`call.event` の `audio`）を間引く送信待ちの上限。映像より後まで残す（音声を優先する）。
+/// 映像と同じ上限だと、映像の 40KB のかけらが続いたときに音声まで捨てられる。
+pub const AUDIO_BACKLOG: usize = QUEUE_SIZE / 2;
+
 /// 間引いてよいものの中でも、小さい通知（画面共有の「共有中」の知らせや問い合わせなど）の大きさの上限（バイト）。
 /// 映像は 40KB ずつに分けて送り、音声は 1 本が 2KB を超えるので、これより小さいものだけがこの特例を受ける。
 const CONTROL_MAX_BYTES: usize = 1024;
@@ -125,6 +129,12 @@ impl Hub {
         self.deliver_with(event, |id, _| conns.contains(&id), true);
     }
 
+    /// 指定した接続に、音声を優先して送る（送信待ちが [`AUDIO_BACKLOG`] 件を超える接続には捨てる）。
+    /// 映像（[`send_lossy_to_conns`]）より後まで残すので、映像で詰まった接続でも音声は届きやすい。
+    pub fn send_audio_to_conns(&self, conns: &[ConnId], event: &ServerEvent) {
+        self.deliver_limited(event, |id, _| conns.contains(&id), AUDIO_BACKLOG);
+    }
+
     fn deliver(&self, event: &ServerEvent, filter: impl Fn(ConnId, &Conn) -> bool) {
         self.deliver_with(event, filter, false);
     }
@@ -142,10 +152,31 @@ impl Hub {
         } else {
             LOSSY_BACKLOG
         };
+        self.deliver_text(text, filter, lossy.then_some(limit));
+    }
+
+    /// 送信待ちが `limit` 件を超える接続には送らない（間引く）。上限を決めるのは呼び出し側
+    fn deliver_limited(
+        &self,
+        event: &ServerEvent,
+        filter: impl Fn(ConnId, &Conn) -> bool,
+        limit: usize,
+    ) {
+        self.deliver_text(encode(event), filter, Some(limit));
+    }
+
+    fn deliver_text(
+        &self,
+        text: Utf8Bytes,
+        filter: impl Fn(ConnId, &Conn) -> bool,
+        limit: Option<usize>,
+    ) {
         let mut conns = self.lock();
         let mut dead = Vec::new();
         for (&id, conn) in conns.iter().filter(|(id, c)| filter(**id, c)) {
-            if lossy && QUEUE_SIZE - conn.tx.capacity() > limit {
+            if let Some(limit) = limit
+                && QUEUE_SIZE - conn.tx.capacity() > limit
+            {
                 continue;
             }
             if let Err(err) = conn.tx.try_send(text.clone()) {
@@ -254,6 +285,32 @@ mod tests {
         // 映像はもう入らない
         hub.send_lossy_to_conns(&[id], &big_event());
         assert_eq!(drain(&mut rx), 1 + LOSSY_BACKLOG + 10);
+    }
+
+    #[test]
+    fn audio_outlasts_video_when_the_receiver_backs_up() {
+        let hub = Hub::new();
+        let (id, mut rx) = hub.register(
+            "u1",
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            &ServerEvent::CallKicked { by: "u".into() },
+        );
+        // 映像のかけらで送信待ちを越える（LOSSY_BACKLOG を超えた分は捨てられる）
+        for _ in 0..100 {
+            hub.send_lossy_to_conns(&[id], &big_event());
+        }
+        // 同じ状態でも、音声は AUDIO_BACKLOG まで届く（映像より後まで残る）
+        for _ in 0..100 {
+            hub.send_audio_to_conns(&[id], &big_event());
+        }
+        // 内訳: hello(1) + 映像のために満杯になるまでの 32 件 + 音声 100 件（AUDIO_BACKLOG より下なので全部入る）= 133
+        // 映像と同じ上限（LOSSY_BACKLOG）だと、音声は 33 件しか入らず、この検証は失敗する
+        let got = drain(&mut rx);
+        assert_eq!(
+            got,
+            1 + LOSSY_BACKLOG + 100,
+            "audio is kept past the video backlog"
+        );
     }
 
     #[test]

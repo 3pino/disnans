@@ -2,8 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScreenCallPort, ScreenSettingsPort, ScreenSettingsValue } from './types';
 
+/** 符号化した base64 の長さ（文字）。既定は 1 かけらに収まる大きさ。大きくすると 1 枚が何片にも分かれる */
+let encodedChars = 20000;
 vi.mock('./codec', () => ({
-  encodeFrame: vi.fn((_cv: unknown, _src: unknown, w: number, h: number) => ({ mime: 'image/jpeg', b64: '/9j/' + 'A'.repeat(20000 + w * 0) })),
+  encodeFrame: vi.fn((_cv: unknown, _src: unknown, _w: number, _h: number) => ({ mime: 'image/jpeg', b64: '/9j/' + 'A'.repeat(encodedChars) })),
   fitSize: (w: number, h: number) => ({ w, h }),
 }));
 
@@ -82,7 +84,7 @@ const frameEmits = (emitted: { name: string; payload: unknown }[]) => emitted.fi
 
 beforeEach(() => {
   vi.useFakeTimers();
-  pixel = 100; blank = false; videoReady = true; playPromise = null; stalls.length = 0; bodyChildren.length = 0;
+  pixel = 100; encodedChars = 20000; blank = false; videoReady = true; playPromise = null; stalls.length = 0; bodyChildren.length = 0;
   settingsValue = { fps: 5, quality: 'p720', color: 'full' };
 });
 afterEach(() => {
@@ -196,6 +198,29 @@ describe('web の取り込み', () => {
     (call as unknown as { bufferedAmount: number }).bufferedAmount = 0;
     await vi.advanceTimersByTimeAsync(200);
     expect(frameEmits(emitted).length).toBeGreaterThan(0);
+    s.stop();
+  });
+
+  it('1 枚の途中で送信待ちが上限を超えたら、残りのかけらは送らない（映像だけ捨てる）', async () => {
+    // 送った分だけ送信待ちが増える送り手（通話の WebSocket の模擬）。上限を超えたら、そのフレームの残りは出さない
+    const emitted: { name: string; payload: unknown }[] = [];
+    const call = {
+      joined: true, listed: true, myPeer: 'me', bufferedAmount: 0,
+      get participants() { return [{ peer: 'me', userId: 'u1', self: true }, { peer: 'p2', userId: 'u2', self: false }]; },
+      emit: vi.fn((name: string, payload: unknown) => {
+        emitted.push({ name, payload });
+        (call as { bufferedAmount: number }).bufferedAmount += 60 * 1024;
+      }),
+    } as unknown as ScreenCallPort & { bufferedAmount: number };
+    // 1 枚が 12 片になる大きさ（、40K 文字のかけら。上限を超えたら残りを捨てる）
+    encodedChars = 12 * 40 * 1024;
+    const s = makeSender(call);
+    s.startWeb(fakeStream() as unknown as MediaStream);
+    await vi.advanceTimersByTimeAsync(100);
+    const first = frameEmits(emitted);
+    expect(first.length).toBeGreaterThan(0);
+    // 上限（BACKLOG_LIMIT=192KB）を超えた時点で止める（最大でも 4 片まで）
+    expect(first.length).toBeLessThanOrEqual(4);
     s.stop();
   });
 

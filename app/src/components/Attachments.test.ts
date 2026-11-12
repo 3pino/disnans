@@ -48,6 +48,15 @@ describe('添付の別枠', () => {
     expect(el.textContent).toContain('doc.pdf');
   });
 
+  it('mime が octet-stream のままの AVIF も、画像として出す（ファイルの chip にしない）', () => {
+    const el = render([att('1', 'photo.avif', 'application/octet-stream'), att('2', 'data.bin', 'application/octet-stream')], '');
+    const images = el.querySelectorAll('.attachment-image img');
+    expect(images).toHaveLength(1);
+    expect(images[0].getAttribute('src')).toContain('/api/files/1');
+    expect(el.querySelectorAll('.attachment-file')).toHaveLength(1);
+    expect(el.textContent).toContain('data.bin');
+  });
+
   it('削除された添付も、本文に残っていれば別枠に出さない（本文の中で「削除されたファイル」と出す）', () => {
     const el = render([att('1', 'old.pdf', 'application/pdf', { deleted: true })], '![[attachments/old.pdf]]');
     expect(el.querySelector('.attachment-file-deleted')).toBeNull();

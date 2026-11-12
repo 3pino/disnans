@@ -9,9 +9,12 @@ import type { FileState } from './stores/sharedIndex.svelte';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|avif)$/i;
 
-/** 画像か（添付の mime が無ければ拡張子で見る） */
+/**
+ * 画像か。mime が画像ならそれで決める。mime が無い・汎用（application/octet-stream）のときは拡張子で見る。
+ * 送り手が種類を付けられなかった添付（古い行や、サーバーの既定の値）は拡張子で見る。新しい添付はサーバーが拡張子から種類を決める
+ */
 export function isImage(name: string, mime?: string | null): boolean {
-  if (mime) return mime.startsWith('image/');
+  if (mime && mime !== 'application/octet-stream') return mime.startsWith('image/');
   return IMAGE_EXT.test(name);
 }
 

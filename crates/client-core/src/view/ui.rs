@@ -199,6 +199,13 @@ const ENTER_OPTIONS: &[Opt] = &[
     opt("none", "なし"),
 ];
 
+/// 参加したときの状態（`settings::JOIN_MODE_OPTIONS` と同じ値）
+const JOIN_MODE_OPTIONS: &[Opt] = &[
+    opt("none", "ミュートなし"),
+    opt("mic", "ミュート"),
+    opt("speaker", "スピーカーミュート"),
+];
+
 const LIMITER_OPTIONS: &[Opt] = &[
     opt("none", "なし"),
     opt("weak", "弱"),
@@ -443,11 +450,13 @@ pub const SETTINGS_PAGES: &[Page] = &[
             show: GUI_ONLY,
             items: &[
                 Item::Field {
-                    id: "joinMuted",
-                    label: "参加したときミュートにする",
+                    id: "joinMode",
+                    label: "参加した時点でのモード",
                     icon: Some("mic-off"),
-                    key: "joinMuted",
-                    control: Control::Toggle,
+                    key: "joinMode",
+                    control: Control::Segmented {
+                        options: JOIN_MODE_OPTIONS,
+                    },
                     show: GUI_ONLY,
                 },
                 Item::Field {

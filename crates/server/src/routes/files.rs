@@ -30,11 +30,15 @@ pub async fn upload(
             continue;
         }
         let file_name = files::sanitize_file_name(field.file_name());
+        // 送り手が種類を付けなかった（octet-stream など）ときは、ファイル名の拡張子で決める（AVIF などを画像として扱えるように）
         let mime = field
             .content_type()
-            .filter(|m| m.parse::<mime::Mime>().is_ok())
-            .unwrap_or("application/octet-stream")
-            .to_owned();
+            .filter(|m| {
+                m.parse::<mime::Mime>().is_ok()
+                    && !m.eq_ignore_ascii_case("application/octet-stream")
+            })
+            .map(str::to_owned)
+            .unwrap_or_else(|| crate::webdav::fs::guess_mime(&file_name));
 
         let tmp = state
             .config

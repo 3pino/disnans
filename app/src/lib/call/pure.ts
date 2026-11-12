@@ -45,9 +45,25 @@ export const OUTPUTS_REFRESH_TICKS = 50;
 
 export type SavedOutput = { id: string; kind: string; label: string };
 
+/**
+ * 参加したときの状態。none＝ミュートなし（既定）・mic＝マイクをミュート・speaker＝スピーカーミュート（相手の音も止め、マイクもミュート）。
+ * 値は crates/client-core/src/view/settings.rs の JOIN_MODE_OPTIONS と同じ。旧い joinMuted（真偽値）は joinModeOf（settingsModel.ts）で読み替える
+ */
+export const JOIN_MODES = ['none', 'mic', 'speaker'] as const;
+export type JoinMode = (typeof JOIN_MODES)[number];
+
+/**
+ * 参加したときのミュート・スピーカーの状態。スピーカーミュートはミュートを伴う（setDeafened と同じ）。
+ * web の参加とネイティブの参加の両方で使う。
+ */
+export function joinStateOf(mode: JoinMode): { muted: boolean; deafened: boolean } {
+  return { muted: mode !== 'none', deafened: mode === 'speaker' };
+}
+
 /** 通話の設定。デバイスごとに保存する（同期されない） */
 export type CallSettingsData = {
-  joinMuted: boolean;
+  /** 参加したときの状態（ミュートなし・ミュート・スピーカーミュート） */
+  joinMode: JoinMode;
   /** マイクの音量。1 が等倍 */
   micVolume: number;
   /** 相手の音量。0〜1 */
@@ -63,7 +79,7 @@ export type CallSettingsData = {
 };
 
 export const DEFAULT_CALL_SETTINGS: CallSettingsData = {
-  joinMuted: false,
+  joinMode: 'none',
   micVolume: 1,
   outVolume: 1,
   inputId: '',

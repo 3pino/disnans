@@ -10,7 +10,7 @@
  */
 
 import { DEFAULT_NAV_ITEMS } from './navBar';
-import { DEFAULT_CALL_SETTINGS } from './call/pure';
+import { DEFAULT_CALL_SETTINGS, JOIN_MODES, type JoinMode } from './call/pure';
 import { DEFAULT_ENTER_KEYS } from './enterKeys';
 import { DEFAULT_COMPOSER_MENU } from './composerMenu';
 import type { ScreenSettingsValue } from './call/screen/types';
@@ -28,9 +28,20 @@ export const THEME_CHOICES = ['system', 'light', 'dark'] as const;
 export type ThemeChoice = (typeof THEME_CHOICES)[number];
 
 /** ユーザー共通の項目（サーバーの prefs のキー） */
-export const USER_KEYS = ['theme', 'customTheme', 'navBarItems', 'navBarLabels', 'joinMuted', 'micVolume', 'outVolume', 'limiter', 'limitDb'] as const;
+export const USER_KEYS = ['theme', 'customTheme', 'navBarItems', 'navBarLabels', 'joinMode', 'micVolume', 'outVolume', 'limiter', 'limitDb'] as const;
 /** 通話の設定のうち、ユーザー共通のもの */
-export const CALL_USER_KEYS = ['joinMuted', 'micVolume', 'outVolume', 'limiter', 'limitDb'] as const;
+export const CALL_USER_KEYS = ['joinMode', 'micVolume', 'outVolume', 'limiter', 'limitDb'] as const;
+
+/**
+ * 参加したときの状態（joinMode）。Rust の normalize_user_prefs（join_mode_from_legacy）と同じ読み方。
+ * joinMode が無い・null のときは、旧い真偽値 joinMuted から読み替える（true → mic、それ以外 → none）。
+ * joinMode が知らない値なら none（安全な側）。元のオブジェクトの joinMuted は消さない。
+ */
+export function joinModeOf(raw: Raw): JoinMode {
+  const v = raw.joinMode;
+  if (v === undefined || v === null) return raw.joinMuted === true ? 'mic' : 'none';
+  return (JOIN_MODES as readonly unknown[]).includes(v) ? (v as JoinMode) : 'none';
+}
 /** 通話の設定のうち、デバイスごとのもの */
 export const CALL_DEVICE_KEYS = ['inputId', 'output'] as const;
 
@@ -44,7 +55,7 @@ export function userDefaults(): Raw {
     customTheme: null,
     navBarItems: [...DEFAULT_NAV_ITEMS],
     navBarLabels: {},
-    joinMuted: DEFAULT_CALL_SETTINGS.joinMuted,
+    joinMode: DEFAULT_CALL_SETTINGS.joinMode,
     micVolume: DEFAULT_CALL_SETTINGS.micVolume,
     outVolume: DEFAULT_CALL_SETTINGS.outVolume,
     limiter: DEFAULT_CALL_SETTINGS.limiter,
@@ -58,7 +69,8 @@ export function userDefaults(): Raw {
 
 /** 表示の値の補完（足りない項目だけ既定で埋める。値の型は直さない。直すのは Rust の正規化） */
 export function fillUserDefaults(raw: Raw): Raw {
-  return { ...userDefaults(), ...raw };
+  // joinMode は旧い joinMuted からの読み替えを含めて決める（既定の none で埋めない）
+  return { ...userDefaults(), ...raw, joinMode: joinModeOf(raw) };
 }
 
 /** Rust を通さない（ブラウザーの開発）ときの設定の結果。raw はそのまま、view は既定で埋めたもの */
@@ -136,7 +148,10 @@ export function legacyUserValues(read: LegacyRead): Raw {
   const labels = readJson(read, LEGACY.navBarLabels);
   if (isObject(labels)) out.navBarLabels = labels;
   const call = legacyCall(read);
-  if (call) for (const k of CALL_USER_KEYS) if (k in call) out[k] = call[k];
+  if (call) {
+    for (const k of CALL_USER_KEYS) if (k !== 'joinMode' && k in call) out[k] = call[k];
+    if ('joinMode' in call || 'joinMuted' in call) out.joinMode = joinModeOf(call);
+  }
   return out;
 }
 
