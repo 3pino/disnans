@@ -5,8 +5,8 @@ import { flushSync, mount, unmount, type Component } from 'svelte';
 import ScreenShareViewer from './ScreenShareViewer.svelte';
 import { ui } from '../lib/stores/ui.svelte';
 import { LOCAL_VIEW } from '../lib/call/screen/types';
-import { fakeScreen, sharer } from './testing/screenFake';
-import { reactiveScreen } from './testing/reactiveScreen.svelte';
+import { fakeScreen, sharer } from '../test-support/screenFake';
+import { reactiveScreen } from '../test-support/reactiveScreen.svelte';
 
 const env = vi.hoisted(() => ({ android: false }));
 const commandHost = vi.hoisted(() => ({ paletteOpen: false }));

@@ -2,11 +2,9 @@
 
 #![allow(dead_code)]
 
-use std::net::SocketAddr;
 use std::time::Duration;
 
-use disnans_server::config::Config;
-use disnans_server::state::SharedState;
+use disnans_server::testing::DevServer;
 use disnans_shared::{ClientEvent, Message, ServerEvent};
 use futures_util::{SinkExt, StreamExt};
 use serde::de::DeserializeOwned;
@@ -14,39 +12,24 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
+/// 開発モードのサーバー（`DevServer`）と、テスト用の HTTP クライアント。`addr`・`state`・`dir` は DevServer のもの。
 pub struct TestServer {
-    pub addr: SocketAddr,
-    pub state: SharedState,
+    pub dev: DevServer,
     pub http: reqwest::Client,
-    pub dir: tempfile::TempDir,
+}
+
+impl std::ops::Deref for TestServer {
+    type Target = DevServer;
+    fn deref(&self) -> &DevServer {
+        &self.dev
+    }
 }
 
 impl TestServer {
     pub async fn start() -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        let config = Config {
-            data_dir: dir.path().to_owned(),
-            bind: "127.0.0.1:0".parse().unwrap(),
-            dev: true,
-            tailscale_socket: dir.path().join("no-such.sock"),
-            image_max_edge: disnans_server::image_proc::DEFAULT_MAX_EDGE,
-        };
-        let (app, state) = disnans_server::build(config).await.unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .await
-            .unwrap();
-        });
         Self {
-            addr,
-            state,
+            dev: DevServer::start().await,
             http: reqwest::Client::new(),
-            dir,
         }
     }
 

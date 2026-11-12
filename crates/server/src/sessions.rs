@@ -3,6 +3,7 @@
 //! サーバーは state の中身を解釈しない。保存して配るだけ。
 
 use axum::http::StatusCode;
+use disnans_shared::limits::MAX_EVENT_PAYLOAD_BYTES;
 use disnans_shared::{Card, CreateSession, Id, PluginNotify, ServerEvent, Session, UpdateSession};
 
 use crate::chat::{self, Actor};
@@ -17,8 +18,6 @@ use crate::store::{messages, plugins as plugin_store, users};
 
 /// state（JSON）の最大バイト数。
 const MAX_STATE_BYTES: usize = 1024 * 1024;
-/// 一時的なイベントの payload（JSON）の最大バイト数。
-const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 /// 一時的なイベントの名前の最大文字数。
 const MAX_EVENT_NAME_CHARS: usize = 64;
 /// カードの最大文字数。
@@ -183,11 +182,11 @@ fn validate_event(name: &str, payload: &serde_json::Value) -> AppResult<()> {
             format!("イベント名は 1〜{MAX_EVENT_NAME_CHARS} 文字にしてください"),
         ));
     }
-    if json_len(payload) > MAX_PAYLOAD_BYTES {
+    if json_len(payload) > MAX_EVENT_PAYLOAD_BYTES {
         return Err(AppError::new(
             StatusCode::PAYLOAD_TOO_LARGE,
             "payload_too_large",
-            format!("payload は {} KB までです", MAX_PAYLOAD_BYTES / 1024),
+            format!("payload は {} KB までです", MAX_EVENT_PAYLOAD_BYTES / 1024),
         ));
     }
     Ok(())

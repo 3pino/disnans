@@ -99,7 +99,7 @@ async fn listing(fs: &SharedFs, segs: &[String]) -> AppResult<SharedListing> {
 }
 
 /// 共有フォルダの直下の一覧。
-pub async fn list_root(
+pub(crate) async fn list_root(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
 ) -> AppResult<Json<SharedListing>> {
@@ -108,7 +108,7 @@ pub async fn list_root(
 }
 
 /// フォルダなら一覧、ファイルなら中身。
-pub async fn get(
+pub(crate) async fn get(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(path): Path<String>,
@@ -132,7 +132,7 @@ pub async fn get(
 }
 
 /// 本文を、そのパスのファイルにする（作成・上書き）。一時ファイルに書いてから差し替える。
-pub async fn put(
+pub(crate) async fn put(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(path): Path<String>,
@@ -169,7 +169,7 @@ pub async fn put(
 }
 
 /// 削除。フォルダは中身ごと消す。
-pub async fn delete(
+pub(crate) async fn delete(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(path): Path<String>,
@@ -180,7 +180,7 @@ pub async fn delete(
 }
 
 /// フォルダの作成・移動・コピー。結果の項目を返す。
-pub async fn ops(
+pub(crate) async fn ops(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Json(op): Json<SharedOp>,
@@ -220,7 +220,7 @@ pub async fn ops(
 }
 
 /// 大きさ（ルート）。仮想の `attachments/` は、DB の添付を 1 回だけ数える。
-pub async fn size_root(
+pub(crate) async fn size_root(
     State(state): State<SharedState>,
     CurrentUser(_user): CurrentUser,
 ) -> AppResult<Json<SharedSize>> {
@@ -228,7 +228,7 @@ pub async fn size_root(
 }
 
 /// フォルダ・ファイル・添付の大きさ。
-pub async fn size(
+pub(crate) async fn size(
     State(state): State<SharedState>,
     CurrentUser(_user): CurrentUser,
     Path(path): Path<String>,

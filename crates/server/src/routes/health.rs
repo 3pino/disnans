@@ -11,7 +11,7 @@ use serde_json::json;
 
 use crate::state::SharedState;
 
-pub async fn get(State(state): State<SharedState>) -> Response {
+pub(crate) async fn get(State(state): State<SharedState>) -> Response {
     let started = Instant::now();
     let db = sqlx::query_scalar::<_, i64>("SELECT 1")
         .fetch_one(&state.pool)

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CallStore } from './store.svelte';
 import { CallSettings, createCallSource } from './settings.svelte';
-import { FakeNativePort, deferred, snap } from './nativeFake';
+import { FakeNativePort, deferred, snap } from '../../test-support/nativeFake';
 import type { ScreenCaptureOptions, ScreenCapturePort, ScreenSettingsPort } from './screen/types';
 
 const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };

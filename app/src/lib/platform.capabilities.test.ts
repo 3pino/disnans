@@ -4,8 +4,8 @@
 // 3. その値が、経路（select・boot）と通知・更新・画面共有などの判断を実際に変える。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { capabilities } from './platform';
-import { bootChatTransport, bootReadApi, bootWriteApi, currentBootEnv, currentChatBootEnv } from './transport/boot';
-import { injectedPlatform, rustCapabilities, stubTauri, type TauriOs } from './testing/tauriEnv';
+import { bootChatTransport, currentBootEnv, currentChatBootEnv } from './transport/boot';
+import { injectedPlatform, rustCapabilities, stubTauri, type TauriOs } from '../test-support/tauriEnv';
 
 const OSES: TauriOs[] = ['windows', 'linux', 'other', 'android'];
 
@@ -68,12 +68,9 @@ describe('Rust の値があるとき', () => {
 });
 
 describe('方針の値が、判断を実際に変える', () => {
-  it('rustApi が false なら、Windows でも読取と書込は http、チャットは無い', () => {
+  it('rustApi が false なら、チャットは無い（読取・書込は常に Rust）', () => {
     stubTauri({ os: 'windows', inject: injectedPlatform('windows', { ...rustCapabilities('windows'), rustApi: false }) });
-    const env = currentBootEnv();
-    expect(env.rustApi).toBe(false);
-    expect(bootReadApi({ ...env, log: undefined }).kind).toBe('http');
-    expect(bootWriteApi({ ...env, log: undefined }).kind).toBe('http');
+    expect(capabilities().rustApi).toBe(false);
     expect(bootChatTransport(currentChatBootEnv())).toBeNull();
   });
 
@@ -97,7 +94,7 @@ describe('方針の値が、判断を実際に変える', () => {
   it('nativeScreen が null なら、Linux でも画面共有は使えない（既定）', async () => {
     stubTauri({ os: 'linux', inject: injectedPlatform('linux', { ...rustCapabilities('linux'), nativeScreen: null }) });
     vi.resetModules();
-    const { screenCaptureApi } = await import('./plugins/nativeScreen');
+    const { screenCaptureApi } = await import('./media/nativeScreen');
     expect(screenCaptureApi.supported).toBe(false);
   });
 });

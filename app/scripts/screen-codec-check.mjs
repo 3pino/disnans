@@ -1,16 +1,13 @@
 // 合成画面だけで減色誤差・実際の符号化サイズ・処理時間を測る。実機、画面取得、マイク、見た目の判定は行わない。
 // CHROME で Chromium の実行ファイルを指定できる。数値はこの環境の合成画像に限り、実通信量を保証しない。
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import { connectCdp, launchChrome, makeProfile, openPage, stopChrome } from './cdp.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const executable = process.env.CHROME ?? join(homedir(), '.cache/puppeteer/chrome-headless-shell/linux-146.0.7680.153/chrome-headless-shell-linux64/chrome-headless-shell');
-const profile = mkdtempSync(join(tmpdir(), 'disnans-screen-codec-'));
+const profile = makeProfile('disnans-screen-codec-');
 const html = `<!doctype html><html><head></head><body><script type="module">
 import { applyColorMode, encodeFrame } from '/src/lib/call/screen/codec.ts';
 window.runBench = () => {
@@ -50,20 +47,11 @@ const vite = await createServer({ root, server: { host: '127.0.0.1', port: 0 }, 
 let chrome, ws;
 try {
   await vite.listen();
-  chrome = spawn(executable, ['--no-sandbox', '--disable-gpu', `--user-data-dir=${profile}`, '--remote-debugging-port=0', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
-  const endpoint = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Chromium startup timed out')), 15_000); let text = '';
-    chrome.on('error', (e) => { clearTimeout(timer); reject(e); });
-    chrome.stderr.on('data', (chunk) => { text += chunk; const match = /DevTools listening on (ws:\/\/\S+)/.exec(text); if (match) { clearTimeout(timer); resolve(match[1]); } });
-  });
-  ws = new WebSocket(endpoint);
-  await new Promise((resolve, reject) => { ws.addEventListener('open', resolve, { once: true }); ws.addEventListener('error', reject, { once: true }); });
-  let seq = 0; const pending = new Map();
-  ws.addEventListener('message', ({ data }) => { const m = JSON.parse(data), p = pending.get(m.id); if (!p) return; pending.delete(m.id); clearTimeout(p.timer); if (m.error) p.reject(new Error(JSON.stringify(m.error))); else p.resolve(m.result); });
-  const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject, timer: setTimeout(() => { pending.delete(id); reject(new Error('CDP timed out: ' + method)); }, 30_000) }); ws.send(JSON.stringify({ id, method, params, sessionId })); });
-  const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
-  const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
-  const S = (method, params) => send(method, params, sessionId);
+  const launched = launchChrome(profile);
+  chrome = launched.child;
+  // 合成画面の計測は時間がかかるので、送信の待ち時間は 30 秒
+  ws = await connectCdp(await launched.endpoint, { timeoutMs: 30_000 });
+  const S = await openPage(ws);
   const evaluate = async (expression) => { const r = await S('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails)); return r.result.value; };
   await S('Page.enable'); await S('Page.navigate', { url: `http://127.0.0.1:${vite.httpServer.address().port}/__screen_codec_fixture` });
   for (let i=0; i<150 && !(await evaluate('typeof window.runBench === "function"')); i++) await new Promise(r=>setTimeout(r,50));
@@ -73,5 +61,5 @@ try {
   const blue = rows.find(r=>r.name==='blue-tint'); assert(blue.newRgbError < blue.oldRgbError, 'blue hue regression not improved');
   console.log(JSON.stringify({ syntheticOnly: true, noMediaCapture: true, rows }, null, 2));
 } finally {
-  ws?.close(); chrome?.kill(); await vite.close(); rmSync(profile, { recursive: true, force: true });
+  ws?.close(); stopChrome(chrome, profile); await vite.close();
 }

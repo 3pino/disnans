@@ -4,9 +4,16 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 
 /**
- * 試験の小さな道具。JUnit を使わず（キャッシュに無いため）、失敗は例外にする。
- * 実行: 各 *Test.kt の `main` を java で呼ぶ（tools/ の手順を参照）。
+ * 試験の小さな道具。失敗は例外にする（JUnit の assert と同じ扱い）。
+ * 実行: `:notifier:testDebugUnitTest`（NativeCallJUnitRunners.kt が各 `run()` を @Test にする）。
  */
+
+/** harness を一つの試験として走らせ、検査の件数を出す */
+internal fun runHarness(name: String, body: () -> Unit) {
+  val before = Check.count
+  body()
+  println("$name: ${Check.count - before} checks passed")
+}
 object Check {
   var count = 0
   fun that(cond: Boolean, msg: () -> String) {

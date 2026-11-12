@@ -24,6 +24,8 @@ pub mod sessions;
 pub mod state;
 pub mod store;
 pub mod tailscale;
+#[cfg(feature = "test-support")]
+pub mod testing;
 pub mod trash;
 pub mod update;
 pub mod webdav;

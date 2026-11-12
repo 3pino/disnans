@@ -40,8 +40,6 @@ pub enum Kind {
     NullableText,
     /// 文字列の配列
     TextList,
-    /// 形を問わない JSON（オブジェクトなど。中身は GUI が決める）
-    Any,
     /// ホットキー（コマンド ID → キーの一覧）。`prefs.svelte`・`commands.svelte.ts` の `normalizeHotkeys` と同じ
     HotkeyMap,
     /// スラッシュコマンドの別名（コマンド ID → 名前）。`slashAlias.ts` の `normalizeSlashAliases` と同じ
@@ -357,7 +355,6 @@ pub fn normalize_value(def: &Def, value: Option<&Value>) -> Value {
         (Kind::TextList, Some(Value::Array(items))) if items.iter().all(Value::is_string) => {
             Value::Array(items.clone())
         }
-        (Kind::Any, Some(v)) if !v.is_null() => v.clone(),
         (Kind::HotkeyMap, Some(v)) => hotkey_map(v),
         (Kind::SlashAliases, Some(v)) => slash_aliases(v),
         (Kind::EnterKeys, Some(v)) => enter_keys(v),
@@ -590,45 +587,6 @@ pub fn join_mode_from_legacy(raw: &Value) -> Value {
     Value::String(if muted { "mic" } else { "none" }.to_owned())
 }
 
-/// 保存する値の検査用に、定義の一覧を JSON にする（GUI が起動時に一度読む想定）
-pub fn definitions_json() -> Value {
-    Value::Array(
-        DEFINITIONS
-            .iter()
-            .map(|d| {
-                serde_json::json!({
-                    "key": d.key,
-                    "scope": d.scope,
-                    "default": d.default.to_value(),
-                    "kind": kind_json(d.kind),
-                })
-            })
-            .collect(),
-    )
-}
-
-fn kind_json(kind: Kind) -> Value {
-    match kind {
-        Kind::Bool => serde_json::json!({"type": "bool"}),
-        Kind::Number { min, max } => serde_json::json!({"type": "number", "min": min, "max": max}),
-        Kind::Choice { options, nullable } => {
-            serde_json::json!({"type": "choice", "options": options, "nullable": nullable})
-        }
-        Kind::Text => serde_json::json!({"type": "text"}),
-        Kind::NullableText => serde_json::json!({"type": "nullableText"}),
-        Kind::TextList => serde_json::json!({"type": "textList"}),
-        Kind::Any => serde_json::json!({"type": "any"}),
-        Kind::HotkeyMap => serde_json::json!({"type": "hotkeyMap"}),
-        Kind::SlashAliases => serde_json::json!({"type": "slashAliases"}),
-        Kind::EnterKeys => serde_json::json!({"type": "enterKeys"}),
-        Kind::ComposerMenu => serde_json::json!({"type": "composerMenu"}),
-        Kind::NavItems => serde_json::json!({"type": "navItems"}),
-        Kind::NavLabels => serde_json::json!({"type": "navLabels"}),
-        Kind::AudioOutput => serde_json::json!({"type": "audioOutput"}),
-        Kind::ScreenShare => serde_json::json!({"type": "screenShare"}),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -821,7 +779,10 @@ mod tests {
                 nullable: false,
             }
         );
-        assert!(DEFINITIONS.iter().all(|x| x.key != "joinMuted"), "joinMuted is replaced");
+        assert!(
+            DEFINITIONS.iter().all(|x| x.key != "joinMuted"),
+            "joinMuted is replaced"
+        );
     }
 
     #[test]
@@ -840,7 +801,13 @@ mod tests {
 
     #[test]
     fn old_join_muted_false_or_absent_reads_as_none() {
-        for raw in [json!({"joinMuted": false}), json!({}), json!({"joinMuted": "yes"}), json!({"joinMuted": 1}), json!({"joinMuted": null})] {
+        for raw in [
+            json!({"joinMuted": false}),
+            json!({}),
+            json!({"joinMuted": "yes"}),
+            json!({"joinMuted": 1}),
+            json!({"joinMuted": null}),
+        ] {
             let out = normalize_user_prefs(&raw);
             assert_eq!(out["joinMode"], "none", "input {raw}");
         }
@@ -851,13 +818,20 @@ mod tests {
         let out = normalize_user_prefs(&json!({"joinMuted": true, "joinMode": "speaker"}));
         assert_eq!(out["joinMode"], "speaker");
         let out = normalize_user_prefs(&json!({"joinMuted": true, "joinMode": "none"}));
-        assert_eq!(out["joinMode"], "none", "choosing none after an old true stays none");
+        assert_eq!(
+            out["joinMode"], "none",
+            "choosing none after an old true stays none"
+        );
     }
 
     #[test]
     fn unknown_join_mode_is_none_not_the_old_boolean() {
         // 知らない値は安全な側（ミュートなし）。古い真偽値があっても、選ばれた値が優先されて既定に戻る
-        for raw in [json!({"joinMode": "loud"}), json!({"joinMode": true, "joinMuted": true}), json!({"joinMode": 1, "joinMuted": true})] {
+        for raw in [
+            json!({"joinMode": "loud"}),
+            json!({"joinMode": true, "joinMuted": true}),
+            json!({"joinMode": 1, "joinMuted": true}),
+        ] {
             let out = normalize_user_prefs(&raw);
             assert_eq!(out["joinMode"], "none", "input {raw}");
         }
@@ -878,22 +852,5 @@ mod tests {
                 assert_eq!(out[d.key], default_of(d), "{} for {raw}", d.key);
             }
         }
-    }
-
-    #[test]
-    fn definitions_json_lists_every_key_once() {
-        let v = definitions_json();
-        let items = v.as_array().unwrap();
-        assert_eq!(items.len(), DEFINITIONS.len());
-        assert!(
-            items
-                .iter()
-                .any(|d| d["key"] == "orientation" && d["scope"] == "device")
-        );
-        assert!(
-            items
-                .iter()
-                .any(|d| d["key"] == "server" && d["scope"] == "local")
-        );
     }
 }

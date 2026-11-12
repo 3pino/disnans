@@ -20,7 +20,7 @@ use crate::state::SharedState;
 use crate::store::files::{self as file_store, FileRow};
 
 /// アップロード（multipart、フィールド名 `file`）。ディスクにストリーミングで書いてから変換する。
-pub async fn upload(
+pub(crate) async fn upload(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     mut multipart: Multipart,
@@ -81,7 +81,7 @@ pub async fn upload(
 }
 
 /// ファイル本体。Range リクエストにも対応する（動画のシークなど）。
-pub async fn get(
+pub(crate) async fn get(
     State(state): State<SharedState>,
     Path(id): Path<String>,
     req: Request,
@@ -93,7 +93,7 @@ pub async fn get(
 }
 
 /// 投稿前のアップロードを取り消す（本人のもので、まだどの本文にも投稿されていないもの。それ以外は 403）。
-pub async fn discard(
+pub(crate) async fn discard(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(id): Path<String>,
@@ -103,7 +103,7 @@ pub async fn discard(
 }
 
 /// サムネイル（WebP）。
-pub async fn thumb(
+pub(crate) async fn thumb(
     State(state): State<SharedState>,
     Path(id): Path<String>,
     req: Request,

@@ -4,58 +4,39 @@
 //! 確かめること: join が成功して参加者一覧に載るか、update が `not_in_call` で落ちないか、
 //! サーバーの error イベントが ChatSession の受信側に届くか。
 
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
 use disnans_client_core::{ChatSession, ConnectOptions, ServerUrl, WatchItem};
+use disnans_server::testing::DevServer;
 use disnans_shared::{CallStatus, ClientEvent, ServerEvent};
-use tokio::{net::TcpListener, task::JoinHandle};
 
 const IO: Duration = Duration::from_secs(10);
 
+/// 開発モードのサーバー（一時ディレクトリ）。`addr`・`state` は DevServer のもの。
 struct TestServer {
-    address: SocketAddr,
-    task: JoinHandle<()>,
-    state: disnans_server::state::SharedState,
-    _data: tempfile::TempDir,
+    dev: DevServer,
+}
+
+impl std::ops::Deref for TestServer {
+    type Target = DevServer;
+    fn deref(&self) -> &DevServer {
+        &self.dev
+    }
 }
 
 impl TestServer {
     async fn start() -> Self {
-        let data = tempfile::tempdir().unwrap();
-        let config = disnans_server::config::Config {
-            data_dir: data.path().to_owned(),
-            bind: "127.0.0.1:0".parse().unwrap(),
-            dev: true,
-            tailscale_socket: data.path().join("no-such-socket"),
-            image_max_edge: disnans_server::image_proc::DEFAULT_MAX_EDGE,
-        };
-        let (app, state) = disnans_server::build(config).await.unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let task = tokio::spawn(async move {
-            axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .await
-            .unwrap();
-        });
         Self {
-            address,
-            task,
-            state,
-            _data: data,
+            dev: DevServer::start().await,
         }
     }
 
     fn server(&self) -> ServerUrl {
-        ServerUrl::parse(&format!("http://{}", self.address)).unwrap()
+        ServerUrl::parse(&format!("http://{}", self.addr)).unwrap()
     }
 
-    async fn stop(mut self) {
-        self.task.abort();
-        let _ = (&mut self.task).await;
-        self.state.pool.close().await;
+    async fn stop(self) {
+        self.dev.stop().await;
     }
 }
 

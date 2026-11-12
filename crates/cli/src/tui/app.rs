@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 
 use crossterm::event::{KeyEvent, MouseEvent, MouseEventKind};
+use disnans_shared::limits::MAX_BODY_CHARS;
 use disnans_shared::{Message, Reaction, User};
 
 use std::collections::HashMap;
@@ -28,8 +29,6 @@ use disnans_client_core::view::ui::{
 /// 起動時・再取得時に読む件数。
 pub const PAGE_SIZE: u32 = 50;
 pub const REFETCH_SIZE: u32 = 100;
-/// 本文の最大文字数（サーバーと同じ）。
-pub const MAX_BODY_CHARS: usize = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnState {

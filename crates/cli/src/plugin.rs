@@ -20,8 +20,8 @@ const FILES: [&str; 5] = [
     "theme.css",
     "icon.svg",
 ];
-/// サーバーの合計上限（5 MB）。超えるものは送る前に断る。
-const MAX_TOTAL: usize = 5 * 1024 * 1024;
+/// サーバーの合計上限。超えるものは送る前に断る。
+const MAX_TOTAL: usize = disnans_shared::limits::MAX_PLUGIN_PACKAGE_BYTES;
 
 fn usage(message: impl Into<String>) -> CliError {
     CliError::Usage(message.into())

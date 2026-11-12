@@ -13,15 +13,12 @@ serde_json = "1"
 sha2 = "0.10"
 unicode-normalization = "0.1"
 url = "2"
-# WebSocket client (feature `ws`). The desktop GUI keeps its TypeScript WebSocket for now, so it does not enable this.
-fastrand = { version = "2", optional = true }
+# WebSocket クライアント（チャット）。Tauri（Windows・Linux・Android）と CLI・TUI が使う。ブラウザの開発版だけは TypeScript の WebSocket
+fastrand = "2"
 futures-util = { version = "0.3", features = ["sink"] }
-tokio = { version = "1", features = ["net", "rt", "sync", "time", "macros"], optional = true }
-tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots", "rustls-tls-native-roots"], optional = true }
+tokio = { version = "1", features = ["net", "rt", "sync", "time", "macros"] }
+tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots", "rustls-tls-native-roots"] }
 ulid = "1"
-
-[features]
-ws = ["dep:fastrand", "dep:tokio", "dep:tokio-tungstenite"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "io-util", "time", "sync"] }

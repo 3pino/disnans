@@ -13,6 +13,12 @@ describe('API_CHANGES', () => {
     expect(API_CHANGES.find((c) => c.version === 13)?.text).toContain('スレッド');
     expect(API_CHANGES.find((c) => c.version === 14)?.text).toContain('PluginError');
   });
+
+  it('17 は画面のキャプチャ・ピクチャーインピクチャーの削除（標準の画面共有へ）', () => {
+    const text = API_CHANGES.find((c) => c.version === 17)?.text ?? '';
+    expect(text).toContain('screenCapture');
+    expect(text).toContain('pip');
+  });
 });
 
 describe('targetApiVersion', () => {

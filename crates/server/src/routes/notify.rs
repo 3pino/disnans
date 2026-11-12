@@ -13,7 +13,7 @@ use crate::state::SharedState;
 ///
 /// 送るのは、ボタンを押したデバイス（リクエストと同じ IP アドレスからの接続）だけ。
 /// Android では WebView と通知用の常駐サービスの両方が、同じデバイスからつないでいる。
-pub async fn sample(
+pub(crate) async fn sample(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,

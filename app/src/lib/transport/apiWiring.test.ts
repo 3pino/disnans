@@ -1,39 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bootReadApi, bootWriteApi, currentBootEnv } from './boot';
-import { createHttpReadApi } from './http';
 
-// 起動時の経路の決め方（api.ts は bootReadApi() の結果を読み込み時に1回だけ使う）。
-// 決定関数を、スタブした実行環境から直接検証する。
+// 起動時の経路（api.ts は bootReadApi() / bootWriteApi() の結果を読み込み時に1回だけ使う）。
+// 読取・書込・添付は、どの OS でも Rust（Tauri）だけ。HTTP の経路は無い。
 
 const LINUX = 'Mozilla/5.0 (X11; Linux x86_64)';
+const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
 const OTHER = 'Mozilla/5.0 (OtherOS; x86_64)';
 
-type Env = { flag?: string; ua: string; tauri: boolean; server?: string };
+type Env = { ua: string; server?: string };
 
 function stubEnvironment(env: Env) {
   const store = new Map<string, string>();
   if (env.server) store.set('disnans.server', env.server);
-  if (env.flag !== undefined) store.set('disnans.rustApi', env.flag);
+  // 古い開発用フラグ（disnans.rustApi = "0"）が残っていても、Rust 経路のまま
+  store.set('disnans.rustApi', '0');
   const win: Record<string, unknown> = {
     localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem() {}, removeItem() {} },
     location: { search: '' },
+    __TAURI_INTERNALS__: {},
   };
-  if (env.tauri) win.__TAURI_INTERNALS__ = {};
   vi.stubGlobal('window', win);
   vi.stubGlobal('navigator', { userAgent: env.ua, platform: '' });
 }
 
 let invoke: ReturnType<typeof vi.fn>;
-let fetchCalls: string[];
 
 beforeEach(() => {
   invoke = vi.fn().mockResolvedValue({ id: 'u1' });
-  fetchCalls = [];
-  vi.stubGlobal('fetch', async (url: string) => {
-    fetchCalls.push(url);
-    return new Response(JSON.stringify({ id: 'u-http' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  vi.stubGlobal('fetch', async () => {
+    throw new Error('HTTP is not used');
   });
-  vi.spyOn(console, 'info').mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -41,76 +38,30 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** 起動時の環境から経路を決める（Tauri 側の invoke だけ差し替える） */
-function boot(env: Env) {
+function readApi(env: Env) {
   stubEnvironment(env);
   return bootReadApi({ ...currentBootEnv(), invoke: invoke as never });
 }
 
-describe('boot-time read transport choice', () => {
-  it('unset on Linux Tauri: Rust is the default', () => {
-    expect(boot({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('tauri');
-  });
+function writeApi(env: Env) {
+  stubEnvironment(env);
+  return bootWriteApi({ ...currentBootEnv(), invoke: invoke as never });
+}
 
-  it('flag "0": HTTP, invoke is never called', () => {
-    const choice = boot({ flag: '0', ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
-    expect(choice.kind).toBe('http');
-    expect(console.info).toHaveBeenCalledWith('[disnans] api read transport: http');
-    expect(invoke).not.toHaveBeenCalled();
-  });
-
-  it('flag on on Linux Tauri: Rust, reads use the fixed command with the current server', async () => {
-    const choice = boot({ flag: '1', ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
-    expect(choice.kind).toBe('tauri');
-    expect(await choice.api.me()).toEqual({ id: 'u1' });
+describe('boot-time transport choice (Rust only)', () => {
+  it.each([
+    ['Linux', LINUX],
+    ['Windows', WINDOWS],
+    ['another OS', OTHER],
+  ])('reads go through invoke on %s, even with the old flag set to "0"', async (_name, ua) => {
+    const api = readApi({ ua, server: 'http://127.0.0.1:8080' });
+    expect(await api.me()).toEqual({ id: 'u1' });
     expect(invoke).toHaveBeenCalledWith('api_me', { args: { server: 'http://127.0.0.1:8080', devUser: null } });
-    expect(console.info).toHaveBeenCalledWith('[disnans] api read transport: tauri');
   });
 
-  it('no flag on Windows Tauri: Rust is the default', () => {
-    expect(boot({ ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('tauri');
-  });
-
-  it('Tauri on an OS other than Windows, Linux and Android: HTTP even without a flag', () => {
-    expect(boot({ ua: OTHER, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
-  });
-
-  it('flag on but another OS: HTTP', () => {
-    expect(boot({ flag: '1', ua: OTHER, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
-  });
-
-  it('the HTTP implementation still fetches the same URL', async () => {
-    stubEnvironment({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
-    await createHttpReadApi().me();
-    expect(fetchCalls).toEqual(['http://127.0.0.1:8080/api/me']);
-  });
-});
-
-describe('boot-time write transport choice (follows the same rule as reads)', () => {
-  function bootWrite(env: Env) {
-    stubEnvironment(env);
-    return bootWriteApi({ ...currentBootEnv(), invoke: invoke as never });
-  }
-
-  it('Windows/Linux Tauri: Rust by default, and "0" gives HTTP', () => {
-    expect(bootWrite({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('tauri');
-    expect(bootWrite({ ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', tauri: true }).kind).toBe('tauri');
-    expect(bootWrite({ flag: '0', ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' }).kind).toBe('http');
-  });
-
-  it('another OS keeps HTTP, even with a flag of "1"', () => {
-    expect(bootWrite({ ua: OTHER, tauri: true }).kind).toBe('http');
-    expect(bootWrite({ flag: '1', ua: OTHER, tauri: true }).kind).toBe('http');
-  });
-
-  it('the Rust write goes through invoke, and the HTTP write does not', async () => {
-    const rust = bootWrite({ ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
-    await rust.write.clearAvatar();
+  it('writes and uploads go through invoke too', async () => {
+    const api = writeApi({ ua: LINUX, server: 'http://127.0.0.1:8080' });
+    await api.write.clearAvatar();
     expect(invoke).toHaveBeenCalledWith('api_clear_avatar', expect.anything());
-    const http = bootWrite({ flag: '0', ua: LINUX, tauri: true, server: 'http://127.0.0.1:8080' });
-    invoke.mockClear();
-    await http.write.clearAvatar();
-    expect(invoke).not.toHaveBeenCalled();
-    expect(fetchCalls[0]).toContain('/api/me/avatar');
   });
 });

@@ -25,7 +25,7 @@ mod imp {
     use rustix::fs::{CWD, RenameFlags, renameat_with};
     use rustix::io::Errno;
 
-    pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+    pub(crate) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
         renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE).map_err(|e| match e {
             // このファイルシステムは RENAME_NOREPLACE に対応していない
             Errno::INVAL | Errno::NOSYS | Errno::OPNOTSUPP => {
@@ -49,7 +49,7 @@ mod imp {
         p.as_os_str().encode_wide().chain(once(0)).collect()
     }
 
-    pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+    pub(crate) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
         let (a, b) = (wide(from), wide(to));
         // 置き換えのフラグ（MOVEFILE_REPLACE_EXISTING）を付けないので、同名があれば失敗する
         // SAFETY: どちらも NUL で終わる UTF-16 の文字列で、呼び出しの間は生きている
@@ -67,7 +67,7 @@ mod imp {
     use std::io;
     use std::path::Path;
 
-    pub fn rename_no_replace(_from: &Path, _to: &Path) -> io::Result<()> {
+    pub(crate) fn rename_no_replace(_from: &Path, _to: &Path) -> io::Result<()> {
         Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 }

@@ -3,12 +3,12 @@ import { MediaError } from './errors';
 import type { ScreenCapturePort, ScreenPipPort, ScreenRelay, ScreenSnapshot } from '../call/screen/types';
 
 /**
- * ネイティブの画面取得への橋渡し。
- * - screenCapture（API v9）: Android の MediaProjection で画面を撮り、縮小した JPEG / WebP を JS に渡す。
- * - Linux（API v12）: portal / PipeWire → GStreamer で、選んだ画面を取得する。WebKitGTK の映像の描画には頼らない
- * - pip（API v9）: Activity のピクチャーインピクチャー
+ * ネイティブの画面取得への橋渡し。通話の標準の画面共有（call/screen）と設定のプレビューだけが使う。プラグインへは公開しない。
+ * - Android: MediaProjection で画面を撮り、縮小した JPEG / WebP を JS に渡す。
+ * - Linux: portal / PipeWire → GStreamer で、選んだ画面を取得する。WebKitGTK の映像の描画には頼らない
+ * - pip: Activity のピクチャーインピクチャー
  * 画面の取得は、ユーザーの許可のダイアログ（システム）と、通知欄の常駐（フォアグラウンドサービス）を伴う。
- * - screenCapture.snapshot（API v11）: ダイアログなしの静止画 1 枚。デスクトップ（Windows / Linux）でも使える。
+ * - snapshot: ダイアログなしの静止画 1 枚。デスクトップ（Windows / Linux）でも使える。
  *   デスクトップは本体の `screen_snapshot` コマンド（src-tauri/src/snapshot.rs）、Android は screen プラグインの `snapshot`（PixelCopy）
  */
 
@@ -51,7 +51,7 @@ function listen<T>(event: string, cb: (payload: T) => void): () => void {
 
 /**
  * ネイティブのプラグインのエラー（`{ message, code }` のオブジェクトで届く）を Error にする。
- * ユーザーが許可のダイアログで断った（code が `cancelled`）ときは name を `AbortError` にする（API v10）
+ * ユーザーが許可のダイアログで断った（code が `cancelled`）ときは name を `AbortError` にする
  */
 export function toCaptureError(e: unknown): Error {
   if (e instanceof Error) return e;
@@ -75,7 +75,7 @@ let captureBackend: 'android' | 'linux' | null = null;
 type Retirement = { owner: object; backend: 'android' | 'linux'; seq: number; pending: Promise<void> | null };
 let retirement: Retirement | null = null;
 
-// ---- 通話へのネイティブ送信（API v16）。フロントエンドと Android のネイティブは同じ APK に入るので、Android なら使える ----
+// ---- 通話へのネイティブ送信。フロントエンドと Android のネイティブは同じ APK に入るので、Android なら使える ----
 
 /** 名前・状態の決まり（本体へ渡す前に、JS で確かめる）。違うものは invalid_argument */
 const RELAY_RESERVED_NAMES = new Set(['audio']);
@@ -145,7 +145,7 @@ function retireCapture(owner: object): Promise<void> {
   return run.pending;
 }
 
-/** 取得は OS ごとに一つ。本体と拡張の停止・設定が、他方の取得へ作用しないように分ける。 */
+/** 取得は OS ごとに一つ（所有者を取り違えないよう、停止・設定はこのポートを作った側だけが行う）。 */
 function capturePort(): ScreenCapturePort {
   const owner = {};
   let request = 0;
@@ -153,7 +153,7 @@ function capturePort(): ScreenCapturePort {
   get supported() {
     return capabilities().nativeScreen !== null;
   },
-  /** 通話へのネイティブ送信（API v16）が使える。Android（この版の本体）だけ true。Linux・ブラウザーでは false */
+  /** 通話へのネイティブ送信が使える。Android（この版の本体）だけ true。Linux・ブラウザーでは false */
   get supportsCallRelay() {
     return native();
   },
@@ -248,8 +248,6 @@ function capturePort(): ScreenCapturePort {
 }
 
 export const screenCaptureApi = capturePort();
-/** 公開 SDK の互換用。本体の通話が持つ取得は止められない。 */
-export const pluginScreenCaptureApi = capturePort();
 
 function cleanup(): void {
   capturing = false;
@@ -260,7 +258,7 @@ function cleanup(): void {
   captureOff = [];
 }
 
-// ---- 静止画（API v11） ----
+// ---- 静止画 ----
 
 /** プレビューなどに使う静止画の JPEG の品質 */
 const SNAPSHOT_QUALITY = 0.85;

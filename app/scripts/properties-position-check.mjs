@@ -5,17 +5,14 @@
 // 使い方: cd app && node scripts/properties-position-check.mjs   （CHROME で Chromium を指定できる）
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { fixtureScript } from './touch-fixture.mjs';
+import { connectCdp, launchChrome, makeProfile, openPage, stopChrome } from './cdp.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const executable = process.env.CHROME ?? join(homedir(), '.cache/puppeteer/chrome-headless-shell/linux-146.0.7680.153/chrome-headless-shell-linux64/chrome-headless-shell');
-const profile = mkdtempSync(join(tmpdir(), 'disnans-properties-'));
+const profile = makeProfile('disnans-properties-');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 仮の共有フォルダ（直下に 6 つ。グリッドで左端の列に項目が来る）
@@ -40,22 +37,10 @@ let chrome, ws;
 try {
   await vite.listen();
   const APP = `http://127.0.0.1:${vite.httpServer.address().port}/`;
-  chrome = spawn(executable, ['--no-sandbox', '--disable-gpu', `--user-data-dir=${profile}`, '--remote-debugging-port=0', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
-  const endpoint = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Chromium startup timed out')), 15000);
-    let text = '';
-    chrome.on('error', (e) => { clearTimeout(timer); reject(e); });
-    chrome.stderr.on('data', (b) => { text += b; const m = /DevTools listening on (ws:\/\/\S+)/.exec(text); if (m) { clearTimeout(timer); resolve(m[1]); } });
-  });
-  ws = new WebSocket(endpoint);
-  await new Promise((resolve, reject) => { ws.addEventListener('open', resolve, { once: true }); ws.addEventListener('error', reject, { once: true }); });
-  let seq = 0;
-  const pending = new Map();
-  ws.addEventListener('message', ({ data }) => { const m = JSON.parse(data); const p = pending.get(m.id); if (!p) return; pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); });
-  const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params, sessionId })); });
-  const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
-  const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
-  const S = (m, p) => send(m, p, sessionId);
+  const launched = launchChrome(profile);
+  chrome = launched.child;
+  ws = await connectCdp(await launched.endpoint);
+  const S = await openPage(ws);
   const evaluate = async (expression) => {
     const r = await S('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails));
@@ -136,8 +121,7 @@ try {
   console.log('properties position: menu and dialog stay inside the shell content area (right of the nav-bar) on wide screens (no appearance check)');
 } finally {
   ws?.close();
-  chrome?.kill();
+  stopChrome(chrome, profile);
   fake.close();
   await vite.close();
-  rmSync(profile, { recursive: true, force: true });
 }

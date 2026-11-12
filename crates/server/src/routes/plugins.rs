@@ -15,7 +15,7 @@ use crate::state::SharedState;
 use crate::store::plugins as plugin_store;
 
 /// みんなのものと、自分だけのもの。
-pub async fn list(
+pub(crate) async fn list(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
 ) -> AppResult<Json<Vec<PluginInfo>>> {
@@ -26,7 +26,7 @@ pub async fn list(
 
 /// 配布・更新（multipart、フィールド名 `file` を複数）。ファイル名で種類を見分ける。
 /// フィールド `visibility`（`public` / `private`）で範囲を選ぶ。省略すると `public`。
-pub async fn upload(
+pub(crate) async fn upload(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     mut multipart: Multipart,
@@ -70,7 +70,7 @@ pub async fn upload(
     ))
 }
 
-pub async fn remove(
+pub(crate) async fn remove(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(id): Path<String>,
@@ -81,7 +81,7 @@ pub async fn remove(
 
 /// 配布されたファイル。クライアントは `?v=<hash>` を付けて取るので、キャッシュは毎回確かめさせる。
 /// ほかの人の自分だけのものは、ないものとして扱う（404）。
-pub async fn file(
+pub(crate) async fn file(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path((id, name)): Path<(String, String)>,
@@ -123,7 +123,7 @@ pub async fn file(
     Ok(res)
 }
 
-pub async fn notify(
+pub(crate) async fn notify(
     State(state): State<SharedState>,
     Path(id): Path<String>,
     Json(req): Json<PluginNotify>,
@@ -133,7 +133,7 @@ pub async fn notify(
 }
 
 /// プラグインがボットとしてメッセージを投稿する。
-pub async fn post_message(
+pub(crate) async fn post_message(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(id): Path<String>,

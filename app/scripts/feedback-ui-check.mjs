@@ -1,14 +1,11 @@
 // 実際の部品の矩形・DOM だけを検査する。スクリーンショット・実機・実際のメディア取得は使わない。
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import { connectCdp, launchChrome, makeProfile, openPage, stopChrome } from './cdp.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const executable = process.env.CHROME ?? join(homedir(), '.cache/puppeteer/chrome-headless-shell/linux-146.0.7680.153/chrome-headless-shell-linux64/chrome-headless-shell');
-const profile = mkdtempSync(join(tmpdir(), 'disnans-feedback-ui-'));
+const profile = makeProfile('disnans-feedback-ui-');
 const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
 <style>html,body{height:100%;margin:0}.shell-root{height:100%;display:flex;flex-direction:column}#fixture{flex:1;min-height:0}</style>
 <div class="shell-root"><div class="top-slot"></div><div id="fixture"></div></div>
@@ -79,12 +76,10 @@ const vite = await createServer({ root, server: { host: '127.0.0.1', port: 0 }, 
 }}] });
 let chrome,ws;
 try{
- await vite.listen();chrome=spawn(executable,['--no-sandbox','--disable-gpu',`--user-data-dir=${profile}`,'--remote-debugging-port=0','about:blank'],{stdio:['ignore','ignore','pipe']});
- const endpoint=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Chromium startup timed out')),15000);let text='';chrome.on('error',e=>{clearTimeout(timer);reject(e);});chrome.stderr.on('data',b=>{text+=b;const m=/DevTools listening on (ws:\/\/\S+)/.exec(text);if(m){clearTimeout(timer);resolve(m[1]);}});});
- ws=new WebSocket(endpoint);await new Promise((resolve,reject)=>{ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',reject,{once:true});});
- let seq=0;const pending=new Map();ws.addEventListener('message',({data})=>{const m=JSON.parse(data);if(process.env.FEEDBACK_UI_DEBUG&&(m.method==='Log.entryAdded'||m.method==='Runtime.exceptionThrown'))console.error(JSON.stringify(m.params).slice(0,600));const p=pending.get(m.id);if(!p)return;pending.delete(m.id);clearTimeout(p.timer);if(m.error)p.reject(new Error(JSON.stringify(m.error)));else p.resolve(m.result);});
- const send=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject,timer:setTimeout(()=>{pending.delete(id);reject(new Error('CDP timeout '+method));},20000)});ws.send(JSON.stringify({id,method,params,sessionId}));});
- const {targetId}=await send('Target.createTarget',{url:'about:blank'}),{sessionId}=await send('Target.attachToTarget',{targetId,flatten:true});const S=(m,p)=>send(m,p,sessionId);
+ await vite.listen();const launched=launchChrome(profile);chrome=launched.child;
+ ws=await connectCdp(await launched.endpoint,{timeoutMs:20_000});
+ ws.onMessage((m)=>{if(process.env.FEEDBACK_UI_DEBUG&&(m.method==='Log.entryAdded'||m.method==='Runtime.exceptionThrown'))console.error(JSON.stringify(m.params).slice(0,600));});
+ const S=await openPage(ws);
  const evaluate=async(expression)=>{const r=await S('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
  await S('Page.enable');await S('Log.enable');await S('Runtime.enable');await S('Emulation.setDeviceMetricsOverride',{width:390,height:700,deviceScaleFactor:1,mobile:true});await S('Page.navigate',{url:`http://127.0.0.1:${vite.httpServer.address().port}/__feedback_ui_fixture`});
  for(let i=0;i<150&&!(await evaluate('typeof window.renderFixture === "function"'));i++)await new Promise(r=>setTimeout(r,50));assert.equal(await evaluate('typeof window.renderFixture'),'function');
@@ -179,4 +174,4 @@ try{
  // 設定は偽物の enumerateDevices() を読む。本物の列挙・録音・取得・AudioContext には到達しない。
  assert.deepEqual(await evaluate('window.__mediaCalls.filter(name=>name!=="enumerateDevices")'),[],'fixture attempted media capture/audio');
  console.log('feedback UI: all-device 30% image caps (+theme variable, sizes), call view lower-half square streams in order, call-name unselectable, settings header switching passed (no appearance check/media)');
-}finally{ws?.close();chrome?.kill();await vite.close();rmSync(profile,{recursive:true,force:true});}
+}finally{ws?.close();stopChrome(chrome,profile);await vite.close();}

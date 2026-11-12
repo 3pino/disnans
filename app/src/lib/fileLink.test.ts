@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { attachmentActionText, attachmentNameError, deletedAttachmentNames, fileLinkView, isImage, isPdf } from './fileLink';
-import { HttpError } from './transport/http';
+import { HttpError } from './transport/httpError';
 import type { SharedEntry } from './protocol/SharedEntry';
 import type { Message } from './protocol/Message';
 import type { FileState } from './stores/sharedIndex.svelte';

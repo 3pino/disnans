@@ -10,12 +10,11 @@ import type { Session } from '../protocol/Session';
 import type { UpdateMe } from '../protocol/UpdateMe';
 import type { UpdateSession } from '../protocol/UpdateSession';
 import type { User } from '../protocol/User';
-import { apiUrl, authHeaders } from '../config';
-import { HttpError, request, toError } from './http';
+import { HttpError } from './httpError';
 import { toBridgeError } from './tauri';
 import type { BridgeContext, Invoke } from './types';
 import { encodeBody, type BodyMode } from './body';
-import { prefsResultOf, type PrefsResult } from '../settingsModel';
+import type { PrefsResult } from '../settingsModel';
 
 /**
  * 書込 REST の経路（契約 .pi/step4-ipc-contract.md §9）。`api` の書込メソッドと同じ引数・戻り値。
@@ -45,37 +44,6 @@ export const UNKNOWN_OUTCOME = 'unknown_outcome';
 
 /** 非冪等の書込（同じ要求を二度送ると二度効く）。status の無い失敗は UNKNOWN_OUTCOME になる */
 export const NON_IDEMPOTENT = new Set(['sampleNotification', 'publishPlugin', 'pluginPostMessage', 'pluginNotify', 'createSession']);
-
-/** HTTP の経路（従来の fetch。挙動は変えない） */
-export function createHttpWriteApi(): WriteApi {
-  return {
-    updateMe: (body) => request<User>('PATCH', '/api/me', body),
-    setAvatar: async (file, fileName) => {
-      const fd = new FormData();
-      fd.append('file', file, fileName);
-      const res = await fetch(apiUrl('/api/me/avatar'), { method: 'PUT', headers: authHeaders(), body: fd });
-      if (!res.ok) throw await toError(res);
-      return (await res.json()) as User;
-    },
-    clearAvatar: () => request<User>('DELETE', '/api/me/avatar'),
-    setPrefs: async (prefs) => prefsResultOf(await request('PUT', '/api/me/prefs', prefs)),
-    sampleNotification: () => request<void>('POST', '/api/notify/sample'),
-    markRead: (body) => request<ReadMarker>('PUT', '/api/me/read', body),
-    deletePlugin: (id) => request<void>('DELETE', `/api/plugins/${encodeURIComponent(id)}`),
-    publishPlugin: async (files, visibility = 'public') => {
-      const fd = new FormData();
-      fd.append('visibility', visibility);
-      for (const f of files) fd.append('file', f.data, f.name);
-      const res = await fetch(apiUrl('/api/plugins'), { method: 'POST', headers: authHeaders(), body: fd });
-      if (!res.ok) throw await toError(res);
-      return (await res.json()) as PluginInfo;
-    },
-    pluginPostMessage: (id, body) => request<Message>('POST', `/api/plugins/${encodeURIComponent(id)}/messages`, body),
-    pluginNotify: (id, body) => request<void>('POST', `/api/plugins/${encodeURIComponent(id)}/notify`, body),
-    createSession: (body) => request<Session>('POST', '/api/sessions', body),
-    updateSession: (id, body) => request<Session>('PUT', `/api/sessions/${encodeURIComponent(id)}`, body),
-  };
-}
 
 /** raw body の付随情報（契約 §9.3）: ヘッダー x-disnans-args = encodeURIComponent(JSON.stringify(args)) */
 export function argsHeader(args: Record<string, unknown>): Record<string, string> {

@@ -239,27 +239,10 @@ fn app_err(e: crate::error::AppError) -> FsError {
 
 /// 拡張子から種類を決める（WebDAV で作ったファイル・送り手が種類を付けなかった添付用。分からなければ octet-stream）。
 pub fn guess_mime(name: &str) -> String {
-    let ext = name
-        .rsplit_once('.')
-        .map(|(_, e)| e.to_ascii_lowercase())
-        .unwrap_or_default();
-    let mime = match ext.as_str() {
-        "txt" | "log" | "md" => "text/plain",
-        "csv" => "text/csv",
-        "json" => "application/json",
-        "pdf" => "application/pdf",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "avif" => "image/avif",
-        "bmp" => "image/bmp",
-        "mp4" => "video/mp4",
-        "mp3" => "audio/mpeg",
-        "zip" => "application/zip",
-        _ => "application/octet-stream",
-    };
-    mime.to_owned()
+    let ext = name.rsplit_once('.').map(|(_, e)| e).unwrap_or_default();
+    disnans_shared::mime::for_extension(ext)
+        .unwrap_or("application/octet-stream")
+        .to_owned()
 }
 
 impl SharedFs {
@@ -1196,5 +1179,8 @@ mod tests {
         assert_eq!(guess_mime("a.PNG"), "image/png");
         assert_eq!(guess_mime("photo.avif"), "image/avif");
         assert_eq!(guess_mime("noext"), "application/octet-stream");
+        // WebView で描けない画像や SVG は、推測では決めない（以前どおり octet-stream）
+        assert_eq!(guess_mime("photo.heic"), "application/octet-stream");
+        assert_eq!(guess_mime("icon.svg"), "application/octet-stream");
     }
 }

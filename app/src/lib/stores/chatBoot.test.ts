@@ -2,7 +2,7 @@
 // Rust のチャットを持つ Tauri（Windows・Linux・Android）は、chat_start を invoke で呼ぶ（WebSocket は作らない）。
 // 対象外の OS はチャットを使えない（接続せず、理由を出す）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { injectedPlatform, stubTauri, type TauriOs } from '../testing/tauriEnv';
+import { injectedPlatform, stubTauri, type TauriOs } from '../../test-support/tauriEnv';
 
 class FakeWebSocket {
   static instances = 0;

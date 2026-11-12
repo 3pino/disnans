@@ -3,6 +3,7 @@
 //! WebSocket の `ClientEvent` から呼ばれる。DB を書き換えたあと、結果を全員に配信し、
 //! 必要なら通知を送る。
 
+use disnans_shared::limits::MAX_BODY_CHARS;
 use disnans_shared::{Id, Message, PluginInfo, PluginPostMessage, ServerEvent, User};
 
 use crate::db;
@@ -14,8 +15,6 @@ use crate::state::AppState;
 use crate::store::messages::{self, MessageRow};
 use crate::store::{files as file_store, sessions, users};
 
-/// 本文の最大文字数。
-const MAX_BODY_CHARS: usize = 10_000;
 /// ボットの表示名の最大文字数。
 const MAX_BOT_NAME_CHARS: usize = 40;
 /// リアクションの絵文字の最大文字数（合字の絵文字は複数の文字からなる）。

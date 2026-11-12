@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { NativeCallSession, type NativeSessionHooks, type NativeStartInput } from './nativeSession';
-import { FakeNativePort, deferred, snap } from './nativeFake';
+import { FakeNativePort, deferred, snap } from '../../test-support/nativeFake';
 import type { NativeSnapshot } from './native';
 
 const input: NativeStartInput = {

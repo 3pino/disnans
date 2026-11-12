@@ -3,22 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { ScreenShareStore } from '../lib/call/screen/store.svelte';
 import type { ScreenCallPort } from '../lib/call/screen/types';
-import { state } from './testing/screenShellState.svelte';
+import { state } from '../test-support/screenShellState.svelte';
 
-vi.mock('../lib/call/instance.svelte', async () => ({ call: (await import('./testing/screenShellState.svelte')).call }));
-vi.mock('../lib/commandHost.svelte', async () => ({ commandHost: (await import('./testing/screenShellState.svelte')).commands }));
+vi.mock('../lib/call/instance.svelte', async () => ({ call: (await import('../test-support/screenShellState.svelte')).call }));
+vi.mock('../lib/commandHost.svelte', async () => ({ commandHost: (await import('../test-support/screenShellState.svelte')).commands }));
 vi.mock('../lib/stores/client.svelte', () => ({ client: { user: (id: string) => ({ id, display_name: '配信者' }) } }));
 // 音声・メディアの取得・ネットワーク・他のタブは試験しない。Shell、CallView、Preview、Overlay、Viewer は実物。
-vi.mock('./ChatView.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./PluginPanel.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./TimelinePanel.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./SettingsView.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./FileExplorer.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./PluginSettingsPage.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./ConnectionBanner.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./NavBar.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./TopBarSlot.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./CommandPalette.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
+vi.mock('./ChatView.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./PluginPanel.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./TimelinePanel.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./SettingsView.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./FileExplorer.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./PluginSettingsPage.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./ConnectionBanner.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./NavBar.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./TopBarSlot.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./CommandPalette.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
 
 import Shell from './Shell.svelte';
 import { ui } from '../lib/stores/ui.svelte';

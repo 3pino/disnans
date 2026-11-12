@@ -18,13 +18,13 @@ use crate::store::{prefs, users};
 const MAX_DISPLAY_NAME_CHARS: usize = 32;
 
 /// 設定（`/api/me/prefs`）の JSON の最大バイト数。
-pub const MAX_PREFS_BYTES: usize = 64 * 1024;
+pub(crate) const MAX_PREFS_BYTES: usize = 64 * 1024;
 
-pub async fn me(CurrentUser(user): CurrentUser) -> Json<User> {
+pub(crate) async fn me(CurrentUser(user): CurrentUser) -> Json<User> {
     Json(user)
 }
 
-pub async fn update_me(
+pub(crate) async fn update_me(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Json(req): Json<UpdateMe>,
@@ -48,7 +48,7 @@ pub async fn update_me(
 }
 
 /// 自分の設定。まだ保存していなければ空のオブジェクト。
-pub async fn get_prefs(
+pub(crate) async fn get_prefs(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
 ) -> AppResult<Json<serde_json::Value>> {
@@ -62,7 +62,7 @@ pub async fn get_prefs(
 }
 
 /// 自分の設定をまるごと置き換え、自分のすべての接続（ほかのデバイス）に `prefs.updated` を送る。
-pub async fn put_prefs(
+pub(crate) async fn put_prefs(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Json(value): Json<serde_json::Value>,
@@ -93,12 +93,12 @@ pub async fn put_prefs(
     Ok(Json(value))
 }
 
-pub async fn list(State(state): State<SharedState>) -> AppResult<Json<Vec<User>>> {
+pub(crate) async fn list(State(state): State<SharedState>) -> AppResult<Json<Vec<User>>> {
     Ok(Json(users::list(&state.pool).await?))
 }
 
 /// アバターの設定（multipart、フィールド名 `file`）。一時ファイルに書いてから変換する。
-pub async fn upload_avatar(
+pub(crate) async fn upload_avatar(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     mut multipart: Multipart,
@@ -138,7 +138,7 @@ pub async fn upload_avatar(
 }
 
 /// 自分で設定したアバターを消し、Tailscale のプロフィール画像に戻す。
-pub async fn delete_avatar(
+pub(crate) async fn delete_avatar(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
 ) -> AppResult<Json<User>> {
@@ -146,7 +146,7 @@ pub async fn delete_avatar(
 }
 
 /// アバターの画像（WebP）。ID は設定し直すたびに変わるので、長くキャッシュしてよい。
-pub async fn avatar(
+pub(crate) async fn avatar(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> AppResult<Response> {

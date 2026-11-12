@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 import MessageList from './MessageList.svelte';
 
-vi.mock('./MessageItem.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
+vi.mock('./MessageItem.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
 
 let observers: Array<() => void> = [];
 class FakeResizeObserver {

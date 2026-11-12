@@ -7,7 +7,8 @@ import type { SharedTrashOp } from '../protocol/SharedTrashOp';
 import type { SharedSize } from '../protocol/SharedSize';
 import type { ApiError } from '../protocol/ApiError';
 import { apiUrl, authHeaders } from '../config';
-import { HttpError, READ, request, toError } from './http';
+import { READ, request, toError } from './http';
+import { HttpError } from './httpError';
 import { sharedPath } from '../sharedPath';
 
 /**

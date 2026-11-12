@@ -1,4 +1,5 @@
-import { ConnectionError, HttpError } from '../transport/http';
+import { ConnectionError } from '../transport/http';
+import { HttpError } from '../transport/httpError';
 import { errorMessage } from './types';
 
 /**

@@ -33,6 +33,7 @@
 |---|---|
 | 13 | スレッドの API が削除されました |
 | 14 | エラーの形が変わりました（`disnans.PluginError` と `code`） |
+| 17 | 画面のキャプチャ（`disnans.screenCapture`、v16 の `callRelay` を含む）とピクチャーインピクチャー（`disnans.pip`）が削除されました（画面共有は本体の機能です） |
 
 - manifest の `apiVersion` は、そのプラグインを作った（対象の）版です。省略すると `minApiVersion` とみなします。新しい API を使って作り直したら、`apiVersion` をその版に上げてください
 - 本体がプラグインの対象の版より新しく、その後に削除・変更があると、プラグインは**読み込まれたまま**、設定 → プラグインの一覧に警告が出ます。例: 「このプラグインは v12 向けです。v13 でスレッドの API が削除されました」
@@ -50,13 +51,12 @@
 - 6: `postMessage` の `notify`・`openSettings`
 - 7: `disnans.call`（通話の状態の読み取り・通話のバーのボタン）
 - 8: `disnans.call` の参加者どうしのデータの送受信。v7 にあった WebRTC のトラックの API（`addTrack` など）は外れた
-- 9: `addMessageAction` / `openTimeline`・`disnans.screenCapture` / `disnans.pip`・`ui.onBack` / `ui.setImmersive`
+- 9: `addMessageAction` / `openTimeline`・`ui.onBack` / `ui.setImmersive`（同じ版の `disnans.screenCapture` / `disnans.pip` は v17 で削除）
 - 10: 通話の画面の領域 `call.addPanel`・送信待ちの量 `call.bufferedAmount`
-- 11: ダイアログなしの静止画 `screenCapture.snapshot`
-- 12: 通話画面だけに出すボタン `call.addButton({ location: 'view' })`・Linux のネイティブ画面取得（portal / PipeWire）
+- 12: 通話画面だけに出すボタン `call.addButton({ location: 'view' })`
 - 14: `disnans.PluginError`・`session.viewers`
 - 15: 共有フォルダ `this.files`
-- 16: Android のネイティブ通話へ画面を中継する `screenCapture.supportsCallRelay` / `start({ callRelay })`
+- 17: 追加はなし（画面のキャプチャの削除のみ。上の表）
 
 ## 注意点
 

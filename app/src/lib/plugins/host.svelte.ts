@@ -26,7 +26,6 @@ import { apiWarnings } from './compat';
 import { createUi } from './ui';
 import { holdBackground } from './background';
 import { audio } from './audio';
-import { pipApi, screenCaptureApi } from './nativeScreen';
 import { setImmersive } from '../systemBars';
 import { orientation } from '../stores/orientation.svelte';
 import { callApi } from '../call/instance.svelte';
@@ -272,8 +271,6 @@ export class PluginHost {
       VersionConflictError,
       audio,
       call: callApi,
-      screenCapture: screenCaptureApi,
-      pip: pipApi,
     });
     (window as unknown as { disnans: Disnans.Host }).disnans = host;
 

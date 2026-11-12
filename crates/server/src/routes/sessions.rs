@@ -10,7 +10,7 @@ use crate::error::AppResult;
 use crate::sessions;
 use crate::state::SharedState;
 
-pub async fn create(
+pub(crate) async fn create(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Json(req): Json<CreateSession>,
@@ -22,14 +22,14 @@ pub async fn create(
     Ok(Json(sessions::create(&state, &actor, req).await?))
 }
 
-pub async fn get(
+pub(crate) async fn get(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> AppResult<Json<Session>> {
     Ok(Json(sessions::get(&state, &id).await?))
 }
 
-pub async fn update(
+pub(crate) async fn update(
     State(state): State<SharedState>,
     Path(id): Path<String>,
     Json(req): Json<UpdateSession>,

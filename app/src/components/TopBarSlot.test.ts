@@ -14,9 +14,9 @@ vi.mock('../lib/call/instance.svelte', () => ({
   },
 }));
 // 通話のバーは、印の要素だけにする（描画は CallBar の仕事）
-vi.mock('./CallBar.svelte', async () => ({ default: (await import('./testing/CallBarStub.svelte')).default }));
+vi.mock('./CallBar.svelte', async () => ({ default: (await import('../test-support/CallBarStub.svelte')).default }));
 // プラグインのステータス欄も、印の要素だけにする（描画は PluginStatusBar の仕事）
-vi.mock('./PluginStatusBar.svelte', async () => ({ default: (await import('./testing/PluginStatusBarStub.svelte')).default }));
+vi.mock('./PluginStatusBar.svelte', async () => ({ default: (await import('../test-support/PluginStatusBarStub.svelte')).default }));
 
 let instance: ReturnType<typeof mount> | undefined;
 let target: HTMLElement | undefined;

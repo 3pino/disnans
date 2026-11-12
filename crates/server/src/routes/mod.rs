@@ -88,7 +88,7 @@ pub fn router(state: SharedState) -> Router {
             get(plugins::list)
                 .post(plugins::upload)
                 .layer(DefaultBodyLimit::max(
-                    crate::plugins::MAX_PACKAGE_BYTES + 64 * 1024,
+                    disnans_shared::limits::MAX_PLUGIN_PACKAGE_BYTES + 64 * 1024,
                 )),
         )
         .route("/plugins/{id}", delete(plugins::remove))

@@ -171,6 +171,74 @@ fn set_linux_audio_latency() {
     unsafe { std::env::set_var("PIPEWIRE_LATENCY", "256/48000") };
 }
 
+/// 全 OS で同じ command の一覧（api_*・chat_*・client_storage_*・downloads）。
+/// OS ごとの追加は先頭に渡す（各項目の後ろにカンマを付ける）。
+macro_rules! shared_handler {
+    ($($extra:tt)*) => {
+        tauri::generate_handler![
+            $($extra)*
+            api_bridge::api_me,
+            api_bridge::api_users,
+            api_bridge::api_prefs,
+            api_bridge::api_messages,
+            api_bridge::api_search_messages,
+            api_bridge::api_read_markers,
+            api_bridge::api_plugins,
+            api_bridge::api_session,
+            api_bridge::api_update_me,
+            api_bridge::api_clear_avatar,
+            api_bridge::api_set_avatar,
+            api_bridge::api_set_prefs,
+            downloads::api_download,
+            downloads::api_download_open,
+            api_bridge::api_device_register,
+            api_bridge::api_markdown_tree,
+            api_bridge::api_device_prefs_read,
+            api_bridge::api_device_prefs_write,
+            api_bridge::api_devices_list,
+            api_bridge::api_device_delete,
+            api_bridge::api_mark_read,
+            api_bridge::api_update_session,
+            api_bridge::api_delete_plugin,
+            api_bridge::api_sample_notification,
+            api_bridge::api_plugin_post_message,
+            api_bridge::api_plugin_notify,
+            api_bridge::api_create_session,
+            api_bridge::api_create_plugin,
+            api_bridge::api_upload_file,
+            api_bridge::api_upload_abort,
+            chat_bridge::chat_start,
+            chat_bridge::chat_send,
+            chat_bridge::chat_emit,
+            chat_bridge::chat_reconnect,
+            chat_bridge::chat_stop,
+            client_storage::client_storage_read,
+            client_storage::client_device_id,
+            client_storage::client_storage_write,
+            client_storage::client_storage_import,
+        ]
+    };
+}
+
+/// デスクトップ（Windows・Linux）の command。共通の一覧に、デスクトップだけの追加を足す
+#[cfg(desktop)]
+macro_rules! desktop_handler {
+    ($($extra:tt)*) => {
+        shared_handler!(
+            open_devtools,
+            desktop_notify::desktop_notify,
+            recent_images::recent_images,
+            os_drop::os_drop_list,
+            os_drop::os_drop_read,
+            os_drop::os_drop_release,
+            dev_plugins::dev_plugins_scan,
+            dev_plugins::dev_plugin_read,
+            snapshot::screen_snapshot,
+            $($extra)*
+        )
+    };
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "android")]
@@ -215,165 +283,24 @@ pub fn run() {
             .plugin(tauri_plugin_clipboard_manager::init());
         #[cfg(not(target_os = "linux"))]
         {
-            builder = builder.invoke_handler(tauri::generate_handler![
-                open_devtools,
-                desktop_notify::desktop_notify,
-                recent_images::recent_images,
-                os_drop::os_drop_list,
-                os_drop::os_drop_read,
-                os_drop::os_drop_release,
-                dev_plugins::dev_plugins_scan,
-                dev_plugins::dev_plugin_read,
-                snapshot::screen_snapshot,
-                client_storage::client_storage_read,
-                client_storage::client_device_id,
-                client_storage::client_storage_write,
-                client_storage::client_storage_import,
-                api_bridge::api_me,
-                api_bridge::api_users,
-                api_bridge::api_prefs,
-                api_bridge::api_messages,
-                api_bridge::api_search_messages,
-                api_bridge::api_read_markers,
-                api_bridge::api_plugins,
-                api_bridge::api_session,
-                api_bridge::api_update_me,
-                api_bridge::api_clear_avatar,
-                api_bridge::api_set_avatar,
-                api_bridge::api_set_prefs,
-                downloads::api_download,
-                downloads::api_download_open,
-                api_bridge::api_device_register,
-                api_bridge::api_settings_definitions,
-                api_bridge::api_markdown_tree,
-                api_bridge::api_device_prefs_read,
-                api_bridge::api_device_prefs_write,
-                api_bridge::api_devices_list,
-                api_bridge::api_device_delete,
-                api_bridge::api_mark_read,
-                api_bridge::api_update_session,
-                api_bridge::api_delete_plugin,
-                api_bridge::api_sample_notification,
-                api_bridge::api_plugin_post_message,
-                api_bridge::api_plugin_notify,
-                api_bridge::api_create_session,
-                api_bridge::api_create_plugin,
-                api_bridge::api_upload_file,
-                api_bridge::api_upload_abort,
-                chat_bridge::chat_start,
-                chat_bridge::chat_send,
-                chat_bridge::chat_emit,
-                chat_bridge::chat_reconnect,
-                chat_bridge::chat_stop
-            ]);
+            builder = builder.invoke_handler(desktop_handler!());
         }
         #[cfg(target_os = "linux")]
         {
             builder = builder
                 .manage(linux_capture::LinuxScreenState::default())
-                .invoke_handler(tauri::generate_handler![
-                    open_devtools,
-                    desktop_notify::desktop_notify,
-                    recent_images::recent_images,
-                    os_drop::os_drop_list,
-                    os_drop::os_drop_read,
-                    os_drop::os_drop_release,
-                    dev_plugins::dev_plugins_scan,
-                    dev_plugins::dev_plugin_read,
-                    snapshot::screen_snapshot,
+                .invoke_handler(desktop_handler!(
                     linux_capture::linux_screen_start,
                     linux_capture::linux_screen_stop,
                     linux_capture::linux_screen_update,
-                    client_storage::client_storage_read,
-                    client_storage::client_device_id,
-                    client_storage::client_storage_write,
-                    client_storage::client_storage_import,
-                    api_bridge::api_me,
-                    api_bridge::api_users,
-                    api_bridge::api_prefs,
-                    api_bridge::api_messages,
-                    api_bridge::api_search_messages,
-                    api_bridge::api_read_markers,
-                    api_bridge::api_plugins,
-                    api_bridge::api_session,
-                    api_bridge::api_update_me,
-                    api_bridge::api_clear_avatar,
-                    api_bridge::api_set_avatar,
-                    api_bridge::api_set_prefs,
-                    downloads::api_download,
-                    downloads::api_download_open,
-                    api_bridge::api_device_register,
-                    api_bridge::api_settings_definitions,
-                    api_bridge::api_markdown_tree,
-                    api_bridge::api_device_prefs_read,
-                    api_bridge::api_device_prefs_write,
-                    api_bridge::api_devices_list,
-                    api_bridge::api_device_delete,
-                    api_bridge::api_mark_read,
-                    api_bridge::api_update_session,
-                    api_bridge::api_delete_plugin,
-                    api_bridge::api_sample_notification,
-                    api_bridge::api_plugin_post_message,
-                    api_bridge::api_plugin_notify,
-                    api_bridge::api_create_session,
-                    api_bridge::api_create_plugin,
-                    api_bridge::api_upload_file,
-                    api_bridge::api_upload_abort,
-                    chat_bridge::chat_start,
-                    chat_bridge::chat_send,
-                    chat_bridge::chat_emit,
-                    chat_bridge::chat_reconnect,
-                    chat_bridge::chat_stop
-                ]);
+                ));
         }
     }
     // Android: システムバーのアイコンの明暗をアプリのテーマに合わせる
     #[cfg(target_os = "android")]
     {
         builder = builder
-            .invoke_handler(tauri::generate_handler![
-                read_shared_file,
-                api_bridge::api_me,
-                api_bridge::api_users,
-                api_bridge::api_prefs,
-                api_bridge::api_messages,
-                api_bridge::api_search_messages,
-                api_bridge::api_read_markers,
-                api_bridge::api_plugins,
-                api_bridge::api_session,
-                api_bridge::api_update_me,
-                api_bridge::api_clear_avatar,
-                api_bridge::api_set_avatar,
-                api_bridge::api_set_prefs,
-                downloads::api_download,
-                downloads::api_download_open,
-                api_bridge::api_device_register,
-                api_bridge::api_settings_definitions,
-                api_bridge::api_markdown_tree,
-                api_bridge::api_device_prefs_read,
-                api_bridge::api_device_prefs_write,
-                api_bridge::api_devices_list,
-                api_bridge::api_device_delete,
-                api_bridge::api_mark_read,
-                api_bridge::api_update_session,
-                api_bridge::api_delete_plugin,
-                api_bridge::api_sample_notification,
-                api_bridge::api_plugin_post_message,
-                api_bridge::api_plugin_notify,
-                api_bridge::api_create_session,
-                api_bridge::api_create_plugin,
-                api_bridge::api_upload_file,
-                api_bridge::api_upload_abort,
-                chat_bridge::chat_start,
-                chat_bridge::chat_send,
-                chat_bridge::chat_emit,
-                chat_bridge::chat_reconnect,
-                chat_bridge::chat_stop,
-                client_storage::client_storage_read,
-                client_storage::client_device_id,
-                client_storage::client_storage_write,
-                client_storage::client_storage_import
-            ])
+            .invoke_handler(shared_handler!(read_shared_file,))
             .setup(|app| {
                 use tauri::Manager;
                 // 共有の設定と下書きは、アプリのデータの中に置く（Android には HOME が無い）

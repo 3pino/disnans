@@ -5,7 +5,7 @@ import type { ClientEvent } from '../protocol/ClientEvent';
 import type { ServerEvent } from '../protocol/ServerEvent';
 import { CallSettings, createCallSource } from './settings.svelte';
 import { CallStore, type CallDeps } from './store.svelte';
-import { FakeNativePort, snap } from './nativeFake';
+import { FakeNativePort, snap } from '../../test-support/nativeFake';
 import { DEFAULT_CALL_SETTINGS, type JoinMode } from './pure';
 
 type Harness = {
@@ -523,7 +523,7 @@ describe('失敗の知らせ（任意の文章・例外を出さない。成功�
 
 describe('読み込みのあいだに接続先が変わった（採用・参加の後に一度だけ確かめる）', () => {
   it('回復中の通話（旧い接続先）の読み込みが終わるまでに、接続先が新しくなったら、採用のあとに、その古い論理セッションだけを止める', async () => {
-    const { deferred, snap: snapOf } = await import('./nativeFake');
+    const { deferred, snap: snapOf } = await import('../../test-support/nativeFake');
     const gate = deferred<void>();
     h.port.snapshotGate = gate;
     h.port.current = snapOf({ session: 'REC', phase: 'joined', listed: true, peer: 'p-self', generation: 6, seq: 1, serverUrl: 'http://old.test' });
@@ -551,7 +551,7 @@ describe('読み込みのあいだに接続先が変わった（採用・参加�
   });
 
   it('読み込みのあいだに接続先が同じ値に入っても（同じ URL の初期化）止めない', async () => {
-    const { deferred, snap: snapOf } = await import('./nativeFake');
+    const { deferred, snap: snapOf } = await import('../../test-support/nativeFake');
     const gate = deferred<void>();
     h.port.snapshotGate = gate;
     h.port.current = snapOf({ session: 'REC', phase: 'joined', listed: true, peer: 'p-self', generation: 6, seq: 1, serverUrl: 'http://srv.test' });
@@ -636,7 +636,7 @@ describe('頼んだ開始の返事が失敗したとき（画面は確かめた�
 
 describe('読み込みのあいだの接続先の「空にした」知らせ（明示的な変更は取りこぼさない）', () => {
   it('回復中の通話の読み込みのあいだに、接続先を空にした知らせが来たら、採用のあとに古い論理セッションだけを止める', async () => {
-    const { deferred, snap: snapOf } = await import('./nativeFake');
+    const { deferred, snap: snapOf } = await import('../../test-support/nativeFake');
     const gate = deferred<void>();
     h.port.snapshotGate = gate;
     h.port.current = snapOf({ session: 'REC', phase: 'joined', listed: true, peer: 'p-self', generation: 6, seq: 1, serverUrl: 'http://old.test' });
@@ -652,7 +652,7 @@ describe('読み込みのあいだの接続先の「空にした」知らせ（�
   });
 
   it('知らせの無い空の値（まだ整っていない初期化）では、読み込みのあとも止めない', async () => {
-    const { deferred, snap: snapOf } = await import('./nativeFake');
+    const { deferred, snap: snapOf } = await import('../../test-support/nativeFake');
     const gate = deferred<void>();
     h.port.snapshotGate = gate;
     h.port.current = snapOf({ session: 'REC', phase: 'joined', listed: true, peer: 'p-self', generation: 6, seq: 1, serverUrl: 'http://srv.test' });

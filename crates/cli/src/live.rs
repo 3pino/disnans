@@ -89,19 +89,8 @@ pub async fn upload_attachments(
 }
 
 fn mime_of(name: &str) -> &'static str {
-    match name
-        .rsplit_once('.')
-        .map(|(_, e)| e.to_ascii_lowercase())
-        .as_deref()
-    {
-        Some("png") => "image/png",
-        Some("jpg" | "jpeg") => "image/jpeg",
-        Some("gif") => "image/gif",
-        Some("webp") => "image/webp",
-        Some("txt" | "md") => "text/plain",
-        Some("pdf") => "application/pdf",
-        _ => "application/octet-stream",
-    }
+    let ext = name.rsplit_once('.').map(|(_, e)| e).unwrap_or_default();
+    disnans_shared::mime::for_extension(ext).unwrap_or("application/octet-stream")
 }
 
 pub async fn send(

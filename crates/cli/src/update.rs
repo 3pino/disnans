@@ -39,24 +39,6 @@ struct Platform {
     url: String,
 }
 
-/// `1.2.3` / `v1.2.3` / `1.2.3-rc.1` の数字部分。読めなければ `None`。
-fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
-    let core = text.trim().trim_start_matches('v');
-    let core = core.split(['-', '+']).next()?;
-    let mut parts = core.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = parts.next()?.parse().ok()?;
-    let patch = parts.next()?.parse().ok()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    Some((major, minor, patch))
-}
-
-fn is_newer(latest: &str, current: &str) -> Option<bool> {
-    Some(parse_version(latest)? > parse_version(current)?)
-}
-
 #[derive(Debug, PartialEq, Eq)]
 enum Method {
     Deb,
@@ -113,7 +95,7 @@ pub async fn run(args: UpdateArgs) -> Result<String, CliError> {
         .map_err(ClientError::Request)?;
 
     let latest = fetch_latest(&client).await?;
-    let newer = is_newer(&latest.version, current).ok_or_else(|| {
+    let newer = disnans_shared::version::is_newer(&latest.version, current).ok_or_else(|| {
         CliError::Usage(format!(
             "バージョンを比較できません（最新: {}, 現在: {current}）",
             crate::output::escape_human(&latest.version)
@@ -253,18 +235,6 @@ fn install_deb(path: &Path) -> Result<(), CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn versions_compare_numerically_and_ignore_prerelease_suffixes() {
-        assert_eq!(parse_version("v0.2.10"), Some((0, 2, 10)));
-        assert_eq!(parse_version("1.0.0-rc.1"), Some((1, 0, 0)));
-        assert_eq!(parse_version("1.0"), None);
-        assert_eq!(parse_version("1.0.0.1"), None);
-        assert_eq!(is_newer("0.2.10", "0.2.9"), Some(true));
-        assert_eq!(is_newer("0.2.7", "0.2.7"), Some(false));
-        assert_eq!(is_newer("0.1.9", "0.2.0"), Some(false));
-        assert_eq!(is_newer("x", "0.2.0"), None);
-    }
 
     #[test]
     fn install_method_depends_on_os_and_location() {

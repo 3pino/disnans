@@ -123,25 +123,42 @@ fn is_image(path: &Path) -> bool {
     extension(path).is_some_and(|e| EXTENSIONS.contains(&e.as_str()))
 }
 
+/// 以前からの対応（この一覧だけの形式）。共有の表にあるものは、そちらと同じ値
+fn local_image_mime(ext: &str) -> Option<&'static str> {
+    Some(match ext {
+        "apng" => "image/apng",
+        "jfif" => "image/jpeg",
+        "pjpeg" => "image/pjpeg",
+        "tif" | "tiff" => "image/tiff",
+        "ico" => "image/x-icon",
+        "qoi" => "image/qoi",
+        "tga" => "image/x-tga",
+        "svg" => "image/svg+xml",
+        "heic" => "image/heic",
+        "heif" => "image/heif",
+        "jxl" => "image/jxl",
+        _ => return None,
+    })
+}
+
 fn mime_of(path: &Path) -> &'static str {
-    match extension(path).as_deref() {
-        Some("png") => "image/png",
-        Some("apng") => "image/apng",
-        Some("jpg" | "jpeg" | "jfif") => "image/jpeg",
-        Some("pjpeg") => "image/pjpeg",
-        Some("webp") => "image/webp",
-        Some("gif") => "image/gif",
-        Some("bmp") => "image/bmp",
-        Some("tif" | "tiff") => "image/tiff",
-        Some("ico") => "image/x-icon",
-        Some("qoi") => "image/qoi",
-        Some("tga") => "image/x-tga",
-        Some("avif") => "image/avif",
-        Some("svg") => "image/svg+xml",
-        Some("heic") => "image/heic",
-        Some("heif") => "image/heif",
-        Some("jxl") => "image/jxl",
-        _ => "application/octet-stream",
+    let ext = extension(path).unwrap_or_default();
+    local_image_mime(&ext)
+        .or_else(|| disnans_shared::mime::for_extension(&ext))
+        .unwrap_or("application/octet-stream")
+}
+
+#[cfg(test)]
+mod mime_tests {
+    use super::*;
+
+    #[test]
+    fn svg_and_other_list_only_formats_keep_their_mime() {
+        assert_eq!(mime_of(Path::new("a.svg")), "image/svg+xml");
+        assert_eq!(mime_of(Path::new("a.HEIC")), "image/heic");
+        assert_eq!(mime_of(Path::new("a.jfif")), "image/jpeg");
+        assert_eq!(mime_of(Path::new("a.png")), "image/png");
+        assert_eq!(mime_of(Path::new("a.txt")), "application/octet-stream");
     }
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { SharedEntry } from '../protocol/SharedEntry';
-import { HttpError } from '../transport/http';
+import { HttpError } from '../transport/httpError';
 
 const list = vi.fn<(path: string) => Promise<SharedEntry[]>>();
 vi.mock('../transport/shared', () => ({ sharedApi: { list: (p: string) => list(p) } }));

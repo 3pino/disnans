@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     kotlin("jvm") version "2.2.10"
@@ -46,12 +47,15 @@ sourceSets.main {
     resources.srcDir("../../screen/android/src/test/resources")
 }
 
+// 版は plugins/gradle-versions.properties（ここでは notifier/native-tests から 2 つ上）
+val versions = Properties().apply { file("../../gradle-versions.properties").inputStream().use { load(it) } }
+
 dependencies {
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.15.3")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.fasterxml.jackson.core:jackson-databind:${versions.getProperty("jackson")}")
+    implementation("com.squareup.okhttp3:okhttp:${versions.getProperty("okhttp")}")
     // このプロジェクトは試験専用。本体の Android の依存には追加しない。
-    implementation("junit:junit:4.13.2")
-    implementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    implementation("junit:junit:${versions.getProperty("junit")}")
+    implementation("com.squareup.okhttp3:mockwebserver:${versions.getProperty("okhttp")}")
 }
 
 tasks.register<JavaExec>("nativeCallTest") {

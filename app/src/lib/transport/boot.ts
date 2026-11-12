@@ -1,29 +1,24 @@
 import { devUser, getServerUrl } from '../config';
 import { capabilities } from '../platform';
-import { getItem } from '../storage';
-import { RUST_API_FLAG, selectReadApi, selectWriteApi, type ApiEnv, type ReadApiChoice, type WriteApiChoice } from './select';
+import { selectReadApi, selectWriteApi, type ApiEnv, type WriteApiChoice } from './select';
 import type { ChatTransport } from './chat';
 import { createTauriChatTransport } from './tauriChat';
 import { tauriInvoke } from './tauri';
-import type { BridgeContext } from './types';
+import type { BridgeContext, ReadApi } from './types';
 
 const bridgeContext = (): BridgeContext => ({ server: () => getServerUrl(), devUser });
 
 /** 起動時に実行環境から読む値（呼び出しのたびに読む。経路の決定は呼び出し側が1回だけ行う）。方針は capabilities() から */
 export function currentBootEnv(): ApiEnv {
-  const caps = capabilities();
   return {
-    flag: getItem(RUST_API_FLAG),
-    rustApi: caps.rustApi,
-    bodyMode: caps.bodyMode,
+    bodyMode: capabilities().bodyMode,
     invoke: tauriInvoke,
     context: bridgeContext(),
-    log: (message) => console.info(message),
   };
 }
 
 /** api.ts の読み込み時に1回だけ呼ぶ */
-export function bootReadApi(env: ApiEnv = currentBootEnv()): ReadApiChoice {
+export function bootReadApi(env: ApiEnv = currentBootEnv()): ReadApi {
   return selectReadApi(env);
 }
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   COLOR_MODES,
   FPS_OPTIONS,
@@ -177,58 +177,5 @@ describe('encodeFrame', () => {
   it('canvas の文脈が取れなければ、例外（送らない）', () => {
     const { cv } = fakeCanvas({ images: {}, ctxNull: true });
     expect(() => encodeFrame(cv, {}, 1, 1, { color: 'full', quality: 0.5, format: null })).toThrow('canvas を使えません');
-  });
-});
-
-// ---- 旧い examples/screenshare と同じ結果か（写した関数の確かめ）。examples は変えない ----
-
-describe('旧い examples/screenshare と同じ結果（写したものの確かめ）', () => {
-  type OldMod = typeof import('../../../../../examples/screenshare/main.js');
-  let old: OldMod;
-
-  beforeAll(async () => {
-    // main.js は読み込み時に disnans.Plugin を使う（プラグインの動きは使わない）
-    (globalThis as unknown as { disnans: unknown }).disnans = { apiVersion: 1, Plugin: class {}, ui: {} };
-    old = (await import('../../../../../examples/screenshare/main.js')) as OldMod;
-  });
-
-  it('定数', () => {
-    expect(QUALITY_PRESETS).toEqual(old.QUALITY_PRESETS);
-    expect(FPS_OPTIONS).toEqual(old.FPS_OPTIONS);
-    expect(COLOR_MODES).toEqual(old.COLOR_MODES);
-    expect(SERVER_BUDGET_KBPS).toBe(old.SERVER_BUDGET_KBPS);
-  });
-
-  it('純粋な関数の結果', () => {
-    for (const [w, h, m, s] of [[1920, 1080, 1280, 1], [800, 600, 854, 0.5], [3, 9, 10, 1]] as const) {
-      expect(fitSize(w, h, m, s)).toEqual(old.fitSize(w, h, m, s));
-    }
-    // c256 は旧い examples（旧いクライアントの格子）とわざと違う。その確かめは quantize.test.ts
-    for (const mode of ['full', 'c256', 'gray']) expect(candidateFormats(mode)).toEqual(old.candidateFormats(mode));
-    for (const mode of ['full', 'gray']) {
-      const a = new Uint8ClampedArray([9, 130, 250, 255, 0, 255, 128, 64]);
-      const b = new Uint8ClampedArray(a);
-      applyColorMode(a, mode);
-      old.applyColorMode(b, mode);
-      expect([...a]).toEqual([...b]);
-    }
-    expect(pickSmallest({ a: 3, b: 1 })).toBe(old.pickSmallest({ a: 3, b: 1 }));
-    expect(estimateBandwidth(123456, 20)).toEqual(old.estimateBandwidth(123456, 20));
-    for (const n of [0, 1500, 2 * 1024 * 1024]) expect(formatBytes(n)).toBe(old.formatBytes(n));
-    for (const b of ['/9j/x', 'iVBORw0KGgo', 'UklGRAAAAAAARUJQ', 'x']) expect(sniffImageMime(b)).toBe(old.sniffImageMime(b));
-  });
-
-  it('encodeFrame の結果（形式と画像）', () => {
-    // c256 は旧い examples と違う（代表色）ので、ここでは full と gray だけ比べる
-    for (const color of ['full', 'gray']) {
-      const images = { 'image/jpeg': JPEG, 'image/webp': WEBP, 'image/png': PNG };
-      const mine = fakeCanvas({ images });
-      const theirs = fakeCanvas({ images });
-      const source = {} as unknown;
-      const a = encodeFrame(mine.cv, source, 4, 4, { color, quality: 0.6, format: null });
-      const b = old.encodeFrame(theirs.cv as unknown as HTMLCanvasElement, source as CanvasImageSource, 4, 4, { color, quality: 0.6, format: null });
-      expect({ mime: a.mime, b64: a.b64 }).toEqual({ mime: b.mime, b64: b.b64 });
-      expect(mine.calls).toEqual(theirs.calls);
-    }
   });
 });

@@ -83,30 +83,6 @@ struct Asset {
     browser_download_url: String,
 }
 
-/// `v1.2.3` / `1.2.3` を (1, 2, 3) にする。プレリリース（`-` や `+` を含む）は対象外（None）。
-pub fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
-    let s = s.strip_prefix('v').unwrap_or(s);
-    if s.contains('-') || s.contains('+') {
-        return None;
-    }
-    let mut it = s.split('.');
-    let major = it.next()?.parse().ok()?;
-    let minor = it.next()?.parse().ok()?;
-    let patch = it.next()?.parse().ok()?;
-    if it.next().is_some() {
-        return None;
-    }
-    Some((major, minor, patch))
-}
-
-/// `candidate` が `current` より新しいか。どちらかが解釈できなければ false（下げず、わからないものは入れない）。
-pub fn is_newer(candidate: &str, current: &str) -> bool {
-    match (parse_version(candidate), parse_version(current)) {
-        (Some(c), Some(p)) => c > p,
-        _ => false,
-    }
-}
-
 /// sha256sum の出力（`<hex>  <name>` や `<hex>`）から、先頭の 64 桁の 16 進数を小文字で取り出す。
 pub fn parse_sha256_line(text: &str) -> Option<String> {
     let token = text.split_whitespace().next()?;
@@ -195,7 +171,13 @@ impl Updater {
             .strip_prefix('v')
             .unwrap_or(&release.tag_name)
             .to_owned();
-        if !is_newer(&version, &self.current) {
+        // 自動更新は正式版だけ（プレリリース・ビルド情報付きは入れない。比較は disnans-shared の semver に従う）
+        if disnans_shared::version::parse(&version)
+            .is_none_or(|v| !v.pre.is_empty() || !v.build.is_empty())
+        {
+            return Ok(None);
+        }
+        if disnans_shared::version::is_newer(&version, &self.current) != Some(true) {
             return Ok(None);
         }
         if self.given_up(&version) {
@@ -406,19 +388,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn versions_compare_by_number_and_skip_prereleases() {
-        assert_eq!(parse_version("v0.2.18"), Some((0, 2, 18)));
-        assert_eq!(parse_version("1.10.0"), Some((1, 10, 0)));
-        assert_eq!(parse_version("1.2"), None);
-        assert_eq!(parse_version("1.2.3.4"), None);
-        assert_eq!(parse_version("1.2.3-rc.1"), None);
-        assert_eq!(parse_version("1.2.3+build"), None);
-        assert!(is_newer("0.2.18", "0.2.17"));
-        assert!(is_newer("v0.10.0", "0.9.9"));
-        assert!(!is_newer("0.2.17", "0.2.17"), "同じ版は入れない");
-        assert!(!is_newer("0.2.16", "0.2.17"), "下げない");
-        assert!(!is_newer("0.3.0-rc.1", "0.2.17"), "プレリリースは無視");
-        assert!(!is_newer("garbage", "0.2.17"));
+    fn automatic_update_takes_only_stable_newer_versions() {
+        // 比較は共有の semver（細かい入力の表は disnans-shared のテスト）
+        assert_eq!(
+            disnans_shared::version::is_newer("0.2.18", "0.2.17"),
+            Some(true)
+        );
+        assert_eq!(
+            disnans_shared::version::is_newer("0.2.17", "0.2.17"),
+            Some(false)
+        );
+        // プレリリースは自動で入れない（比較の結果に関わらず）
+        assert!(disnans_shared::version::parse("0.3.0-rc.1").is_some_and(|v| !v.pre.is_empty()));
+        assert!(disnans_shared::version::parse("0.3.0").is_some_and(|v| v.pre.is_empty()));
+        assert!(
+            disnans_shared::version::parse("0.3.0+build.1").is_some_and(|v| !v.build.is_empty())
+        );
     }
 
     #[test]

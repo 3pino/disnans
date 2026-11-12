@@ -3,8 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { flushSync, mount, unmount, type Component } from 'svelte';
 import ScreenShareControls from './ScreenShareControls.svelte';
-import ScreenShareEntrance from './ScreenShareEntrance.svelte';
-import { fakeScreen, sharer } from './testing/screenFake';
+import { fakeScreen } from '../test-support/screenFake';
 
 let instance: ReturnType<typeof mount> | undefined;
 let target: HTMLElement | undefined;
@@ -59,33 +58,5 @@ describe('画面共有の押すボタン', () => {
   it('対応していない共有（canScreen / canCamera が false）のボタンは出さない', () => {
     const el = render(ScreenShareControls, { screen: fakeScreen({ canScreen: false, canCamera: false }) });
     expect(el.querySelectorAll('button').length).toBe(0);
-  });
-});
-
-describe('見る入口（通話のバー）', () => {
-  it('共有者がいて見ていないときだけ出し、押すと最初の人の表示を開く', () => {
-    const s = fakeScreen({ sharers: [sharer('pa')] });
-    const el = render(ScreenShareEntrance, { screen: s, nameOf: () => 'Aさん' });
-    const b = button(el, 'Aさんの画面を見る');
-    expect(b).not.toBeNull();
-    b!.click();
-    expect(s.openViewer).toHaveBeenCalledWith('pa');
-  });
-
-  it('共有者がいないとき・見ているときは出さない', () => {
-    expect(render(ScreenShareEntrance, { screen: fakeScreen(), nameOf: () => 'A' }).querySelector('button')).toBeNull();
-    instance = undefined;
-    target?.remove();
-    const el = render(ScreenShareEntrance, { screen: fakeScreen({ sharers: [sharer('pa')], viewerOpen: true }), nameOf: () => 'A' });
-    expect(el.querySelector('button')).toBeNull();
-  });
-
-  it('カメラの共有は「のカメラを見る」、複数人なら「ほか」', () => {
-    const cam = render(ScreenShareEntrance, { screen: fakeScreen({ sharers: [sharer('pa', { source: 'camera' })] }), nameOf: () => 'Aさん' });
-    expect(button(cam, 'Aさんのカメラを見る')).not.toBeNull();
-    instance = undefined;
-    target?.remove();
-    const many = render(ScreenShareEntrance, { screen: fakeScreen({ sharers: [sharer('pa'), sharer('pb')] }), nameOf: () => 'Aさん' });
-    expect(button(many, 'Aさんの画面ほか（見る）')).not.toBeNull();
   });
 });

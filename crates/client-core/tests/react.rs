@@ -2,8 +2,6 @@
 //! 結果の決まり: 自分の ID が付いた（外れた）`reaction.updated` で Confirmed、`error` で Rejected、
 //! 時間切れ・切断で Unknown。自動では再送しない。
 
-#![cfg(feature = "ws")]
-
 use std::{
     sync::{Arc, Mutex},
     time::Duration,

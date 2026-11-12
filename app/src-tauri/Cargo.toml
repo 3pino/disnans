@@ -20,6 +20,8 @@ tauri-build = { version = "2", features = [] }
 # devtools: 配布版でも Ctrl+Shift+I で開発者ツールを開けるようにする
 tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
+# 共有の上限の値（crates/shared/src/limits.rs）
+disnans-shared = { path = "../../crates/shared" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # 添付パネルの「最近の画像」（ピクチャのフォルダとサムネイル）
@@ -39,7 +41,7 @@ futures-util = { version = "0.3", default-features = false, features = ["sink"] 
 tauri-plugin-single-instance = "2"
 
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]
-disnans-client-core = { path = "../../crates/client-core", features = ["ws"] }
+disnans-client-core = { path = "../../crates/client-core" }
 tauri-plugin-notification = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
@@ -81,7 +83,7 @@ tauri-winrt-notification = "0.8"
 
 [target.'cfg(target_os = "android")'.dependencies]
 # REST（読取・書込み・アップロード）とチャット（ws）の Rust 経路（段4）
-disnans-client-core = { path = "../../crates/client-core", features = ["ws"] }
+disnans-client-core = { path = "../../crates/client-core" }
 tauri-plugin-apk-updater = { path = "plugins/apk-updater" }
 tauri-plugin-notifier = { path = "plugins/notifier" }
 tauri-plugin-system-bars = { path = "plugins/system-bars" }

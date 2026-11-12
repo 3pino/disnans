@@ -15,13 +15,13 @@ const MAX_LIMIT: u32 = 200;
 const MAX_QUERY_CHARS: usize = 200;
 
 #[derive(Deserialize)]
-pub struct ListQuery {
+pub(crate) struct ListQuery {
     /// このメッセージ ID より古いものを返す。
     before: Option<String>,
     limit: Option<u32>,
 }
 
-pub async fn list(
+pub(crate) async fn list(
     State(state): State<SharedState>,
     Query(q): Query<ListQuery>,
 ) -> AppResult<Json<Vec<Message>>> {
@@ -33,7 +33,7 @@ pub async fn list(
 }
 
 #[derive(Deserialize)]
-pub struct SearchQuery {
+pub(crate) struct SearchQuery {
     /// 検索語。空白で区切ると、すべての語を含むものを探す。大文字・小文字は区別しない。
     q: Option<String>,
     /// このメッセージ ID より古いものを返す（続きを読むとき）。
@@ -42,7 +42,7 @@ pub struct SearchQuery {
 }
 
 /// 本文の全文検索。新しい順に返す。
-pub async fn search(
+pub(crate) async fn search(
     State(state): State<SharedState>,
     Query(q): Query<SearchQuery>,
 ) -> AppResult<Json<Vec<Message>>> {

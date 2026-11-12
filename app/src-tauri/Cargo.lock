@@ -899,6 +899,7 @@ dependencies = [
  "base64 0.22.1",
  "dirs",
  "disnans-client-core",
+ "disnans-shared",
  "futures-util",
  "gdk",
  "gstreamer",
@@ -956,6 +957,7 @@ dependencies = [
 name = "disnans-shared"
 version = "0.1.0"
 dependencies = [
+ "semver",
  "serde",
  "serde_json",
  "ts-rs",

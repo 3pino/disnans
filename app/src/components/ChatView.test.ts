@@ -23,9 +23,9 @@ vi.mock('../lib/platform', async (orig) => ({
   ...(await orig<typeof import('../lib/platform')>()),
   isLinuxDesktop: () => true,
 }));
-vi.mock('./MessageList.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./SearchResults.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
-vi.mock('./Composer.svelte', async () => ({ default: (await import('./testing/ChatChildStub.svelte')).default }));
+vi.mock('./MessageList.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./SearchResults.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./Composer.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
 
 const RECT = { left: 0, top: 0, right: 400, bottom: 400, width: 400, height: 400, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
 const POINT = { x: 10, y: 10 };

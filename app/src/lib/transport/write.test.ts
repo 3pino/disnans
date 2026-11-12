@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createHttpWriteApi, createTauriWriteApi, NON_IDEMPOTENT, UNKNOWN_OUTCOME, writeError } from './write';
-import { HttpError } from './http';
+import { describe, expect, it } from 'vitest';
+import { createTauriWriteApi, NON_IDEMPOTENT, UNKNOWN_OUTCOME, writeError } from './write';
+import { HttpError } from './httpError';
 import type { Invoke } from './types';
 
 type Call = { command: string; args?: Record<string, unknown> | Uint8Array | string; options?: { headers?: Record<string, string> } };
@@ -124,26 +124,6 @@ describe('Tauri write API: outcome of failures', () => {
 
   it('writeError keeps the success path untouched', () => {
     expect(writeError({ status: 500, code: 'internal', message: 'x' }, true)).toMatchObject({ code: 'internal', status: 500 });
-  });
-});
-
-describe('HTTP write API (existing behaviour)', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  it('sends the same method and path as before', async () => {
-    const urls: string[] = [];
-    const methods: string[] = [];
-    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-      urls.push(url);
-      methods.push(init?.method ?? 'GET');
-      return new Response(JSON.stringify({ id: 'x' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    });
-    const api = createHttpWriteApi();
-    await api.clearAvatar();
-    await api.createSession({} as never);
-    await api.updateSession('s/1', {} as never);
-    expect(methods).toEqual(['DELETE', 'POST', 'PUT']);
-    expect(urls[2]).toMatch(/\/api\/sessions\/s%2F1$/);
   });
 });
 

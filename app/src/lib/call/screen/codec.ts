@@ -1,5 +1,5 @@
 /**
- * 画面の 1 枚を、送れる画像にする純粋な部品（旧い examples/screenshare の同じ関数を写したもの。examples は変えない）。
+ * 画面の 1 枚を、送れる画像にする純粋な部品。
  * DOM は作らない（canvas は引数で受ける。読み込むときに DOM を触らない）。
  * 送り手（sender）と、設定の見本（settings の preview）が使う。
  */

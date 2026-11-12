@@ -12,7 +12,7 @@ use crate::state::SharedState;
 use crate::store::reads;
 
 /// メインチャットの既読の位置と未読数（配列で返す）。
-pub async fn list(
+pub(crate) async fn list(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
 ) -> AppResult<Json<Vec<ReadMarker>>> {
@@ -21,7 +21,7 @@ pub async fn list(
 }
 
 /// 既読の位置を進める（戻さない）。進んだら、自分のすべての接続に `read.updated` を送る。
-pub async fn mark(
+pub(crate) async fn mark(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Json(req): Json<MarkRead>,

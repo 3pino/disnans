@@ -658,12 +658,6 @@ pub async fn device_delete(args: &IdArgs) -> Result<Value, ReadFailure> {
         .await
 }
 
-/// 設定項目の定義（キー・保存先・型・既定値）。core の一覧が正（起動時に一度読む想定）
-#[tauri::command]
-pub fn api_settings_definitions() -> Value {
-    disnans_client_core::view::settings::definitions_json()
-}
-
 /// 本文の構文木（送信・編集の仮表示に使う。core の Markdown の木と同じ形）。サーバーには触らない
 #[tauri::command]
 pub fn api_markdown_tree(body: String) -> Value {

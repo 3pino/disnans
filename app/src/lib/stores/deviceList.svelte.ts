@@ -1,7 +1,7 @@
 import { devUser, getServerUrl } from '../config';
 import { createDeviceApi, type DeviceApi, type DeviceInfo } from '../transport/device';
 import { tauriInvoke } from '../transport/tauri';
-import { HttpError } from '../transport/http';
+import { HttpError } from '../transport/httpError';
 import { deviceSettings } from './deviceSettings.svelte';
 
 // 「デバイス設定」の一覧（自分のデバイス・名前の変更・削除）。

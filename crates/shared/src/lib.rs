@@ -3,6 +3,10 @@
 //! `cargo test -p disnans-shared` を実行すると、TypeScript の型が
 //! `app/src/lib/protocol/` に書き出される（ts-rs）。
 
+pub mod limits;
+pub mod mime;
+pub mod version;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

@@ -38,7 +38,7 @@
 - [plugins/commands.md](plugins/commands.md): コマンド・＋メニュー・メッセージの操作
 - [plugins/views.md](plugins/views.md): view・カード・セッション・エラー
 - [plugins/runtime.md](plugins/runtime.md): 一時的なイベント・ステータス欄・バックグラウンド・通知・設定タブ・共有フォルダ・保存
-- [plugins/call.md](plugins/call.md): 通話の拡張・画面共有のネイティブ API
+- [plugins/call.md](plugins/call.md): 通話の拡張 API
 - [plugins/styles.md](plugins/styles.md): 見た目（CSS）・TypeScript
 - [plugins/distribution.md](plugins/distribution.md): 配布・更新・削除・互換・API を追加した版・注意点
 - [plugins/ui.md](plugins/ui.md): `disnans.ui` とアイコン

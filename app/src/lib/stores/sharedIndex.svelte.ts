@@ -1,7 +1,7 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { SharedEntry } from '../protocol/SharedEntry';
 import { sharedApi } from '../transport/shared';
-import { HttpError } from '../transport/http';
+import { HttpError } from '../transport/httpError';
 import { baseName, parentOf } from '../sharedPath';
 import { onServerChange } from '../config';
 

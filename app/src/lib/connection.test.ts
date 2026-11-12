@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BANNER_SHOW_MS, BANNER_STALL_MS, bannerPhase, failureReason, isConnectionFailure } from './connection';
-import { ConnectionError, HttpError } from './transport/http';
+import { ConnectionError } from './transport/http';
+import { HttpError } from './transport/httpError';
 
 describe('接続の失敗か', () => {
   it('届かなかった通信（fetch の timeout・network）は接続の失敗', () => {

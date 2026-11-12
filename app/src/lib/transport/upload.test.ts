@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createTauriUploadApi, type UploadItem } from './upload';
-import { HttpError } from './http';
+import { HttpError } from './httpError';
 import type { Invoke } from './types';
 
 type Call = { command: string; args?: unknown; options?: { headers?: Record<string, string> } };

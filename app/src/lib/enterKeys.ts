@@ -38,15 +38,6 @@ export function enterComboOf(e: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'ctrlKe
   return mods[0] ?? 'enter';
 }
 
-/** Enter のキー入力の動作。設定していない組み合わせ（Enter でないものも）は null（ブラウザーに任せる） */
-export function resolveEnterAction(
-  e: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'ctrlKey' | 'metaKey' | 'altKey'>,
-  prefs: EnterKeyPrefs,
-): EnterAction | null {
-  const combo = enterComboOf(e);
-  return combo ? prefs[combo] : null;
-}
-
 /** ブラウザーが自分で改行を入れる組み合わせか（Enter と Shift+Enter）。それ以外は insertNewline で入れる */
 export function insertsNewlineByDefault(combo: EnterCombo): boolean {
   return combo === 'enter' || combo === 'shift';

@@ -18,7 +18,7 @@ vi.mock('../api', () => ({
 
 const { Timeline, needsFirstLoad } = await import('./timeline.svelte');
 const { ConnectionError } = await import('../transport/http');
-const { HttpError } = await import('../transport/http');
+const { HttpError } = await import('../transport/httpError');
 
 beforeEach(() => {
   h.calls = 0;

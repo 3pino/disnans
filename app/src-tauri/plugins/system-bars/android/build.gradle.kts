@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     id("com.android.library")
@@ -25,8 +26,11 @@ kotlin {
     }
 }
 
+// 版は plugins/gradle-versions.properties
+val versions = Properties().apply { file("../../gradle-versions.properties").inputStream().use { load(it) } }
+
 dependencies {
-    implementation("androidx.core:core-ktx:1.9.0")
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.15.3")
+    implementation("androidx.core:core-ktx:${versions.getProperty("androidx.core")}")
+    implementation("com.fasterxml.jackson.core:jackson-databind:${versions.getProperty("jackson")}")
     implementation(project(":tauri-android"))
 }

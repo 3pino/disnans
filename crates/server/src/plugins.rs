@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use axum::http::StatusCode;
+use disnans_shared::limits::MAX_PLUGIN_PACKAGE_BYTES;
 use disnans_shared::{PluginInfo, PluginKind, PluginVisibility, ServerEvent, User};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -33,8 +34,6 @@ const PLUGIN_FILES: (&[&str], &[&str]) =
     (&["manifest.json", "main.js"], &["styles.css", "icon.svg"]);
 /// テーマのファイル（必須, 任意）。JS は置けない。
 const THEME_FILES: (&[&str], &[&str]) = (&["manifest.json", "theme.css"], &["icon.svg"]);
-/// ファイルの合計サイズの上限。
-pub const MAX_PACKAGE_BYTES: usize = 5 * 1024 * 1024;
 /// アイコン（`icon.svg`）の上限。
 const MAX_ICON_BYTES: usize = 64 * 1024;
 
@@ -140,7 +139,7 @@ impl Package {
 
     /// あと何バイト足せるか（読み込み中に上限を確かめるのに使う）。
     pub fn remaining(&self) -> usize {
-        MAX_PACKAGE_BYTES - self.total
+        MAX_PLUGIN_PACKAGE_BYTES - self.total
     }
 
     fn file(&self, name: &str) -> Option<&[u8]> {
@@ -251,7 +250,7 @@ pub fn too_large() -> AppError {
         "plugin_too_large",
         format!(
             "ファイルは合計 {} MB までです",
-            MAX_PACKAGE_BYTES / 1024 / 1024
+            MAX_PLUGIN_PACKAGE_BYTES / 1024 / 1024
         ),
     )
 }

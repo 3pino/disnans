@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NativeGate, isLive, mirrorOf, newSessionToken } from './native';
-import { snap } from './nativeFake';
+import { snap } from '../../test-support/nativeFake';
 
 describe('NativeGate（古い状態・出来事を捨てる）', () => {
   it('同じ世代では、seq が増えたものだけ通す', () => {

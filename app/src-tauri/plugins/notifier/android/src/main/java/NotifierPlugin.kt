@@ -40,81 +40,6 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
 
-@InvokeArg
-class StartArgs {
-  lateinit var serverUrl: String
-}
-
-@InvokeArg
-class CallActionArg {
-  lateinit var id: String
-  var title: String = ""
-  var dismiss: Boolean = false
-}
-
-@InvokeArg
-class StartCallArgs {
-  var title: String = ""
-  var text: String = ""
-  var microphone: Boolean = true
-  var actions: Array<CallActionArg> = arrayOf()
-}
-
-@InvokeArg
-class RecentImagesArgs {
-  var limit: Int = 20
-}
-
-@InvokeArg
-class ReadImageArgs {
-  lateinit var id: String
-}
-
-@InvokeArg
-class SetAudioOutputArgs {
-  lateinit var id: String
-}
-
-@InvokeArg
-class SetOrientationArgs {
-  lateinit var mode: String
-}
-
-@InvokeArg
-class SetKeepWebViewArgs {
-  var enabled: Boolean = true
-}
-
-@InvokeArg
-class LogCallArgs {
-  lateinit var message: String
-}
-
-@InvokeArg
-class DiagLogArgs {
-  var level: String = "info"
-  lateinit var message: String
-}
-
-@InvokeArg
-class DiagShareArgs {
-  lateinit var text: String
-  var name: String = "disnans-log.txt"
-}
-
-@InvokeArg
-class VibrateArgs {
-  var ms: Long = HapticsPolicy.MS_DEFAULT
-  /** この呼び出しだけの指定。省けば有効（今の JS と同じ）。false なら鳴らさない（保存された設定とあわせて判断する） */
-  var enabled: Boolean? = null
-}
-
-@InvokeArg
-class SetHapticsArgs {
-  /** 操作の振動のアプリの設定。省けば有効 */
-  var enabled: Boolean? = null
-}
-
 @TauriPlugin(
   permissions = [
     Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = "notifications"),
@@ -541,7 +466,6 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
   private fun targetOf(intent: Intent?): JSObject? {
     if (intent?.getBooleanExtra(NotifyService.EXTRA_OPEN, false) != true) return null
     val target = JSObject()
-    target.put("threadId", intent.getStringExtra(NotifyService.EXTRA_THREAD_ID))
     // 同じ intent で2回開かないようにする
     intent.removeExtra(NotifyService.EXTRA_OPEN)
     return target
@@ -753,14 +677,6 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
-  /** 以前の版の JS が送る [call] のログ。いまは diag_log と同じく診断ログに残す */
-  @Command
-  fun logCall(invoke: Invoke) {
-    val args = invoke.parseArgs(LogCallArgs::class.java)
-    DiagLog.js("info", args.message.take(MAX_LOG_CHARS))
-    invoke.resolve()
-  }
-
   /** JS の console の行を診断ログに残す（リリース版では WebView の console が見えないため） */
   @Command
   fun diagLog(invoke: Invoke) {
@@ -900,14 +816,6 @@ class NotifierPlugin(private val activity: Activity) : Plugin(activity) {
       DiagLog.w("[notify] 常駐サービスを始められませんでした", ex)
       invoke.reject(ex.message)
     }
-  }
-
-  @Command
-  fun stop(invoke: Invoke) {
-    DiagLog.i("[notify] 常駐を無効にします")
-    prefs.enabled = false
-    NotifyService.stop(activity)
-    invoke.resolve()
   }
 
   @Command

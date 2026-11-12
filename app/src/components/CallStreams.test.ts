@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import CallStreams from './CallStreams.svelte';
 import { LOCAL_VIEW } from '../lib/call/screen/types';
-import { fakeScreen, sharer } from './testing/screenFake';
-import { reactiveScreen } from './testing/reactiveScreen.svelte';
+import { fakeScreen, sharer } from '../test-support/screenFake';
+import { reactiveScreen } from '../test-support/reactiveScreen.svelte';
 
 let instance: ReturnType<typeof mount> | undefined;
 let target: HTMLElement | undefined;

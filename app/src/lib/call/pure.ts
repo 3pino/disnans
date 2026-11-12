@@ -35,9 +35,6 @@ export const LIMIT_LOOKAHEAD_MS = 5;
 export const LIMIT_ATTACK_MS = 3;
 export const LIMIT_RELEASE_MS = 150;
 
-/** マイクの音量（倍率）の範囲と、相手の音量（0〜1）の範囲 */
-export const MIC_VOLUME_MAX = 2;
-export const OUT_VOLUME_MAX = 1;
 /** 出力先の一覧を取り直す間隔（tick の回数。LEVEL_MS 刻み） */
 export const OUTPUTS_REFRESH_TICKS = 50;
 

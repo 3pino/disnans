@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use disnans_client_core::{Message, ServerEvent, User};
+use disnans_shared::limits::MAX_EVENT_PAYLOAD_BYTES;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use tauri::async_runtime::{self, JoinHandle};
@@ -25,8 +26,8 @@ use tokio_tungstenite::{
 };
 
 use super::{
-    ChatHub, ChatItem, ItemSink, MAX_AUDIO_IN_FLIGHT, MAX_CALL_PAYLOAD_BYTES, MessageDraft,
-    SendResult, UnknownDto, take_audio_slot,
+    ChatHub, ChatItem, ItemSink, MAX_AUDIO_IN_FLIGHT, MessageDraft, SendResult, UnknownDto,
+    take_audio_slot,
 };
 
 // ----- 送り先 ---------------------------------------------------------------------------------
@@ -1128,14 +1129,14 @@ fn call_payload_at_the_server_limit_is_written_and_one_byte_more_is_refused() {
     let overhead = serde_json::to_string(&serde_json::json!({"pcm": ""}))
         .unwrap()
         .len();
-    let exact = "A".repeat(MAX_CALL_PAYLOAD_BYTES - overhead);
+    let exact = "A".repeat(MAX_EVENT_PAYLOAD_BYTES - overhead);
     let at_limit =
         serde_json::json!({"type": "call.emit", "name": "blob", "payload": {"pcm": exact}});
     emit(&hub, at_limit.clone()).unwrap();
     wait_until("the limit frame", || fake.frames().len() == 1);
     assert_eq!(fake.frames()[0], at_limit);
 
-    let over = "A".repeat(MAX_CALL_PAYLOAD_BYTES - overhead + 1);
+    let over = "A".repeat(MAX_EVENT_PAYLOAD_BYTES - overhead + 1);
     assert_eq!(
         emit_error_code(
             &hub,

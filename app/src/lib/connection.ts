@@ -1,7 +1,8 @@
 // 接続（サーバーに届くか）の失敗の判断と文言。起動時の取得・チャットの読み込み・接続バナーで使う。
 // 届かなかった通信は、JS の fetch（ConnectionError）と、Tauri の Rust 経路（HttpError の code が timeout・network）の両方。
 
-import { ConnectionError, HttpError } from './transport/http';
+import { ConnectionError } from './transport/http';
+import { HttpError } from './transport/httpError';
 
 /** つながらないときに出す案内（画面の文言。利用者の確認を取る前の仮の文） */
 export const CONNECTION_HINT = 'サーバーに接続できません（接続先の URL・ネットワーク・Tailscale を確認してください）';

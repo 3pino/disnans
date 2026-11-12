@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { DeviceList, type DeviceListDeps } from './deviceList.svelte';
-import { HttpError } from '../transport/http';
+import { HttpError } from '../transport/httpError';
 import type { DeviceApi, DeviceInfo } from '../transport/device';
 
 const SELF = 'self-1';

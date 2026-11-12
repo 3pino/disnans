@@ -7,7 +7,7 @@ vi.mock('../config', () => ({
 
 const { sharedApi, sharedUrl, sharedSizePath } = await import('./shared');
 const { sharedPath } = await import('../sharedPath');
-const { HttpError } = await import('./http');
+const { HttpError } = await import('./httpError');
 
 type Call = { url: string; init: RequestInit };
 let calls: Call[] = [];

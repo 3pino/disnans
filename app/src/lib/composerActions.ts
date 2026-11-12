@@ -22,9 +22,6 @@ export type ComposerContext = {
   pickFiles: () => void;
 };
 
-/** 本体の項目。run には ComposerContext を渡す */
-export type BuiltinComposerAction = Omit<ComposerAction, 'run'> & { run: (ctx: ComposerContext) => void };
-
 const registered = new SvelteMap<string, ComposerAction>();
 
 /** 登録されている項目（リアクティブ）。登録した順 */

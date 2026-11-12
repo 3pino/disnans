@@ -4,7 +4,7 @@ import { checkSharedPath, hasPermission, parentOf, PluginFiles } from './files';
 import { PluginError } from './errors';
 import { PluginBase, PluginRuntime } from './runtime';
 import { parseManifest, permissionsOf } from './manifest';
-import { HttpError } from '../transport/http';
+import { HttpError } from '../transport/httpError';
 import type { SharedApi } from '../transport/shared';
 import type { SharedEntry } from '../protocol/SharedEntry';
 import type { HostServices, Manifest, PluginClass } from './types';

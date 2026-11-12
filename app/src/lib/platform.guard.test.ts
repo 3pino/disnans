@@ -9,8 +9,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SRC = join(here, '..');
 const ALLOWED = join(here, 'platform.ts');
 
-/** テスト用の共通の環境（lib/testing）は、テストの一部として Tauri の内部を作る。本体のソースではないので除く */
-const TEST_HELPERS = join(here, 'testing');
+/** テスト用の共通の環境（src/test-support）は、テストの一部として Tauri の内部を作る。本体のソースではないので除く */
+const TEST_HELPERS = join(SRC, 'test-support');
 
 /** src 以下の .ts と .svelte（テストと、テスト用の共通の環境は除く） */
 function sourceFiles(dir: string): string[] {

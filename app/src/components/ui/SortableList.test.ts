@@ -3,7 +3,7 @@
 // ポインターの座標は jsdom では本物の描画の位置を持たないため、判定は lib/sortable.test.ts の純関数で確かめ、ここでは配線を見る。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
-import Host from './SortableListTestHost.svelte';
+import Host from '../../test-support/SortableListTestHost.svelte';
 import { LONG_PRESS_MS } from '../../lib/sortable';
 
 type HostExports = { setItems: (items: { id: string; name: string }[]) => void };

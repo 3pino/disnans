@@ -9,6 +9,7 @@ import type { Manifest } from './types';
 export const API_CHANGES: readonly { version: number; text: string }[] = [
   { version: 13, text: 'スレッドの API が削除されました' },
   { version: 14, text: 'エラーの形が変わりました（disnans.PluginError と code）' },
+  { version: 17, text: '画面のキャプチャ（disnans.screenCapture）とピクチャーインピクチャー（disnans.pip）が削除されました（画面共有は本体の機能です）' },
 ];
 
 /** プラグインの対象の版（apiVersion があればそれ、なければ minApiVersion） */

@@ -54,50 +54,6 @@ export function renameAllowed(path: string): Allowed {
   return path === ATTACHMENTS_DIR ? { ok: false, message: RESERVED_REASON } : { ok: true };
 }
 
-/** 削除の確認の文（ui.confirm に渡す形）。attachments/ の中は本文のリンクが「削除されたファイル」になる */
-export function deleteConfirm(path: string, dir: boolean): { title: string; body: string; okLabel: string; danger: true } {
-  const name = baseName(path);
-  if (inAttachments(path)) {
-    return {
-      title: `「${name}」を削除しますか`,
-      body: '本文のリンクは「削除されたファイル」になります。元に戻せません',
-      okLabel: '削除',
-      danger: true,
-    };
-  }
-  if (dir) {
-    return { title: `フォルダ「${name}」を削除しますか`, body: '中身もすべて消えます。元に戻せません', okLabel: '削除', danger: true };
-  }
-  return { title: `「${name}」を削除しますか`, body: '元に戻せません', okLabel: '削除', danger: true };
-}
-
-/** 複数の項目の削除の確認の文（まとめて 1 回。attachments/ の中・フォルダが混じるときは、その旨を入れる） */
-export function deleteManyConfirm(items: readonly { path: string; kind: 'file' | 'dir' }[]): { title: string; body: string; okLabel: string; danger: true } {
-  const n = items.length;
-  const notes: string[] = [];
-  if (items.some((i) => inAttachments(i.path))) notes.push('添付のものは、本文のリンクが「削除されたファイル」になります');
-  if (items.some((i) => i.kind === 'dir')) notes.push('フォルダは中身もすべて消えます');
-  notes.push('元に戻せません');
-  return { title: `${n} 件を削除しますか`, body: notes.join('。'), okLabel: '削除', danger: true };
-}
-
-/** 1 件をゴミ箱に移す確認の文 */
-export function trashConfirm(path: string, dir: boolean): { title: string; body: string; okLabel: string; danger: true } {
-  const name = baseName(path);
-  if (inAttachments(path)) {
-    return {
-      title: `「${name}」をゴミ箱に移しますか`,
-      body: '本文のリンクは「削除されたファイル」になります。ゴミ箱から元に戻せます',
-      okLabel: 'ゴミ箱に移す',
-      danger: true,
-    };
-  }
-  if (dir) {
-    return { title: `フォルダ「${name}」をゴミ箱に移しますか`, body: '中身もすべて移ります。ゴミ箱から元に戻せます', okLabel: 'ゴミ箱に移す', danger: true };
-  }
-  return { title: `「${name}」をゴミ箱に移しますか`, body: 'ゴミ箱から元に戻せます', okLabel: 'ゴミ箱に移す', danger: true };
-}
-
 /** 複数の項目をゴミ箱に移す確認の文 */
 export function trashManyConfirm(items: readonly { path: string; kind: 'file' | 'dir' }[]): { title: string; body: string; okLabel: string; danger: true } {
   const n = items.length;

@@ -7,7 +7,6 @@ import {
   enterComboOf,
   insertNewline,
   insertsNewlineByDefault,
-  resolveEnterAction,
   sendCombos,
 } from './enterKeys';
 
@@ -29,21 +28,17 @@ describe('enterComboOf', () => {
   });
 });
 
-describe('resolveEnterAction', () => {
+describe('既定の挠動作（MessageInput は enterComboOf と prefs.enterKeys で決める）', () => {
   it('既定は Enter・Shift+Enter が改行、Ctrl+Enter・Alt+Enter が送信', () => {
-    expect(resolveEnterAction(ev(), DEFAULT_ENTER_KEYS)).toBe('newline');
-    expect(resolveEnterAction(ev({ shiftKey: true }), DEFAULT_ENTER_KEYS)).toBe('newline');
-    expect(resolveEnterAction(ev({ ctrlKey: true }), DEFAULT_ENTER_KEYS)).toBe('send');
-    expect(resolveEnterAction(ev({ altKey: true }), DEFAULT_ENTER_KEYS)).toBe('send');
-    expect(resolveEnterAction(ev({ altKey: true, shiftKey: true }), DEFAULT_ENTER_KEYS)).toBeNull();
+    expect(DEFAULT_ENTER_KEYS.enter).toBe('newline');
+    expect(DEFAULT_ENTER_KEYS.shift).toBe('newline');
+    expect(DEFAULT_ENTER_KEYS.ctrl).toBe('send');
+    expect(DEFAULT_ENTER_KEYS.alt).toBe('send');
+    expect(enterComboOf(ev({ altKey: true, shiftKey: true }))).toBeNull();
   });
 
-  it('設定に従う', () => {
+  it('設定の送信の組み合わせを出す', () => {
     const prefs: EnterKeyPrefs = { enter: 'newline', shift: 'none', ctrl: 'send', alt: 'newline' };
-    expect(resolveEnterAction(ev(), prefs)).toBe('newline');
-    expect(resolveEnterAction(ev({ shiftKey: true }), prefs)).toBe('none');
-    expect(resolveEnterAction(ev({ metaKey: true }), prefs)).toBe('newline');
-    expect(resolveEnterAction(ev({ altKey: true }), prefs)).toBe('newline');
     expect(sendCombos(prefs)).toEqual(['ctrl']);
   });
 });

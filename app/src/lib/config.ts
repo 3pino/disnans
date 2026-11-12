@@ -95,6 +95,8 @@ export function needsServerSetup(): boolean {
  * 開発用: `?dev_user=alice` で別ユーザーとして振る舞う。タブごとに sessionStorage に覚える。
  */
 function initDevUser(): string | null {
+  // リリースビルドでは使わない（X-Dev-User も dev_user も送らない）
+  if (!import.meta.env.DEV) return null;
   if (typeof window === 'undefined') return null;
   try {
     const p = new URLSearchParams(window.location.search).get('dev_user');

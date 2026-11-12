@@ -2,7 +2,7 @@
 import { expect, it, vi } from 'vitest';
 import { CallStore } from './store.svelte';
 import { CallSettings, createCallSource } from './settings.svelte';
-import { FakeNativePort, snap } from './nativeFake';
+import { FakeNativePort, snap } from '../../test-support/nativeFake';
 import type { ScreenCapturePort } from './screen/types';
 
 it('Linux の取得は実際の本体 Sender へ渡し、開始応答より早い最初のフレームも送る', async () => {

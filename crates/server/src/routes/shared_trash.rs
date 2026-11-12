@@ -19,7 +19,7 @@ use crate::trash;
 use crate::webdav::fs::{SharedFs, rel};
 use crate::webdav::tree::ATTACHMENTS_DIR;
 
-pub async fn list(
+pub(crate) async fn list(
     State(state): State<SharedState>,
     CurrentUser(_user): CurrentUser,
 ) -> AppResult<Json<SharedTrashListing>> {
@@ -35,7 +35,7 @@ fn segments(path: &str) -> Vec<String> {
         .collect()
 }
 
-pub async fn ops(
+pub(crate) async fn ops(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Json(op): Json<SharedTrashOp>,
@@ -69,7 +69,7 @@ pub async fn ops(
     }
 }
 
-pub async fn purge(
+pub(crate) async fn purge(
     State(state): State<SharedState>,
     CurrentUser(_user): CurrentUser,
     Path(id): Path<String>,

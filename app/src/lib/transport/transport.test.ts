@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createHttpReadApi, HttpError } from './http';
+import { HttpError } from './httpError';
 import { createTauriReadApi, toBridgeError } from './tauri';
 import { selectReadApi, selectWriteApi } from './select';
 import type { Invoke } from './types';
@@ -19,53 +19,23 @@ function recorder(reply: (command: string) => unknown = () => null) {
 
 const ctx = { server: () => 'http://127.0.0.1:8080', devUser: 'alice' as string | null };
 
-describe('read transport selection', () => {
-  const base = { flag: null as string | null, rustApi: true, bodyMode: 'raw' as const, invoke: recorder().invoke, context: ctx };
+describe('transport selection (Rust only)', () => {
+  const base = { bodyMode: 'raw' as const, invoke: recorder().invoke, context: ctx };
 
-  it('uses Rust with flag "1" where the environment has a Rust API', () => {
-    expect(selectReadApi({ ...base, flag: '1' }).kind).toBe('tauri');
-  });
-
-  it('uses Rust by default; "0" turns it off; other values are not "0", so still on', () => {
-    expect(selectReadApi({ ...base, flag: null }).kind).toBe('tauri');
-    expect(selectReadApi({ ...base, flag: '1' }).kind).toBe('tauri');
-    expect(selectReadApi({ ...base, flag: '0' }).kind).toBe('http');
-  });
-
-  it('keeps HTTP where there is no Rust API (another OS), even when the flag is on', () => {
-    expect(selectReadApi({ ...base, flag: '1', rustApi: false }).kind).toBe('http');
-  });
-
-  it('uses Rust for reads, writes and uploads on Android too (flag "0" still turns it off)', () => {
-    const android = { ...base, bodyMode: 'base64' as const };
-    expect(selectReadApi({ ...android, flag: null }).kind).toBe('tauri');
-    expect(selectReadApi({ ...android, flag: '0' }).kind).toBe('http');
-    expect(selectWriteApi({ ...android, flag: null }).kind).toBe('tauri');
-    expect(selectWriteApi({ ...android, flag: '0' }).kind).toBe('http');
+  it('reads are the Tauri API', async () => {
+    const r = recorder(() => ({ id: 'u1' }));
+    expect(await selectReadApi({ ...base, invoke: r.invoke }).me()).toEqual({ id: 'u1' });
+    expect(r.calls[0].command).toBe('api_me');
   });
 
   it('Android sends base64 bodies; desktop keeps raw bytes', async () => {
     const r = recorder();
     const a = selectWriteApi({ ...base, bodyMode: 'base64', invoke: r.invoke });
-    if (a.kind !== 'tauri') throw new Error('expected tauri');
     await a.write.setAvatar(new Blob([new Uint8Array([1, 2, 3])]), 'a.png');
     expect(r.calls[0].args).toBe('AQID');
     const d = selectWriteApi({ ...base, invoke: r.invoke });
-    if (d.kind !== 'tauri') throw new Error('expected tauri');
     await d.write.setAvatar(new Blob([new Uint8Array([1, 2, 3])]), 'a.png');
     expect(r.calls[1].args).toBeInstanceOf(Uint8Array);
-  });
-
-  it('where there is no Rust API (no injected capability), reads and writes stay HTTP', () => {
-    expect(selectReadApi({ ...base, rustApi: false }).kind).toBe('http');
-    expect(selectWriteApi({ ...base, rustApi: false }).kind).toBe('http');
-  });
-
-  it('logs the selected transport once per selection', () => {
-    const lines: string[] = [];
-    selectReadApi({ ...base, flag: '1', log: (m) => lines.push(m) });
-    selectReadApi({ ...base, flag: '0', log: (m) => lines.push(m) });
-    expect(lines).toEqual(['[disnans] api read transport: tauri', '[disnans] api read transport: http']);
   });
 });
 
@@ -135,30 +105,3 @@ describe('Tauri read transport', () => {
   });
 });
 
-describe('HTTP read transport (unchanged request shape)', () => {
-  it('builds the same URL, query, and dev header as before', async () => {
-    const seen: Array<{ url: string; method?: string; headers?: Record<string, string> }> = [];
-    const fake = async (url: string, init?: RequestInit) => {
-      seen.push({ url, method: init?.method, headers: init?.headers as Record<string, string> });
-      return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    };
-    const original = globalThis.fetch;
-    globalThis.fetch = fake as typeof fetch;
-    try {
-      const api = createHttpReadApi();
-      await api.messages({ before: 'm1', limit: 20 });
-      await api.messages({});
-      await api.searchMessages({ q: 'a', limit: 5 });
-      await api.session('s 1');
-    } finally {
-      globalThis.fetch = original;
-    }
-    expect(seen.map((s) => s.url)).toEqual([
-      '/api/messages?before=m1&limit=20',
-      '/api/messages',
-      '/api/messages/search?q=a&limit=5',
-      '/api/sessions/s%201',
-    ]);
-    expect(seen.every((s) => s.method === 'GET')).toBe(true);
-  });
-});

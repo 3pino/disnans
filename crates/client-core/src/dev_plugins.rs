@@ -19,8 +19,8 @@ pub const FILES: [&str; 5] = [
     "icon.svg",
 ];
 
-/// 1つのプラグインの合計の上限（サーバーの配布の上限と同じ 5 MB）
-const MAX_TOTAL: u64 = 5 * 1024 * 1024;
+/// 1つのプラグインの合計の上限（サーバーの配布の上限と同じ。disnans-shared の値）
+const MAX_TOTAL: u64 = disnans_shared::limits::MAX_PLUGIN_PACKAGE_BYTES as u64;
 
 /// フォルダ1つ分の様子（中身は含まない）
 #[derive(Serialize)]

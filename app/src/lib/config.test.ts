@@ -8,6 +8,36 @@ afterEach(() => {
   setServerUrl(null);
 });
 
+describe('devUser（開発用。リリースでは使わない）', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    sessionStorage.clear();
+  });
+
+  it('DEV のとき、?dev_user で別ユーザーになり、X-Dev-User を送る', async () => {
+    vi.stubEnv('DEV', true);
+    window.history.replaceState({}, '', '/?dev_user=alice');
+    vi.resetModules();
+    const cfg = await import('./config');
+    expect(cfg.devUser).toBe('alice');
+    expect(cfg.authHeaders()).toEqual({ 'X-Dev-User': 'alice' });
+  });
+
+  it('リリースでは ?dev_user も sessionStorage の値も無視し、ヘッダーを送らない', async () => {
+    vi.stubEnv('DEV', false);
+    window.history.replaceState({}, '', '/?dev_user=alice');
+    sessionStorage.setItem('disnans.devUser', 'bob');
+    vi.resetModules();
+    const cfg = await import('./config');
+    expect(cfg.devUser).toBeNull();
+    expect(cfg.authHeaders()).toEqual({});
+    // リリースでは保存にも触れない
+    expect(sessionStorage.getItem('disnans.devUser')).toBe('bob');
+  });
+});
+
 describe('normalizeServerUrl', () => {
   it('スキームを補い、末尾のスラッシュを取る', () => {
     expect(normalizeServerUrl(' homeserver:8080/ ')).toBe('http://homeserver:8080');

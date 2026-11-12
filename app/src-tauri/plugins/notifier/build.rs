@@ -1,7 +1,6 @@
 // コマンドの実体は Kotlin（android/）にある。ここでは権限の生成だけをする
 const COMMANDS: &[&str] = &[
     "start",
-    "stop",
     "start_call",
     "stop_call",
     "native_call_start",
@@ -29,7 +28,6 @@ const COMMANDS: &[&str] = &[
     "set_orientation",
     "set_keep_web_view",
     "set_haptics_enabled",
-    "log_call",
     "diag_log",
     "diag_read",
     "diag_clear",

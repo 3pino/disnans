@@ -67,7 +67,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 16） */
+      /** ホスト API のバージョン（いまは 17） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -81,119 +81,6 @@ declare global {
       readonly audio: Audio;
       /** 本体の通話（API v8。`addPanel` と `bufferedAmount` は v10）。画面共有などの拡張向け。通話そのもの（参加・ミュート・出力先）は本体の機能で、ここからは状態の読み取りと、参加者どうしのデータの送受信だけ */
       readonly call: Call;
-      /** 画面のキャプチャ（API v9。Android のネイティブ、v12 で Linux の portal / PipeWire。`snapshot` は v11 でデスクトップも）。画面共有向け。`supported` が false の環境では `getDisplayMedia` を使う */
-      readonly screenCapture: ScreenCapture;
-      /** ピクチャーインピクチャー（API v9。Android のネイティブ）。デスクトップは `<video>` の `requestPictureInPicture` を使う */
-      readonly pip: Pip;
-    }
-
-    /** `screenCapture.start` に渡す設定（API v9） */
-    type ScreenCaptureOptions = {
-      /** 画像の長辺の最大（ピクセル） */
-      maxEdge: number;
-      /** 符号化の品質（0〜1。JPEG / WebP の lossy） */
-      quality: number;
-      /** 1 秒あたりのフレーム数の上限 */
-      fps: number;
-      /** 画像の形式（既定は `jpeg`。Linux は JPEG のみ） */
-      format?: 'jpeg' | 'webp';
-      /** 色数。`c256` は 256 色相当に減色（このときは可逆の WebP / PNG と比べて小さいほうを使う）、`gray` はグレースケール。既定は `full` */
-      color?: 'full' | 'c256' | 'gray';
-      /** 前のフレームとの差（0〜255 の平均）がこれ以下なら送らない。既定は 1.5 */
-      diffThreshold?: number;
-      /** 画面が変わらなくても送り直す間隔（ミリ秒）。既定は 5000 */
-      keepaliveMs?: number;
-      /** OS 側（通知欄の停止ボタンなど）で止められたときに呼ばれる。`stop()` では呼ばれない */
-      onEnd?: () => void;
-      /**
-       * 通話へのネイティブ送信（API v16）。指定すると、フレームと状態（on/off）・問い合わせへの応答を、本体（Android）が
-       * 通話のソケットへ直接送る。JS は送らない（画面が裏で止まっても送り続けられる）。`supportsCallRelay` が false の環境では例外。
-       * このときの `onFrame` は前面のプレビューだけ（送信には使わない）。プラグインは `call.emit` で同じ名前を送らないこと
-       */
-      callRelay?: ScreenCallRelay;
-    };
-
-    /**
-     * `ScreenCaptureOptions.callRelay`（API v16）。送るイベントの名前と、on/off の状態に足す値。
-     * 名前は 1〜64 文字で、`audio` と本体の予約の名前は使えない。3 つの名前は互いに違うこと。
-     * フレームは分割して送る（受け取る側は `screen.frame` の形 `{f, i, n, d}` を組み立てる。既存の形と同じ）
-     */
-    type ScreenCallRelay = {
-      /** フレームのイベント名（例: `screen.frame`） */
-      frameEvent: string;
-      /** 状態のイベント名（例: `screen.state`）。開始は `{on: true, ...state}`、止めたら `{on: false}` */
-      stateEvent: string;
-      /** 問い合わせのイベント名（例: `screen.query`）。受け取ったら、本体が状態と最新の 1 枚を送り直す */
-      queryEvent?: string;
-      /** on の状態に足す値（例: `{source: 'screen'}`）。値は文字列・有限の数・真偽だけで、合わせて 256 バイト（UTF-8）まで。キー `on` は使えない */
-      state?: Record<string, string | number | boolean>;
-    };
-
-    /** `screenCapture` が渡す 1 フレーム（API v9） */
-    type ScreenCaptureFrame = {
-      /** 画像の base64（`data:` の接頭辞なし） */
-      data: string;
-      /** `image/jpeg` `image/webp` `image/png` */
-      mime: string;
-      width: number;
-      height: number;
-    };
-
-    /** `screenCapture.snapshot` が返す静止画（API v11） */
-    type ScreenSnapshot = {
-      /** `data:image/jpeg;base64,...` */
-      dataUrl: string;
-      width: number;
-      height: number;
-      /** `screen`: 画面全体（主モニター）、`app`: disnans 自身の画面（ほかのアプリは写らない） */
-      source: 'screen' | 'app';
-    };
-
-    /**
-     * 画面のキャプチャ（API v9）。Android の WebView には `getDisplayMedia` が無いので、MediaProjection で撮った
-     * 縮小済みの画像を渡す。開始すると OS の確認のダイアログが出て、通知欄に常駐の表示（フォアグラウンドサービス）が出る。
-     * Linux のアプリ版は portal / PipeWire で選んだ画面を撮る（API v12）。`start` で OS の画面選択が出る。
-     * Android / Linux のアプリ版以外では `supported` が false で、`start` は例外になる
-     */
-    interface ScreenCapture {
-      readonly supported: boolean;
-      /**
-       * 通話へのネイティブ送信（`ScreenCaptureOptions.callRelay`）が使えるか（API v16）。
-       * Android のアプリ（フロントエンドとネイティブが同じ版）だけ true。API v15 以前のアプリでは、このプロパティが無い（undefined）
-       */
-      readonly supportsCallRelay?: boolean;
-      /**
-       * 許可を求めて撮り始める。断られたら例外。フレームは `onFrame` に届く（変化が無い間は届かない）。
-       * 本体の標準共有が取得中なら code='busy'。拡張から本体の取得を停止・変更することはできない。
-       * ユーザーが許可のダイアログでキャンセルしたときの例外は `name` が `AbortError`（API v10。何も知らせずに終えてよい）
-       */
-      start(opts: ScreenCaptureOptions, onFrame: (frame: ScreenCaptureFrame) => void): Promise<void>;
-      /** 撮りながら品質を変える。`scale` は取得した画像をさらに縮める倍率（0〜1） */
-      update(patch: { quality?: number; scale?: number }): Promise<void>;
-      /** 止める（撮っていなければ何もしない）。停止を確認できなければ stop_unconfirmed で失敗し、再停止が必要 */
-      stop(): Promise<void>;
-      /**
-       * 静止画を 1 枚だけ撮る（API v11）。どの画面を共有するかの選択や、許可のダイアログを出さない（設定のプレビューなど向け）。
-       * `supported` に関係なく、本体のアプリ（Tauri）で使える。撮れるもの: Windows は主モニター全体、
-       * Linux は X11 なら主モニター全体・Wayland などでは disnans 自身の画面、Android は disnans 自身の画面（`source` で分かる）。
-       * 長辺は 1920 以下に縮める。撮れない環境（Tauri の対応外）では例外
-       */
-      snapshot(): Promise<ScreenSnapshot>;
-    }
-
-    /**
-     * ピクチャーインピクチャー（API v9）。Android では Activity を小窓にする（`enter`）。
-     * 小窓の間は、アプリの画面がそのまま小さく表示されるので、プラグインが小窓用の表示に切り替える（`onChange`）。
-     * Android 以外では `supported` が false で、`enter` は false を返す
-     */
-    interface Pip {
-      readonly supported: boolean;
-      /** いま小窓になっている */
-      readonly active: boolean;
-      /** 小窓にする。入れたら true。`aspect` は小窓の縦横比（既定 16:9） */
-      enter(opts?: { aspect?: { width: number; height: number } }): Promise<boolean>;
-      /** 小窓になった・戻ったとき。戻り値の関数で外す */
-      onChange(cb: (active: boolean) => void): Cleanup;
     }
 
     /** 通話の参加者1人分（API v7〜）。同じ人が2台で入れば2つ */

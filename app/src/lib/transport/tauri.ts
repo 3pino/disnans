@@ -1,4 +1,4 @@
-import { HttpError } from './http';
+import { HttpError } from './httpError';
 import type { InvokeArgs, InvokeOptions as TauriInvokeOptions } from '@tauri-apps/api/core';
 import type { ApiBridgeError, BridgeContext, Invoke, InvokeOptions, ReadApi } from './types';
 

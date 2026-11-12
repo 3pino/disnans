@@ -4,6 +4,7 @@
 mod common;
 
 use common::TestServer;
+use disnans_server::testing::DevServer;
 use disnans_shared::{
     Attachment, ClientEvent, SharedEntry, SharedSize, SharedTrashEntry, SharedTrashListing,
 };
@@ -90,29 +91,14 @@ async fn root_size(server: &TestServer) -> SharedSize {
 
 /// 再起動（同じデータフォルダで、サーバーを作り直す）。回復はルートを公開する前に走る。
 async fn restart(server: &TestServer) -> TestServer {
-    let config = disnans_server::config::Config {
-        data_dir: server.state.config.data_dir.clone(),
-        bind: "127.0.0.1:0".parse().unwrap(),
-        dev: true,
-        tailscale_socket: server.dir.path().join("no-such.sock"),
-        image_max_edge: disnans_server::image_proc::DEFAULT_MAX_EDGE,
-    };
-    let (app, state) = disnans_server::build(config).await.unwrap();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(
-            listener,
-            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-        )
-        .await
-        .unwrap();
-    });
+    let dev = DevServer::start_on(
+        server.state.config.data_dir.clone(),
+        tempfile::tempdir().unwrap(),
+    )
+    .await;
     TestServer {
-        addr,
-        state,
+        dev,
         http: reqwest::Client::new(),
-        dir: tempfile::tempdir().unwrap(),
     }
 }
 

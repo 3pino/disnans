@@ -7,8 +7,8 @@ import { ui } from '../lib/stores/ui.svelte';
 import { orientation } from '../lib/stores/orientation.svelte';
 import { deviceSettings } from '../lib/stores/deviceSettings.svelte';
 
-import { fakeScreen, sharer } from './testing/screenFake';
-import { reactiveScreen } from './testing/reactiveScreen.svelte';
+import { fakeScreen, sharer } from '../test-support/screenFake';
+import { reactiveScreen } from '../test-support/reactiveScreen.svelte';
 import type { ScreenPipPort } from '../lib/call/screen/types';
 
 const env = vi.hoisted(() => ({ android: false, webAvailable: false, startWebPip: null as null | (() => Promise<unknown>) }));

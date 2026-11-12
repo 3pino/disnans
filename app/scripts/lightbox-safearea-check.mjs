@@ -2,16 +2,13 @@
 // 実際の LightboxView（写真）と ScreenShareViewer（共有）を Chromium に載せ、CDP の setSafeAreaInsetsOverride で env() を合成して矩形だけを検査する。
 // Android 実機や OS の没入・PiP は再現しない。
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import { connectCdp, launchChrome, makeProfile, openPage, stopChrome } from './cdp.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const executable = process.env.CHROME ?? join(homedir(), '.cache/puppeteer/chrome-headless-shell/linux-146.0.7680.153/chrome-headless-shell-linux64/chrome-headless-shell');
-const profile = mkdtempSync(join(tmpdir(), 'disnans-viewer-frame-'));
+const profile = makeProfile('disnans-viewer-frame-');
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>body{margin:0}</style></head><body><div id="fixture"></div>
@@ -62,37 +59,10 @@ let ws;
 try {
   await vite.listen();
   const url = `http://127.0.0.1:${vite.httpServer.address().port}/__viewer_frame_fixture`;
-  chrome = spawn(executable, ['--no-sandbox', '--disable-gpu', `--user-data-dir=${profile}`, '--remote-debugging-port=0', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
-  const endpoint = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Chromium startup timed out')), 15_000);
-    let text = '';
-    chrome.on('error', (error) => { clearTimeout(timer); reject(error); });
-    chrome.stderr.on('data', (chunk) => {
-      text += chunk;
-      const match = /DevTools listening on (ws:\/\/\S+)/.exec(text);
-      if (match) { clearTimeout(timer); resolve(match[1]); }
-    });
-  });
-  ws = new WebSocket(endpoint);
-  await new Promise((resolve, reject) => { ws.addEventListener('open', resolve, { once: true }); ws.addEventListener('error', reject, { once: true }); });
-  let seq = 0;
-  const pending = new Map();
-  ws.addEventListener('message', ({ data }) => {
-    const message = JSON.parse(data);
-    const slot = pending.get(message.id);
-    if (!slot) return;
-    pending.delete(message.id); clearTimeout(slot.timer);
-    if (message.error) slot.reject(new Error(JSON.stringify(message.error)));
-    else slot.resolve(message.result);
-  });
-  const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
-    const id = ++seq;
-    pending.set(id, { resolve, reject, timer: setTimeout(() => { pending.delete(id); reject(new Error(`CDP timed out: ${method}`)); }, 15_000) });
-    ws.send(JSON.stringify({ id, method, params, sessionId }));
-  });
-  const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
-  const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
-  const S = (method, params) => send(method, params, sessionId);
+  const launched = launchChrome(profile);
+  chrome = launched.child;
+  ws = await connectCdp(await launched.endpoint);
+  const S = await openPage(ws);
   const evaluate = async (expression) => {
     const result = await S('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     if (result.exceptionDetails) throw new Error('Fixture evaluation failed: ' + JSON.stringify(result.exceptionDetails));
@@ -162,7 +132,6 @@ try {
   console.log(`lightbox safe-area: ${cases} geometry cases + android tap hit-test (real Lightbox photo + real screen viewer, no screenshots/media)`);
 } finally {
   ws?.close();
-  chrome?.kill();
+  stopChrome(chrome, profile);
   await vite.close();
-  rmSync(profile, { recursive: true, force: true });
 }

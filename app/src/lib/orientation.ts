@@ -5,7 +5,6 @@
  */
 export type OrientationMode = 'portrait' | 'media' | 'auto';
 
-export const ORIENTATION_MODES: readonly OrientationMode[] = ['portrait', 'media', 'auto'];
 export const DEFAULT_ORIENTATION: OrientationMode = 'auto';
 
 /** ネイティブへ渡す向きの固定の状態 */

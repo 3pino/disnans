@@ -4,7 +4,6 @@
 description = "通知用の常駐サービスの操作を許可する"
 permissions = [
   "allow-start",
-  "allow-stop",
   "allow-start-call",
   "allow-stop-call",
   "allow-native-call-start",
@@ -23,7 +22,6 @@ permissions = [
   "allow-set-orientation",
   "allow-set-keep-web-view",
   "allow-set-haptics-enabled",
-  "allow-log-call",
   "allow-diag-log",
   "allow-diag-read",
   "allow-diag-clear",

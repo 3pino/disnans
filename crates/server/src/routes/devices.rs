@@ -41,7 +41,7 @@ fn info(row: DeviceRow) -> DeviceInfo {
 }
 
 /// 自分のデバイスの一覧（新しい順）。
-pub async fn list(
+pub(crate) async fn list(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
 ) -> AppResult<Json<Vec<DeviceInfo>>> {
@@ -50,7 +50,7 @@ pub async fn list(
 }
 
 /// デバイスを登録する（初回）、または名前を変える。台数の上限は設けない。
-pub async fn put(
+pub(crate) async fn put(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(device_id): Path<String>,
@@ -82,7 +82,7 @@ pub async fn put(
 }
 
 /// デバイスとその設定を消す。
-pub async fn delete(
+pub(crate) async fn delete(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(device_id): Path<String>,
@@ -97,7 +97,7 @@ pub async fn delete(
 }
 
 /// このデバイスの設定。デバイスがなければ、設定がなければ `404 not_found`。
-pub async fn get_prefs(
+pub(crate) async fn get_prefs(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(device_id): Path<String>,
@@ -122,7 +122,7 @@ pub async fn get_prefs(
 }
 
 /// このデバイスの設定をまるごと置き換える。デバイスが登録されていなければ `404`。
-pub async fn put_prefs(
+pub(crate) async fn put_prefs(
     State(state): State<SharedState>,
     CurrentUser(user): CurrentUser,
     Path(device_id): Path<String>,

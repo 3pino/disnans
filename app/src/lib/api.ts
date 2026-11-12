@@ -13,11 +13,11 @@ import { bootReadApi, bootWriteApi } from './transport/boot';
 import type { UploadHandle } from './transport/upload';
 import { sharedApi } from './transport/shared';
 
-export { HttpError } from './transport/http';
+export { HttpError } from './transport/httpError';
 export type { UploadHandle } from './transport/upload';
 
-/** 読取の経路（Windows/Linux の Tauri では Rust。localStorage "disnans.rustApi"="0" で従来の HTTP）。読み込み時に1回だけ決める */
-const reads = bootReadApi().api;
+/** 読取の経路（Rust）。読み込み時に1回だけ決める */
+const reads = bootReadApi();
 /** 書込と添付の経路（読取と同じ判定。読み込み時に1回だけ決める） */
 const writes = bootWriteApi();
 

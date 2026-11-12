@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDeviceApi } from './device';
-import { HttpError } from './http';
+import { HttpError } from './httpError';
 
 const ctx = { server: () => 'https://disnans.example', devUser: 'alice' };
 

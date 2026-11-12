@@ -1,6 +1,5 @@
 use std::{
     io::Read,
-    net::SocketAddr,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     thread,
@@ -8,64 +7,37 @@ use std::{
 };
 
 use disnans_server::{
-    config::Config,
     state::SharedState,
     store::{messages, users},
+    testing::DevServer,
 };
 use serde_json::Value;
-use tokio::{net::TcpListener, task::JoinHandle};
 
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// 開発モードのサーバー（一時ディレクトリ）。`addr`・`state` は DevServer のもの。
 struct TestServer {
-    address: SocketAddr,
-    task: JoinHandle<()>,
-    state: SharedState,
-    _data: tempfile::TempDir,
+    dev: DevServer,
+}
+
+impl std::ops::Deref for TestServer {
+    type Target = DevServer;
+    fn deref(&self) -> &DevServer {
+        &self.dev
+    }
 }
 
 impl TestServer {
     async fn start(seed_messages: bool) -> Self {
-        let data = tempfile::tempdir().unwrap();
-        let config = Config {
-            data_dir: data.path().to_owned(),
-            bind: "127.0.0.1:0".parse().unwrap(),
-            dev: true,
-            tailscale_socket: data.path().join("no-such-socket"),
-            image_max_edge: disnans_server::image_proc::DEFAULT_MAX_EDGE,
-        };
-        let (app, state) = disnans_server::build(config).await.unwrap();
+        let dev = DevServer::start().await;
         if seed_messages {
-            seed_history(&state).await;
+            seed_history(&dev.state).await;
         }
-
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let task = tokio::spawn(async move {
-            axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .await
-            .unwrap();
-        });
-        Self {
-            address,
-            task,
-            state,
-            _data: data,
-        }
+        Self { dev }
     }
 
-    fn url(&self) -> String {
-        format!("http://{}", self.address)
-    }
-
-    async fn stop(mut self) {
-        self.task.abort();
-        let _ = (&mut self.task).await;
-        // Release SQLite handles before removing the temp directory, especially on Windows.
-        self.state.pool.close().await;
+    async fn stop(self) {
+        self.dev.stop().await;
     }
 }
 
@@ -121,12 +93,6 @@ async fn seeding_history_waits_for_the_server_write_lock() {
             .is_some()
     );
     server.stop().await;
-}
-
-impl Drop for TestServer {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
 }
 
 fn isolated_command(root: &Path, args: &[&str]) -> Command {

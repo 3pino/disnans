@@ -1,18 +1,6 @@
 import type { ApiError } from '../protocol/ApiError';
 import { apiUrl, authHeaders } from '../config';
-import { errorText } from '../errors';
-import { prefsResultOf } from '../settingsModel';
-import type { ReadApi } from './types';
-
-export class HttpError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message: string,
-  ) {
-    super(errorText(code, message));
-  }
-}
+import { HttpError } from './httpError';
 
 export async function toError(res: Response): Promise<HttpError> {
   let code = 'http_' + res.status;
@@ -93,19 +81,4 @@ export function qs(params: Record<string, string | number | null | undefined>): 
   }
   const s = p.toString();
   return s ? '?' + s : '';
-}
-
-/** 従来の fetch 経路。読取メソッドの HTTP 実装（api.ts の既定） */
-export function createHttpReadApi(): ReadApi {
-  return {
-    me: () => request('GET', '/api/me', undefined, undefined, READ),
-    users: () => request('GET', '/api/users', undefined, undefined, READ),
-    prefs: async () => prefsResultOf(await request('GET', '/api/me/prefs', undefined, undefined, READ)),
-    messages: (opts) => request('GET', '/api/messages' + qs({ before: opts.before, limit: opts.limit }), undefined, undefined, READ),
-    searchMessages: (opts) =>
-      request('GET', '/api/messages/search' + qs({ q: opts.q, before: opts.before, limit: opts.limit }), undefined, undefined, READ),
-    readMarkers: () => request('GET', '/api/me/read', undefined, undefined, READ),
-    plugins: () => request('GET', '/api/plugins', undefined, undefined, READ),
-    session: (id) => request('GET', `/api/sessions/${encodeURIComponent(id)}`, undefined, undefined, READ),
-  };
 }

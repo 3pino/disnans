@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { HttpError } from '../transport/http';
+import { HttpError } from '../transport/httpError';
 import { PluginError, VersionConflictError, plainPluginErrors, toPluginError } from './errors';
 import { PluginBase, PluginRuntime } from './runtime';
 import { isVersionConflict } from './types';

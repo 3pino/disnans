@@ -39,7 +39,6 @@ class NotifyService : Service() {
 
     /** 通知を開いたときにアプリへ渡す値 */
     const val EXTRA_OPEN = "dev.disnans.notifier.OPEN"
-    const val EXTRA_THREAD_ID = "dev.disnans.notifier.THREAD_ID"
 
     @Volatile var running = false
       private set
@@ -48,10 +47,6 @@ class NotifyService : Service() {
 
     fun start(context: Context) {
       ContextCompat.startForegroundService(context, Intent(context, NotifyService::class.java))
-    }
-
-    fun stop(context: Context) {
-      context.stopService(Intent(context, NotifyService::class.java))
     }
 
     private const val ASK_OPEN_ID = 3
@@ -188,7 +183,7 @@ class NotifyService : Service() {
       .setOngoing(true)
       .setShowWhen(false)
       .setPriority(NotificationCompat.PRIORITY_MIN)
-      .setContentIntent(openAppIntent(0, null))
+      .setContentIntent(openAppIntent(0))
       .build()
 
   private fun setConnected(value: Boolean) {
@@ -334,7 +329,6 @@ class NotifyService : Service() {
     val title = ev.optString("title")
     val body = ev.optString("body")
     val messageId = ev.optNullableString("message_id")
-    val threadId = ev.optNullableString("thread_id")
     // このアカウントの既読の位置（分からなければ、取り下げ・既読の判断の対象にならない別の値）
     val key = owner.accountFor(gen) ?: NotifyPolicy.UNKNOWN_ACCOUNT
     val prefs = Prefs(this)
@@ -356,7 +350,7 @@ class NotifyService : Service() {
       .setCategory(NotificationCompat.CATEGORY_MESSAGE)
       .setPriority(NotificationCompat.PRIORITY_HIGH)
       .setAutoCancel(true)
-      .setContentIntent(openAppIntent(id, threadId))
+      .setContentIntent(openAppIntent(id))
       .build()
     try {
       val nm = getSystemService(NotificationManager::class.java)
@@ -368,12 +362,11 @@ class NotifyService : Service() {
     }
   }
 
-  private fun openAppIntent(requestCode: Int, threadId: String?): PendingIntent {
+  private fun openAppIntent(requestCode: Int): PendingIntent {
     val intent = (packageManager.getLaunchIntentForPackage(packageName) ?: Intent()).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
       if (requestCode != 0) {
         putExtra(EXTRA_OPEN, true)
-        putExtra(EXTRA_THREAD_ID, threadId)
       }
     }
     return PendingIntent.getActivity(

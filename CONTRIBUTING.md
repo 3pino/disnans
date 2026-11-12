@@ -46,6 +46,11 @@ node scripts/prepare-cli.mjs          # 本物の CLI を release で作って�
 | Rust | `cargo test --workspace` |
 | Chromium での DOM 測定・タッチ・マウス操作(手動) | `app/scripts/touch-check.mjs`。`npx vite build --outDir /tmp/tc-dist` のあと `npx vite preview --outDir /tmp/tc-dist --port 5198` を起動し、`app` の中で `CHROME_BIN=<chrome-headless-shell のパス> DISNANS_URL=http://127.0.0.1:5198 node scripts/touch-check.mjs`(デスクトップ: 実際のマウス・ダブルクリック・キー)と、同じコマンドに `TOUCH_PLATFORM=android` を付けたもの(Android: 実際のタッチ・長押し)の 2 回を実行する。Tauri の IPC(`window.__TAURI_INTERNALS__` と `__DISNANS_PLATFORM__`)を `scripts/touch-fixture.mjs` が CDP で読み込み前に差し込み、共有フォルダは仮のサーバー(メモリ上のフォルダと仮想の `.trash/`)から返す。サーバー・Tauri は要らない。矩形とイベント、押せるか(上に何も被らないか)を確かめる(見た目は目で確かめる)。fixture か仮のサーバーに無い IPC・REST を本体が呼ぶと失敗にする。足すときは `touch-fixture.mjs` の `handlers` か `touch-check.mjs` の仮サーバーへ(`TOUCH_DEBUG=1` で呼ばれた IPC を表示)。ソース編集中の `vite dev` は再読み込みで不安定になるので、固定して測る |
 | 文書のリンク・アンカー | `node scripts/check-docs.mjs` |
+| Chromium での拡大表示枠の安全領域（合成の矩形） | `cd app && node scripts/lightbox-safearea-check.mjs`。実際の LightboxView と画面共有の表示を載せ、矩形だけを検査する（写真・画面取得・実機は使わない）。 |
+| Chromium での設定画面の位置（メニュー・ダイアログ） | `cd app && node scripts/properties-position-check.mjs`。Tauri の IPC は `touch-fixture.mjs` で差し込む。見た目は目で確かめる。 |
+| Chromium での画面共有の符号化（合成画面だけ） | `cd app && node scripts/screen-codec-check.mjs`。減色の誤差と PNG・WebP の大きさを測る。実通信量は保証しない。 |
+| Chromium での部品 UI（フィードバック） | `cd app && node scripts/feedback-ui-check.mjs`。部品の矩形と DOM だけを検査する（スクリーンショット・メディアは使わない）。`FEEDBACK_UI_DEBUG=1` で Chromium のログを出す。 |
+| 上の Chromium の検査の実行ファイル | 環境変数 `CHROME_BIN`（旧名 `CHROME`）。無ければ puppeteer のキャッシュ（`~/.cache/puppeteer/chrome-headless-shell/`）の一番新しい版。共通部分は `app/scripts/cdp.mjs`。 |
 
 ## ドキュメント
 

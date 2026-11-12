@@ -28,6 +28,7 @@ use std::{
 };
 
 use disnans_shared::ClientEvent;
+use disnans_shared::limits::MAX_BODY_CHARS;
 /// Shared wire types, re-exported so callers do not need a direct `disnans-shared` dependency.
 pub use disnans_shared::{Message, ServerEvent, User};
 use futures_util::{SinkExt, StreamExt};
@@ -48,8 +49,6 @@ use url::Url;
 
 use crate::ServerUrl;
 
-/// Longest message body the server accepts (characters).
-const MAX_BODY_CHARS: usize = 10_000;
 /// Largest WebSocket message and frame this client accepts. Server events are far smaller.
 const MAX_MESSAGE_BYTES: usize = 8 << 20;
 /// Header carrying the development identity; the server reads it before the query string.

@@ -28,6 +28,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ulid = "1"
 webp = { version = "0.3", default-features = false }
 
+# 結合テスト用の開発モードのサーバー（src/testing.rs）。本番には入らない
+tempfile = { version = "3", optional = true }
+
+[features]
+test-support = ["dep:tempfile"]
+
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix = { version = "1.1.5", features = ["fs"] }
 
@@ -35,6 +41,8 @@ rustix = { version = "1.1.5", features = ["fs"] }
 windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
+# 自分自身を test-support 付きで読む（結合テストが DevServer を使えるように）
+disnans-server = { path = ".", features = ["test-support"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart"] }
 tempfile = "3"
 tokio-tungstenite = "0.29"

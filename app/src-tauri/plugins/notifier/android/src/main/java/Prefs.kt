@@ -58,3 +58,13 @@ internal class Prefs(context: Context) {
     const val SHOWN_LIMIT = 200
   }
 }
+
+/**
+ * WebView の読み込みより前に読む値（MainActivity が使う）。保存の名前とキーは [Prefs] と同じ。
+ * 書くのは set_orientation だけ。
+ */
+object NotifierOrientation {
+  /** "portrait"・"user"、未設定なら null（manifest のまま） */
+  fun saved(context: Context): String? =
+    context.getSharedPreferences(Prefs.PREFS_NAME, Context.MODE_PRIVATE).getString(Prefs.ORIENTATION_KEY, null)
+}

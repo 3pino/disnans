@@ -26,9 +26,9 @@ GUI（Tauri）・CLI・TUI が共有するクライアント側の部品。URL �
 
 Linux uses XDG config/data roots (falling back to `~/.config` and `~/.local/share` if unset or non-absolute); Windows uses APPDATA/LOCALAPPDATA. Absolute `DISNANS_CLIENT_CONFIG_DIR` and `DISNANS_CLIENT_DATA_DIR` overrides support isolated tests; a present relative/empty override is an error. Newly created Unix directories/files are restricted to user-only permissions without changing permissions on existing directories. Windows relies on the user-profile directory ACL. Storage operations can fail and callers must preserve old values until a new write has succeeded.
 
-## WebSocket client (feature `ws`)
+## WebSocket client
 
-Enable with `features = ["ws"]`. The Tauri GUI (Windows, Linux and Android), CLI and TUI use this Rust connection. Only the browser opened through `vite dev` keeps the development TypeScript WebSocket.
+Always compiled (no feature flag). The Tauri GUI (Windows, Linux and Android), CLI and TUI use this Rust connection. Only the browser opened through `vite dev` keeps the development TypeScript WebSocket.
 
 - `ChatConnection::connect(&server, ConnectOptions)` opens `/api/ws` (`ws://` or `wss://`). The development identity goes in the `X-Dev-User` header (visible ASCII only), never in the URL. Redirects are never followed. TLS uses the webpki root set. Frames larger than 8 MiB are rejected. The connection waits for `hello`; events before `hello` are ignored. `me()` and `users()` come from `hello`.
 - `ConnectOptions::idle_timeout` (default 90 s, matching the server): if no frame arrives for this long, `next_event` returns `Disconnected` with reason `"idle timeout"`. `send_message` refuses to write once this much time has passed without the client writing anything, because the server would have dropped the connection. Pongs are only written while the connection is being read.

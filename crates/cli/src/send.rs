@@ -2,8 +2,8 @@
 
 use std::io::Read;
 
-/// 本文の最大文字数（サーバーと同じ）。
-pub const MAX_BODY_CHARS: usize = 10_000;
+use disnans_shared::limits::MAX_BODY_CHARS;
+
 /// 標準入力から読むバイト数の上限。巨大な入力でメモリを使い切らない。
 const MAX_STDIN_BYTES: u64 = (MAX_BODY_CHARS as u64) * 4 + 4;
 

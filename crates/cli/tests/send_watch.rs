@@ -21,7 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use disnans_server::{config::Config, state::SharedState, store::users};
+use disnans_server::{store::users, testing::DevServer};
 use disnans_shared::{Message, ServerEvent, User};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
@@ -49,62 +49,30 @@ const ACK_TIMEOUT_ENV: &str = "DISNANS_CLI_ACK_TIMEOUT_MS";
 // 実サーバー
 // ---------------------------------------------------------------------------
 
+/// 開発モードのサーバー（一時ディレクトリ）。`addr`・`state` は DevServer のもの。
 struct TestServer {
-    address: SocketAddr,
-    task: TokioJoinHandle<()>,
-    state: SharedState,
-    _data: tempfile::TempDir,
+    dev: DevServer,
+}
+
+impl std::ops::Deref for TestServer {
+    type Target = DevServer;
+    fn deref(&self) -> &DevServer {
+        &self.dev
+    }
 }
 
 impl TestServer {
     async fn start() -> Self {
-        let data = tempfile::tempdir().unwrap();
-        let config = Config {
-            data_dir: data.path().to_owned(),
-            bind: "127.0.0.1:0".parse().unwrap(),
-            dev: true,
-            tailscale_socket: data.path().join("no-such-socket"),
-            image_max_edge: disnans_server::image_proc::DEFAULT_MAX_EDGE,
-        };
-        let (app, state) = disnans_server::build(config).await.unwrap();
+        let dev = DevServer::start().await;
         // 送信者を先に作っておく（CLI の dev user と同じログイン名）
-        users::get_or_create(&state.pool, "alice", "Alice", None)
+        users::get_or_create(&dev.state.pool, "alice", "Alice", None)
             .await
             .unwrap();
-
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let task = tokio::spawn(async move {
-            axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .await
-            .unwrap();
-        });
-        Self {
-            address,
-            task,
-            state,
-            _data: data,
-        }
+        Self { dev }
     }
 
-    fn url(&self) -> String {
-        format!("http://{}", self.address)
-    }
-
-    async fn stop(mut self) {
-        self.task.abort();
-        let _ = (&mut self.task).await;
-        // Windows で一時ディレクトリを消せるよう、SQLite の接続を先に閉じる。
-        self.state.pool.close().await;
-    }
-}
-
-impl Drop for TestServer {
-    fn drop(&mut self) {
-        self.task.abort();
+    async fn stop(self) {
+        self.dev.stop().await;
     }
 }
 

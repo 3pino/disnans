@@ -729,6 +729,7 @@ dependencies = [
  "axum",
  "bytes",
  "dav-server",
+ "disnans-server",
  "disnans-shared",
  "futures-util",
  "http-body-util",
@@ -759,6 +760,7 @@ dependencies = [
 name = "disnans-shared"
 version = "0.1.0"
 dependencies = [
+ "semver",
  "serde",
  "serde_json",
  "ts-rs",

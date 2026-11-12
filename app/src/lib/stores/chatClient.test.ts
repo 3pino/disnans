@@ -481,7 +481,8 @@ describe('chat over Rust: start and reconnect', () => {
   });
 
   describe('chat over Rust: busy, call control order, gap resync (S3 review)', () => {
-    const urls = (f: ReturnType<typeof vi.fn>) => f.mock.calls.map((c) => String(c[0]));
+    /** 履歴の読み直しは読取 API（Rust）を通る */
+    const readHistory = async () => (await import('../api')).api;
 
     it('a busy call.emit (audio frame) is dropped silently', async () => {
       chat.emitError = { code: 'busy', message: 'x' };
@@ -517,19 +518,18 @@ describe('chat over Rust: start and reconnect', () => {
       await flush();
     });
 
-    it('lagged: the connection stays up (no closed banner) and the history is read again over REST', async () => {
-      const f = vi.fn(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }));
-      vi.stubGlobal('fetch', f);
+    it('lagged: the connection stays up (no closed banner) and the history is read again', async () => {
+      const spy = vi.spyOn((await readHistory()), 'messages').mockResolvedValue([]);
       client.timeline().loaded = true;
       chat.push({ kind: 'gap', generation: 1, reason: 'lagged' });
       expect(client.status).toBe('open');
       await flush();
-      expect(urls(f).some((u) => u.includes('/api/messages'))).toBe(true);
+      expect(spy).toHaveBeenCalled();
+      spy.mockRestore();
     });
 
     it('disconnected: closed until the chat reconnects, then the history is read again', async () => {
-      const f = vi.fn(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }));
-      vi.stubGlobal('fetch', f);
+      const spy = vi.spyOn((await readHistory()), 'messages').mockResolvedValue([]);
       client.timeline().loaded = true;
       chat.push({ kind: 'gap', generation: 1, reason: 'disconnected' });
       expect(client.status).toBe('closed');
@@ -537,7 +537,8 @@ describe('chat over Rust: start and reconnect', () => {
       chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME] });
       await flush();
       expect(client.status).toBe('open');
-      expect(urls(f).some((u) => u.includes('/api/messages'))).toBe(true);
+      expect(spy).toHaveBeenCalled();
+      spy.mockRestore();
     });
   });
 

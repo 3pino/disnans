@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import type { ScreenShareView } from '../lib/call/screen/view';
-import { fakeScreen, sharer } from './testing/screenFake';
+import { fakeScreen, sharer } from '../test-support/screenFake';
 
 const { call, openCall, openSettingsSub } = vi.hoisted(() => ({
   call: {

@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use axum::http::StatusCode;
+use disnans_shared::limits::MAX_EVENT_PAYLOAD_BYTES;
 use disnans_shared::{CallMember, CallStatus, ServerEvent};
 
 use crate::chat::Actor;
@@ -23,8 +24,6 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(5);
 /// クライアントは約 5 秒ごとに call.alive を送るので、取りこぼしに余裕を持たせる。
 pub const ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// `call.emit` の payload の上限。
-const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 const MAX_EVENT_NAME_CHARS: usize = 64;
 /// 通話の音声のイベント名（クライアントの `EV_AUDIO`）。映像より優先して届ける
 const AUDIO_EVENT: &str = "audio";
@@ -264,11 +263,11 @@ impl Calls {
         let size = serde_json::to_string(&payload)
             .map(|s| s.len())
             .unwrap_or(usize::MAX);
-        if size > MAX_PAYLOAD_BYTES {
+        if size > MAX_EVENT_PAYLOAD_BYTES {
             return Err(AppError::new(
                 StatusCode::PAYLOAD_TOO_LARGE,
                 "payload_too_large",
-                format!("payload は {} KB までです", MAX_PAYLOAD_BYTES / 1024),
+                format!("payload は {} KB までです", MAX_EVENT_PAYLOAD_BYTES / 1024),
             ));
         }
         let mut members = self.lock();

@@ -5,8 +5,8 @@
 // メッセージの本文は書かないこと（送ってもらう前提なので、ログには ID や状態だけを書く）
 
 import { isAndroid, isTauri, userAgentForLog } from './platform';
+import { invokeNative } from './nativeInvoke';
 
-const NOTIFIER = 'plugin:notifier|';
 const STORAGE_KEY = 'disnans.diagLog';
 const MAX_LINES = 3000;
 const MAX_LINE_CHARS = 1000;
@@ -20,11 +20,6 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 function native(): boolean {
   return isTauri() && isAndroid();
-}
-
-async function invokeNotifier<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<T>(`${NOTIFIER}${cmd}`, args);
 }
 
 function describe(v: unknown): string {
@@ -82,7 +77,7 @@ export function flushDiagLog(): void {
 export function diagLog(level: Level, message: string): void {
   const text = message.replace(/\n/g, ' ').slice(0, MAX_LINE_CHARS);
   if (native()) {
-    invokeNotifier('diag_log', { level, message: text }).catch(() => {});
+    invokeNative('notifier', 'diag_log', { level, message: text }).catch(() => {});
     return;
   }
   lines.push(`${stamp()} ${level === 'error' ? 'E' : level === 'warn' ? 'W' : 'I'} ${text}`);
@@ -139,7 +134,7 @@ export function installDiagLog(): void {
 export async function clearDiagLog(): Promise<void> {
   lines = [];
   if (native()) {
-    await invokeNotifier('diag_clear');
+    await invokeNative('notifier', 'diag_clear');
     return;
   }
   flushDiagLog();
@@ -152,7 +147,7 @@ export async function buildDiagReport(context: [string, string][]): Promise<stri
   out.push(`UA: ${userAgentForLog()}`);
   out.push(`画面: ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}`);
   if (native()) {
-    const r = await invokeNotifier<{ device: string; log: string }>('diag_read');
+    const r = await invokeNative<{ device: string; log: string }>('notifier', 'diag_read');
     out.push('', '---- デバイス ----', r.device, '', '---- ログ（古い順） ----', r.log.trimEnd());
   } else {
     flushDiagLog();
@@ -173,7 +168,7 @@ export function diagFileName(d = new Date()): string {
 export async function exportDiagReport(text: string): Promise<boolean> {
   const name = diagFileName();
   if (native()) {
-    await invokeNotifier('diag_share', { text, name });
+    await invokeNative('notifier', 'diag_share', { text, name });
     return true;
   }
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));

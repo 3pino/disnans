@@ -1,6 +1,7 @@
 import { api } from '../api';
 import { getServerUrl } from '../config';
 import { capabilities } from '../platform';
+import { invokeNative } from '../nativeInvoke';
 import { listenSystemOpen, sendSystemNote } from '../systemNotify';
 import { ui, type ToastAvatar } from './ui.svelte';
 
@@ -37,11 +38,6 @@ function detectBackend(): Backend {
   return capabilities().notifyBackend;
 }
 
-async function invokeNotifier<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<T>(`plugin:notifier|${cmd}`, args);
-}
-
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -71,12 +67,12 @@ class Notifications {
   private async initAndroid(): Promise<void> {
     // 通知から開いたら、チャットを表示する（押したときの動作は lib/systemNotify.ts）
     await listenSystemOpen('android', () => this.openTarget());
-    const { target } = await invokeNotifier<{ target?: unknown }>('take_launch_target');
+    const { target } = await invokeNative<{ target?: unknown }>('notifier', 'take_launch_target');
     if (target) this.openTarget();
 
     // 初回は通知の許可を求める（Android 13 以降。2回目以降は何も出ない）
-    await invokeNotifier('request_permission');
-    await invokeNotifier('start', { serverUrl: getServerUrl() });
+    await invokeNative('notifier', 'request_permission');
+    await invokeNative('notifier', 'start', { serverUrl: getServerUrl() });
     await this.refresh();
     console.info(`[notify] 常駐の状態: ${JSON.stringify(this.android)}`);
   }
@@ -96,7 +92,7 @@ class Notifications {
   async refresh(): Promise<void> {
     if (this.backend !== 'android') return;
     try {
-      this.android = await invokeNotifier<AndroidStatus>('status');
+      this.android = await invokeNative<AndroidStatus>('notifier', 'status');
     } catch (e) {
       console.warn('通知の状態を取得できませんでした', e);
     }
@@ -105,7 +101,7 @@ class Notifications {
   async requestPermission(): Promise<void> {
     try {
       if (this.backend === 'android') {
-        this.android = await invokeNotifier<AndroidStatus>('request_permission');
+        this.android = await invokeNative<AndroidStatus>('notifier', 'request_permission');
       } else {
         const { requestPermission } = await import('@tauri-apps/plugin-notification');
         this.permission = await requestPermission();
@@ -117,7 +113,7 @@ class Notifications {
 
   async openBatterySettings(): Promise<void> {
     try {
-      await invokeNotifier('open_battery_settings');
+      await invokeNative('notifier', 'open_battery_settings');
     } catch (e) {
       ui.toast(`設定を開けませんでした: ${errorMessage(e)}`, 'error');
     }

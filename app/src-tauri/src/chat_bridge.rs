@@ -19,6 +19,7 @@ use disnans_client_core::{
     ChatSession, ClientEvent, ConnectOptions, EmitError, Message, ReadFailure, SendOutcome,
     SendRequest, ServerEvent, ServerUrl, SessionSender, UnknownReason, User, WatchItem, WsError,
 };
+use disnans_shared::limits::MAX_EVENT_PAYLOAD_BYTES;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::async_runtime::{self, JoinHandle, Mutex, Receiver, Sender};
@@ -304,10 +305,6 @@ impl From<EmitError> for ChatCommandError {
     }
 }
 
-/// サーバーが `call.emit` の payload（JSON）に課す上限（crates/server/src/calls.rs の MAX_PAYLOAD_BYTES と同じ）。
-/// 超えたものはサーバーが拒否するので、書かずに `invalid_request` で返す。
-pub const MAX_CALL_PAYLOAD_BYTES: usize = 64 * 1024;
-
 /// `chat_emit` で送ってよい（ack の無い）種類か（契約 §8.6）。`message.send` は別（`send_not_allowed`）。
 /// 通話の音声（`call.emit`）は同じ接続から送る（S3）。`ping` は core が扱うので送らない。
 fn check_emit_kind(event: &ClientEvent) -> Result<(), ChatCommandError> {
@@ -329,7 +326,8 @@ fn check_emit_kind(event: &ClientEvent) -> Result<(), ChatCommandError> {
             let size = serde_json::to_string(payload)
                 .map(|s| s.len())
                 .unwrap_or(usize::MAX);
-            if size > MAX_CALL_PAYLOAD_BYTES {
+            // サーバーが call.emit の payload に課す上限。超えたものはサーバーが拒否するので、書かずに invalid_request で返す
+            if size > MAX_EVENT_PAYLOAD_BYTES {
                 return Err(ChatCommandError::invalid(
                     "通話の payload が大きすぎます（64 KiB まで）",
                 ));

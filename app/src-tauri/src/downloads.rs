@@ -110,26 +110,8 @@ pub fn candidate_name(name: &str, n: u32) -> String {
 #[cfg(any(target_os = "android", test))]
 pub fn mime_for(name: &str) -> &'static str {
     let (_, ext) = split_extension(name);
-    match ext.to_ascii_lowercase().as_str() {
-        ".png" => "image/png",
-        ".jpg" | ".jpeg" => "image/jpeg",
-        ".gif" => "image/gif",
-        ".webp" => "image/webp",
-        ".bmp" => "image/bmp",
-        ".pdf" => "application/pdf",
-        ".txt" | ".log" | ".md" => "text/plain",
-        ".csv" => "text/csv",
-        ".json" => "application/json",
-        ".zip" => "application/zip",
-        ".mp4" => "video/mp4",
-        ".webm" => "video/webm",
-        ".mov" => "video/quicktime",
-        ".mp3" => "audio/mpeg",
-        ".m4a" => "audio/mp4",
-        ".wav" => "audio/wav",
-        ".ogg" => "audio/ogg",
-        _ => "application/octet-stream",
-    }
+    disnans_shared::mime::for_extension(ext.trim_start_matches('.'))
+        .unwrap_or("application/octet-stream")
 }
 
 /// 空き容量が足りないことを表す OS のエラー番号（Linux は ENOSPC、Windows は ERROR_DISK_FULL・ERROR_HANDLE_DISK_FULL）

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { commandError, createTauriChatTransport, type ChannelLike } from './tauriChat';
 import type { ChatItem, MessageDraft } from './chat';
 import { bootChatTransport } from './boot';
-import { HttpError } from './http';
+import { HttpError } from './httpError';
 
 const ctx = { server: () => 'http://127.0.0.1:8080', devUser: 'alice' };
 
