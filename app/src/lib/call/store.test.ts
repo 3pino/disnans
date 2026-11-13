@@ -165,6 +165,17 @@ class FakeServer {
 const names: Record<string, string> = { u1: 'Alice', u2: 'Bob', u3: 'Carol' };
 let server: FakeServer;
 
+/** 試験用: 通話の内部（エンジン・音の経路・ストアの順に探す）。音の経路の状態を直接見る・動かすため */
+function internals(store: CallStore): any {
+  const engine = (store as any).engine;
+  const parts: any[] = [engine.audio ?? {}, engine, store];
+  const owner = (k: string | symbol) => parts.find((p) => k in p) ?? store;
+  return new Proxy({}, {
+    get: (_t, k) => { const v = owner(k)[k]; return typeof v === "function" ? v.bind(owner(k)) : v; },
+    set: (_t, k, v) => { owner(k)[k] = v; return true; },
+  });
+}
+
 function makeClient(userId: string, opts: { device?: string; screen?: CallDeps['screen'] } = {}): Client {
   const toast = vi.fn();
   const confirm = vi.fn(async () => true);
@@ -239,7 +250,7 @@ async function connect(a: Client, b: Client) {
 
 /** 自分の声（大きい音）を送らせる。送られた audio の payload を返す */
 function speak(c: Client): { seq: number; pcm: string }[] {
-  const store = c.store as unknown as { onCapture(chunk: Float32Array): void };
+  const store = internals(c.store);
   c.store.tick(); // 相手がいれば、ここで声を取り出し始める
   const before = c.sent.length;
   store.onCapture(new Float32Array(48000 * 0.2).fill(0.3));
@@ -249,9 +260,9 @@ function speak(c: Client): { seq: number; pcm: string }[] {
     .map((e) => (e as { payload: { seq: number; pcm: string } }).payload);
 }
 
-const plays = (c: Client) => (c.store as unknown as { ctx: FakeAudioContext }).ctx.plays;
+const plays = (c: Client) => (internals(c.store).ctx as FakeAudioContext).plays;
 const gainOf = (c: Client, peer: string) =>
-  (c.store as unknown as { entries: Map<string, { relay: { gain: { gain: { value: number } } } | null }> }).entries.get(peer)!.relay!.gain.gain.value;
+  internals(c.store).entries.get(peer)!.relay!.gain.gain.value;
 
 describe('標準の画面共有と旧クライアントの互換', () => {
   it('プラグインの購読なしにデスクトップの call.event を受け、退出時にその peer だけ消す', async () => {
@@ -339,7 +350,7 @@ describe('参加と音声', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     const a = makeClient('u1');
     await a.store.join();
-    const priv = a.store as unknown as { ctx: { currentTime: number }; ensureCapture: () => void };
+    const priv = internals(a.store);
     const ctx = priv.ctx;
     priv.ensureCapture(); // 取り始める（相手がいるときと同じ）
     ctx.currentTime = 1;
@@ -356,7 +367,7 @@ describe('参加と音声', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     const a = makeClient('u1');
     await a.store.join();
-    const meter = (a.store as unknown as { localMeter: { analyser: { getByteTimeDomainData: (b: Uint8Array) => void } } }).localMeter;
+    const meter = internals(a.store).localMeter;
     meter.analyser.getByteTimeDomainData = (b: Uint8Array) => b.fill(255); // 大きい音
     a.store.tick();
     a.store.tick();
@@ -417,7 +428,7 @@ describe('参加と音声', () => {
     const a = makeClient('u1');
     const b = makeClient('u2');
     await connect(a, b);
-    const ctx = (b.store as unknown as { ctx: FakeAudioContext }).ctx;
+    const ctx = internals(b.store).ctx as FakeAudioContext;
     const hot = pcmToBase64(new Int16Array(800).fill(32767));
     const send = async (pcm = hot) => {
       server.handle(a, { type: 'call.emit', name: 'audio', payload: { pcm } });
@@ -448,7 +459,7 @@ describe('参加と音声', () => {
     const b = makeClient('u2');
     await b.store.join();
     await flush();
-    const store = a.store as unknown as { onCapture(chunk: Float32Array): void };
+    const store = internals(a.store);
     a.store.tick();
     const before = a.sent.length;
     store.onCapture(new Float32Array(48000 * 2));
@@ -482,7 +493,7 @@ describe('参加と音声', () => {
     a.store.toggleMute();
     await flush();
     const m = plays(b);
-    const store = a.store as unknown as { muted: boolean };
+    const store = internals(a.store);
     store.muted = false; // 古い音声が遅れて届いた想定
     speak(a);
     await flush();
@@ -952,13 +963,7 @@ describe('参加と音声', () => {
     const a = makeClient('u1');
     await a.store.join();
     await flush();
-    const priv = a.store as unknown as {
-      ctx: FakeAudioContext;
-      stallSince: number | null;
-      stallCtxTime: number;
-      lastRebuildAt: number;
-      joined: boolean;
-    };
+    const priv = internals(a.store);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const before = priv.ctx;
     // 時計が 3 秒以上止まっていた、と見せかける
@@ -983,7 +988,7 @@ describe('参加と音声', () => {
     const a = makeClient('u1');
     await a.store.join();
     await flush();
-    const priv = a.store as unknown as { ctx: FakeAudioContext; stallSince: number | null };
+    const priv = internals(a.store);
     const before = priv.ctx;
     priv.stallSince = performance.now() - 4000;
     before.currentTime += 1;
@@ -993,7 +998,7 @@ describe('参加と音声', () => {
 
   it('参加中は 5 秒ごとに call.alive を送る。一覧に載るまでは送らない', async () => {
     const a = makeClient('u1');
-    const priv = a.store as unknown as { aliveAt: number; listed: boolean };
+    const priv = internals(a.store);
     await a.store.join();
     await flush();
     const count = () => a.sent.filter((e) => e.type === 'call.alive').length;
@@ -1271,8 +1276,8 @@ describe('拡張 API', () => {
 });
 
 describe('音声の診断（要約・即時・マイクの状態・送受信の数）', () => {
-  const diagOf = (c: Client) => (c.store as unknown as { diag: { get(k: string): number } }).diag;
-  const micOf = (c: Client) => (c.store as unknown as { localStream: FakeStream }).localStream.getAudioTracks()[0];
+  const diagOf = (c: Client) => internals(c.store).diag as { get(k: string): number };
+  const micOf = (c: Client) => (internals(c.store).localStream as FakeStream).getAudioTracks()[0];
 
   it('相手がいなくても、5 秒ごとの要約を出す（相手の数と取り込みの有無つき）', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
