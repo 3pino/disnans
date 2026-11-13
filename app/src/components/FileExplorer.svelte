@@ -32,7 +32,7 @@
   import MenuItem from './ui/MenuItem.svelte';
   import { attachmentActionText } from '../lib/fileLink';
   import { childPath, inAttachments, nameError, overwriteConfirm, planUpload, renameAllowed, renameTarget, sameNameEntry, trashManyConfirm, ATTACHMENTS_DIR } from '../lib/sharedOps';
-  import { checkTransfer, runTransfer, transferFailure, type TransferItem, type TransferOp } from '../lib/sharedTransfer';
+  import { runTransfer, transferFailure, type TransferItem, type TransferOp } from '../lib/sharedTransfer';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import { explorerBuffer } from '../lib/stores/explorerBuffer.svelte';
   import { explorerSelection } from '../lib/stores/explorerSelection.svelte';
@@ -49,6 +49,7 @@ import { TRASH_ROOT, displayEntry, entryLabel, trashItemOf, trashPlace, virtualD
   import { viewerKind } from '../lib/viewers';
   import type { LightboxItem } from '../lib/lightbox';
   import { href, pdfSource, readUrl, thumbUrl } from '../lib/explorer/urls';
+  import { allWholeTrash, copyBlockedReason, cutBlockedReason, deleteBlockedReason, transferItemOf } from '../lib/explorer/selection';
   import PdfThumb from './PdfThumb.svelte';
   import { formatSize, formatStamp } from '../lib/format';
   import { downloadFile, interceptDownload } from '../lib/download';
@@ -577,37 +578,17 @@ import { TRASH_ROOT, displayEntry, entryLabel, trashItemOf, trashPlace, virtualD
     return [...listing.entries.values()].filter((e) => want.has(e.path));
   });
 
-  /** 操作に渡す形（移動・コピー・ゴミ箱の位置・元の名前） */
-  function transferItemOf(e: SharedEntry): TransferItem {
-    const kind = e.kind === 'dir' ? 'dir' : 'file';
-    const place = trashPlace(e);
-    if (place === 'item') return { path: e.path, kind, name: entryLabel(e), trash: { where: 'item', restoreTo: trashItemOf(e)!.original_path } };
-    if (place === 'root') return { path: e.path, kind, trash: { where: 'root' } };
-    if (place === 'inside') return { path: e.path, kind, trash: { where: 'inside' } };
-    return { path: e.path, kind };
-  }
-
   const selectedItems = $derived(selectedEntries.map(transferItemOf));
   /** 選んだものが、全部ゴミ箱の直下の項目（元へ戻す・完全削除の対象） */
-  const allWhole = $derived(selectedEntries.length > 0 && selectedEntries.every((e) => trashPlace(e) === 'item'));
+  const allWhole = $derived(allWholeTrash(selectedEntries));
 
   /** 選んだ項目に、コピーできないもの（ゴミ箱のフォルダ）があれば、その理由 */
-  const copyBlocked = $derived(selectedItems.some((i) => i.trash?.where === 'root') ? 'ゴミ箱のフォルダはコピーできません' : null);
+  const copyBlocked = $derived(copyBlockedReason(selectedItems));
 
   /** 選んだ項目に、切り取りできないもの（添付のフォルダ・ゴミ箱のフォルダや中身など）があれば、その理由。ゴミ箱の直下の項目は切り取れる（貼り付けで元の場所だけ）。 */
-  const cutBlocked = $derived(
-    selectedItems
-      .map((i) => (i.trash?.where === 'item' ? ({ ok: true } as const) : checkTransfer('move', i, parentOf(i.path))))
-      .find((c) => !c.ok)?.message ?? null,
-  );
+  const cutBlocked = $derived(cutBlockedReason(selectedItems));
   /** 選んだ項目を削除できない理由。ゴミ箱のフォルダ・中身は消せない。ゴミ箱の項目は完全削除（ふつうの項目と混ぜない） */
-  const deleteBlocked = $derived.by((): string | null => {
-    const places = selectedEntries.map(trashPlace);
-    if (places.includes('root')) return 'ゴミ箱のフォルダは消せません';
-    if (places.includes('inside')) return 'ゴミ箱の中身は消せません（項目を選んで、元へ戻すか完全に削除してください）';
-    if (places.includes('item') && places.includes('normal')) return 'ゴミ箱の項目と、ふつうの項目は一緒に消せません';
-    return selectedItems.map((i) => renameAllowed(i.path)).find((c) => !c.ok)?.message ?? null;
-  });
+  const deleteBlocked = $derived(deleteBlockedReason(selectedEntries, selectedItems));
 
   /** 選んだ項目をコピー・切り取りする（できたことは、貼り付けが押せるようになることで分かるので通知は出さない） */
   function copySelected(): void {
