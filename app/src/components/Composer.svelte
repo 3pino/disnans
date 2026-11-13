@@ -25,7 +25,7 @@
   import AttachPanel from './AttachPanel.svelte';
   import { attachPanel } from '../lib/stores/attachPanel.svelte';
   import { cameraRequest } from '../lib/stores/cameraRequest.svelte';
-  import { isAndroid } from '../lib/platform';
+  import { pasteSource } from '../lib/pasteSource';
   import { type RecentImage } from '../lib/recentImages';
   import { prepareUpload, readImageInfo, canCropImage } from '../lib/imageCrop';
   import { uploadFile } from '../lib/api';
@@ -212,7 +212,7 @@
   let cameraEl: HTMLInputElement | undefined = $state();
   let imageEl: HTMLInputElement | undefined = $state();
   function takePhoto() {
-    if (isAndroid()) cameraEl?.click();
+    if (pasteSource().android) cameraEl?.click();
     else cameraOpen = true;
   }
   $effect(() => {

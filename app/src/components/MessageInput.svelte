@@ -10,7 +10,7 @@
   import { emojiProvider } from '../lib/suggest/emoji';
   import { commandHint, slashProvider } from '../lib/suggest/slash';
   import { slashCommands } from '../lib/slashCommands.svelte';
-  import { isAndroid, isLinuxDesktop } from '../lib/platform';
+  import { pasteSource } from '../lib/pasteSource';
   import { readNativeClipboardImage } from '../lib/clipboardImage';
   import { ui } from '../lib/stores/ui.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
@@ -213,7 +213,7 @@
     // IME（とくに Android の Gboard）は変換中の文字を覚えたままなので、あとで確定したときに `:sa` が戻ってくる。
     // フォーカスを一度外すと、ブラウザが変換を今の文字のまま確定させ、IME にも入力のやり直し（restartInput）が伝わる。
     // Android は compositionstart が来ないまま変換中の範囲を作ることがあるので、いつも外す
-    if (composing || isAndroid()) {
+    if (composing || pasteSource().android) {
       picking = true;
       ta.blur();
       composing = false;
@@ -276,7 +276,7 @@
     }
     // Linux の WebKitGTK は、画像のペーストで clipboardData.files が空になることがある。
     // 文字のペーストは今まで通り（テキストが入っているときは、ネイティブのクリップボードを見ない）
-    if (onfiles && isLinuxDesktop() && (e.clipboardData?.getData('text/plain') ?? '') === '') {
+    if (onfiles && pasteSource().linuxDesktop && (e.clipboardData?.getData('text/plain') ?? '') === '') {
       void pasteNativeImage();
     }
   }

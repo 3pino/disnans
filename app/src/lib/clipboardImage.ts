@@ -1,4 +1,4 @@
-import { isAndroid, isLinuxDesktop } from './platform';
+import { pasteSource } from './pasteSource';
 import { base64ToBytes } from './recentImagesNative';
 import { invokeNative } from './nativeInvoke';
 
@@ -11,7 +11,7 @@ const WEB_IMAGE_TYPES = ['image/png', 'image/webp', 'image/jpeg', 'image/gif'];
  * 画像が無ければ null。貼り付け（MessageInput）が使う。ほかの場所からは readClipboardImage を使う。
  */
 export async function readNativeClipboardImage(): Promise<File | null> {
-  if (!isLinuxDesktop()) return null;
+  if (!pasteSource().linuxDesktop) return null;
   return readRustClipboardImage();
 }
 
@@ -23,7 +23,7 @@ export async function readNativeClipboardImage(): Promise<File | null> {
  * - デスクトップ（Windows・Linux）: Rust のクリップボード（プラグイン）。失敗は null
  */
 export async function readClipboardImage(): Promise<File | null> {
-  if (isAndroid()) {
+  if (pasteSource().android) {
     try {
       return await readAndroidClipboardImage();
     } catch {

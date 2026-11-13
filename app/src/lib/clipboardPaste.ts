@@ -1,4 +1,4 @@
-import { isAndroid } from './platform';
+import { pasteSource } from './pasteSource';
 import { invokeNative } from './nativeInvoke';
 
 // 共有フォルダへの貼り付けで使う、OS のクリップボードの文字と「何があるか」。画像は clipboardImage.ts の readClipboardImage。
@@ -10,7 +10,7 @@ export type ClipboardPeek = { text: boolean; image: boolean } | 'unknown';
 
 export async function peekClipboard(): Promise<ClipboardPeek> {
   try {
-    if (isAndroid()) {
+    if (pasteSource().android) {
       return await invokeNative<{ text: boolean; image: boolean }>('notifier', 'clipboard_peek');
     }
     const { readImage, readText } = await import('@tauri-apps/plugin-clipboard-manager');
@@ -31,7 +31,7 @@ export async function peekClipboard(): Promise<ClipboardPeek> {
 /** クリップボードの文字。無い・読めないときは null */
 export async function readClipboardText(): Promise<string | null> {
   try {
-    if (isAndroid()) {
+    if (pasteSource().android) {
       const res = await invokeNative<{ text: string } | null>('notifier', 'clipboard_text');
       return res?.text || null;
     }
