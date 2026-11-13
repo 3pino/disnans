@@ -1,5 +1,5 @@
 /**
- * 送る間隔・画質の調整・送信の重さ（純粋な関数）。examples/screenshare/main.js から移した値と式のまま。
+ * 送る間隔・画質の調整・送信の重さ（純粋な関数）。
  */
 import { SERVER_BUDGET_KBPS, type QualityPreset } from './constants';
 export { SERVER_BUDGET_KBPS, QUALITY_PRESETS, type QualityPreset } from './constants';

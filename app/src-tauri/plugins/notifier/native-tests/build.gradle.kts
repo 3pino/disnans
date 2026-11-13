@@ -26,6 +26,7 @@ kotlin {
             "NativeCallTypes.kt",
             "NativeCallProtocol.kt",
             "NativeCallWire.kt",
+            "ServerLink.kt",
             "NativeCallPcm.kt",
             "NativeCallCore.kt",
             "NativeCallRuntime.kt",

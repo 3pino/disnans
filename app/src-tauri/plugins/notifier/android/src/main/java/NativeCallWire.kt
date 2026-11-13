@@ -90,15 +90,19 @@ class NativeCallWire private constructor(
    * A new connect() silently retires the previous attempt (no terminal callback for it).
    */
   fun connect(serverUrl: String, devUser: String?) {
-    val url = NativeCallProtocol.wsUrl(serverUrl)
+    val url = try {
+      ServerLink.wsUrl(serverUrl)
+    } catch (_: IllegalArgumentException) {
+      throw NativeCallProtocolException("bad_server_url")
+    }
     val builder = try {
       Request.Builder().url(url)
     } catch (_: IllegalArgumentException) {
       throw NativeCallProtocolException("bad_server_url")
     }
     if (devUser != null) {
-      if (devUser.isBlank() || !devUser.all { it.code in 0x20..0x7e }) throw NativeCallProtocolException("bad_dev_user")
-      builder.header(DEV_USER_HEADER, devUser)
+      if (!ServerLink.validDevUser(devUser)) throw NativeCallProtocolException("bad_dev_user")
+      builder.header(ServerLink.DEV_USER_HEADER, devUser)
     }
     val request = builder.build()
 
@@ -248,7 +252,7 @@ class NativeCallWire private constructor(
   }
 
   companion object {
-    const val DEV_USER_HEADER = "X-Dev-User"
+    const val DEV_USER_HEADER = ServerLink.DEV_USER_HEADER
 
     /** Audio is dropped when the projected queued bytes would exceed this (about 14 frames; roughly 0.7 s). */
     const val AUDIO_QUEUE_LIMIT_BYTES: Long = 32L * 1024L

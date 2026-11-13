@@ -17,13 +17,11 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 /**
  * 通知用の常駐サービス。WebView とは別にサーバーの WebSocket につなぎ、`notify` を受け取ったら
@@ -97,11 +95,8 @@ class NotifyService : Service() {
   }
 
   private val handler = Handler(Looper.getMainLooper())
-  private val client = OkHttpClient.Builder()
-    // 途中の経路で切れたことに気づけるよう、定期的に ping を送る
-    .pingInterval(30, TimeUnit.SECONDS)
-    .readTimeout(0, TimeUnit.MILLISECONDS)
-    .build()
+  // 途中の経路で切れたことに気づけるよう、定期的に ping を送る（読み取りの時間切れは無し）
+  private val client = ServerLink.socketClient(pingSeconds = 30, readTimeoutMs = 0L)
   /** 既読の位置を読む（普通の HTTP。WebSocket と違って時間で切る） */
   private val readClient = newReadMarkerClient()
   private var socket: WebSocket? = null
@@ -169,11 +164,7 @@ class NotifyService : Service() {
 
   private fun startInForeground() {
     val n = ongoingNotification()
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-      startForeground(ONGOING_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
-    } else {
-      startForeground(ONGOING_ID, n)
-    }
+    ForegroundSupport.startForeground(this, ONGOING_ID, n, Build.VERSION_CODES.UPSIDE_DOWN_CAKE, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
   }
 
   private fun ongoingNotification(): Notification =
@@ -245,15 +236,14 @@ class NotifyService : Service() {
     socket?.cancel()
     // 新しい接続の世代。前の接続の受信・既読の結果は、この世代では使わない
     val gen = owner.beginConnection()
-    val url = base.replaceFirst(Regex("^http", RegexOption.IGNORE_CASE), "ws") + "/api/ws"
     val request = try {
-      Request.Builder().url(url).build()
+      Request.Builder().url(ServerLink.wsUrl(base)).build()
     } catch (ex: IllegalArgumentException) {
       DiagLog.w("[notify] サーバーの URL が不正です: $base", ex)
       stopSelf()
       return
     }
-    DiagLog.i("[notify] つなぎます: $url")
+    DiagLog.i("[notify] つなぎます: ${request.url}")
     socket = client.newWebSocket(request, Listener(gen, base))
   }
 

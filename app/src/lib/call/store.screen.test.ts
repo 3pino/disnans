@@ -25,12 +25,12 @@ function videoStream() {
   return { track, stream: { getTracks: () => [track], getVideoTracks: () => [track] } as unknown as MediaStream };
 }
 
-function make() {
+function make(over: Partial<Pick<ScreenCapturePort, 'supported' | 'supportsCallRelay'>> = {}) {
   const port = new FakeNativePort();
   const captureGate = { current: null as ReturnType<typeof deferred<void>> | null };
   let options: ScreenCaptureOptions | null = null;
   const capture: ScreenCapturePort = {
-    supported: true, supportsCallRelay: true,
+    supported: true, supportsCallRelay: true, ...over,
     start: vi.fn(async (opts) => { options = opts; if (captureGate.current) await captureGate.current.promise; }),
     stop: vi.fn(async () => {}), update: vi.fn(async () => {}),
     snapshot: vi.fn(async () => ({ dataUrl: 'data:image/jpeg;base64,QUJD', width: 2, height: 2, source: 'app' as const })),
@@ -154,8 +154,7 @@ describe('標準の共有は CallStore が直接所有する', () => {
   });
 
   it('Windows の選択待ちに退出したら、遅い画面のハンドルを解放する', async () => {
-    const h = make(); await joined(h);
-    Object.assign(h.capture, { supported: false, supportsCallRelay: false });
+    const h = make({ supported: false, supportsCallRelay: false }); await joined(h);
     const gate = deferred<MediaStream>(); const fresh = videoStream();
     const getDisplayMedia = vi.fn(() => gate.promise);
     vi.stubGlobal('navigator', { userAgent: 'fake', mediaDevices: { getDisplayMedia } });
@@ -183,7 +182,7 @@ describe('標準の共有は CallStore が直接所有する', () => {
   });
 
   it('カメラ切替失敗では元の映像を保ち、古い track 終了は新しい共有へ作用しない', async () => {
-    const h = make(); await joined(h);
+    const h = make({ supported: false, supportsCallRelay: false }); await joined(h);
     const camera = videoStream(); const display = videoStream();
     const getUserMedia = vi.fn().mockResolvedValueOnce(camera.stream).mockRejectedValueOnce(new Error('synthetic'));
     vi.stubGlobal('navigator', { userAgent: 'fake', mediaDevices: { getUserMedia,
@@ -193,7 +192,6 @@ describe('標準の共有は CallStore が直接所有する', () => {
     await h.store.screen!.switchCamera();
     expect(h.store.screen!.localStream).toBe(camera.stream);
     expect(camera.track.stop).not.toHaveBeenCalled();
-    Object.assign(h.capture, { supported: false, supportsCallRelay: false });
     await h.store.screen!.toggleScreen(); camera.track.dispatchEvent(new Event('ended'));
     expect(h.store.screen!.sharing).toBe(true);
     expect(h.store.screen!.localStream).toBe(display.stream);

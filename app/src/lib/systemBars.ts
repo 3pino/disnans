@@ -1,4 +1,5 @@
 import { isAndroid, isTauri } from './platform';
+import { invokeNative } from './nativeInvoke';
 
 let last: boolean | null = null;
 
@@ -47,7 +48,6 @@ export async function setImmersive(on: boolean): Promise<boolean> {
  */
 export async function setScreenOrientation(mode: 'portrait' | 'user'): Promise<boolean> {
   if (!isTauri() || !isAndroid()) return false;
-  const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('plugin:notifier|set_orientation', { mode });
+  await invokeNative('notifier', 'set_orientation', { mode });
   return true;
 }

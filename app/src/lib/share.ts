@@ -1,4 +1,5 @@
 import { isAndroid, isTauri } from './platform';
+import { invokeNative } from './nativeInvoke';
 import { shareInbox } from './stores/shareInbox.svelte';
 import { ui } from './stores/ui.svelte';
 
@@ -41,9 +42,9 @@ export async function startShareReceiver(): Promise<void> {
   if (started || !isTauri() || !isAndroid()) return;
   started = true;
   try {
-    const { addPluginListener, invoke } = await import('@tauri-apps/api/core');
+    const { addPluginListener } = await import('@tauri-apps/api/core');
     await addPluginListener<Share>('notifier', 'share', (s) => void receive(s));
-    const { shares } = await invoke<{ shares?: Share[] }>('plugin:notifier|take_shared');
+    const { shares } = await invokeNative<{ shares?: Share[] }>('notifier', 'take_shared');
     for (const s of shares ?? []) await receive(s);
   } catch (e) {
     started = false;

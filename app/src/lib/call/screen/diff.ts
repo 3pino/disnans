@@ -1,5 +1,5 @@
 /**
- * 画面が変わったかの判定（純粋な関数）。examples/screenshare/main.js から移した式と閾値のまま。
+ * 画面が変わったかの判定（純粋な関数）。
  */
 import { KEEPALIVE_FRAME_MS } from './pacing';
 

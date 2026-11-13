@@ -9,7 +9,6 @@ import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
 import java.io.InterruptedIOException
-import java.util.concurrent.TimeUnit
 
 /**
  * 既読の位置の同期（常駐サービス）。通知の取り下げと、既読の通知を出さないことの元になる。
@@ -64,11 +63,7 @@ internal fun readMarkerFrom(status: Int, body: String?): ReadFetch {
 }
 
 /** 既読の位置を読むための HTTP の口。接続・読み取りの各段と、1 回の全体の上限（15 秒）で切る */
-internal fun newReadMarkerClient(): OkHttpClient = OkHttpClient.Builder()
-  .connectTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-  .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-  .callTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-  .build()
+internal fun newReadMarkerClient(): OkHttpClient = ServerLink.httpClient(READ_TIMEOUT_SECONDS)
 
 internal const val READ_TIMEOUT_SECONDS = 15L
 

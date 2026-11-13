@@ -1,8 +1,6 @@
 package dev.disnans.notifier
 
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -33,7 +31,7 @@ data class CallButton(val id: String, val title: String, val dismiss: Boolean)
 
 class CallService : Service() {
   companion object {
-    private const val CHANNEL_CALL = "call"
+    private const val CHANNEL_CALL = ForegroundSupport.CALL_CHANNEL
     private const val ONGOING_ID = 2
     private const val EXTRA_TITLE = "title"
     private const val EXTRA_TEXT = "text"
@@ -91,8 +89,7 @@ class CallService : Service() {
 
   private fun holdWakeLock() {
     if (wakeLock != null) return
-    val lock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "disnans:call")
-    lock.setReferenceCounted(false)
+    val lock = ForegroundSupport.newPartialWakeLock(getSystemService(PowerManager::class.java), "disnans:call")
     lock.acquire(WAKE_LOCK_MAX_MS)
     wakeLock = lock
   }
@@ -116,17 +113,13 @@ class CallService : Service() {
     val title = intent?.getStringExtra(EXTRA_TITLE).orEmpty().ifEmpty { "通話" }
     val text = intent?.getStringExtra(EXTRA_TEXT).orEmpty()
     val microphone = intent?.getBooleanExtra(EXTRA_MICROPHONE, true) ?: true
-    createChannel(this)
+    ForegroundSupport.createCallChannel(this)
     val list = parseButtons(intent?.getStringExtra(EXTRA_ACTIONS))
     buttons = list
     val n = notification(title, text, list)
     try {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        val type = if (microphone) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING
-        startForeground(ONGOING_ID, n, type)
-      } else {
-        startForeground(ONGOING_ID, n)
-      }
+      val type = if (microphone) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING
+      ForegroundSupport.startForeground(this, ONGOING_ID, n, Build.VERSION_CODES.Q, type)
     } catch (e: Exception) {
       // 前景にできなかった（マイクの許可の失効・開始できない条件など）。ここで落とすとアプリごと止まるので、記録して常駐なしで続ける
       DiagLog.w("[call] 前景サービスを始められませんでした", e)
@@ -220,15 +213,5 @@ class CallService : Service() {
       builder.addAction(0, a.title, api)
     }
     return builder.build()
-  }
-
-  private fun createChannel(context: Context) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-    context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-      NotificationChannel(CHANNEL_CALL, "通話", NotificationManager.IMPORTANCE_LOW).apply {
-        description = "通話中であることを示す"
-        setShowBadge(false)
-      }
-    )
   }
 }

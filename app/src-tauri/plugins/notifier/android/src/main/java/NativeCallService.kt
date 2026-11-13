@@ -1,7 +1,6 @@
 package dev.disnans.notifier
 
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -30,7 +29,7 @@ import androidx.core.content.ContextCompat
 class NativeCallService : Service() {
   companion object {
     const val NOTIFICATION_ID = 3
-    private const val CHANNEL = "call"
+    private const val CHANNEL = ForegroundSupport.CALL_CHANNEL
     private const val TAG_LOCK = "disnans:nativecall"
     private const val EXTRA_SESSION = "session"
     private const val SCHEME = "disnans-native-call"
@@ -119,7 +118,7 @@ class NativeCallService : Service() {
     /** 前景の通知の中身（古い開始の命令のとき、通話の通知を壊さずに前景を満たすため） */
     internal fun currentOrPlaceholder(context: Context): Notification {
       liveNotification?.let { return it }
-      createChannel(context)
+      ForegroundSupport.createCallChannel(context)
       return NotificationCompat.Builder(context, CHANNEL)
         .setSmallIcon(R.drawable.disnans_notification)
         .setContentTitle("通話")
@@ -140,7 +139,7 @@ class NativeCallService : Service() {
     }
 
     private fun build(context: Context, s: NativeCallSnapshot, session: String): Notification {
-      createChannel(context)
+      ForegroundSupport.createCallChannel(context)
       val open = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
       } ?: Intent()
@@ -166,15 +165,6 @@ class NativeCallService : Service() {
       return builder.build()
     }
 
-    private fun createChannel(context: Context) {
-      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-      context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-        NotificationChannel(CHANNEL, "通話", NotificationManager.IMPORTANCE_LOW).apply {
-          description = "通話中であることを示す"
-          setShowBadge(false)
-        },
-      )
-    }
   }
 
   private var wakeLock: PowerManager.WakeLock? = null
@@ -285,11 +275,7 @@ class NativeCallService : Service() {
       linkUp = false, listed = false, bufferedBytes = 0L, error = null,
     ), session)
     val ok = try {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-      } else {
-        startForeground(NOTIFICATION_ID, n)
-      }
+      ForegroundSupport.startForeground(this, NOTIFICATION_ID, n, Build.VERSION_CODES.R, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
       true
     } catch (e: Exception) {
       DiagLog.w("[native-call] 前景にできませんでした（${e.javaClass.simpleName}）")
@@ -315,7 +301,7 @@ class NativeCallService : Service() {
       null
     } ?: return diagWake("電源の管理を取得できませんでした")
     val lock = try {
-      pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG_LOCK).apply { setReferenceCounted(false) }
+      ForegroundSupport.newPartialWakeLock(pm, TAG_LOCK)
     } catch (_: Exception) {
       return diagWake("起動の保持を作れませんでした")
     }

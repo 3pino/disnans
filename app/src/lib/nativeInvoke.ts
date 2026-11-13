@@ -6,5 +6,7 @@ export type NativePlugin = 'notifier' | 'screen';
 
 export async function invokeNative<T = void>(plugin: NativePlugin, cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<T>(`plugin:${plugin}|${cmd}`, args);
+  const name = `plugin:${plugin}|${cmd}`;
+  // 引数の無い呼び出しは、引数を渡さない形のまま（呼び出しの形を変えない）
+  return args === undefined ? invoke<T>(name) : invoke<T>(name, args);
 }

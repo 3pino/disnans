@@ -37,7 +37,7 @@ export const READ_TIMEOUT_MS = 15_000;
 /** 読み取り用（時間で打ち切る）。書込には付けない（送信の結果が分からなくなるため） */
 export const READ: RequestOptions = { timeoutMs: READ_TIMEOUT_MS };
 
-export type RequestOptions = { timeoutMs?: number };
+type RequestOptions = { timeoutMs?: number };
 
 /**
  * 通信をひとまとめに行う。timeoutMs があれば、応答の本文まで含めてその時間で打ち切る。

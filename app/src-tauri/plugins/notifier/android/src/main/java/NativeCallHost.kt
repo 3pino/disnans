@@ -39,10 +39,7 @@ object NativeCallHost {
     Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "disnans-native-timers").apply { isDaemon = true } }
   }
   private val client: OkHttpClient by lazy {
-    OkHttpClient.Builder()
-      .connectTimeout(10, TimeUnit.SECONDS)
-      .pingInterval(20, TimeUnit.SECONDS)
-      .build()
+    ServerLink.socketClient(pingSeconds = 20, connectTimeoutSeconds = 10)
   }
 
   private var runtime: NativeCallRuntime? = null

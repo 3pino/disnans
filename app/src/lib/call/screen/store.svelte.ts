@@ -1,11 +1,9 @@
 import { LOCAL_VIEW } from './types';
 import type { ScreenFrame, ScreenSettingsPort, ScreenSettingsValue, ScreenShareDeps, ScreenSource } from './types';
-import { ScreenReceiver, SCREEN_FRAME, SCREEN_QUERY, SCREEN_STATE } from './receiver.svelte';
+import { ScreenReceiver, SCREEN_QUERY, SCREEN_STATE } from './receiver.svelte';
 import { ScreenSender } from './sender';
-import { QUALITY_PRESETS } from './codec';
-import { DIFF_THRESHOLD } from './diff';
-import { KEEPALIVE_FRAME_MS } from './pacing';
-import { captureFailure, isCaptureCancelled, oppositeCamera, pickVideo, stopTracks, switchableCamera } from './webCapture';
+import { oppositeCamera, stopTracks, switchableCamera } from './webCapture';
+import { selectScreenSource, WebScreenSource, type ScreenSourcePort } from './source';
 
 /** 本体の通話が持つ共有。参加／退出の判断を別のプラグインへ複製しない。 */
 export class ScreenShareStore {
@@ -22,8 +20,9 @@ export class ScreenShareStore {
   private readonly receiver: ScreenReceiver;
   private readonly now: () => number;
   private sender: ScreenSender | null = null;
-  private backend: 'native' | 'web' | null = null;
-  private nativeRelay = false;
+  private readonly screenSource: ScreenSourcePort;
+  private readonly webSource: ScreenSourcePort;
+  private run: ScreenSourcePort | null = null;
   private epoch = 0;
   private disposed = false;
   private peer = '';
@@ -36,6 +35,8 @@ export class ScreenShareStore {
   private runSettings: ScreenSettingsValue;
 
   constructor(private deps: ScreenShareDeps) {
+    this.screenSource = selectScreenSource(deps.capture);
+    this.webSource = this.screenSource instanceof WebScreenSource ? this.screenSource : new WebScreenSource();
     this.settings = deps.settings;
     this.runSettings = { ...deps.settings.value };
     this.now = deps.now ?? Date.now;
@@ -43,8 +44,10 @@ export class ScreenShareStore {
   }
 
   get sharers() { return this.receiver.sharers; }
-  get canScreen(): boolean { return this.deps.capture.supported || typeof globalThis.navigator?.mediaDevices?.getDisplayMedia === 'function'; }
-  get canCamera(): boolean { return typeof globalThis.navigator?.mediaDevices?.getUserMedia === 'function'; }
+  get canScreen(): boolean { return this.screenSource.canStart('screen'); }
+  get canCamera(): boolean { return this.webSource.canStart('camera'); }
+  private sourceFor(source: ScreenSource): ScreenSourcePort { return source === 'camera' ? this.webSource : this.screenSource; }
+  private get nativeRelay(): boolean { return this.run?.relay === true; }
 
   toggleScreen(): Promise<void> { return this.toggle('screen'); }
   toggleCamera(): Promise<void> { return this.toggle('camera'); }
@@ -53,19 +56,20 @@ export class ScreenShareStore {
     if (this.disposed) return;
     if (this.starting || (this.sharing && this.source === source)) { this.stop(); return; }
     if (!this.deps.call.joined || !this.deps.call.listed) { this.deps.toast('通話に参加していません', 'error'); return; }
-    if (!(source === 'screen' ? this.canScreen : this.canCamera)) { this.deps.toast(source === 'screen' ? 'この環境では画面を共有できません（見ることはできます）' : 'この環境ではカメラを共有できません', 'error'); return; }
+    const from = this.sourceFor(source);
+    if (!from.canStart(source)) { this.deps.toast(source === 'screen' ? 'この環境では画面を共有できません（見ることはできます）' : 'この環境ではカメラを共有できません', 'error'); return; }
     this.stop();
     const epoch = ++this.epoch;
     this.source = source;
     this.starting = true;
     this.runSettings = { ...this.settings.value };
     try {
-      if (source === 'screen' && this.deps.capture.supported) await this.startNative(epoch);
-      else await this.startWeb(epoch, source);
+      await this.begin(epoch, source, from);
     } catch (error) {
       if (this.current(epoch)) {
         this.stop();
-        if (!(source === 'screen' && isCaptureCancelled(error))) this.deps.toast(captureFailure(source, error), 'error');
+        const failure = from.failure(source, error);
+        if (!failure.silent) this.deps.toast(failure.message, 'error');
       }
     } finally {
       if (this.current(epoch)) this.starting = false;
@@ -86,56 +90,42 @@ export class ScreenShareStore {
         this.deps.toast('映像を取り込めません。共有を止めて、もう一度お試しください', 'error');
       },
       onTune: (value) => {
-        if (this.current(epoch) && this.backend === 'native' && !this.nativeRelay) {
-          void this.deps.capture.update(value).catch(() => {});
-        }
+        if (this.current(epoch)) this.run?.tune(value);
       },
     });
   }
 
-  private async startNative(epoch: number): Promise<void> {
-    const preset = QUALITY_PRESETS[this.runSettings.quality];
-    this.backend = 'native'; // 許可待ちの stop も、取得番号を持つ橋へ届く
-    this.nativeRelay = this.deps.capture.supportsCallRelay === true;
-    await this.deps.capture.start({
-      maxEdge: preset.maxEdge, quality: preset.quality, fps: this.runSettings.fps,
-      format: 'jpeg', color: this.runSettings.color, diffThreshold: DIFF_THRESHOLD, keepaliveMs: KEEPALIVE_FRAME_MS,
-      ...(this.nativeRelay ? { callRelay: { frameEvent: SCREEN_FRAME, stateEvent: SCREEN_STATE, queryEvent: SCREEN_QUERY, state: { source: 'screen' } } } : {}),
+  private async begin(epoch: number, source: ScreenSource, from: ScreenSourcePort): Promise<void> {
+    this.run = from; // 許可待ちの stop も、取得番号を持つ橋へ届く
+    const acquired = await from.start(source, this.runSettings, {
+      onFrame: (frame) => {
+        if (!this.current(epoch)) return;
+        this.localFrame = frame;
+        if (this.sharing && !from.relay) this.sender?.offerNative(frame);
+      },
       onEnd: () => { if (this.current(epoch)) this.stop(); },
-    }, (frame) => {
-      if (!this.current(epoch)) return;
-      this.localFrame = frame;
-      if (this.sharing && !this.nativeRelay) this.sender?.offerNative(frame);
     });
     // 遅い完了は橋が取得番号で破棄する。ここから stop() を呼ぶと新しい取得を止めるので触らない。
-    if (!this.current(epoch)) return;
-    if (!this.nativeRelay) {
+    if (!this.current(epoch)) { acquired.discard(); return; }
+    const stream = acquired.stream;
+    if (stream) {
+      const sender = this.makeSender(epoch);
+      try { sender.startWeb(stream); }
+      catch (error) { sender.stop(); acquired.discard(); throw error; }
+      this.sender = sender;
+      this.localStream = stream;
+    } else if (!from.relay) {
       this.sender = this.makeSender(epoch);
       this.sender.startNative();
     }
     this.sharing = true;
     this.starting = false;
     this.lastHeartbeat = this.now();
+    if (stream) this.trackEnd(stream, epoch);
     this.sendState(true);
-    if (this.localFrame && !this.nativeRelay) this.sender?.offerNative(this.localFrame);
-  }
-
-  private async startWeb(epoch: number, source: ScreenSource): Promise<void> {
-    const stream = await pickVideo(source, this.runSettings.fps);
-    if (!this.current(epoch)) { stopTracks(stream); return; }
-    const sender = this.makeSender(epoch);
-    try { sender.startWeb(stream); }
-    catch (error) { sender.stop(); stopTracks(stream); throw error; }
-    this.sender = sender;
-    this.backend = 'web';
-    this.nativeRelay = false;
-    this.localStream = stream;
-    this.sharing = true;
-    this.starting = false;
-    this.lastHeartbeat = this.now();
-    this.trackEnd(stream, epoch);
-    this.sendState(true);
-    if (source === 'camera') void switchableCamera().then((ok) => { if (this.current(epoch) && this.localStream === stream) this.canSwitchCamera = ok; });
+    if (stream) {
+      if (source === 'camera') void switchableCamera().then((ok) => { if (this.current(epoch) && this.localStream === stream) this.canSwitchCamera = ok; });
+    } else if (this.localFrame && !from.relay) this.sender?.offerNative(this.localFrame);
   }
 
   private trackEnd(stream: MediaStream, epoch: number): void {
@@ -168,7 +158,6 @@ export class ScreenShareStore {
 
   stop(): void {
     const wasActive = this.sharing;
-    const native = this.backend === 'native';
     ++this.epoch;
     this.starting = false;
     this.sharing = false;
@@ -182,9 +171,9 @@ export class ScreenShareStore {
     // 自分の映像を全画面で見ていたなら、共有が止まった時点で閉じる（ほかの人の映像へ勝手に切り替えない）
     if (this.selectedPeer === LOCAL_VIEW) { this.closeViewer(); this.selectedPeer = null; }
     if (wasActive) this.sendState(false); // ネイティブ所有なら off もネイティブだけが送る
-    this.backend = null;
-    this.nativeRelay = false;
-    if (native) void this.deps.capture.stop().catch(() => this.deps.toast('画面の取得を止められませんでした', 'error'));
+    const run = this.run;
+    this.run = null;
+    if (run) void run.stop().catch(() => this.deps.toast('画面の取得を止められませんでした', 'error'));
   }
 
   private send(name: string, payload: unknown): void {

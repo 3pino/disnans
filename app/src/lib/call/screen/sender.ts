@@ -2,7 +2,6 @@
  * 画面（web の取り込み・ネイティブのフレーム）を、通話へ分割して送る（送り手）。
  * 状態（screen.state）・問い合わせ（screen.query）は送らない（エンジンが送る）。
  * 通話の対象の判定・停止の権限は持たない。ストリームのトラックも止めない（エンジンが持つ）。
- * examples/screenshare/main.js の送り手の部分を移したもの（式と定数は同じ）。
  */
 import type { ScreenCallPort, ScreenFrame, ScreenSettingsPort } from './types';
 import { encodeFrame, fitSize } from './codec';

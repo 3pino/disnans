@@ -1,5 +1,6 @@
 import { isAndroid, isLinuxDesktop } from './platform';
 import { base64ToBytes } from './recentImagesNative';
+import { invokeNative } from './nativeInvoke';
 
 /** Web の Clipboard API で読む画像の形式（この順で探す） */
 const WEB_IMAGE_TYPES = ['image/png', 'image/webp', 'image/jpeg', 'image/gif'];
@@ -34,8 +35,7 @@ export async function readClipboardImage(): Promise<File | null> {
 
 /** Android のクリップボードの画像（notifier の clipboard_image → {name, mime, data}、無ければ null） */
 async function readAndroidClipboardImage(): Promise<File | null> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  const res = await invoke<{ name: string; mime: string; data: string } | null>('plugin:notifier|clipboard_image');
+  const res = await invokeNative<{ name: string; mime: string; data: string } | null>('notifier', 'clipboard_image');
   if (!res) return null;
   return new File([base64ToBytes(res.data)], res.name || `clipboard-${Date.now()}`, { type: res.mime, lastModified: Date.now() });
 }

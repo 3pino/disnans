@@ -1,5 +1,5 @@
 /**
- * 画面共有の分割フレーム（JS の送り手・受け手の共通）。examples/screenshare/main.js から移した純粋な関数。
+ * 画面共有の分割フレーム（JS の送り手・受け手の共通）。
  * Android のネイティブ送信（8 KiB）とは別の大きさを、呼び出し側が chunkChars で渡す。
  */
 export const CHUNK_CHARS = 40 * 1024;

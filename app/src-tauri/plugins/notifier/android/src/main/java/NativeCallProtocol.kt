@@ -324,9 +324,11 @@ object NativeCallProtocol {
 
   /** The wss/ws URL for `/api/ws`, same rule as the notifier's socket. Throws for non-http(s) input. */
   fun wsUrl(serverUrl: String): String {
-    val lower = serverUrl.lowercase()
-    if (!(lower.startsWith("http://") || lower.startsWith("https://"))) throw NativeCallProtocolException("bad_server_url")
-    return serverUrl.replaceFirst(Regex("^http", RegexOption.IGNORE_CASE), "ws").trimEnd('/') + "/api/ws"
+    try {
+      return ServerLink.wsUrl(serverUrl)
+    } catch (_: IllegalArgumentException) {
+      throw NativeCallProtocolException("bad_server_url")
+    }
   }
 
   // ---- internals ----

@@ -2,6 +2,7 @@
 // WebView の navigator.vibrate は、押している最中は user activation が無く拒否されることがあるため。
 // それ以外は navigator.vibrate（対応していない環境では何もしない）。ネイティブの呼び出しが失敗しても握りつぶす
 import { isAndroid, isTauri } from './platform';
+import { invokeNative } from './nativeInvoke';
 import { deviceSettings } from './stores/deviceSettings.svelte';
 import { onForeground } from './foreground';
 
@@ -19,9 +20,8 @@ export function startHapticsPreferences(): () => void {
     const mine = ++generation;
     queue = queue.then(async () => {
       if (disposed || mine !== generation) return;
-      const { invoke } = await import('@tauri-apps/api/core');
       if (disposed || mine !== generation) return;
-      await invoke(SET_HAPTICS_COMMAND, { enabled: deviceSettings.hapticsEnabled });
+      await invokeNative('notifier', 'set_haptics_enabled', { enabled: deviceSettings.hapticsEnabled });
     }).catch(() => {
       // 設定変更・前面復帰で再同期する。通知の設定は触らない。
       console.warn('[haptics] preference_sync_failed');
@@ -53,9 +53,9 @@ export function vibrate(ms: number): void {
 
 async function nativeVibrate(ms: number): Promise<void> {
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
     // import を待つ間にオフにした場合も、遅れて振動させない。
-    if (deviceSettings.hapticsEnabled) await invoke(VIBRATE_COMMAND, { ms });
+    await import('@tauri-apps/api/core');
+    if (deviceSettings.hapticsEnabled) await invokeNative('notifier', 'vibrate', { ms });
   } catch {
     // ネイティブの振動が使えない（コマンドが無い・失敗）ときは、振動しないだけ
   }
