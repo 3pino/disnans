@@ -38,7 +38,7 @@ const { ui } = disnans;
 アイコンを受け取るところ（`ui.icon`、`ui.button` の `icon`、`ComposerAction.icon`、`SlashCommand.icon`、`View.icon` など）は、
 どこでも**アイコンの名前**（文字列）で指定します。名前は次の順に探します。
 
-1. 本体の独自のアイコン: `disnans-logo`（アプリのロゴ。Lucide のアイコンと並べて使えるように作ってあります）
+1. 本体の独自のアイコン: `disnans-logo`（アプリのロゴ）
 2. `addIcon` で登録したアイコン（どのプラグインが登録したものでも）
 3. [Lucide](https://lucide.dev/icons) のアイコン（サイトに出ている名前。例: `dice-5`, `message-circle`, `settings`）
 

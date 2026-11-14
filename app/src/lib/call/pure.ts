@@ -178,40 +178,9 @@ export function updateSpeaking(state: { lastLoud: number; speaking: boolean }, l
   return changed;
 }
 
-/** 実験用の切り替え（localStorage 'disnans.micRaw' === '1'）。ふだんは false（処理を通す） */
-export function micRawFlag(value: string | null): boolean {
-  return value === '1';
-}
-
-/** 実験用の keep-alive の切り替え（localStorage 'disnans.noKeepAlive' === '1' で止める）。ふだんは動かす */
-export function noKeepAliveFlag(value: string | null): boolean {
-  return value === '1';
-}
-
-/**
- * keep-alive の振幅（localStorage 'disnans.keepAliveLevel' の dBFS で上書き）。
- * 値が数でない・範囲外（-120〜-30 dBFS）なら既定の fallbackDb を使う。
- */
-export function keepAliveGain(value: string | null, fallbackDb: number): number {
-  const n = value === null || value.trim() === '' ? NaN : Number(value);
-  const db = Number.isFinite(n) && n >= -120 && n <= -30 ? n : fallbackDb;
-  return dbToLinear(db);
-}
-
-/** AudioContext の周波数の上書き（localStorage 'disnans.ctxRate'）。数値で範囲外・不正は null（既定を使う） */
-export function ctxRateFlag(value: string | null): number | null {
-  if (value === null || !/^\d+$/.test(value.trim())) return null;
-  const n = Number(value);
-  return n >= 8000 && n <= 192000 ? n : null;
-}
-
-/**
- * マイクを開くときの要求。raw は、エコー消去・雑音抑制・自動音量を切る（処理の遅れを減らせるかの実験）。
- * sampleRate や latency は要求しない（ブラウザーの既定のまま）
- */
-export function micConstraints(raw: boolean): { echoCancellation: boolean; noiseSuppression: boolean; autoGainControl: boolean } {
-  const on = !raw;
-  return { echoCancellation: on, noiseSuppression: on, autoGainControl: on };
+/** マイクを開くときの要求。エコー消去・雑音抑制・自動音量はいつも入れる（sampleRate や latency は要求しない） */
+export function micConstraints(): { echoCancellation: boolean; noiseSuppression: boolean; autoGainControl: boolean } {
+  return { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 }
 
 /** 時間領域のバイト列（128 が無音）から RMS を出す */

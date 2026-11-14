@@ -6,6 +6,7 @@
 
 import { isAndroid, isTauri, userAgentForLog } from './platform';
 import { invokeNative } from './nativeInvoke';
+import { getItem, setItemOrThrow } from './storage';
 
 const STORAGE_KEY = 'disnans.diagLog';
 const MAX_LINES = 3000;
@@ -43,7 +44,7 @@ function stamp(d = new Date()): string {
 
 function load(): string[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = getItem(STORAGE_KEY);
     return raw ? raw.split('\n').filter((l) => l !== '') : [];
   } catch {
     return [];
@@ -61,12 +62,12 @@ export function flushDiagLog(): void {
   saveTimer = null;
   if (native()) return;
   try {
-    localStorage.setItem(STORAGE_KEY, lines.join('\n'));
+    setItemOrThrow(STORAGE_KEY, lines.join('\n'));
   } catch {
     // 容量が足りないときは、古い半分を捨ててもう一度だけ試す
     lines = lines.slice(Math.floor(lines.length / 2));
     try {
-      localStorage.setItem(STORAGE_KEY, lines.join('\n'));
+      setItemOrThrow(STORAGE_KEY, lines.join('\n'));
     } catch {
       // 残せなくても本体の動作は続ける
     }

@@ -56,6 +56,8 @@ pub enum Kind {
     AudioOutput,
     /// 画面共有の設定（`{fps, quality, color}`）。null は「未設定」。オブジェクトなら、外れた項目だけ既定に直す
     ScreenShare,
+    /// フォルダごとの表示（`{ パス: {view, sortKey, sortOrder} }`）。件数と大きさに上限がある（`explorer_dirs`）
+    ExplorerDirs,
 }
 
 /// 既定値
@@ -283,6 +285,12 @@ pub const DEFINITIONS: &[Def] = &[
         kind: Kind::ScreenShare,
         default: DefaultValue::Null,
     },
+    Def {
+        key: "explorerDirs",
+        scope: Scope::Device,
+        kind: Kind::ExplorerDirs,
+        default: DefaultValue::EmptyObject,
+    },
     // ---- このデバイスだけ（サーバーに送らない。キーは移行の目印として一覧に置く）----
     Def {
         key: "server",
@@ -363,6 +371,7 @@ pub fn normalize_value(def: &Def, value: Option<&Value>) -> Value {
         (Kind::NavLabels, Some(v)) => nav_labels(v),
         (Kind::AudioOutput, Some(v)) => audio_output(v),
         (Kind::ScreenShare, Some(v)) => screen_share(v),
+        (Kind::ExplorerDirs, Some(v)) => explorer_dirs(v),
         (_, None) => fallback(),
         _ => fallback(),
     }
@@ -413,6 +422,65 @@ fn screen_share(raw: &Value) -> Value {
         _ => "full",
     };
     serde_json::json!({"fps": fps, "quality": quality, "color": color})
+}
+
+/// フォルダごとの表示の件数の上限と、JSON（コンパクトな書き方）の大きさの上限
+const EXPLORER_DIRS_MAX_ENTRIES: usize = 200;
+const EXPLORER_DIRS_MAX_BYTES: usize = 24 * 1024;
+
+/// フォルダごとの表示。オブジェクトでなければ空。各項目は、オブジェクトでなければ捨てる。
+/// 中の値は 1 つずつ直す（外れたものは既定: details・name・asc。旧い `list` は `details`）。
+/// 件数（200）を超えたら、キーの順（JSON オブジェクトの並び。下の注意）で後ろから捨てる。
+/// 大きさ（コンパクトな JSON で 24 KiB）を超えたら、同じく後ろから捨てる（先頭の並びをそのまま残す）。
+/// 注意: このクレートの serde_json は `preserve_order` を使わないので、オブジェクトの並びは
+/// 挿入順ではなくキーの昇順（BTreeMap）。だから「古いものから捨てる」ではなく「キーの昇順で後ろから捨てる」になる。
+fn explorer_dirs(raw: &Value) -> Value {
+    let Value::Object(map) = raw else {
+        return Value::Object(Map::new());
+    };
+    let mut out = Map::new();
+    let mut bytes = 2usize; // "{}"
+    for (dir, entry) in map {
+        if out.len() >= EXPLORER_DIRS_MAX_ENTRIES {
+            break;
+        }
+        let Some(value) = explorer_entry(entry) else {
+            continue;
+        };
+        let key_len = serde_json::to_string(dir).map_or(0, |s| s.len());
+        let value_len = serde_json::to_string(&value).map_or(0, |s| s.len());
+        let comma = usize::from(!out.is_empty());
+        let added = comma + key_len + 1 + value_len;
+        if bytes + added > EXPLORER_DIRS_MAX_BYTES {
+            break;
+        }
+        bytes += added;
+        out.insert(dir.clone(), value);
+    }
+    Value::Object(out)
+}
+
+/// フォルダ 1 つ分の表示。オブジェクトでなければ None（捨てる）
+fn explorer_entry(raw: &Value) -> Option<Value> {
+    let Value::Object(map) = raw else {
+        return None;
+    };
+    let view = match map.get("view").and_then(Value::as_str) {
+        Some("grid") => "grid",
+        // 旧い "list" は details として読む
+        _ => "details",
+    };
+    let sort_key = map
+        .get("sortKey")
+        .and_then(Value::as_str)
+        .filter(|k| matches!(*k, "name" | "modified" | "size"))
+        .unwrap_or("name");
+    let sort_order = map
+        .get("sortOrder")
+        .and_then(Value::as_str)
+        .filter(|o| matches!(*o, "asc" | "desc"))
+        .unwrap_or("asc");
+    Some(serde_json::json!({"view": view, "sortKey": sort_key, "sortOrder": sort_order}))
 }
 
 /// 出力先: `id`・`kind`・`label` が文字列のとき、その 3 つだけを残す。そろわなければ null（未選択と同じ）
@@ -667,6 +735,86 @@ mod tests {
         assert_eq!(def("outVolume").default.to_value(), json!(1.0));
         assert_eq!(def("limiter").default.to_value(), json!(true));
         assert_eq!(def("limitDb").default.to_value(), json!(-6.0));
+    }
+
+    #[test]
+    fn explorer_dirs_default_is_an_empty_object_and_is_device_scoped() {
+        assert_eq!(def("explorerDirs").scope, Scope::Device);
+        assert_eq!(defaults_of("explorerDirs"), json!({}));
+    }
+
+    fn defaults_of(key: &str) -> Value {
+        default_of(def(key))
+    }
+
+    #[test]
+    fn explorer_dirs_keeps_valid_entries_and_drops_non_objects() {
+        let def = def("explorerDirs");
+        let raw = json!({
+            "": {"view": "grid", "sortKey": "modified", "sortOrder": "desc"},
+            "a/b": 5,
+            "c": "x",
+            "d": {"view": "details", "sortKey": "size", "sortOrder": "asc"}
+        });
+        let out = normalize_value(def, Some(&raw));
+        assert_eq!(
+            out,
+            json!({
+                "": {"view": "grid", "sortKey": "modified", "sortOrder": "desc"},
+                "d": {"view": "details", "sortKey": "size", "sortOrder": "asc"}
+            })
+        );
+    }
+
+    #[test]
+    fn explorer_dirs_bad_fields_fall_back_per_field_and_old_list_is_details() {
+        let def = def("explorerDirs");
+        let raw = json!({"x": {"view": "list", "sortKey": "color", "sortOrder": 1}});
+        assert_eq!(
+            normalize_value(def, Some(&raw)),
+            json!({"x": {"view": "details", "sortKey": "name", "sortOrder": "asc"}})
+        );
+        let bad_view = json!({"x": {"view": "tiles"}});
+        assert_eq!(
+            normalize_value(def, Some(&bad_view))["x"]["view"],
+            "details"
+        );
+    }
+
+    #[test]
+    fn explorer_dirs_non_object_becomes_empty() {
+        let def = def("explorerDirs");
+        assert_eq!(normalize_value(def, Some(&json!([1, 2]))), json!({}));
+        assert_eq!(normalize_value(def, Some(&json!("x"))), json!({}));
+        assert_eq!(normalize_value(def, Some(&Value::Null)), json!({}));
+    }
+
+    #[test]
+    fn explorer_dirs_caps_the_entry_count_at_200() {
+        let def = def("explorerDirs");
+        let mut map = Map::new();
+        for i in 0..250 {
+            map.insert(format!("d{i:03}"), json!({"view": "grid"}));
+        }
+        let out = normalize_value(def, Some(&Value::Object(map)));
+        assert_eq!(out.as_object().unwrap().len(), 200);
+    }
+
+    #[test]
+    fn explorer_dirs_stops_at_the_24_kib_budget_deterministically() {
+        let def = def("explorerDirs");
+        let long = "p".repeat(300);
+        let mut map = Map::new();
+        for i in 0..150 {
+            map.insert(format!("{long}{i:03}"), json!({"view": "grid"}));
+        }
+        let raw = Value::Object(map);
+        let out = normalize_value(def, Some(&raw));
+        let text = serde_json::to_string(&out).unwrap();
+        assert!(text.len() <= 24 * 1024, "{}", text.len());
+        assert!(out.as_object().unwrap().len() < 150);
+        // 同じ入力なら同じ結果（決定的）
+        assert_eq!(normalize_value(def, Some(&raw)), out);
     }
 
     #[test]

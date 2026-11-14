@@ -2,8 +2,8 @@ import type { ServerEvent } from '../protocol/ServerEvent';
 import { canonicalServerUrl } from '../config';
 import { mirrorOf, type NativeCallPort, type NativeControlPatch, type NativeError, type NativeRelay, type NativeSettings, type NativeSnapshot } from './native';
 import { NativeCallSession } from './nativeSession';
-import { EV_AUDIO, joinStateOf, micRawFlag } from './pure';
-import { readLocal } from './webAudio';
+import { EV_AUDIO, joinStateOf } from './pure';
+
 import type { CallEngine, CallHost, PeerView } from './types';
 
 /** プラグインが使えないイベント名。audio は本体の音声が使う */
@@ -290,7 +290,7 @@ export class NativeCallEngine implements CallEngine {
       outVolume: s.outVolume,
       limiter: s.limiter,
       limitDb: s.limitDb,
-      rawInput: micRawFlag(readLocal('disnans.micRaw')),
+      rawInput: false,
       outputId: s.output?.id ?? null,
     };
   }

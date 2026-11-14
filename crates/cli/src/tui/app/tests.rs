@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::tui::search::LIMIT;
 use crate::tui::transcript::tests_support::{message, user};

@@ -73,7 +73,12 @@ export class DeviceSettings {
       cached = null;
     }
     // キャッシュが無ければ、以前の localStorage の値から始める（取り込みは start で、サーバーに無いときに行う）
-    const base = cached !== null && typeof cached === 'object' ? cached : legacyDeviceValues(deps.get);
+    const legacy = legacyDeviceValues(deps.get);
+    // 古いキャッシュ（フォルダごとの表示を持たない）には、以前の一覧の表示だけを足す（ほかの以前の値は、キャッシュがあれば使わない）
+    const base: Raw =
+      cached !== null && typeof cached === 'object'
+        ? { ...(legacy.explorerDirs !== undefined ? { explorerDirs: legacy.explorerDirs } : {}), ...(cached as Raw) }
+        : legacy;
     this.raw = fillDeviceDefaults(base as Raw);
   }
 
@@ -205,9 +210,14 @@ export class DeviceSettings {
     }
     const server = typeof view.prefs === 'object' && view.prefs !== null && !Array.isArray(view.prefs) ? (view.prefs as Raw) : {};
     const next: Raw = { ...server };
+    // サーバーにフォルダごとの表示が無いとき（読みは既定で補った値を返すので、項目が無いか、空のとき）だけ、以前の一覧（localStorage）を取り込む
+    const serverDirs = server.explorerDirs;
+    const noDirs = serverDirs === undefined || (typeof serverDirs === 'object' && serverDirs !== null && Object.keys(serverDirs).length === 0);
+    const imported = noDirs ? legacyDeviceValues(this.deps.get).explorerDirs : undefined;
+    if (imported !== undefined) next.explorerDirs = imported;
     for (const key of local) next[key] = this.raw[key];
     this.apply(next);
-    if (local.length > 0) this.push(this.raw);
+    if (local.length > 0 || imported !== undefined) this.push(this.raw);
   }
 
   private commit(next: Raw): void {

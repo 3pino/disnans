@@ -35,6 +35,7 @@
     "pluginsDisabled": [],
     "pluginsDevDir": null,
     "screenShare": null,
+    "explorerDirs": {},
     "server": null,
     "devUser": null,
     "updateCheckedAt": null,

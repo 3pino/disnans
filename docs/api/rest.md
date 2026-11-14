@@ -21,7 +21,7 @@
 ### `GET /api/health`
 
 障害の切り分けに使う。認証なしで答える（Tailscale の経路の確認にも使える）。
-応答は次の値だけ。利用者や接続元の情報は含まない。
+応答は次の通り。
 
 ```json
 { "ok": true, "version": "0.2.43", "uptime_secs": 12345, "db": { "ok": true, "ms": 0 }, "ws_connections": 3 }

@@ -285,20 +285,7 @@ describe('標準の画面共有と旧クライアントの互換', () => {
 });
 
 describe('参加と音声', () => {
-  it("実験用の localStorage 'disnans.micRaw'='1' なら、次の参加からエコー消去などを切って開く", async () => {
-    const gum = vi.fn(async (_c: unknown) => new FakeStream([new FakeTrack('audio')]));
-    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: gum } });
-    const a = makeClient('u1');
-    await a.store.join();
-    expect(gum.mock.calls[0][0]).toMatchObject({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-    a.store.leave();
-    localStorage.setItem('disnans.micRaw', '1');
-    await a.store.join();
-    expect(gum.mock.calls[1][0]).toMatchObject({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-    localStorage.removeItem('disnans.micRaw');
-  });
-
-  it("AudioContext は 48000Hz・interactive で作る。'disnans.ctxRate' で上書きできる（不正なら既定）", async () => {
+  it("AudioContext は 48000Hz・interactive で作る", async () => {
     const opts: unknown[] = [];
     class Spy extends FakeAudioContext {
       constructor(o?: unknown) {
@@ -310,40 +297,6 @@ describe('参加と音声', () => {
     const a = makeClient('u1');
     await a.store.join();
     expect(opts[0]).toEqual({ sampleRate: 48000, latencyHint: 'interactive' });
-    a.store.leave();
-    localStorage.setItem('disnans.ctxRate', '44100');
-    await a.store.join();
-    expect(opts[1]).toEqual({ sampleRate: 44100, latencyHint: 'interactive' });
-    a.store.leave();
-    localStorage.setItem('disnans.ctxRate', 'bogus');
-    await a.store.join();
-    expect(opts[2]).toEqual({ sampleRate: 48000, latencyHint: 'interactive' });
-    localStorage.removeItem('disnans.ctxRate');
-  });
-
-  it("'disnans.noKeepAlive'='1' なら keep-alive（発振）を動かさない", async () => {
-    const made = vi.fn();
-    const osc = () => {
-      made();
-      return { frequency: { value: 0 }, connect: () => ({ connect: () => {} }), start: () => {}, stop: () => {} };
-    };
-    const fake = FakeAudioContext.prototype as unknown as Record<string, unknown>;
-    const gainOrig = fake.createGain;
-    fake.createOscillator = osc;
-    fake.createGain = () => ({ gain: { value: 0 }, connect: () => ({ connect: () => {} }) });
-    try {
-      localStorage.setItem('disnans.noKeepAlive', '1');
-      const a = makeClient('u1');
-      await a.store.join();
-      expect(made).not.toHaveBeenCalled();
-      a.store.leave();
-      localStorage.removeItem('disnans.noKeepAlive');
-      await a.store.join();
-      expect(made).toHaveBeenCalled();
-    } finally {
-      delete fake.createOscillator;
-      fake.createGain = gainOrig;
-    }
   });
 
   it('参加中は 5 秒ごとに時計のずれを出す（ctx と壁の時計）', async () => {

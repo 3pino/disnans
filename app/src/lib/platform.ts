@@ -20,7 +20,7 @@ export type InjectedPlatform = {
 export type Capabilities = {
   /** 共有の設定と下書き（client_storage）を Rust で持つ（Windows・Linux の Tauri と、Android） */
   sharedStorage: boolean;
-  /** 読取・書込・添付を Rust 経路で行う（既定で on。localStorage の "0" で off） */
+  /** チャットの Rust 経路があるか（Windows・Linux・Android の Tauri。それ以外の OS は無し）。切り替えの設定は無い。Rust の注入値が優先 */
   rustApi: boolean;
   /** 本体の渡し方（Android の WebView は base64） */
   bodyMode: 'raw' | 'base64';

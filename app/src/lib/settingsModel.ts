@@ -14,6 +14,7 @@ import { DEFAULT_CALL_SETTINGS, JOIN_MODES, type JoinMode } from './call/pure';
 import { DEFAULT_ENTER_KEYS } from './enterKeys';
 import { DEFAULT_COMPOSER_MENU } from './composerMenu';
 import type { ScreenSettingsValue } from './call/screen/types';
+import { legacyExplorerDirs } from './explorerDirs';
 
 export type Raw = Record<string, unknown>;
 
@@ -46,7 +47,7 @@ export function joinModeOf(raw: Raw): JoinMode {
 export const CALL_DEVICE_KEYS = ['inputId', 'output'] as const;
 
 /** デバイスごとの項目（サーバーのデバイスの prefs のキー） */
-export const DEVICE_KEYS = ['inputId', 'output', 'deviceKind', 'hideNavigationBar', 'hapticsEnabled', 'orientation', 'pluginsDisabled', 'pluginsDevDir', 'screenShare'] as const;
+export const DEVICE_KEYS = ['inputId', 'output', 'deviceKind', 'hideNavigationBar', 'hapticsEnabled', 'orientation', 'pluginsDisabled', 'pluginsDevDir', 'screenShare', 'explorerDirs'] as const;
 
 /** ユーザー共通の既定値（crates/client-core/src/view/settings.rs の DEFINITIONS と同じ。ブラウザーの表示の補完だけに使う） */
 export function userDefaults(): Raw {
@@ -91,6 +92,8 @@ export const DEVICE_DEFAULTS: Readonly<Raw> = Object.freeze({
   pluginsDevDir: null,
   // 未設定は null（既定の値は表示側で決める。保存の有無を区別するため）
   screenShare: null,
+  // フォルダごとの表示・並び順（この端末）。既定は空（決めていないフォルダは上のフォルダに従う）
+  explorerDirs: {},
 });
 
 /** 以前の localStorage の保存先（読むだけ）。値は文字列（JSON のものは JSON 文字列） */
@@ -168,6 +171,9 @@ export function legacyDeviceValues(read: LegacyRead): Raw {
   if (Array.isArray(disabled)) out.pluginsDisabled = disabled.filter((x): x is string => typeof x === 'string');
   const dir = read(LEGACY.pluginsDevDir);
   if (dir !== null && dir.trim() !== '') out.pluginsDevDir = dir.trim();
+  // フォルダごとの表示（旧い保存。取り込みは、サーバーに値が無いときだけ deviceSettings が行う）
+  const explorer = legacyExplorerDirs(read);
+  if (explorer !== null) out.explorerDirs = explorer;
   const call = legacyCall(read);
   if (call) {
     for (const k of CALL_DEVICE_KEYS) if (k in call) out[k] = call[k];

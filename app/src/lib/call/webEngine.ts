@@ -2,7 +2,7 @@ import type { CallMember } from '../protocol/CallMember';
 import type { CallStatus } from '../protocol/CallStatus';
 import type { ClientEvent } from '../protocol/ClientEvent';
 import type { ServerEvent } from '../protocol/ServerEvent';
-import { keepWebViewEnabled, setKeepWebViewResumed } from './nativeCall';
+import { setKeepWebViewResumed } from './nativeCall';
 import { EV_AUDIO, LEVEL_MS, OUTPUTS_REFRESH_TICKS, joinStateOf, notificationContent, randomId } from './pure';
 import { WebAudio, errName } from './webAudio';
 import type { CallEngine, CallHost } from './types';
@@ -291,7 +291,7 @@ export class WebCallEngine implements CallEngine {
         return;
       }
       // WebView を裏でも動かすかを、常駐の開始の前に決める
-      setKeepWebViewResumed(keepWebViewEnabled());
+      setKeepWebViewResumed();
       // マイクの許可を得たあとで常駐を始める（Android 14 以降は許可前だと失敗する）
       try {
         this.notifyKey = '';

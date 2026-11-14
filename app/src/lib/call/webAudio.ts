@@ -8,11 +8,7 @@ import { isAndroid } from '../platform';
 import {
   EV_AUDIO,
   Framer,
-  keepAliveGain,
-  ctxRateFlag,
   micConstraints,
-  micRawFlag,
-  noKeepAliveFlag,
   PeakLimiter,
   clipCurve,
   clampLimitDb,
@@ -70,27 +66,18 @@ const KEEPALIVE_HZ = 20;
 /**
  * keep-alive の既定の大きさ（dBFS）。Chromium は「音が出ている」ページを凍結しない。その判定の無音のしきい値は約 -72 dBFS。
  * Android では -60 dBFS（振幅 1e-3）の 20 Hz の正弦にする。スマホのスピーカーではほぼ鳴らず、人にはまず聞こえない。
- * デスクトップなど他の環境は、これまでどおり -80 dBFS（ほぼ無音）のまま。localStorage 'disnans.keepAliveLevel' で上書きできる。
+ * デスクトップなど他の環境は、これまでどおり -80 dBFS（ほぼ無音）のまま。
  */
 const KEEPALIVE_DB_ANDROID = -60;
 const KEEPALIVE_DB_OTHER = -80;
 
-/** 実験用の切り替えの値（localStorage。読めないときは null） */
-export function readLocal(key: string): string | null {
-  try {
-    return typeof localStorage === 'undefined' ? null : localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * 通話用の AudioContext。周波数は 48000 を既定にする（Linux の既定の 44100 とマイクのずれを避けるため）。
- * 'disnans.ctxRate' で上書き。周波数の指定が通らなければ既定で作る
+ * 周波数の指定が通らなければ既定で作る
  */
 const CTX_RATE_DEFAULT = 48000;
 export function makeCallContext(): AudioContext {
-  const rate = ctxRateFlag(readLocal('disnans.ctxRate')) ?? CTX_RATE_DEFAULT;
+  const rate = CTX_RATE_DEFAULT;
   try {
     return new AudioContext({ sampleRate: rate, latencyHint: 'interactive' });
   } catch (e) {
@@ -109,7 +96,6 @@ export class WebAudio {
   private micGain: GainNode | null = null;
   private captureSrc: AudioNode | null = null;
   /** 診断: マイクを開いた時刻と、最初にデータ・大きい音が見えた時刻（開いてからの ms） */
-  private micRaw = false;
   micOpenAt: number | null = null;
   private micFirstData: number | null = null;
   private micFirstLoud: number | null = null;
@@ -240,17 +226,12 @@ export class WebAudio {
    */
   private startKeepAlive(ctx: AudioContext): void {
     if (typeof ctx.createOscillator !== 'function') return;
-    // 実験用: 'disnans.noKeepAlive'==='1' なら動かさない（音の遅れへの影響の切り分け）
-    if (noKeepAliveFlag(readLocal('disnans.noKeepAlive'))) {
-      console.info('[call] keep-alive を止めています（実験用）');
-      return;
-    }
     this.keepAlive?.stop();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     const db = isAndroid() ? KEEPALIVE_DB_ANDROID : KEEPALIVE_DB_OTHER;
     osc.frequency.value = KEEPALIVE_HZ;
-    gain.gain.value = keepAliveGain(readLocal('disnans.keepAliveLevel'), db);
+    gain.gain.value = dbToLinear(db);
     console.info(`[call] keep-alive を ${KEEPALIVE_HZ} Hz・既定 ${db} dBFS で動かします`);
     osc.connect(gain).connect(ctx.destination);
     osc.start();
@@ -319,10 +300,9 @@ export class WebAudio {
 
   /** マイクを開く。選んだ機器が使えなければ既定の機器で開き直す */
   private async openMic(): Promise<MediaStream> {
-    // 実験用: localStorage 'disnans.micRaw' === '1' なら、処理（エコー消去など）を切って開く（次の参加から効く）
-    this.micRaw = micRawFlag(readLocal('disnans.micRaw'));
-    const base = micConstraints(this.micRaw);
-    console.info(`[call] マイクを開きます: raw=${this.micRaw} 要求=${JSON.stringify(base)}`);
+
+    const base = micConstraints();
+    console.info(`[call] マイクを開きます: 要求=${JSON.stringify(base)}`);
     const id = this.h.settings.inputId;
     if (id) {
       try {
@@ -370,7 +350,7 @@ export class WebAudio {
       autoGainControl: set.autoGainControl,
     };
     console.info(
-      `[call] 音の設定: ctxRate=${ctx.sampleRate} baseLatency=${ctx.baseLatency ?? '?'} outputLatency=${out ?? '?'} state=${ctx.state} raw=${this.micRaw} mic=${JSON.stringify(mic)}`,
+      `[call] 音の設定: ctxRate=${ctx.sampleRate} baseLatency=${ctx.baseLatency ?? '?'} outputLatency=${out ?? '?'} state=${ctx.state} mic=${JSON.stringify(mic)}`,
     );
   }
 

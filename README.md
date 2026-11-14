@@ -1,9 +1,9 @@
 # disnans
 
-小さな SNS。チャットと、写真やファイルの共有ができます。
+Discord 代替の SNS
 
 - Tailscale の中だけで動きます。インターネットには公開しません。ログインも Tailscale のアカウントで自動的に行われます。
-- **サーバーは自宅の PC で動かします。** データは手元に置かれます
+- サーバーは個人の PC で動かします。
 - 対応: Android / Windows / Linux
 
 ## インストール（参加する人）
@@ -12,8 +12,6 @@
 
 1. [Tailscale](https://tailscale.com/download) をインストールし、自分のアカウントでログインする
 2. サーバーの管理者から届く「ノード共有」の招待を受け入れる
-
-これで準備は完了です。disnans 用のアカウントは、初めて接続したときに自動で作られます。
 
 ### 2. アプリを入れる
 
@@ -26,34 +24,33 @@
 | Linux（Ubuntu / Debian） | `disnans_*_amd64.deb` | `sudo apt install ./disnans_*_amd64.deb` |
 | Linux（その他） | `disnans_*_amd64.AppImage` | `chmod +x` で実行権限を付けて起動する |
 
-Windows の `.exe` と Linux の `.deb` を入れると、CLI の `disnans` も使えるようになります。
+Windows の `.exe` と Linux の `.deb` を入れると、CLI・TUI の `disnans` も使えるようになります。
 
-- **Windows**: インストール時にユーザーの PATH へ入れます。新しく開いたターミナルで `disnans` と打てます。アンインストールでは、インストーラが追加した分だけを PATH から外します（他の PATH は変えません）。
-  - PATH が長すぎるときは、インストーラは PATH を一切変えません（安全のため。CLI のフォルダは入ります）。目安はおおむね 800 文字からで、インストーラのビルドによって異なります。その場合は `%LOCALAPPDATA%\disnans` を手で PATH に追加してください。
-- **Linux（`.deb`）**: `/usr/bin/disnans` に入ります。
-- **AppImage**: CLI の PATH 登録は行いません。CLI を使うなら `.deb` か Windows の `.exe` を入れてください。
+- Windows: インストール時にユーザーの PATH へ入れます。新しく開いたターミナルで `disnans` と打てます。
+  - PATH が長すぎるときは、インストーラは PATH を一切変えません（安全のため。CLI のフォルダは入ります）。その場合は `%LOCALAPPDATA%\disnans` を手で PATH に追加してください。
+- Linux（`.deb`）: `/usr/bin/disnans` に入ります。
 
 ### 3. サーバーに接続する
 
-アプリを起動し、管理者から教わったサーバーのアドレス（例: `100.x.x.x:8080`）を入力します。`http://` は省略できます。
+アプリを起動し、管理者から教わったサーバーのアドレス（例: `100.x.x.x:8080`）を入力します。
 
 ### 通知
 
 - 「設定」→「サンプル通知を送信」で、通知が届くか確かめられます。
 - メインチャットに投稿されると、投稿者以外の全員に通知が届きます。「サイレント送信」（送信ボタンを上へなぞって送る）では通知しません。
-- **Android**: 初回の起動時に通知の許可を求められます。アプリを閉じていても通知が届くよう、裏でサーバーとつなぎ続けます（「通知を受け取っています」という通知が常に表示されますが、オフにして構いません）。
-- **Linux のトレイ**: システムトレイのアイコンに `libayatana-appindicator3-1` が要ります（`.deb` は依存として入れます。AppImage などでは `sudo apt install libayatana-appindicator3-1`。GNOME ではトレイを出す拡張機能「AppIndicator and KStatusNotifierItem Support」も要ります）。
+- Android: 「通知を受け取っています」という通知が常に表示されますが、オフにして構いません。
+- Linux のトレイ: システムトレイのアイコンに `libayatana-appindicator3-1` が要ります（`.deb` は依存として入れます。AppImage などでは `sudo apt install libayatana-appindicator3-1`。GNOME ではトレイを出す拡張機能「AppIndicator and KStatusNotifierItem Support」も要ります）。
 
 ### 通話
 
 画面の上部に通話のバーが出て、「＋」メニューの「通話に参加」や `/vc-join` で参加します。参加者を長押し（PC は右クリック）すると、その人を通話から外せます。設定は「設定」→「通話」にあります。
 
 - **Linux**: `gstreamer1.0-plugins-good`、`gstreamer1.0-plugins-bad`、`gstreamer1.0-pulseaudio`（PipeWire の環境なら `gstreamer1.0-pipewire` も）が要ります（`.deb` は推奨パッケージとして入れます）。
-- **Linux の既知の問題（未解決）**: 通話中、自分のマイクの音が遅れることがあります（Windows では出ません）。内容・試した対策・回避策は [FEEDBACKS.md](FEEDBACKS.md) を参照してください。
+- **Linux の既知の問題（未解決）**: 通話中、自分のマイクの音が遅れることがあります（Windows では出ません）。内容・試した対策・回避策は [FEEDBACKS.md](FEEDBACKS.md) を参照してください。アプリは既定で環境変数 `PIPEWIRE_LATENCY=256/48000` を設定します。すでに設定されていればその値を優先します（既定の値を変えたいときは、起動する前にこの変数を指定してください）。
 
 ### 不具合を報告する（診断ログ）
 
-「通知が来ない」「通話が切れる」などが起きたら、そのあとで「設定」→「アプリ」→「ログを送る」（Android。PC は「ログを保存」）を押し、できたテキストファイルを開発者に送ってください。Android では共有のシートが開くので、メールやチャット（disnans 自身も選べます）を選べます。
+不具合が起きたら、そのあとで「設定」→「ログを送る or ログを保存」を押し、できたテキストファイルを開発者に送ってください。Android では共有のシートが開くので、メールやチャット（disnans 自身も選べます）を選べます。
 
 - 記録しているもの: 通知用の接続・切断と通知を出したか（出さなかった理由）、通話のサービスの開始・終了、アプリが裏に回った・戻った時刻、エラー。Android では、通知の許可・電池の最適化・バックグラウンドの制限と、最近アプリのプロセスが終わった理由も添えます。
 - メッセージの本文は含みません。サーバーのアドレスとユーザー名は含みます。
@@ -146,3 +143,5 @@ loginctl enable-linger $USER   # ログアウトしても動かし続ける
 ## 開発
 
 開発・テスト・リリースの手順は [CONTRIBUTING.md](CONTRIBUTING.md)、文書の一覧は [docs/README.md](docs/README.md) にあります。未対応の項目・既知の問題は [FEEDBACKS.md](FEEDBACKS.md) にまとめています。
+
+

@@ -152,6 +152,7 @@ const SCOPE_OF: Record<string, 'user' | 'device' | 'local'> = {
   pluginsDisabled: 'device',
   pluginsDevDir: 'device',
   screenShare: 'device',
+  explorerDirs: 'device',
   server: 'local',
   devUser: 'local',
   updateCheckedAt: 'local',
@@ -177,6 +178,7 @@ const TS_DEFAULTS: Record<string, unknown> = {
   inputId: DEFAULT_CALL_SETTINGS.inputId,
   output: DEFAULT_CALL_SETTINGS.output,
   orientation: DEFAULT_ORIENTATION,
+  explorerDirs: {},
 };
 
 describe('既定値は fixture（Rust の定義と同じ）と一致する', () => {

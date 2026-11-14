@@ -25,3 +25,10 @@ export function setItem(key: string, value: string | null, kind: 'local' | 'sess
     // 保存できなくても動作は続ける
   }
 }
+
+/** 書けなかったら例外を投げる版（容量不足で再試行する呼び出し元だけが使う）。読むのは getItem と同じく包む */
+export function setItemOrThrow(key: string, value: string, kind: 'local' | 'session' = 'local'): void {
+  const s = store(kind);
+  if (!s) throw new Error('storage unavailable');
+  s.setItem(key, value);
+}
