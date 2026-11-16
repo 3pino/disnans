@@ -181,3 +181,25 @@ describe('投稿前の自分の添付（送信の途中の本文のリンク）'
     expect(idx.file('attachments/a.png').kind).toBe('missing');
   });
 });
+
+describe('一度失敗した一覧は、時間が経てば読み直す（一時的な失敗で「見つからない」にしない）', () => {
+  it('error のあと、すぐの ensure は読まず、RETRY の時間が過ぎた ensure で読み直す', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    try {
+      list.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      idx.ensure('attachments');
+      await settle();
+      expect(idx.state('attachments')?.kind).toBe('error');
+      idx.ensure('attachments');
+      expect(list).toHaveBeenCalledTimes(1);
+      now.mockReturnValue(1_000 + 60_000);
+      list.mockResolvedValueOnce([entry('attachments/photo.png')]);
+      idx.ensure('attachments');
+      await settle();
+      expect(list).toHaveBeenCalledTimes(2);
+      expect(idx.file('attachments/photo.png').kind).toBe('found');
+    } finally {
+      now.mockRestore();
+    }
+  });
+});

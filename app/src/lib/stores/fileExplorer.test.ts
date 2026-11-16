@@ -47,7 +47,7 @@ describe('fileExplorer', () => {
     list.mockRejectedValueOnce(new Error('boom'));
     fileExplorer.open('docs');
     await flush();
-    expect(fileExplorer.state).toEqual({ kind: 'error', message: 'boom' });
+    expect(fileExplorer.state).toEqual({ kind: 'error', message: 'boom', at: expect.any(Number) });
     list.mockResolvedValue([]);
     fileExplorer.reload();
     await flush();

@@ -18,9 +18,11 @@
   let { path, alias, embed }: { path: string; alias: string | null; embed: boolean } = $props();
 
   // 一覧が手元になければ読む（files.changed で捨てられたら、ここで読み直す）
+  // 読めなかった一覧は、時間が経てば読み直す（ensure が判断する。一時的な失敗が再読み込みまで続かないように）
   $effect(() => {
     const dir = parentOf(path);
-    if (sharedIndex.state(dir) === undefined) untrack(() => sharedIndex.ensure(dir));
+    const st = sharedIndex.state(dir);
+    if (st === undefined || st.kind === 'error') untrack(() => sharedIndex.ensure(dir));
   });
 
   const deleted = $derived(deletedAttachmentNames(client.timeline().messages));
@@ -35,6 +37,8 @@
   <span class="file-link file-link-pending">{view.text}</span>
 {:else if view.kind === 'missing' || (view.kind === 'embedImage' && broken)}
   <span class="file-link file-link-missing" role="note">見つからないファイル{view.kind === 'missing' ? `（${view.text}）` : ''}</span>
+{:else if view.kind === 'unreadable'}
+  <span class="file-link file-link-missing" role="note">読み込めませんでした（{view.text}）</span>
 {:else if view.kind === 'deleted'}
   <span class="file-link file-link-deleted" role="note"><FileX size={14} />削除されたファイル（{view.name}）</span>
 {:else if view.kind === 'folder'}

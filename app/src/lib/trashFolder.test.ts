@@ -63,7 +63,7 @@ describe('仮想のゴミ箱の場所（印で決める。.trash という名前
   it('直下の一覧が無い・読めないときは、.trash の下を unknown にして書き込みを止める', () => {
     expect(virtualDir('.trash/X--a', undefined)).toBe('unknown');
     expect(virtualDir('.trash', { kind: 'loading' })).toBe('unknown');
-    expect(virtualDir('.trash', { kind: 'error', message: 'x' })).toBe('unknown');
+    expect(virtualDir('.trash', { kind: 'error', message: 'x', at: 0 })).toBe('unknown');
     expect(writeBlockReason('unknown')).toContain('確かめて');
     expect(writeBlockReason('root')).toContain('中には書き込めません');
   });

@@ -34,7 +34,7 @@ internal class NotifierDisplay(private val bridge: NotifierBridge) {
     invoke.resolve()
   }
 
-  /** 通話の参加時に JS から呼ぶ。false なら、裏に回ったとき WebView を止めたままにする（実験用） */
+  /** 通話の参加時に JS から呼ぶ。false なら、裏に回ったとき WebView を止めたままにする */
   fun setKeepWebView(invoke: Invoke) {
     val args = invoke.parseArgs(SetKeepWebViewArgs::class.java)
     keepWebView = args.enabled
@@ -59,7 +59,7 @@ internal class NotifierDisplay(private val bridge: NotifierBridge) {
    * 通話中は、画面を消したり別のアプリに切り替えたりしても WebView を止めない。
    * TauriActivity.onPause は、WryActivity の onPause（WebView.onPause()）のあとに、この処理を呼ぶ。
    * そのため、ここで動かし直すと WebView は動いたままになる（タイマーと音の経路を保つ）。
-   * 実験用の逃げ道: localStorage 'disnans.keepWebViewResumed'='0' なら JS が keepWebView を false にする。
+   * JS は通話の参加時に enabled=true を送る（現在の JS に false を送る経路は無い）。
    */
   fun onPause() {
     if (!CallService.running) {

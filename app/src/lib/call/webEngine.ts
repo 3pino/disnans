@@ -45,6 +45,9 @@ export class WebCallEngine implements CallEngine {
   onServerEvent(ev: ServerEvent): void {
     switch (ev.type) {
       case 'hello':
+        // 新しい接続。サーバーは通話に誰もいないとき一覧を送らない（call.state は空でない時だけ続く）。
+        // 切れているあいだに空になった通話を、前の一覧のまま見せない
+        if (!this.h.joined) this.h.members = [];
         this.onReconnect();
         break;
       case 'call.state':

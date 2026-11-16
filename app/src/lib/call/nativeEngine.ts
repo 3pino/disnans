@@ -114,6 +114,15 @@ export class NativeCallEngine implements CallEngine {
 
   onServerEvent(ev: ServerEvent): void {
     // 参加・音・kick・再接続はネイティブが行う。チャットの接続からは、参加していないときの一覧だけ使う
+    if (ev.type === 'hello') {
+      // 新しい接続。通話に誰もいないとき、サーバーは一覧を送らない。前の一覧を残さない
+      this.roomMembers = [];
+      if (!this.h.joined && !this.h.joining) {
+        this.h.members = [];
+        this.h.refresh();
+      }
+      return;
+    }
     if (ev.type !== 'call.state') return;
     this.roomMembers = ev.members;
     if (!this.h.joined && !this.h.joining) this.h.members = ev.members;

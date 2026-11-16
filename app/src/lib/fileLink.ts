@@ -36,8 +36,10 @@ export function deletedAttachmentNames(messages: readonly Message[]): Set<string
 export type FileLinkView =
   /** 確かめ中（一覧を読んでいる） */
   | { kind: 'pending'; text: string }
-  /** 見つからない（消えた・名前が違う・読めない） */
+  /** 見つからない（消えた・名前が違う） */
   | { kind: 'missing'; text: string }
+  /** 一覧を読めなかった（一時的。読み直せば開ける） */
+  | { kind: 'unreadable'; text: string }
   /** 削除された添付（名前は出すが開けない） */
   | { kind: 'deleted'; name: string }
   /** フォルダ（リンクにはしない） */
@@ -64,6 +66,7 @@ export function fileLinkView(
   const name = baseName(link.path);
   const text = link.alias ?? name;
   if (state.kind === 'loading') return { kind: 'pending', text };
+  if (state.kind === 'error') return { kind: 'unreadable', text };
   if (state.kind !== 'found') {
     const wasDeleted = link.path.startsWith('attachments/') && deleted.has(name.toLowerCase());
     return wasDeleted ? { kind: 'deleted', name } : { kind: 'missing', text };

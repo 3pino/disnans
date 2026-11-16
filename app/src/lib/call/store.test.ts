@@ -557,6 +557,15 @@ describe('参加と音声', () => {
     expect(a.store.muted).toBe(false);
   });
 
+  it('参加していないとき、切れている間に通話が空になっても、つなぎ直したら前の参加者を残さない（サーバーは空の一覧を送らない）', async () => {
+    const a = makeClient('u1');
+    a.store.onServerEvent({ type: 'call.state', members: [{ peer: 'p9', user_id: 'u2', status: { muted: false, deafened: false, device: null } }] } as never);
+    expect(a.store.others.length).toBe(1);
+    a.store.onServerEvent({ type: 'hello', me: { id: 'u1' } as never, users: [] });
+    expect(a.store.others.length).toBe(0);
+    expect(a.store.visible).toBe(false);
+  });
+
   it('つなぎ直す（hello）で新しい peer ID で入り直し、また声が届く', async () => {
     const a = makeClient('u1');
     const b = makeClient('u2');

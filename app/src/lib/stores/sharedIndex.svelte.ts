@@ -7,13 +7,15 @@ import { onServerChange } from '../config';
 
 /** 添付のフォルダ（`attachments/`） */
 const ATTACHMENTS_DIR = 'attachments';
+/** 読めなかった一覧を読み直すまでの時間（ms） */
+const RETRY_MS = 5_000;
 
 /** フォルダの一覧の状態（本文のファイルリンクを今の名前・有無で見分けるため） */
 export type DirState =
   | { kind: 'loading' }
   | { kind: 'ok'; entries: Map<string, SharedEntry> }
   | { kind: 'missing' }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string; at: number };
 
 /** 本文のファイルリンク 1 つの状態 */
 export type FileState =
@@ -47,7 +49,9 @@ export class SharedIndex {
 
   /** フォルダの一覧が手元になければ読む（読み込み中は何もしない） */
   ensure(dir: string): void {
-    if (this.dirs.has(dir)) return;
+    const st = this.dirs.get(dir);
+    // 読めなかったものは RETRY_MS のあと読み直す（一時的な失敗が、再読み込みまで続かないように）
+    if (st !== undefined && !(st.kind === 'error' && Date.now() - st.at >= RETRY_MS)) return;
     this.load(dir);
   }
 
@@ -65,7 +69,7 @@ export class SharedIndex {
       (e: unknown) => {
         if ((this.gen.get(dir) ?? 0) !== g) return;
         const missing = e instanceof HttpError && e.code === 'not_found';
-        this.dirs.set(dir, missing ? { kind: 'missing' } : { kind: 'error', message: e instanceof Error ? e.message : String(e) });
+        this.dirs.set(dir, missing ? { kind: 'missing' } : { kind: 'error', message: e instanceof Error ? e.message : String(e), at: Date.now() });
       },
     );
   }

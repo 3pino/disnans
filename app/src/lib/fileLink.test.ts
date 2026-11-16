@@ -82,9 +82,9 @@ describe('fileLinkView（見つからない・削除・確かめ中）', () => {
     expect(fileLinkView({ path: 'docs/a', alias: '表', embed: false }, { kind: 'loading' }, none)).toEqual({ kind: 'pending', text: '表' });
   });
 
-  it('一覧に無ければ missing（404 も error も同じ扱い）', () => {
+  it('一覧に無ければ missing（404 の扱い。error は下の unreadable）', () => {
     expect(fileLinkView({ path: 'docs/x', alias: null, embed: false }, { kind: 'missing' }, none)).toMatchObject({ kind: 'missing' });
-    expect(fileLinkView({ path: 'docs/x', alias: null, embed: true }, { kind: 'error', message: 'x' }, none)).toMatchObject({ kind: 'missing' });
+    expect(fileLinkView({ path: 'docs/x', alias: null, embed: true }, { kind: 'missing' }, none)).toMatchObject({ kind: 'missing' });
   });
 
   it('同じ名前の削除された添付があれば deleted（attachments/ だけ）', () => {
@@ -142,5 +142,16 @@ describe('PDF の見分け', () => {
     expect(isPdf('A.PDF', null)).toBe(true);
     expect(isPdf('a.pdf', 'application/octet-stream')).toBe(true);
     expect(isPdf('a.txt')).toBe(false);
+  });
+});
+
+describe('一覧を一時的に読めなかった（error）は、見つからないファイルにしない', () => {
+  it('error の本文のリンクは「読み込めません」（missing ではない）', () => {
+    const v = fileLinkView({ path: 'attachments/photo.png', alias: null, embed: false }, { kind: 'error', message: 'x' }, none);
+    expect(v).toEqual({ kind: 'unreadable', text: 'photo.png' });
+  });
+  it('埋め込みの error も同じ（missing ではない）', () => {
+    const v = fileLinkView({ path: 'attachments/a.zip', alias: null, embed: true }, { kind: 'error', message: 'x' }, none);
+    expect(v).toEqual({ kind: 'unreadable', text: 'a.zip' });
   });
 });
