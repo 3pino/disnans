@@ -13,6 +13,9 @@ import { explorerView } from '../lib/stores/explorerView.svelte';
 import { LONG_PRESS_MS } from '../lib/sortable';
 import * as cfg from '../lib/config';
 
+/** 画面の本体（共有の部品）のソースの場所。見た目の決まり（CSS）を読む試験で使う */
+const KIT = 'node_modules/@3pino/explorer-kit/src/';
+
 // 共有フォルダの一覧の書き込み（アップロード・同名の確認・フォルダ作成）の流れ。HTTP は差し替える
 const entry = (name: string, kind: 'file' | 'dir' = 'file'): SharedEntry => ({
   name,
@@ -622,7 +625,7 @@ describe('表示方法と並び順', () => {
 
   it('アイコン表示の枠に地の色は付けない。選んだ項目の「…」に色を付けるのは詳細だけ', async () => {
     const { readFileSync } = await import('node:fs');
-    const css = (readFileSync('src/components/FileExplorer.svelte', 'utf8').split('<style>')[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const css = (readFileSync(KIT + 'FileExplorer.svelte', 'utf8').split('<style>')[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
     const thumb = css.match(/\.file-explorer-thumb \{[^}]*\}/)![0];
     expect(thumb).not.toMatch(/background/);
     const dots = css.match(/[^{}]*shared-entry-menu-button\)[^{}]*\{[^}]*\}/g) ?? [];
@@ -632,8 +635,8 @@ describe('表示方法と並び順', () => {
 
   it('サムネイルは欠けないよう、全体を枠に収める（object-fit: contain）', async () => {
     const { readFileSync } = await import('node:fs');
-    for (const file of ['FileExplorer.svelte', 'PdfThumb.svelte']) {
-      const css = readFileSync(`src/components/${file}`, 'utf8').split('<style>')[1] ?? '';
+    for (const file of [KIT + 'FileExplorer.svelte', 'src/components/PdfThumb.svelte']) {
+      const css = readFileSync(file, 'utf8').split('<style>')[1] ?? '';
       expect(css, file).toMatch(/object-fit:\s*contain/);
       expect(css, file).not.toMatch(/object-fit:\s*cover/);
     }
@@ -677,8 +680,8 @@ describe('操作メニューは外側の幕より前にある（押せない不�
   it('メニューの見た目に z-index を書かない（design-system の .menu が幕（-1）より前に出る）', async () => {
     const { readFileSync } = await import('node:fs');
     // テストは app/ で動く（npm test）
-    for (const file of ['FileExplorer.svelte', 'SharedEntryActions.svelte']) {
-      const css = (readFileSync(`src/components/${file}`, 'utf8').split('<style>')[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const file of [KIT + 'FileExplorer.svelte', KIT + 'EntryActions.svelte']) {
+      const css = (readFileSync(file, 'utf8').split('<style>')[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
       const menuRules = css.match(/[^{}]*(file-explorer-popup-menu|shared-entry-menu)[^{}]*\{[^}]*\}/g) ?? [];
       expect(menuRules.length, file).toBeGreaterThan(0);
       for (const rule of menuRules) expect(rule, file).not.toMatch(/z-index/);
@@ -1049,7 +1052,7 @@ describe('クリップボードから貼ったら、すぐ名前の書き換え'
 describe('詳細の見出し', () => {
   it('縦にスクロールしても上端に残し、文字は選べない', async () => {
     const { readFileSync } = await import('node:fs');
-    const css = (readFileSync('src/components/FileExplorer.svelte', 'utf8').split('<style>')[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const css = (readFileSync(KIT + 'FileExplorer.svelte', 'utf8').split('<style>')[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
     const rule = css.match(/\.file-explorer-columns \{[^}]*\}/g)!.join('\n');
     expect(rule).toContain('position: sticky');
     expect(rule).toContain('user-select: none');

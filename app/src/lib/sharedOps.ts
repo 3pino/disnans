@@ -1,20 +1,21 @@
-// 共有フォルダの書き込みの決まり（名前・確認の文・同名の扱い）。見た目は持たない（components/FileExplorer・SharedEntryActions）。
+// 共有フォルダの書き込みの決まり（名前・確認の文・同名の扱い）。見た目は持たない。
+// 決まりの本体は共有の部品（@3pino/explorer-kit の ops）。ここは、Disnans の共有フォルダの決まり（SHARED_RULES:
+// 添付のフォルダ attachments/・名前の決まり）を渡して呼ぶ。
 // 添付（attachments/ の中）は本文のリンクと結びつくので、確認の文にその旨を入れる。
 
+import * as kit from '@3pino/explorer-kit';
+import type { Rules } from '@3pino/explorer-kit';
 import type { SharedEntry } from './protocol/SharedEntry';
 import { attachmentNameError } from './fileLink';
-import { baseName, parentOf } from './sharedPath';
+
+export { childPath, renameTarget, RESERVED_REASON } from '@3pino/explorer-kit';
+export type { Allowed, UploadPlan } from '@3pino/explorer-kit';
 
 export const ATTACHMENTS_DIR = 'attachments';
 
 /** attachments/ そのものか、その中か（添付の決まりが掛かる） */
 export function inAttachments(path: string): boolean {
   return path === ATTACHMENTS_DIR || path.startsWith(ATTACHMENTS_DIR + '/');
-}
-
-/** 直下の子のパス（dir が空なら名前だけ） */
-export function childPath(dir: string, name: string): string {
-  return dir === '' ? name : `${dir}/${name}`;
 }
 
 /** Windows で使えない名前（予約名。拡張子があっても同じ） */
@@ -38,80 +39,39 @@ export function nameError(dir: string, name: string): string | null {
   return null;
 }
 
+/** Disnans の共有フォルダの決まり（エクスプローラーの部品へ渡す） */
+export const SHARED_RULES: Rules = { attachmentsDir: ATTACHMENTS_DIR, nameError };
+
 /** 項目の操作（名前の変更・削除）を出すか。attachments/ そのもの（仮想のフォルダ）は動かさない */
 export function canOperate(path: string): boolean {
   return path !== ATTACHMENTS_DIR;
 }
 
-/** 添付のフォルダ（attachments/ そのもの）の理由。動かせない・消せない（サーバーの決まり: 403） */
-export const RESERVED_REASON = '添付のフォルダは動かせません';
-
-/** 項目の操作（名前の変更・切り取り・削除）が、今できるか。できないときは理由 */
-export type Allowed = { ok: true } | { ok: false; message: string };
-
 /** 項目の名前の変更・削除の可否（attachments/ そのものだけ不可。サーバーの決まり） */
-export function renameAllowed(path: string): Allowed {
-  return path === ATTACHMENTS_DIR ? { ok: false, message: RESERVED_REASON } : { ok: true };
+export function renameAllowed(path: string): kit.Allowed {
+  return kit.renameAllowed(SHARED_RULES, path);
 }
 
 /** 複数の項目をゴミ箱に移す確認の文 */
 export function trashManyConfirm(items: readonly { path: string; kind: 'file' | 'dir' }[]): { title: string; body: string; okLabel: string; danger: true } {
-  const n = items.length;
-  const notes: string[] = [];
-  if (items.some((i) => inAttachments(i.path))) notes.push('添付のものは、本文のリンクが「削除されたファイル」になります');
-  notes.push('ゴミ箱から元に戻せます');
-  return { title: `${n} 件をゴミ箱に移しますか`, body: notes.join('。'), okLabel: 'ゴミ箱に移す', danger: true };
+  return kit.trashManyConfirm(SHARED_RULES, items);
 }
 
 /** 同名のファイルを上書きする確認の文（必ず確認する）。attachments/ の中は、本文の表示も新しい中身になる */
 export function overwriteConfirm(path: string): { title: string; body: string; okLabel: string; danger: true } {
-  const name = baseName(path);
-  return {
-    title: `「${name}」を上書きしますか`,
-    body: inAttachments(path)
-      ? '同じ添付の中身が入れ替わります。本文の表示も新しい中身になります。元に戻せません'
-      : '今のファイルは消えて、新しいものに入れ替わります。元に戻せません',
-    okLabel: '上書き',
-    danger: true,
-  };
+  return kit.overwriteConfirm(SHARED_RULES, path);
 }
 
 /** 一覧の中の、同じ名前の項目。attachments/ は大文字・小文字を区別しない（添付の別名の決まり） */
-export function sameNameEntry(
-  entries: ReadonlyMap<string, SharedEntry>,
-  dir: string,
-  name: string,
-): SharedEntry | undefined {
-  const exact = entries.get(name);
-  if (exact || !inAttachments(dir)) return exact;
-  const lower = name.toLowerCase();
-  for (const [k, v] of entries) if (k.toLowerCase() === lower) return v;
-  return undefined;
+export function sameNameEntry(entries: ReadonlyMap<string, SharedEntry>, dir: string, name: string): SharedEntry | undefined {
+  return kit.sameNameEntry(SHARED_RULES, entries, dir, name);
 }
-
-/** アップロード（作成・上書き）の決め方 */
-export type UploadPlan =
-  | { kind: 'create'; path: string }
-  | { kind: 'overwrite'; path: string }
-  | { kind: 'blocked'; message: string };
 
 /**
  * アップロードの前に、同名の扱いを決める。
  * - 一覧が手元にない（読み終えていない）ときは上書きを防ぐため止める（PUT は同名を黙って上書きするため）
  * - 同名がフォルダなら止める。ファイルなら上書き（呼ぶ側で確認する）
  */
-export function planUpload(dir: string, name: string, state: { kind: string; entries?: ReadonlyMap<string, SharedEntry> }): UploadPlan {
-  const path = childPath(dir, name);
-  const bad = nameError(dir, name);
-  if (bad) return { kind: 'blocked', message: bad };
-  if (state.kind !== 'ok' || !state.entries) return { kind: 'blocked', message: 'フォルダの中身を読み終えてから、もう一度送ってください' };
-  const same = sameNameEntry(state.entries, dir, name);
-  if (!same) return { kind: 'create', path };
-  if (same.kind === 'dir') return { kind: 'blocked', message: '同じ名前のフォルダがあります' };
-  return { kind: 'overwrite', path: childPath(dir, same.name) };
-}
-
-/** 項目の親のフォルダ（名前の変更の先） */
-export function renameTarget(path: string, to: string): string {
-  return childPath(parentOf(path), to);
+export function planUpload(dir: string, name: string, state: { kind: string; entries?: ReadonlyMap<string, SharedEntry> }): kit.UploadPlan {
+  return kit.planUpload(SHARED_RULES, dir, name, state);
 }

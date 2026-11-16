@@ -75,7 +75,7 @@ describe('プロパティ（読むだけ）', () => {
 
   it('見出し（名前・パスなど）は選べない', async () => {
     const { readFileSync } = await import('node:fs');
-    const src = readFileSync('src/components/FileProperties.svelte', 'utf8');
+    const src = readFileSync('node_modules/@3pino/explorer-kit/src/FileProperties.svelte', 'utf8');
     expect(src).toMatch(/\.file-properties dt \{[^}]*user-select: none/);
   });
 

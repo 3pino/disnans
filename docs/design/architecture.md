@@ -14,6 +14,17 @@
 - 部品や DOM を変えるときは、共有側の CSS と、`components/ui/`・`lib/plugins/ui.ts`・[PLUGIN_UI.md](../plugins/ui.md) をそろえる
 - 見た目の最終確認は利用者が行う
 
+## エクスプローラー（共有フォルダの画面）
+
+共有フォルダを見る画面（一覧・選択・コピー／移動・ゴミ箱・名前の変更・プロパティ）と、その決まり・状態は、共有パッケージ **[@3pino/explorer-kit](https://github.com/3pino/explorer-kit)** にある。
+ファイラーのアプリ disrect と同じ部品で、Disnans は「サーバーの共有フォルダ」という置き場所を 1 つ渡して使う。
+
+- 取り込み: `app/package.json` の依存（タグ指定）。TypeScript と Svelte のソースのまま配られるので、`app/vite.config.ts` で開発サーバーの事前バンドルから外している（`optimizeDeps.exclude`）
+- Disnans の実装を渡すところ: `app/src/lib/explorer/instance.ts`（置き場所 = `sharedApi`・項目の URL・共有フォルダの決まり `SHARED_RULES`、本体から貸す機能 = 通知・確認・戻る・拡大表示・クリップボード・保存・OS からのドロップ）
+- `components/FileExplorer.svelte`・`FileProperties.svelte`・`SharedEntryActions.svelte` は、部品へそれを渡すだけの薄い包み。`lib/sharedOps.ts`・`sharedTransfer.ts`・`trashFolder.ts`・`fileExplorer.ts`・`explorerDirs.ts` と `lib/stores/explorer*.svelte.ts`・`fileExplorer.svelte.ts` は、部品を Disnans の決まりで呼ぶ入口（これまでと同じ名前で使える）
+- 画面の流れの試験（`components/FileExplorer.test.ts`）は Disnans の側にあり、部品に Disnans の実装を渡して確かめる。部品を変えたら、この試験が通ることを確かめてからタグを更新する
+- 更新: 共有側でタグを打ち、依存のタグを更新する
+
 ## クライアントと共通表示データ
 
 - 製品の GUI は Tauri（Windows・Linux・Android）。チャットは Rust の接続を使う。製品としてのブラウザー対応はしない。`vite dev` は Tauri の接続先と、テスト（vitest・`app/scripts/touch-check.mjs` の Chromium）のためにあり、通常のブラウザーから実サーバーへつなぐ経路は持たない。
