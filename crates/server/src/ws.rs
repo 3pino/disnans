@@ -26,9 +26,9 @@ use crate::state::SharedState;
 use crate::store::{reads, users};
 
 /// サーバーから WebSocket の ping を送る間隔。
-const PING_INTERVAL: Duration = Duration::from_secs(30);
+const PING_INTERVAL: Duration = Duration::from_secs(60);
 /// この時間なにも受け取らなければ、切れたものとみなして閉じる。
-const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+const IDLE_TIMEOUT: Duration = Duration::from_secs(180);
 
 pub async fn handler(
     State(state): State<SharedState>,

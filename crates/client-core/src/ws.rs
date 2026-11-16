@@ -87,7 +87,7 @@ pub struct ConnectOptions {
     pub hello_timeout: Duration,
     /// Longest time without any frame from the server while waiting for events. Also the limit
     /// after which a connection that has not sent anything (no reads, so no pong) is treated as
-    /// dead. Default: 90 seconds, matching the server's idle timeout.
+    /// dead. Default: 180 seconds, matching the server's idle timeout.
     pub idle_timeout: Duration,
 }
 
@@ -97,7 +97,7 @@ impl Default for ConnectOptions {
             dev_user: None,
             connect_timeout: Duration::from_secs(10),
             hello_timeout: Duration::from_secs(10),
-            idle_timeout: Duration::from_secs(90),
+            idle_timeout: Duration::from_secs(180),
         }
     }
 }
