@@ -5,13 +5,14 @@
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture';
   import SwitchCamera from '@lucide/svelte/icons/switch-camera';
   import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
-  import LightboxView from './LightboxView.svelte';
+  import LightboxView from '@3pino/viewer-kit-web/viewers/LightboxView.svelte';
+  import { defaultViewers } from '@3pino/viewer-kit-web/viewers';
   import { ui } from '../lib/stores/ui.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
   import { isAndroid } from '../lib/platform';
   import { setImmersive } from '../lib/systemBars';
   import { orientation } from '../lib/stores/orientation.svelte';
-  import type { LightboxItem } from '../lib/lightbox';
+  import type { LightboxItem } from '@3pino/viewer-kit-web/viewers/types';
   import { startWebPip, webPipAvailable, type WebPip } from '../lib/call/screen/webPip';
   import type { ScreenShareView } from '../lib/call/screen/view';
   import type { ScreenPipPort } from '../lib/call/screen/types';
@@ -237,6 +238,7 @@
     closeOnEscape={false}
     chrome={!pipNative && !(android && fullscreen)}
     download={false}
+    viewers={defaultViewers}
     class="screen-viewer"
     tabIndex={-1}
     tapMode={android ? 'media' : 'close'}

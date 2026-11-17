@@ -1,16 +1,13 @@
-// 写真の拡大表示（Lightbox）の、前後の画像をたどる決まり。画面の部品（components/Lightbox.svelte）は並べ替えと移動だけを使う。
-// 画像の見分けは src（URL）。同じ画像が 2 回出るとき、前後は最初に出た位置から数える（既知の制限）
+// チャットの画像の一覧（拡大表示で前後にたどる順）。拡大表示そのもの（部品・前後の決まり）は @3pino/viewer-kit-web/viewers
 
 import type { Message } from './protocol/Message';
-import type { ViewerKind } from './viewers';
 import { fileUrl } from './config';
 import { attachmentRefs, bodyAttachmentNames, type AttachmentRef } from './fileLink';
 
-/** 拡大表示の 1 件。kind はビューアーの種類（lib/viewers.ts）。無ければ画像 */
-export type LightboxItem = { src: string; alt: string; downloadUrl: string; kind?: ViewerKind; /** 同じものの src が変わり続けるとき（ライブの映像）の見分け。無ければ src */ key?: string };
-
-/** 前後をたどる一覧。呼ぶたびに今の一覧を返す */
-export type LightboxGallery = () => LightboxItem[];
+// 拡大表示の型と前後の決まりは @3pino/viewer-kit-web/viewers（types）。ここは disnans のチャットの一覧だけ
+export type { LightboxItem, LightboxGallery } from '@3pino/viewer-kit-web/viewers/types';
+export { adjacentItem } from '@3pino/viewer-kit-web/viewers/types';
+import type { LightboxItem } from '@3pino/viewer-kit-web/viewers/types';
 
 /**
  * チャットの画像の一覧（表示の順）。メッセージの並び順（古い→新しい）、1 メッセージの中は本文での出現順、
@@ -33,13 +30,4 @@ export function chatImageItems(messages: readonly Message[], bodyImage: (ref: At
     }
   }
   return out;
-}
-
-/**
- * 前（delta < 0）・次（delta > 0）の画像。いまの画像が一覧に無い、または端で続きが無いときは null（動かさない）
- */
-export function adjacentItem(items: readonly LightboxItem[], src: string, delta: -1 | 1): LightboxItem | null {
-  const i = items.findIndex((it) => it.src === src);
-  if (i < 0) return null;
-  return items[i + delta] ?? null;
 }

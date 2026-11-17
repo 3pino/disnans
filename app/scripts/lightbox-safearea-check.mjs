@@ -15,7 +15,8 @@ const html = `<!doctype html><html><head><meta name="viewport" content="width=de
 <script type="module">
 import {mount,unmount,tick} from 'svelte';
 import '/src/app.css';
-import LightboxView from '/src/components/LightboxView.svelte';
+import LightboxView from '/node_modules/@3pino/viewer-kit-web/src/viewers/LightboxView.svelte';
+import { defaultViewers } from '/node_modules/@3pino/viewer-kit-web/src/viewers/index.ts';
 import ScreenShareViewer from '/src/components/ScreenShareViewer.svelte';
 const PNG = ${JSON.stringify(PNG)};
 const items = ['a','b','c'].map((n) => ({ src: PNG + '#' + n, alt: n + '.png', downloadUrl: PNG }));
@@ -32,7 +33,7 @@ window.renderFixture = async (kind) => {
   // Android: 映像の上を押すと没入（バーを隠す）、外を押すと閉じる。OS の没入は呼ばれない（Tauri ではない）
   window.__DISNANS_PLATFORM__ = kind === 'android' ? { os: 'android', android: true, desktop: false, capabilities: null } : undefined;
   if (kind === 'photo') {
-    app = mount(LightboxView, { target: document.getElementById('fixture'), props: { item: items[1], gallery: () => items, onchange() {}, onclose() {} } });
+    app = mount(LightboxView, { target: document.getElementById('fixture'), props: { item: items[1], gallery: () => items, viewers: defaultViewers, onchange() {}, onclose() {} } });
   } else {
     const dataUrl = kind === 'android' ? BIG : PNG;
     const screen = { sharing: false, starting: false, source: 'screen', switching: false, canSwitchCamera: false, canScreen: true, canCamera: true, localStream: null, localFrame: null,

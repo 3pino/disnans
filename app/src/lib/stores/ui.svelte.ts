@@ -4,7 +4,7 @@ import { prefs } from './prefs.svelte';
 import { deviceSettings } from './deviceSettings.svelte';
 import { setSettingsErrorHandler } from '../settingsModel';
 import type { User } from '../protocol/User';
-import type { LightboxItem } from '../lightbox';
+import type { LightboxItem } from '@3pino/viewer-kit-web/viewers/types';
 import { Shell, type ShellConfirm, type ShellToast } from '@3pino/app-kit-web/shell';
 import { forgetPanelIn, navBack, navBackDepth, navigate, normalizeNav, type NavMode, type NavState, type NavTab, type Panel, type SettingsSubpage } from '../navHistory';
 

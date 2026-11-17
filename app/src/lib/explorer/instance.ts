@@ -14,7 +14,7 @@ import { diagLog } from '../diagLog';
 import { downloadFile, interceptDownload } from '../download';
 import { dropRootsOf, entriesFromDropRoots, listenNativeDrop, listenOsDrop, osDropEntries, osDropRelease } from '../dropFiles';
 import { attachmentActionText, isImage } from '../fileLink';
-import type { LightboxItem } from '../lightbox';
+import type { LightboxItem } from '@3pino/viewer-kit-web/viewers/types';
 import { isLinuxDesktop, isTauri, osName } from '../platform';
 import { SHARED_RULES } from '../sharedOps';
 import { deviceSettings } from '../stores/deviceSettings.svelte';

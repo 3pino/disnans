@@ -42,6 +42,8 @@
 - `core/`（TypeScript）: プラットフォームの判定（Rust の注入値の名前は `app/src/lib/platformGlobal.ts` で `__DISNANS_PLATFORM__` に決める）・storage・localKeys の照合・invokeNative・戻る操作の履歴への接続・Esc の順・クリップボード・ドロップの既定動作・拡大と移動の計算など。
 - `shell/`: 画面の土台の状態 `Shell`（トースト・確認・拡大表示・戻る操作の層）と、部品 `Toasts.svelte`・`ConfirmDialog.svelte`。
 
+拡大表示の部品（写真・PDF・ライブ映像の全画面）は、共有パッケージ `@3pino/viewer-kit-web`（別のリポジトリ `~/repos/viewer-kit-web`、v0.1.0）から取り込む。`LightboxView`・ビューアー（画像・PDF）・`PdfThumb`・前後の決まりと型を持つ。URL・保存・エラーの文・種類の見分け・チャットの一覧は disnans が渡す（`components/Lightbox.svelte` が `ondownload`（Tauri の直接保存）と `errorText` を渡し、`lib/viewers.ts` が種類を決める）。共有の全画面（`ScreenShareViewer`）は同じ `LightboxView` を props で使う。
+
 disnans に残るもの: `app/src/lib/platform.ts`（方針 `capabilities`）、`app/src/lib/stores/ui.svelte.ts`（タブ・パネル・通話・設定・検索・遷移の履歴。土台の `Shell` を `shell` として持ち、メンバーを委ねる）、`app/src/components/Toasts.svelte`・`ConfirmDialog.svelte`（土台の部品に ui の値と送り主のアイコンを渡すだけ）、診断ログ・システムバー・通知など、アプリごとの Tauri プラグインと結び付くもの。
 
 呼び出し側は `ui` だけを使い、土台のメンバー（`toast`・`confirm`・`lightbox`・`back` など）も `ui` 経由のまま変えていない。

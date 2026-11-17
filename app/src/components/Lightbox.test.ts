@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import Lightbox from './Lightbox.svelte';
 import { ui } from '../lib/stores/ui.svelte';
-import type { LightboxItem } from '../lib/lightbox';
+import type { LightboxItem } from '@3pino/viewer-kit-web/viewers/types';
 
 // 拡大表示: ←→ キー・横スワイプ（1 本指・等倍のとき。指に合わせて隣が出てくる）・端では動かさない・拡大中はパン優先・タップで閉じる
 const ITEMS: LightboxItem[] = ['a', 'b', 'c'].map((n) => ({ src: `${n}.png`, alt: `${n}.png`, downloadUrl: `${n}.png` }));

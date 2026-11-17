@@ -15,10 +15,11 @@
     "tauri:icon": "tauri icon src-tauri/icons/icon-manifest.json"
   },
   "dependencies": {
-    "@3pino/app-kit-web": "git+https://github.com/3pino/app-kit-web.git#v0.1.0",
+    "@3pino/app-kit-web": "git+https://github.com/3pino/app-kit-web.git#v0.1.1",
     "@3pino/design-system": "git+https://github.com/3pino/design-system.git#v0.4.1",
     "@3pino/explorer-kit": "git+https://github.com/3pino/explorer-kit.git#v0.4.0",
     "@3pino/ui-kit-web": "git+https://github.com/3pino/ui-kit-web.git#v0.3.0",
+    "@3pino/viewer-kit-web": "git+https://github.com/3pino/viewer-kit-web.git#v0.1.0",
     "@lucide/svelte": "^1.53.0",
     "@tauri-apps/api": "^2.12.2",
     "@tauri-apps/plugin-clipboard-manager": "^2.4.1",
