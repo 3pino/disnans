@@ -9,7 +9,7 @@
 
   // プラグインの view を出すパネル（枠は返信のツリーと同じ）。view は containerEl に自分で描く。
   // 上部の題名・アイコンは view が決める（View.title / View.icon、setTitle / setIcon）。省くとプラグイン名・プラグインのアイコン、空文字列なら出さない
-  let { plugin, view, sessionId }: { plugin: string; view: string; sessionId: string } = $props();
+  let { plugin, view, sessionId }: { plugin: string; view: string; sessionId: string | null } = $props();
 
   const runtime = $derived(pluginHost.runtime(plugin));
   let containerEl: HTMLDivElement | undefined = $state();

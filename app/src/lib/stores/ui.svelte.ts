@@ -173,7 +173,7 @@ class Ui {
   }
 
   /** プラグインの view でセッションを開く */
-  openPluginView(plugin: string, view: string, sessionId: string): void {
+  openPluginView(plugin: string, view: string, sessionId: string | null): void {
     this.openPanel({ kind: 'plugin', plugin, view, sessionId });
   }
 

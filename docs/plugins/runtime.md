@@ -211,6 +211,46 @@ export default class extends Plugin {
 - 権限を入れていないプラグインは、どの操作も `permission_denied` で失敗します（`onChange` は同期で投げます）
 - 作るとき `minApiVersion` を `15` にしてください（`14` 以下の本体には `this.files` がありません）
 
+### API 19 の追加
+
+共有フォルダ（`this.files`）に、URL・アップロード（進みと中止）・大きさ・ゴミ箱を足しました。`minApiVersion` を `19` にしてください（権限は `files` のまま）。
+
+```js
+const url = this.files.url(entry);                                  // <img src> に使える URL（同期。項目から。thumb: true で縮小版）
+const ac = new AbortController();
+await this.files.upload('photos/b.png', blob, {
+  onProgress: (sent, total) => bar.style.width = `${(sent / total) * 100}%`,
+  signal: ac.signal,                                                // ac.abort() で中止（AbortError）
+});
+const { size, files, dirs } = await this.files.size('photos');
+const trash = await this.files.trashList();                         // ゴミ箱の一覧
+await this.files.trash('photos/old.png');                           // ゴミ箱へ（フォルダは中身ごと）
+await this.files.restore(trash[0].id);                              // 元の場所へ（同名があれば exists）
+await this.files.purge(trash[0].id);                                // 完全に消す（元に戻せない）
+```
+
+- `caps()` は、この置き場所の機能を返します（Disnans は `{ trash: true, restore: true, attachmentsDir: 'attachments' }`）。`trash` が偽の置き場所では、ゴミ箱の操作は `unsupported`
+- `upload` の `onProgress` は送った量と全体（バイト）。中止すると `AbortError`（`DOMException`）。途中で中止したとき、サーバーには一時ファイルが残らない（サーバーは一時から rename します）
+- `url` は、本体が作る URL です。画像・PDF の表示に使えます（ヘッダーの付けられない場所でも使えます）
+- `this.files.onChange` は、どのデバイスの変更でも届きます。自分の `upload` の結果を画面に出すときは、`onChange` の遅れを考えてください
+- `this.files.url(entry, { thumb? })` は同期です。`entry` は `list` などが返した項目をそのまま渡します。添付は ID の URL（`thumb` で縮小版）、ゴミ箱の中の項目はパスの URL です（本体の explorer と同じ決まり）
+- `session.onServerChange(cb)`（`disnans.session`）: 接続先のサーバーが変わったとき。サーバーの URL は見えません。旧サーバーの写しを捨てるために使います。解除関数を返します
+- `disnans.app.platform`: このデバイスの環境（読み取りのみ）。`{ tauri: boolean, os: 'windows' | 'linux' | 'android' | …（分からなければ空）, linuxDesktop: boolean }`
+- `disnans.chat.registerLinkOpener((path, alias) => …)`: 本文のファイルリンクの「開く」を、プラグインに任せます。1 つだけ（後から登録したものが勝ちます）。登録が無ければ、本体の既定（保存・拡大表示）のままです。解除関数を返します。プラグインを外すときに `this.register` で登録すると自動で外れます
+- 旧い保存先（`this.legacyData`）: 組み込みのエクスプローラーの以前の一覧の表示（`explorerDirs`）を、一度だけ引き継ぐための値です。プラグインが**最初に `saveData` するまで**入り、そのあとは `null` です。対象のプラグイン以外は常に `null` です
+
+### セッションのない view
+
+`registerView(type, factory)` の factory は `session` を受けます。`openView(type)` を session なしで呼ぶと、factory には `null` が渡り、セッションもカードも作りません（ファイルの一覧など、チャットに何も流さない画面に使います）。`openView(type, session)` は今までどおりです。
+
+```js
+this.registerView('files', (session) => {        // session は null（openView('files') で開いたとき）
+  return { onOpen(el, panel) { panel.setTitle('ファイル'); /* 中身を el に描く */ } };
+});
+const nav = disnans.ui.navItem({ id: 'notes:files', label: 'ファイル', icon: 'folder', view: 'files' });
+this.register(nav.close);
+```
+
 ### loadData / saveData
 
 そのデバイスにだけ保存するデータ（設定など）です。ほかのメンバーとは共有されません。共有したいものはセッションに入れます。

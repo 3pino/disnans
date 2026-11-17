@@ -7,6 +7,8 @@
   import { commandHost } from '../lib/commandHost.svelte';
   import { NAV_BUILTIN_IDS, NAV_CALL_ID, NAV_CHAT_ID, NAV_SETTINGS_ID, navActiveId, navItemLabel, visibleNavItems } from '../lib/navBar';
   import { navBar } from '../lib/stores/navBar.svelte';
+  import { pluginNav, type PluginNavEntry } from '../lib/pluginNav.svelte';
+  import { pluginHost } from '../lib/plugins/host.svelte';
   import { unread } from '../lib/stores/unread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
@@ -18,14 +20,26 @@
   // 選んでいる項目は、いま見せている画面（タブ）に合わせる
 
   // 選んでいる項目（共有フォルダ・チャット・設定・通話のどれか。規則は lib/navBar.ts の navActiveId）
-  const current = $derived(navActiveId({ tab: ui.tab, panel: ui.panel?.kind ?? null }));
+  // プラグインの項目（ui.navItem）: 利用者の並べ替えには入らないが、登録されていれば末尾に自動で出る
+  const current = $derived.by(() => {
+    if (ui.panel?.kind === 'plugin') {
+      const hit = pluginNav.forView(ui.panel.plugin, ui.panel.view);
+      if (hit) return hit.id;
+    }
+    return navActiveId({ tab: ui.tab, panel: ui.panel?.kind ?? null });
+  });
 
   /** 登録されている（出せる）コマンドの ID */
   const available = $derived(new Set(commandList().map((c) => c.id)));
-  const ids = $derived(visibleNavItems(navBar.items, available));
+  const ids = $derived.by(() => {
+    const shown = visibleNavItems(navBar.items, available);
+    return [...shown, ...pluginNav.entries.map((e) => e.id).filter((id) => !shown.includes(id))];
+  });
 
   /** 項目の見た目。表示名は設定どおり（lib/navBar.ts の navItemLabel）。本体の3つは専用のアイコンとバッジ、ほかはコマンドのアイコン */
   function toItem(id: string): NavBarItem | null {
+    const p = pluginNav.find(id);
+    if (p) return { id, label: p.label, icon: p.icon, badge: p.badge };
     const c = findCommand(id);
     if (!c && !NAV_BUILTIN_IDS.includes(id)) return null;
     const label = navItemLabel(id, c?.name, navBar.labels);
@@ -48,6 +62,10 @@
       ui.openSettings();
     } else if (id === NAV_CALL_ID) {
       ui.openCall('reset');
+    } else if (pluginNav.find(id)) {
+      const p: PluginNavEntry = pluginNav.find(id)!;
+      if (p.view) pluginHost.openViewByType(p.view);
+      p.onOpen?.();
     } else {
       const c = findCommand(id);
       if (c) void commandHost.run(c, 'palette');

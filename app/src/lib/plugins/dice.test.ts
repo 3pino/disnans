@@ -22,6 +22,8 @@ const uiDeps: UiDeps = { toast: () => {}, confirm: async () => true };
   VersionConflictError,
   audio: { listOutputs: async () => [], setOutput: async () => false, listInputs: async () => [], attach: () => () => {} },
   call: {} as Disnans.Call,
+  session: { onServerChange: () => () => {} },
+  chat: { registerLinkOpener: () => () => {} },
 };
 
 const users = [
@@ -210,7 +212,7 @@ describe('examples/dice', () => {
     await vi.waitFor(() => expect(el.querySelectorAll('.dice-face-reveal')).toHaveLength(2));
     expect(el.querySelectorAll('.dice-face-pending, .dice-face-shaking')).toHaveLength(0);
     expect(headers.at(-1)).toEqual({ title: 'ダイス（2d6）', icon: 'dices' });
-    expect(handle.session.version).toBe(2);
+    expect(handle.session!.version).toBe(2);
 
     // タブを「使い方」に切り替える
     el.querySelectorAll<HTMLButtonElement>('.nav-bar-item')[1].click();

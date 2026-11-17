@@ -12,6 +12,7 @@
   import { interceptDownload } from '../lib/download';
   import { parentOf } from '../lib/sharedPath';
   import { chatGallery } from '../lib/chatGallery';
+  import { linkOpener } from '../lib/linkOpener.svelte';
 
   // 本文のファイルリンク（`[別名](パス)`）と埋め込み（`![…](パス)`）。どちらも共有フォルダのパスを今の一覧と突き合わせて表す。
   // 見た目は仮（利用者の確認を取る）。判断の決まりは lib/fileLink.ts
@@ -44,7 +45,23 @@
 {:else if view.kind === 'folder'}
   <span class="file-link-folder"><Folder size={14} />{view.text}</span>
 {:else if view.kind === 'link'}
-  <a class="file-link inline-link" href={view.href} download={view.name} target="_blank" rel="noopener" onclick={(ev) => interceptDownload(ev, { url: view.href, name: view.name })}>{view.text}</a>
+  <a
+    class="file-link inline-link"
+    href={view.href}
+    download={view.name}
+    target="_blank"
+    rel="noopener"
+    onclick={(ev) => {
+      // プラグインが「開く」を登録していれば、そちらへ（登録が無ければ、いつもどおり）
+      const open = linkOpener();
+      if (open) {
+        ev.preventDefault();
+        open(path, alias);
+        return;
+      }
+      interceptDownload(ev, { url: view.href, name: view.name });
+    }}>{view.text}</a
+  >
 {:else if view.kind === 'image'}
   <button type="button" class="file-link file-link-button" onclick={() => ui.openLightbox({ src: view.src, alt: view.alt, downloadUrl: view.src }, chatGallery)}>{view.text}</button>
 {:else if view.kind === 'embedImage'}

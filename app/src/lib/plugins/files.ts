@@ -1,7 +1,10 @@
 import type { SharedEntry } from '../protocol/SharedEntry';
+import type { SharedSize } from '../protocol/SharedSize';
+import type { SharedTrashEntry } from '../protocol/SharedTrashEntry';
 import type { SharedApi } from '../transport/shared';
 import { PluginError, toPluginError } from './errors';
 import { parentOf } from '../sharedPath';
+import { readUrl } from '../explorer/urls';
 
 /** manifest.json の permissions に入れると使える、共有フォルダの権限（disnans.Plugin の files） */
 export const PERMISSION_FILES = 'files';
@@ -11,6 +14,10 @@ export type FilesChangedSubscribe = (cb: (path: string) => void) => () => void;
 
 /** move / copy の任意の指定 */
 export type FileCopyOptions = { overwrite?: boolean };
+
+/** 共有フォルダの機能の有無（API 19。Disnans の共有フォルダはゴミ箱があり、添付は attachments/ に読み取り専用で並ぶ） */
+export type SharedCapSet = { trash: boolean; restore: boolean; attachmentsDir: string | null };
+export const DISNANS_SHARED_CAPS: SharedCapSet = { trash: true, restore: true, attachmentsDir: 'attachments' };
 
 /** 権限があるか（manifest.json の permissions に "files" があるか） */
 export function hasPermission(permissions: readonly string[] | undefined, name: string): boolean {
@@ -50,6 +57,7 @@ export class PluginFiles {
     private readonly allowed: boolean,
     private readonly api: SharedApi,
     private readonly subscribe: FilesChangedSubscribe,
+    private readonly capSet: SharedCapSet = DISNANS_SHARED_CAPS,
   ) {}
 
   private need(): void {
@@ -138,5 +146,83 @@ export class PluginFiles {
     this.need();
     if (typeof cb !== 'function') throw new PluginError('invalid_argument', 'cb は関数にしてください');
     return this.subscribe((path) => cb({ path }));
+  }
+
+  // ---- API 19 ----
+
+  /**
+   * <img>・<a> で使える URL（同期）。項目から、explorer と同じ決まり（lib/explorer/urls.ts の readUrl）で作る。
+   * 添付は ID の URL（thumb なら縮小版）、ゴミ箱の中の項目は共有フォルダのパスの URL
+   */
+  url(entry: SharedEntry, opts: { thumb?: boolean } = {}): string {
+    this.need();
+    if (typeof entry !== 'object' || entry === null || typeof entry.path !== 'string') {
+      throw new PluginError('invalid_argument', 'entry は files.list などが返した項目で渡してください');
+    }
+    return readUrl(entry, opts.thumb === true);
+  }
+
+  /** 送る（作成・上書き）。onProgress は送った量と全体（バイト）。signal で中止できる（中止は AbortError） */
+  async upload(
+    path: string,
+    data: Blob,
+    opts: { onProgress?: (sent: number, total: number) => void; signal?: AbortSignal } = {},
+  ): Promise<SharedEntry> {
+    this.need();
+    const p = checkSharedPath(path);
+    if (!(data instanceof Blob)) throw new PluginError('invalid_argument', 'data は Blob にしてください');
+    if (opts.signal?.aborted) throw new DOMException('中止しました', 'AbortError');
+    try {
+      return await this.call(() => this.api.upload(p, data, opts.onProgress, opts.signal));
+    } catch (e) {
+      if (opts.signal?.aborted) throw new DOMException('中止しました', 'AbortError');
+      throw e;
+    }
+  }
+
+  /** フォルダ（またはファイル）の大きさ。path を省くと共有フォルダ全体 */
+  async size(path = ''): Promise<SharedSize> {
+    this.need();
+    const p = checkSharedPath(path, true);
+    return this.call(() => this.api.size(p));
+  }
+
+  /** この置き場所の機能（同期） */
+  caps(): SharedCapSet {
+    this.need();
+    return { ...this.capSet };
+  }
+
+  private needTrash(): void {
+    this.need();
+    if (!this.capSet.trash) throw new PluginError('unsupported', 'この置き場所にはゴミ箱がありません');
+  }
+
+  /** ゴミ箱の一覧 */
+  async trashList(): Promise<SharedTrashEntry[]> {
+    this.needTrash();
+    return this.call(() => this.api.trashList());
+  }
+
+  /** ゴミ箱へ入れる（フォルダは中身ごと） */
+  async trash(path: string): Promise<SharedTrashEntry> {
+    this.needTrash();
+    const p = checkSharedPath(path);
+    return this.call(() => this.api.trash(p));
+  }
+
+  /** ゴミ箱から元の場所へ戻す（同名があれば exists） */
+  async restore(id: string): Promise<SharedEntry> {
+    this.needTrash();
+    if (!this.capSet.restore) throw new PluginError('unsupported', 'この置き場所では戻せません');
+    if (typeof id !== 'string' || id === '') throw new PluginError('invalid_argument', 'id は空でない文字列にしてください');
+    return this.call(() => this.api.restore(id));
+  }
+
+  /** ゴミ箱から完全に消す（元に戻せない） */
+  async purge(id: string): Promise<void> {
+    this.needTrash();
+    if (typeof id !== 'string' || id === '') throw new PluginError('invalid_argument', 'id は空でない文字列にしてください');
+    return this.call(() => this.api.purge(id));
   }
 }

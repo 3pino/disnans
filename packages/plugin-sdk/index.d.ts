@@ -67,7 +67,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 18） */
+      /** ホスト API のバージョン（いまは 19） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -77,6 +77,10 @@ declare global {
       readonly PluginError: typeof PluginError;
       /** Session.update が他の人の更新とぶつかったときのエラー（PluginError の一種。`instanceof` で見分ける） */
       readonly VersionConflictError: typeof VersionConflictError;
+      /** 接続先（API 19）。接続先の URL は見せない */
+      readonly session: HostSession;
+      /** チャットの口（API 19）。本文のファイルリンクの「開く」を、プラグインに任せる */
+      readonly chat: HostChat;
       /** 音の入出力の選択（API v5）。通話のプラグイン向け。環境の違い（Android・デスクトップ）はここで隠す */
       readonly audio: Audio;
       /** 本体の通話（API v8。`addPanel` と `bufferedAmount` は v10）。画面共有などの拡張向け。通話そのもの（参加・ミュート・出力先）は本体の機能で、ここからは状態の読み取りと、参加者どうしのデータの送受信だけ */
@@ -246,6 +250,8 @@ declare global {
       user(id: string): User | undefined;
       /** 表示名。いなければ「不明なユーザー」 */
       nameOf(id: string): string;
+      /** この端末の環境（API 19。読み取りのみ。Tauri・OS・Linux のデスクトップの有無） */
+      readonly platform: PlatformInfo;
       readonly isMobile: boolean;
       /** 現在のテーマ */
       readonly theme: 'light' | 'dark';
@@ -303,8 +309,15 @@ declare global {
        * 型引数 S でセッションの state の型を指定できる。
        */
       registerView<S = unknown>(type: string, factory: (session: Session<S>) => View): void;
+      /**
+       * セッションのない view（API 19）。factory には session が null で渡る。ファイルの一覧など、カードを作らない画面に使う。
+       * 同じ registerView でも、openView を session なしで呼んだときは null になる。
+       */
+      registerView(type: string, factory: (session: Session<any> | null) => View): void;
       /** パネル（モバイルでは全画面）に view を開く */
       openView<S = unknown>(type: string, session: Session<S>): void;
+      /** セッションのない view をパネルに開く（API 19。registerView で factory が受けた view を開く） */
+      openView(type: string): void;
       /** カードの見た目を独自に描く。省略すると本体の標準のカード */
       registerCardRenderer(render: CardRenderer): void;
 
@@ -328,6 +341,12 @@ declare global {
       ): void;
       /** setInterval を登録し、外すときに自動で止める（`window.setInterval` の戻り値を渡す） */
       registerInterval(id: number): number;
+
+      /**
+       * 旧い保存先の値（API 19。読み取り専用）。組み込みの機能から引き継ぐ値で、プラグインが最初に saveData するまでの間だけ入る
+       * （そのあとは null。一度きりの取り込みに使う）。プラグインごとに本体が決める。対象でなければ null
+       */
+      readonly legacyData: unknown;
 
       /** そのデバイスに保存したプラグインのデータを読む（なければ null） */
       loadData<T = unknown>(): Promise<T | null>;
@@ -607,8 +626,15 @@ declare global {
 
     type Card = { title: string; text: string };
 
+    /** 共有フォルダのゴミ箱の 1 件か、その中の位置（API 19。ゴミ箱の表示用） */
+    type SharedTrashNode = { kind: 'root' } | { kind: 'item'; entry: SharedTrashEntry } | { kind: 'descendant'; id: string };
+
     /** 共有フォルダの項目（`/api/shared`。API v15）。サーバーの SharedEntry と同じ形（`size`・`modified` は数）。 */
     type SharedEntry = {
+      /** 添付の ID（`attachments/` の中の項目。API 19。`files.url(entry)` が使う） */
+      file_id: string | null;
+      /** ゴミ箱の中の項目だけ（API 19） */
+      trash?: SharedTrashNode;
       /** 名前（最後の区切りの後ろ） */
       name: string;
       /** 共有フォルダからの相対パス（`docs/a.txt`） */
@@ -623,6 +649,94 @@ declare global {
       /** 添付のメッセージ ID（`attachments/` の中だけ） */
       message_id: string | null;
     };
+
+    /** 共有フォルダのゴミ箱の項目（API 19。`GET /api/shared-trash` と同じ形。id は不透明な文字列） */
+    type SharedTrashEntry = {
+      id: string;
+      /** 削除されたときの共有フォルダからの相対パス */
+      original_path: string;
+      kind: 'file' | 'dir';
+      /** ファイルの大きさ（バイト）。フォルダは配下の合計 */
+      size: number;
+      /** ゴミ箱へ入れた時刻（ミリ秒、UNIX 時間） */
+      deleted_at: number;
+      /** `.trash/` の中での完全な相対パス（仮想の名前空間が有効なときだけ） */
+      trash_path?: string;
+    };
+
+    /** フォルダ・ファイルの大きさ（API 19）。files は配下のファイル数、dirs は配下のフォルダ数（自身は含まない） */
+    type SharedSize = { size: number; files: number; dirs: number };
+
+    /** 共有フォルダの機能の有無（API 19）。置き場所ごとに本体が決める */
+    type SharedCaps = {
+      trash: boolean;
+      restore: boolean;
+      /** 読み取り専用の添付のフォルダ名（なければ null） */
+      attachmentsDir: string | null;
+    };
+
+    /** 接続先の変化（API 19） */
+    interface HostSession {
+      /** 接続先のサーバーが変わったとき（旧サーバーの写しを捨てるため）に呼ぶ。解除関数を返す。プラグインが外れると自動で解除 */
+      onServerChange(cb: () => void): Cleanup;
+    }
+
+    /** チャットの口（API 19） */
+    interface HostChat {
+      /**
+       * 本文のファイルリンク（共有フォルダのファイル）の「開く」を、プラグインに任せる（API 19）。
+       * 1 つだけ（後から登録したものが勝つ）。登録が無ければ本体の既定（保存・拡大表示）。handle には、リンクのパスと別名（無ければ null）が渡る。
+       * 外すときは戻り値の関数（プラグインを外すときに this.register で登録すると、自動で外れる）
+       */
+      registerLinkOpener(handle: (path: string, alias: string | null) => void): Cleanup;
+    }
+
+    /** クリップボードの中身（文字・画像が有るか）。読めなければ 'unknown' */
+    type ClipboardPeek = { text: boolean; image: boolean } | 'unknown';
+
+    /** この端末の環境（API 19。読み取りのみ） */
+    interface PlatformInfo {
+      /** Tauri（デスクトップ・Android の本体）か */
+      readonly tauri: boolean;
+      /** 'windows'・'linux'・'android' など（分からなければ空文字） */
+      readonly os: string;
+      /** Linux のデスクトップ（Tauri）か */
+      readonly linuxDesktop: boolean;
+    }
+
+    /** 拡大表示の 1 件（API 19）。kind は 'image'（既定）か 'pdf'。downloadUrl を省くと src を使う */
+    type LightboxItemOptions = { src: string; alt: string; downloadUrl?: string; kind?: 'image' | 'pdf' | (string & {}) };
+
+    /** ナビバーの項目（API 19）。項目は、利用者が設定で並べる（コマンドと同じ扱い）。選ぶと onOpen を呼ぶ */
+    /**
+     * ナビバーの項目（API 19）。`view` を渡すと、その view をパネルに開く（onOpen は不要）。`onOpen` は選んだときに呼ぶ（view と両方でもよい）。
+     * 項目は既定でナビに出る（利用者の並べ替えには入らない）。選んでいる間は、その view を開いているときに選ばれる。
+     */
+    type NavItemOptions = { id: string; label: string; icon: IconName; view?: string; onOpen?(): void; badge?: number | string | null };
+
+    /** ナビバーの項目の操作（API 19） */
+    interface NavItemHandle {
+      /** 右上の数字など（0・空・null は出さない） */
+      setBadge(badge: number | string | null): void;
+      /** 項目を外す（何度呼んでもよい） */
+      close(): void;
+    }
+
+    /** 本体の OS ドロップ（API 19。explorer-kit の osDrop と同じ形）。プラグインが view を出している間だけ listen する */
+    type OsDropEntry = { rel: string; dir: true } | { rel: string; dir: false; size: number; read: () => Promise<Blob> };
+    type NativeDropEvent = { type: 'enter' | 'over' | 'drop' | 'leave'; paths: string[]; position: { x: number; y: number } | null };
+    type OsDropEvent = { id: number | null; error?: string | null; position: { x: number; y: number } | null };
+    interface OsDropPort {
+      listenNative(handler: (ev: NativeDropEvent) => void): Promise<Cleanup>;
+      listen(handler: (ev: OsDropEvent) => void): Promise<Cleanup>;
+      entries(id: number): Promise<{ entries: OsDropEntry[]; skipped: string[] }>;
+      release(id: number): Promise<void>;
+      rootsOf(dt: DataTransfer | null | undefined): FileSystemEntry[];
+      entriesFromRoots(roots: FileSystemEntry[]): Promise<OsDropEntry[]>;
+    }
+
+    /** トーストの操作（API 19） */
+    type ToastAction = { label: string; run(): void };
 
     /**
      * 共有フォルダ（v15）。全員で共有する 1 つのフォルダ。パスは相対で、区切りは `/`。
@@ -650,6 +764,31 @@ declare global {
       copy(from: string, to: string, opts?: { overwrite?: boolean }): Promise<SharedEntry>;
       /** 共有フォルダの変更（どの端末の変更でも）。cb は `{ path }`（変わった項目の相対パス）。解除関数を返す。プラグインが外れると自動で解除 */
       onChange(cb: (ev: { path: string }) => void): Cleanup;
+
+      // ---- API 19 ----
+      /**
+       * <img>・<a> で使える URL（同期。API 19）。entry の項目から本体が決める（添付は ID の URL、縮小版は thumb、ゴミ箱の中はパスの URL）。
+       * entry は files.list などが返した項目をそのまま渡す
+       */
+      url(entry: SharedEntry, opts?: { thumb?: boolean }): string;
+      /** アップロード（作成・上書き）。onProgress は送った量と全体（バイト）。signal で中止できる（中止は AbortError） */
+      upload(
+        path: string,
+        data: Blob,
+        opts?: { onProgress?: (sent: number, total: number) => void; signal?: AbortSignal },
+      ): Promise<SharedEntry>;
+      /** フォルダ（またはファイル）の大きさ。path を省くと共有フォルダ全体 */
+      size(path?: string): Promise<SharedSize>;
+      /** この置き場所の機能（同期）。trash が偽のときは trash 系が unsupported を投げる */
+      caps(): SharedCaps;
+      /** ゴミ箱の一覧（caps().trash が真のとき） */
+      trashList(): Promise<SharedTrashEntry[]>;
+      /** ゴミ箱へ入れる（フォルダは中身ごと） */
+      trash(path: string): Promise<SharedTrashEntry>;
+      /** ゴミ箱から元の場所へ戻す（同名があれば exists） */
+      restore(id: string): Promise<SharedEntry>;
+      /** ゴミ箱から完全に消す（元に戻せない） */
+      purge(id: string): Promise<void>;
     }
 
     interface Sessions {
@@ -899,9 +1038,58 @@ declare global {
        */
       setImmersive(on: boolean): Promise<boolean>;
       /** トースト */
-      toast(text: string, kind?: 'info' | 'error'): void;
+      toast(text: string, kind?: 'info' | 'error', action?: ToastAction): void;
       /** 確認ダイアログ。OK なら true。okLabel の既定は「OK」、ngLabel（取り消すボタン）の既定は「キャンセル」 */
       confirm(opts: { title: string; body?: string; okLabel?: string; ngLabel?: string; danger?: boolean }): Promise<boolean>;
+
+      // ---- API 19 ----
+      /**
+       * ナビバーの項目を登録する（API 19）。登録すると、ナビの末尾に自動で出る（利用者の並べ替えには入らない）。
+       * view を渡すと選んだときにその view をパネルに開き、選んでいる間はその項目が選ばれる。badge で右上の数字を出せる。
+       * id は本体の中で一意（`<プラグインID>:<名前>` の形を推奨）。戻り値の setBadge・close で変える・外す。プラグインを外すときは this.register で外すと安全
+       */
+      navItem(opts: NavItemOptions): NavItemHandle;
+      /** 拡大表示を開く（画像・PDF）。gallery を渡すと前後をたどれる（呼ぶたびに今の一覧を返す） */
+      openLightbox(item: LightboxItemOptions, gallery?: () => LightboxItemOptions[]): void;
+      /**
+       * PDF の 1 ページ目のサムネイルを el の中に描く（本体の部品）。source は URL（files.url など）。
+       * 戻り値の関数で外す（プラグインが外れると自動で外れる）
+       */
+      renderPdfThumb(el: HTMLElement, source: string, opts?: { key?: string }): Cleanup;
+      /** チャットの検索を開く（API 19）。query を渡すと、その語で検索する */
+      openSearch(query?: string): void;
+      /** クリップボード（API 19）。ユーザーの操作の中から呼ぶこと */
+      readonly clipboard: {
+        copyText(text: string): Promise<boolean>;
+        readText(): Promise<string | null>;
+        /** 画像（Linux の WebView の代わりの経路も含む。無ければ null） */
+        readImage(): Promise<Blob | null>;
+        /** 中身の種類（文字・画像が有るか。読めなければ 'unknown'） */
+        peek(): Promise<ClipboardPeek>;
+        /** 文字を貼り付けて作るファイルの名前（例: clipboard-20261025-061230.txt） */
+        textName(): string;
+      };
+      /**
+       * 本体の保存で、リンク（url は files.url などで作った本体のサーバーの URL）を保存する（API 19）。
+       * Tauri では直接保存（トーストつき）。ブラウザーでは <a download>。サーバーの URL 以外の保存は saveBlob を使う
+       */
+      download(req: { url: string; name: string }): Promise<void>;
+      /** リンクの押しを、本体の保存に差し替える（差し替えたら true。ev の既定の動きは止まる）。右クリックなどは止めない */
+      interceptDownload(ev: MouseEvent, req: { url: string; name: string }): boolean;
+      /**
+       * ファイルを保存する（API 19）。ブラウザーは <a download>。Tauri（デスクトップ・Android）では未対応で、unsupported を投げる
+       * （Blob を保存する本体の口がまだ無い。サーバーの URL の保存は別の経路）
+       */
+      saveBlob(blob: Blob, name: string): Promise<void>;
+      /**
+       * 共有フォルダからファイルを選ぶ（API 19）。画面に選ぶ一覧が開く。選んだ項目を返し、取り消しは null。
+       * folderOnly なら、フォルダだけを選ぶ。multiple なら複数を選べる。
+       */
+      pickSharedFiles(opts?: { multiple?: boolean; folderOnly?: boolean }): Promise<SharedEntry[] | null>;
+      /** OS からのドロップの口（API 19）。explorer-kit の osDrop と同じ形。プラグインが view を出している間だけ listen する */
+      readonly osDrop: OsDropPort;
+      /** チャットからフォルダへ持っていくドラッグの型（API 19。本体の値と同じ） */
+      readonly dragType: string;
     }
   }
 }

@@ -32,6 +32,20 @@ import { callApi } from '../call/instance.svelte';
 import { loadLucide, registerIcon } from '../icons.svelte';
 import { API_VERSION, errorMessage, type HostServices, type Manifest, type PluginClass } from './types';
 import { viewTexts } from '../viewTexts';
+import { onServerChange } from '../config';
+import { isLinuxDesktop, isTauri, osName } from '../platform';
+import { downloadFile, interceptDownload } from '../download';
+import { messageSearch } from '../stores/search.svelte';
+import { copyText } from '@3pino/app-kit-web/core/clipboard';
+import { clipboardTextName, peekClipboard, readClipboardText } from '../clipboardPaste';
+import { readClipboardImage, readNativeClipboardImage } from '../clipboardImage';
+import { mountPdfThumb } from './ui/pdfThumb';
+import { pluginNav } from '../pluginNav.svelte';
+import { setLinkOpener } from '../linkOpener.svelte';
+import { listenNativeDrop, listenOsDrop, osDropEntries, osDropRelease, dropRootsOf, entriesFromDropRoots } from '../dropFiles';
+import { pickSharedFiles } from './sharedPicker';
+import { legacyExplorerDirs } from '../explorerDirs';
+import type { UiDeps } from './ui';
 
 const DEV_POLL_MS = 1000;
 const DARK_QUERY = '(prefers-color-scheme: dark)';
@@ -152,6 +166,18 @@ async function importModule(id: string, code: string): Promise<{ default?: unkno
  * プラグインのホスト。配布済み（サーバー）と開発中（開発用フォルダ）のプラグインを読み込み・外す。
  * デバイスごとのオンオフと、読み込みのエラーもここで持つ。
  */
+/** この端末の環境（disnans.app.platform。読むたびに、いまの値の新しい箱を返す） */
+export function hostPlatform(): { tauri: boolean; os: string; linuxDesktop: boolean } {
+  return { tauri: isTauri(), os: osName(), linuxDesktop: isLinuxDesktop() };
+}
+
+/** 組み込みのエクスプローラーのプラグイン ID（旧い保存先の取り込みの対象） */
+export const EXPLORER_PLUGIN_ID = 'disnans-explorer';
+/** 旧い保存先を、そのプラグインが取り込んだ印（デバイスごと） */
+export function legacyTakenKey(pluginId: string): string {
+  return `disnans.plugin.${pluginId}.legacyTaken`;
+}
+
 export class PluginHost {
   /** 配布済みのもの（サーバーの一覧） */
   server = $state<PluginInfo[]>([]);
@@ -198,6 +224,10 @@ export class PluginHost {
       get isMobile() {
         return ui.isMobile;
       },
+      /** この端末の環境（読み取りのみ。読むたびに、いまの値の新しい箱を返す） */
+      get platform() {
+        return hostPlatform();
+      },
       get theme() {
         if (ui.theme !== 'system') return ui.theme;
         return window.matchMedia(DARK_QUERY).matches ? 'dark' : 'light';
@@ -223,8 +253,10 @@ export class PluginHost {
     openSettings: (plugin) => ui.openPluginSettings(plugin),
     // プラグインが閉じた view は、遷移の履歴からも外す（戻る操作で開き直さない）
     closePanel: (plugin) => ui.forgetPanel((p) => p.kind === 'plugin' && p.plugin === plugin),
-    toast: (text, kind) => ui.toast(text, kind),
+    toast: (text, kind, action) => ui.toast(text, kind, action),
     storage: { get: (k) => getItem(k), set: (k, v) => setItem(k, v) },
+    legacyData: (pluginId) => this.legacyDataFor(pluginId),
+    markLegacyTaken: (pluginId) => setItem(legacyTakenKey(pluginId), '1'),
     files: {
       api: sharedApi,
       onChanged: (cb) => {
@@ -247,6 +279,83 @@ export class PluginHost {
     changed: () => this.rev++,
   };
 
+
+  /** 旧い保存先の値（API 19）。対象は組み込みのエクスプローラーだけ。プラグインが最初に saveData するまで（そのあとは null） */
+  private legacyDataFor(pluginId: string): unknown {
+    if (pluginId !== EXPLORER_PLUGIN_ID || getItem(legacyTakenKey(pluginId)) === '1') return null;
+    return legacyExplorerDirs((k) => getItem(k));
+  }
+
+  /** 読み込み済みのプラグインの view を、セッションなしで開く（ナビの項目から使う） */
+  openViewByType(type: string): boolean {
+    for (const l of this.loaded.values()) {
+      if (l.runtime.views.has(type)) {
+        ui.openPluginView(l.runtime.id, type, null);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** API 19 の ui の口（createUi に渡す。ナビの項目・拡大表示・検索・クリップボード・保存） */
+  private apiV19Ui(): Pick<UiDeps, 'navItem' | 'openLightbox' | 'renderPdfThumb' | 'openSearch' | 'clipboard' | 'saveBlob' | 'pickSharedFiles' | 'download' | 'interceptDownload'> {
+    return {
+      navItem: ({ id, label, icon, view, onOpen, badge }) => {
+        const nid = `ui-nav:${id}`;
+        const off = pluginNav.add({
+          id: nid,
+          label,
+          icon,
+          badge: badge ?? null,
+          view: view ?? null,
+          onOpen: onOpen ?? null,
+        });
+        if (!off) throw new PluginError('invalid_argument', `ナビの項目「${id}」は、もう登録されています`);
+        return {
+          setBadge: (b) => pluginNav.setBadge(nid, b ?? null),
+          close: () => off(),
+        };
+      },
+      pickSharedFiles: (opts) => pickSharedFiles(opts),
+      openLightbox: (item, gallery) => {
+        const toItem = (o: Disnans.LightboxItemOptions) => ({
+          src: o.src,
+          alt: o.alt ?? '',
+          downloadUrl: o.downloadUrl ?? o.src,
+          kind: o.kind ?? 'image',
+        });
+        ui.openLightbox(toItem(item), gallery ? () => gallery().map(toItem) : null);
+      },
+      renderPdfThumb: (el, url, key) => mountPdfThumb(el, url, key),
+      openSearch: (query) => {
+        ui.openSearch();
+        if (query !== undefined) messageSearch.setQuery(query);
+      },
+      clipboard: {
+        copyText: (text) => copyText(text),
+        readText: () => readClipboardText(),
+        // 画像は、Linux の WebView で paste から取れないときの経路を先に試す（無ければ従来の読み方）
+        readImage: async () => (await readNativeClipboardImage()) ?? (await readClipboardImage()),
+        peek: () => peekClipboard(),
+        textName: () => clipboardTextName(),
+      },
+      download: (req) => downloadFile(req),
+      interceptDownload: (ev, req) => interceptDownload(ev, req),
+      saveBlob: async (blob, name) => {
+        // Tauri（デスクトップ・Android）の保存は、まだ本体に口が無い（段 5 の後段）
+        if (isTauri()) throw new PluginError('unsupported', 'ui.saveBlob は、この環境ではまだ使えません（ブラウザーのみ）');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      },
+    };
+  }
+
   // ---- 開始 ----
 
   /** 接続を始めたあとに1回呼ぶ。最初の hello を待ってから読み込む */
@@ -258,7 +367,7 @@ export class PluginHost {
       apiVersion: API_VERSION,
       Plugin: PluginBase,
       ui: createUi({
-        toast: (t, k) => ui.toast(t, k),
+        toast: (t, k, a) => ui.toast(t, k, a),
         confirm: (o) => ui.confirm(o),
         onBack: (run) => ui.addPluginBack(run),
         setImmersive: (on) => setImmersive(on).then((ok) => {
@@ -266,11 +375,29 @@ export class PluginHost {
           if (ok) orientation.setImmersive(on);
           return ok;
         }),
+        ...this.apiV19Ui(),
+        osDrop: {
+          listenNative: (handler) => listenNativeDrop(handler),
+          listen: (handler) => listenOsDrop(handler),
+          entries: (id) => osDropEntries(id),
+          release: (id) => osDropRelease(id),
+          rootsOf: (dt) => dropRootsOf(dt),
+          entriesFromRoots: (roots) => entriesFromDropRoots(roots),
+        },
       }),
       PluginError,
       VersionConflictError,
       audio,
       call: callApi,
+      session: {
+        onServerChange: (cb: () => void) => onServerChange(() => cb()),
+      },
+      chat: {
+        registerLinkOpener: (handle: (path: string, alias: string | null) => void) => {
+          if (typeof handle !== 'function') throw new PluginError('invalid_argument', 'registerLinkOpener には関数を渡してください');
+          return setLinkOpener((path, alias) => handle(path, alias));
+        },
+      },
     });
     (window as unknown as { disnans: Disnans.Host }).disnans = host;
 
@@ -334,7 +461,7 @@ export class PluginHost {
         // カードのメッセージが消えるとセッションも消える。開いている view を閉じ、キャッシュを捨てる
         const dropped = new Set<string>();
         for (const l of this.loaded.values()) for (const id of l.runtime.dropSessionsByMessage(ev.message_id)) dropped.add(id);
-        ui.forgetPanel((p) => p.kind === 'plugin' && dropped.has(p.sessionId));
+        ui.forgetPanel((p) => p.kind === 'plugin' && p.sessionId !== null && dropped.has(p.sessionId));
         break;
       }
     }

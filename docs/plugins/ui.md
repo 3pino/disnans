@@ -463,3 +463,20 @@ ui.setImmersive(on: boolean): Promise<boolean>
 - 位置や余白など、使う場所だけの調整は、**プラグイン ID の接頭辞を付けた自分のクラス**で書きます（`.dice-view .btn { ... }` など）
 - `.btn` などの本体のクラスそのものを書き換えないでください（全員の本体の見た目が変わります）
 - 色は CSS 変数（`--accent` など。[「見た目（CSS）」](styles.md#見た目css)）を使います
+
+## API 19 の部品と口
+
+- `ui.navItem({ id, label, icon, view?, onOpen?, badge? })`: ナビバーの項目。**登録すると、ナビの末尾に自動で出ます**（利用者の並べ替えには入りません。コマンドではないので、パレットには出ません）。`view` を渡すと選んだときにその view をパネルに開き、`onOpen` は選んだときに呼ばれます（両方でもかまいません）。選んでいる間は、その view を開いているときにその項目が選ばれます。戻り値は `{ setBadge(n), close() }`。`badge` は右上の数字（0・空・null は出ません）。`id` は本体の中で一意です。`<プラグインID>:<名前>` の形を使ってください（プラグインごとの名前空間はまだありません）。プラグインを外すときは `this.register(h.close)` で外すと安全です
+- `ui.openLightbox(item, gallery?)`: 拡大表示（画像・PDF）。`item` は `{ src, alt, downloadUrl?, kind? }`（`kind` は `'image'`（既定）か `'pdf'`）。`gallery` は呼ぶたびに今の一覧を返す関数（前後で移動できる）
+- `ui.renderPdfThumb(el, source, { key? })`: PDF の 1 ページ目のサムネイルを `el` の中に描きます（本体の部品）。戻り値の関数で外します。`source` は URL（`this.files.url` など）
+- `ui.openSearch(query?)`: チャットの検索を開きます。`query` を渡すと、その語で検索します
+- `ui.toast(text, kind?, action?)`: トーストに操作を付けられます。`action` は `{ label, run }`（例: 「元に戻す」）
+- `ui.clipboard.copyText(text)` / `readText()` / `readImage()` / `peek()` / `textName()`: クリップボード。ユーザーの操作（ボタンを押したなど）の中から呼んでください。`readImage()` は Linux の WebView で貼り付けから取れないときの経路も先に試します（呼ぶ側は気にしなくてよい）。`peek()` は中身の種類（`{ text, image }`、分からなければ `'unknown'`）、`textName()` は貼り付けたものの保存名
+- `ui.download({ url, name })`: 本体のサーバーの URL（`files.url(entry)` など）を保存します。Tauri（デスクトップ・Android）では直接保存してトーストを出し、ブラウザーでは `<a download>` です。`url` は `/api/files/` か `/api/shared/` のものだけ直接保存されます（それ以外は既定の動き）
+- `ui.interceptDownload(ev, { url, name })`: リンクの押し（`MouseEvent`）を、`ui.download` の保存に差し替えます。差し替えたら `true`。右クリックや修飾キー付きの押しは差し替えません（既定の動き）
+- `ui.saveBlob(blob, name)`: **サーバーの URL ではない**データ（作ったファイルなど）の保存。**ブラウザーのみ**（`<a download>`）。Tauri では `unsupported`（Blob を保存する本体の口がまだありません）
+- `ui.pickSharedFiles({ multiple?, folderOnly? })`: 共有フォルダの一覧から選ぶ画面を開きます。選んだ項目の配列を返し、取り消しは `null`。`multiple` は複数、`folderOnly` はフォルダだけ
+- `ui.osDrop`: OS からのドロップの口（explorer-kit の `osDrop` と同じ形）。`listenNative(handler)` / `listen(handler)` は解除関数を返します。`entries(id)`（中身の読み出し）・`release(id)`・`rootsOf(dt)`・`entriesFromRoots(roots)` を使えます。**プラグインの view を出している間だけ listen し、閉じるときに解除してください**（`this.register` で登録すると、外すときに自動で解除されます）。権限は要りません
+- `ui.dragType`: チャットから共有フォルダへのドラッグの型（本体の値と同じ）
+
+使えない環境で呼ぶと、`disnans.PluginError` の `code` が `unsupported` になります。非同期の口は、失敗を Promise の拒否で返します。

@@ -11,7 +11,7 @@
 | `version` | ○ | `1.0.0` のような版。更新のときに上げる |
 | `description` | ○ | 一覧に出る説明 |
 | `author` | ○ | 作った人 |
-| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまの版は `18`（`18` は `ui` に `iconButton` / `section` / `statusLine` / `slider` / `menu` / `modal` を足した。`17` は画面のキャプチャの削除だけで、新しい API はない。`17` 以下の本体には `ui.iconButton` などの `18` の部品がない。`14` 以下の本体には `this.files`（共有フォルダ）がない。共有フォルダを使うなら `15`。`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
+| `minApiVersion` | ○ | 必要なホスト API のバージョン。本体のほうが古ければ読み込まない。いまの版は `19`（`19` は共有フォルダに `url`・`upload`・`size`・`caps`・ゴミ箱を、`ui` に `navItem`・`openLightbox`・`renderPdfThumb`・`openSearch`・`clipboard`・`saveBlob` を、`session.onServerChange` を足した。`18` は `ui` に `iconButton` / `section` / `statusLine` / `slider` / `menu` / `modal` を足した。`17` は画面のキャプチャの削除だけで、新しい API はない。`17` 以下の本体には `ui.iconButton` などの `18` の部品がない。`14` 以下の本体には `this.files`（共有フォルダ）がない。共有フォルダを使うなら `15`。`11` 以下の本体では `call.addButton` の `location: 'view'` が使えない。`9` の本体には `call.addPanel` / `call.bufferedAmount` がなく、`6` の本体には `disnans.call` がなく、`5` の本体には `notify`（`postMessage` の通知）と `openSettings` がなく、`4` の本体には `postMessage` がなく、`8` の本体には `addMessageAction` / `openTimeline` がなく、`1` の本体には `addCommand` の `slash` などがなく、`2` の本体には `broadcast` / `addStatusBarItem` / `holdBackground` がなく、`3` の本体には `holdBackground` の `actions` / `update` がない。`disnans.audio` は `5` から） |
 | `apiVersion` | | このプラグインを作った（対象の）ホスト API のバージョン。省略すると `minApiVersion` とみなす。`minApiVersion` 以上の整数。本体がこれより新しく、その後に削除・意味を変えた API があると、読み込んだうえで設定の一覧に警告が出る（→ [互換](distribution.md#互換apiversion-と削除の警告)） |
 | `icon` | | プラグインのアイコン。[Lucide](https://lucide.dev/icons/) のアイコン名（`dice-5` など。英小文字・数字・ハイフン、64 文字まで） |
 | `permissions` | | 使う権限の配列（v15）。`"files"` で共有フォルダ（`this.files`）。入れていないと、その API は `permission_denied` で失敗する。知らない名前は無視される（→ [共有フォルダ](runtime.md#共有フォルダfilesv15)） |
@@ -137,6 +137,10 @@ app/node_modules/.bin/tsc -p examples/dice
 | `this.postMessage({ body, name?, notify? })` | ボットとしてメッセージを投稿する（v5）。投稿者は自分のままで、名前は `name`（省略するとプラグインの名前）。`notify: true`（v6）なら、通常の宛先に加えて投稿した本人にも通知が届く（文言はボットの名前）。省略すると通知は送らない。例: `examples/bot`。失敗が `unknown_outcome` のときは送信済みかどうか分からない。再送は plugin が判断する（二重投稿に注意） |
 | `this.openSettings()` | このプラグインの設定画面を開く（v6）。設定タブに切り替える |
 | `this.broadcast(name, payload)` / `this.onBroadcast(name, cb)` | セッションに紐づかない一時的なイベント（v3）。いまつながっている人に届く |
+| `this.files.url(entry, { thumb? })`（同期） / `upload(path, blob, { onProgress, signal })` / `size(path?)` / `caps()` / `trashList()` / `trash(path)` / `restore(id)` / `purge(id)` | 共有フォルダ（API v19。権限 `files`）。詳しくは [runtime.md](runtime.md#api-19-の追加) |
+| `disnans.ui.navItem` / `openLightbox` / `renderPdfThumb` / `openSearch` / `clipboard`（peek・textName つき）/ `download` / `interceptDownload` / `saveBlob` / `pickSharedFiles` / `osDrop` / `toast`（action つき）、`disnans.app.platform` | API v19。詳しくは [ui.md](ui.md#api-19-の部品と口) と [runtime.md](runtime.md#api-19-の追加) |
+| `disnans.chat.registerLinkOpener(h)` / `this.legacyData` / `this.registerView(type, factory)`（session なし） | API v19。詳しくは [runtime.md](runtime.md#api-19-の追加) |
+| `disnans.session.onServerChange(cb)` | 接続先のサーバーが変わったとき（API v19） |
 | `this.addStatusBarItem()` | 常時表示のステータス欄（画面上部の枠。通話のバーと同じ）に出す要素（v3） |
 | `this.holdBackground({ microphone, actions, onAction })` | 画面を切っても動き続ける（v3。Android のフォアグラウンドサービス）。通知のボタンと `update()` は v4 |
 | `this.addMessageAction(action)` | メッセージの長押しメニュー・ホバーのツールバーに項目を足す（v9。→ [メッセージの操作とタイムライン](commands.md#メッセージの操作とタイムラインv9)）。例: `examples/messages` |

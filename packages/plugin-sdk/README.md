@@ -1,10 +1,11 @@
 # @disnans/plugin-sdk
 
-disnans のプラグインを書くための型定義（ホスト API バージョン 18）。
+disnans のプラグインを書くための型定義（ホスト API バージョン 19）。
 
 - `index.d.ts`: ホスト API の型。グローバルの `disnans` と、名前空間 `Disnans`（`Disnans.Session` など）を宣言する
 - 実行時のコードは入っていない。ホスト API の実体は disnans 本体がグローバルの `disnans` として用意する
 - v12 では `disnans.call.addButton({ ..., location: 'view' })` を使うと、ボタンを通話画面だけに表示できる（省略時は従来どおり通話バーと通話画面の両方）
+- v19 で共有フォルダに `url`（同期・項目から）/ `upload`（進みと中止）/ `size` / `caps` / ゴミ箱を、`ui` に `navItem`（ナビへ自動で出る）/ `openLightbox` / `renderPdfThumb` / `openSearch` / `clipboard` / `saveBlob` / `pickSharedFiles` / `osDrop` を、`toast` に操作（action）を、`disnans.chat.registerLinkOpener` と `session.onServerChange` を、セッションのない `registerView` / `openView(type)` を、`legacyData` を足した（削除・意味の変更はない）。`saveBlob` の Tauri は未対応（サーバーの URL は `download` を使う）。`app.platform`（読み取り）と、`clipboard` の `peek` / `textName` を足した
 - v18 で `ui` に `iconButton` / `section` / `statusLine` / `slider` / `menu` / `modal` を追加した（削除・意味の変更はない）。
 - v17 で画面のキャプチャ（`disnans.screenCapture`）とピクチャーインピクチャー（`disnans.pip`）を削除した。画面共有は本体の標準機能になった（→ [`docs/design/call-screen.md`](../../docs/design/call-screen.md)）。v16 の `callRelay` も同時に削除
 - v15 で共有フォルダ（`this.files`。`list` / `stat` / `read` / `write` / `mkdir` / `remove` / `move` / `copy` / `onChange`）を使えるようにした。使うには manifest.json の `permissions` に `"files"` を入れ、`minApiVersion` を `15` にする（→ [`docs/plugins/README.md`](../../docs/plugins/README.md) の「共有フォルダ」）

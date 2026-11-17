@@ -44,6 +44,8 @@ export interface SharedApi {
   move(from: string, to: string, overwrite?: boolean): Promise<SharedEntry>;
   /** コピー。overwrite の決まりは move と同じ */
   copy(from: string, to: string, overwrite?: boolean): Promise<SharedEntry>;
+  /** 送る（API 19。files.upload。進みは送った量と全体。signal で中止すると AbortError 相当の HttpError('aborted') で失敗する） */
+  upload(path: string, file: Blob, onProgress?: (sent: number, total: number) => void, signal?: AbortSignal): Promise<SharedEntry>;
 }
 
 /** move / copy の本体（overwrite は helper-1 の REST 変更で入る。生成型が追いつくまで、ここで形を持つ） */
@@ -73,6 +75,14 @@ export const sharedApi: SharedApi = {
   size: (path) => request<SharedSize>('GET', sharedSizePath(path), undefined, undefined, READ),
   move: (from, to, overwrite) => op(withOverwrite({ op: 'move', from, to }, overwrite)),
   copy: (from, to, overwrite) => op(withOverwrite({ op: 'copy', from, to }, overwrite)),
+  upload(path, file, onProgress, signal) {
+    const { promise, abort } = uploadShared(path, file, onProgress && ((ratio) => onProgress(Math.round(ratio * file.size), file.size)));
+    if (signal) {
+      if (signal.aborted) abort();
+      else signal.addEventListener('abort', abort, { once: true });
+    }
+    return promise;
+  },
 };
 
 /** overwrite は真のときだけ送る（省略は false） */

@@ -6,13 +6,17 @@ import { PluginFiles, hasPermission, PERMISSION_FILES } from './files';
 import { errorMessage, type Cleanup, type HostTimelineEntry, type HostTimelineHandle, type HostServices, type Manifest, type PluginClass } from './types';
 import { viewTexts } from '../viewTexts';
 
+/** view の作り手。セッションのない view（openView に session を渡さない）では session が null */
+export type ViewFactory = (session: SessionImpl | null) => Disnans.View;
+
 /** パネルの上部（題名・アイコン）。null は既定（プラグイン名・プラグインのアイコン）、空文字列は出さない */
 export type ViewHeader = { title: string | null; icon: string | null };
 
 /** パネルに開いている view 1つ分 */
 export type ViewHandle = {
   readonly view: Disnans.View;
-  readonly session: SessionImpl;
+  /** 開いた view のセッション（セッションなしの view は null） */
+  readonly session: SessionImpl | null;
   /** 閉じる（onClose を呼ぶ）。何度呼んでもよい */
   close(): void;
   readonly closed: boolean;
@@ -51,6 +55,10 @@ export class PluginBase implements Disnans.Plugin {
   get files(): Disnans.Files {
     return rt(this).files;
   }
+  /** 旧い保存先の値（API 19）。プラグインが最初に saveData するまで、本体が決めた値。そのあとは null */
+  get legacyData(): unknown {
+    return rt(this).legacyData();
+  }
 
   onload(): void | Promise<void> {}
   onunload(): void {}
@@ -76,11 +84,15 @@ export class PluginBase implements Disnans.Plugin {
   addIcon(name: string, svg: string): void {
     rt(this).addIcon(name, svg);
   }
-  registerView<S = unknown>(type: string, factory: (session: Disnans.Session<S>) => Disnans.View): void {
-    rt(this).registerView(type, factory as (session: Disnans.Session<unknown>) => Disnans.View);
+  registerView<S = unknown>(type: string, factory: (session: Disnans.Session<S>) => Disnans.View): void;
+  registerView(type: string, factory: (session: Disnans.Session<any> | null) => Disnans.View): void;
+  registerView(type: string, factory: (session: any) => Disnans.View): void {
+    rt(this).registerView(type, factory as ViewFactory);
   }
-  openView<S = unknown>(type: string, session: Disnans.Session<S>): void {
-    rt(this).openView(type, session.id);
+  openView(type: string): void;
+  openView<S = unknown>(type: string, session: Disnans.Session<S>): void;
+  openView(type: string, session?: Disnans.Session<unknown>): void {
+    rt(this).openView(type, session ? session.id : null);
   }
   openSettings(): void {
     rt(this).openSettings();
@@ -135,7 +147,7 @@ export class PluginRuntime {
   instance: Disnans.Plugin | null = null;
   readonly sessions: SessionsImpl;
   readonly files: PluginFiles;
-  readonly views = new Map<string, (session: Disnans.Session<unknown>) => Disnans.View>();
+  readonly views = new Map<string, ViewFactory>();
   cardRenderer: Disnans.CardRenderer | null = null;
   readonly settingTabs: Disnans.SettingTab[] = [];
   stopped = false;
@@ -476,7 +488,7 @@ export class PluginRuntime {
     this.register(off);
   }
 
-  registerView(type: string, factory: (session: Disnans.Session<unknown>) => Disnans.View): void {
+  registerView(type: string, factory: ViewFactory): void {
     if (this.stopped) return;
     this.views.set(type, factory);
     this.register(() => {
@@ -587,7 +599,8 @@ export class PluginRuntime {
     return first.done ? null : first.value;
   }
 
-  openView(type: string, sessionId: string): void {
+  /** パネルに view を開く。sessionId が null なら、セッションのない view（ファイルの一覧など） */
+  openView(type: string, sessionId: string | null): void {
     if (this.stopped) return;
     if (!this.views.has(type)) throw new PluginError('not_found', `view「${type}」は登録されていません`);
     this.services.openPanel(this.id, type, sessionId);
@@ -606,12 +619,12 @@ export class PluginRuntime {
    */
   async mountView(
     type: string,
-    sessionId: string,
+    sessionId: string | null,
     containerEl: HTMLElement,
     onHeader?: (header: ViewHeader) => void,
   ): Promise<ViewHandle> {
     if (this.stopped) throw new PluginError('stopped', 'プラグインは外されています');
-    const session = (await this.sessions.get(sessionId)) as SessionImpl;
+    const session = sessionId === null ? null : ((await this.sessions.get(sessionId)) as SessionImpl);
     const factory = this.views.get(type);
     if (!factory) throw new PluginError('not_found', `view「${type}」は登録されていません`);
     if (this.stopped) throw new PluginError('stopped', 'プラグインは外されています');
@@ -631,7 +644,7 @@ export class PluginRuntime {
         this.openViews.delete(handle);
         if (counted) {
           counted = false;
-          this.markPresenceClose(session.id);
+          if (session) this.markPresenceClose(session.id);
         }
         try {
           view.onClose?.();
@@ -674,7 +687,7 @@ export class PluginRuntime {
       throw e;
     }
     counted = true;
-    this.markPresenceOpen(session.id);
+    if (session) this.markPresenceOpen(session.id);
     return handle;
   }
 
@@ -710,7 +723,7 @@ export class PluginRuntime {
 
   /** カードのメッセージが消えた: そのセッションの view を閉じ、キャッシュを捨てる */
   dropSessionsByMessage(messageId: string): string[] {
-    for (const h of [...this.openViews]) if (h.session.messageId === messageId) h.close();
+    for (const h of [...this.openViews]) if (h.session?.messageId === messageId) h.close();
     return this.sessions.dropByMessage(messageId);
   }
 
@@ -745,9 +758,17 @@ export class PluginRuntime {
     }
   }
 
+  /** 旧い保存先の値（最初の saveData までだけ） */
+  legacyData(): unknown {
+    if (this.stopped) return null;
+    return this.services.legacyData?.(this.id) ?? null;
+  }
+
   saveData(data: unknown): void {
     const json = data === undefined ? null : JSON.stringify(data);
     this.services.storage.set(this.dataKey, json ?? null);
+    // 旧い保存先は、最初の保存で取り込んだものとして扱う（以後は読めない）
+    this.services.markLegacyTaken?.(this.id);
   }
 
   notify(userIds: string[], text: string, sessionId: string | null): Promise<void> {

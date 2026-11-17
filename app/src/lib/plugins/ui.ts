@@ -6,6 +6,7 @@
 import Divider from '@3pino/ui-kit-web/Divider.svelte';
 import Icon from '@3pino/ui-kit-web/Icon.svelte';
 import { PluginError } from './errors';
+import { EXPLORER_DRAG_TYPE } from '@3pino/explorer-kit';
 import { mountElement, mountOverlay, releaseDetached } from './ui/mount';
 import PButton from './ui/PButton.svelte';
 import PIconButton from './ui/PIconButton.svelte';
@@ -22,18 +23,71 @@ import PToggle from './ui/PToggle.svelte';
 import './ui.css';
 
 export type UiDeps = {
-  toast(text: string, kind?: 'info' | 'error'): void;
+  toast(text: string, kind?: 'info' | 'error', action?: { label: string; run(): void }): void;
   confirm(opts: { title: string; body?: string; okLabel: string; ngLabel: string; danger?: boolean }): Promise<boolean>;
   /** 戻る操作（Android の戻るジェスチャーなど）で閉じる層を足す（API v9）。省くと何もしない */
   onBack?(run: () => void): () => void;
   /** 没入モード（システムバーを隠す。Android）。ネイティブで切り替えたら true（API v9） */
   setImmersive?(on: boolean): Promise<boolean>;
+  // ---- API 19（省くと、その API は unsupported で失敗する） ----
+  /** ナビバーの項目（コマンドとして登録する。解除関数を返す） */
+  navItem?(opts: { id: string; label: string; icon: string; view?: string; onOpen?(): void; badge?: number | string | null }): Disnans.NavItemHandle;
+  /** 共有フォルダからの選択（画面に一覧を開く）。取り消しは null */
+  pickSharedFiles?(opts?: { multiple?: boolean; folderOnly?: boolean }): Promise<Disnans.SharedEntry[] | null>;
+  /** OS からのドロップの口（本体の dropFiles。省くと unsupported） */
+  osDrop?: Disnans.OsDropPort;
+  /** 保存（ブラウザー・Tauri の本体の経路） */
+  /** 拡大表示（本体の lightbox）。items は本体の形に直して渡す */
+  openLightbox?(item: Disnans.LightboxItemOptions, gallery?: () => Disnans.LightboxItemOptions[]): void;
+  /** PDF のサムネイルを el の中に描く（本体の部品。解除関数で外す） */
+  renderPdfThumb?(el: HTMLElement, source: string, key: string): Cleanup;
+  /** チャットの検索を開く（query があれば、その語で検索） */
+  openSearch?(query?: string): void;
+  /** クリップボード（本体の実装。ユーザーの操作の中から呼ぶ） */
+  clipboard?: {
+    copyText(text: string): Promise<boolean>;
+    readText(): Promise<string | null>;
+    /** 画像（Linux の WebView の代わりの経路を含む。無ければ null） */
+    readImage(): Promise<Blob | null>;
+    /** 中身の種類（文字・画像が有るか。読めなければ 'unknown'） */
+    peek(): Promise<Disnans.ClipboardPeek>;
+    /** 文字を貼り付けて作るファイルの名前 */
+    textName(): string;
+  };
+  /** 本体の保存（リンクの先を Tauri では直接保存する。url は本体のサーバーの URL） */
+  download?(req: { url: string; name: string }): Promise<void>;
+  /** リンクの押しを、保存の処理に差し替える（差し替えたら true） */
+  interceptDownload?(ev: MouseEvent, req: { url: string; name: string }): boolean;
+  /** ファイルの保存（本体の実装） */
+  saveBlob?(blob: Blob, name: string): Promise<void>;
 };
+
+type Cleanup = () => void;
+
+/** OS ドロップの口が無いときの口（どれも unsupported） */
+function unsupportedOsDrop(): Disnans.OsDropPort {
+  const no = (): never => {
+    throw unsupported('ui.osDrop');
+  };
+  return {
+    listenNative: async () => no(),
+    listen: async () => no(),
+    entries: async () => no(),
+    release: async () => no(),
+    rootsOf: () => no(),
+    entriesFromRoots: async () => no(),
+  };
+}
+
+/** この環境・この版では使えない API の失敗（code は unsupported） */
+function unsupported(what: string): PluginError {
+  return new PluginError('unsupported', `${what} は、この環境では使えません`);
+}
 
 // ---- プラグインが渡す値の確かめ（文字は文字として入れる。HTML としては読まない） ----
 
 /** disnans.ui のメソッドの、オプションの型 */
-type Opts<K extends keyof Disnans.Ui> = NonNullable<Parameters<Disnans.Ui[K]>[0]>;
+type Opts<K extends keyof Disnans.Ui> = NonNullable<Parameters<Extract<Disnans.Ui[K], (...a: never[]) => unknown>>[0]>;
 
 const invalid = (message: string): PluginError => new PluginError('invalid_argument', message);
 
@@ -391,8 +445,17 @@ export function createUi(deps: UiDeps): Disnans.Ui {
       }
     },
 
-    toast(text, kind = 'info') {
-      deps.toast(String(text), kind === 'error' ? 'error' : 'info');
+    toast(text, kind = 'info', action) {
+      let a: { label: string; run: () => void } | undefined;
+      if (action !== undefined && action !== null) {
+        const o = requireOpts<Disnans.ToastAction>(action, 'ui.toast の action');
+        const run = optFn<[]>(o.run, 'action.run');
+        if (!run) throw invalid('action.run は関数で渡してください');
+        a = { label: requireText(o.label, 'action.label'), run: () => run() };
+      }
+      // 操作がなければ、今までどおり 2 つの引数だけで呼ぶ
+      if (a) deps.toast(String(text), kind === 'error' ? 'error' : 'info', a);
+      else deps.toast(String(text), kind === 'error' ? 'error' : 'info');
     },
 
     confirm(opts) {
@@ -404,5 +467,98 @@ export function createUi(deps: UiDeps): Disnans.Ui {
         danger: opts.danger,
       });
     },
+
+    // ---- API 19 ----
+
+    navItem(opts) {
+      const o = requireOpts<Disnans.NavItemOptions>(opts, 'ui.navItem');
+      const id = requireText(o.id, 'id');
+      const label = requireText(o.label, 'label（表示の名前）');
+      const icon = requireText(o.icon, 'icon');
+      const view = o.view === undefined || o.view === null ? undefined : requireText(o.view, 'view');
+      const onOpen = optFn<[]>(o.onOpen, 'onOpen');
+      if (!view && !onOpen) throw invalid('ui.navItem には view（開く view の種類）か onOpen（関数）のどちらかを渡してください');
+      if (!deps.navItem) throw unsupported('ui.navItem');
+      return deps.navItem({ id, label, icon, view, onOpen, badge: o.badge ?? null });
+    },
+
+    openLightbox(item, gallery) {
+      const o = requireOpts<Disnans.LightboxItemOptions>(item, 'ui.openLightbox');
+      requireText(o.src, 'src（URL）');
+      if (gallery !== undefined && typeof gallery !== 'function') throw invalid('gallery は関数で渡してください');
+      if (!deps.openLightbox) throw unsupported('ui.openLightbox');
+      deps.openLightbox(o, gallery);
+    },
+
+    renderPdfThumb(el, source, opts = {}) {
+      if (!(el instanceof HTMLElement)) throw invalid('el（入れる要素）を渡してください');
+      const url = requireText(source, 'source（PDF の URL）');
+      if (!deps.renderPdfThumb) throw unsupported('ui.renderPdfThumb');
+      return deps.renderPdfThumb(el, url, opts.key ? String(opts.key) : url);
+    },
+
+    openSearch(query) {
+      if (query !== undefined && typeof query !== 'string') throw invalid('query は文字列で渡してください');
+      if (!deps.openSearch) throw unsupported('ui.openSearch');
+      deps.openSearch(query);
+    },
+
+    // 非同期の口は、失敗を必ず Promise の拒否で返す（同期に投げない）
+    async download(req) {
+      const o = requireOpts<{ url: string; name: string }>(req, 'ui.download');
+      const url = requireText(o.url, 'url');
+      const name = requireText(o.name, 'name');
+      if (!deps.download) throw unsupported('ui.download');
+      return deps.download({ url, name });
+    },
+
+    interceptDownload(ev, req) {
+      if (!(ev instanceof MouseEvent)) throw invalid('ev は MouseEvent で渡してください');
+      const o = requireOpts<{ url: string; name: string }>(req, 'ui.interceptDownload');
+      const url = requireText(o.url, 'url');
+      const name = requireText(o.name, 'name');
+      if (!deps.interceptDownload) throw unsupported('ui.interceptDownload');
+      return deps.interceptDownload(ev, { url, name });
+    },
+
+    clipboard: {
+      async peek() {
+        if (!deps.clipboard) throw unsupported('ui.clipboard');
+        return deps.clipboard.peek();
+      },
+      textName() {
+        if (!deps.clipboard) throw unsupported('ui.clipboard');
+        return deps.clipboard.textName();
+      },
+      async copyText(text) {
+        if (!deps.clipboard) throw unsupported('ui.clipboard');
+        return deps.clipboard.copyText(String(text));
+      },
+      async readText() {
+        if (!deps.clipboard) throw unsupported('ui.clipboard');
+        return deps.clipboard.readText();
+      },
+      async readImage() {
+        if (!deps.clipboard) throw unsupported('ui.clipboard');
+        return deps.clipboard.readImage();
+      },
+    },
+
+    async saveBlob(blob, name) {
+      if (!(blob instanceof Blob)) throw invalid('blob は Blob で渡してください');
+      const n = requireText(name, 'name');
+      if (!deps.saveBlob) throw unsupported('ui.saveBlob');
+      return deps.saveBlob(blob, n);
+    },
+
+    pickSharedFiles(opts = {}) {
+      const o = requireOpts<NonNullable<Parameters<NonNullable<UiDeps['pickSharedFiles']>>[0]>>(opts, 'ui.pickSharedFiles');
+      if (!deps.pickSharedFiles) return Promise.reject(unsupported('ui.pickSharedFiles'));
+      return deps.pickSharedFiles({ multiple: optBool(o.multiple), folderOnly: optBool(o.folderOnly) });
+    },
+
+    osDrop: deps.osDrop ?? unsupportedOsDrop(),
+
+    dragType: EXPLORER_DRAG_TYPE,
   };
 }

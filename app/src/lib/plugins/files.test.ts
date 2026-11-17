@@ -62,6 +62,7 @@ function fakeApi(entries: SharedEntry[] = []) {
     }),
     purge: vi.fn(async () => {}),
     size: vi.fn(async () => ({ size: 0, files: 0, dirs: 0 })),
+    upload: vi.fn(async (path: string) => entry(path)),
   };
   return { api, calls };
 }

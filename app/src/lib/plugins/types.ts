@@ -16,7 +16,7 @@ import type { Message } from '../protocol/Message';
 import type { TimelineEntry, TimelineHandle, TimelineSpec } from '../stores/timelinePanel.svelte';
 
 /** ホスト API のバージョン。index.d.ts を変えたら上げる */
-export const API_VERSION = 18;
+export const API_VERSION = 19;
 
 export type Manifest = Disnans.Manifest;
 export type Cleanup = Disnans.Cleanup;
@@ -62,12 +62,16 @@ export interface HostServices {
   /** メッセージの集合をパネルに開く（API v9） */
   openTimeline(spec: HostTimelineSpec): HostTimelineHandle;
   /** パネルに view を開く */
-  openPanel(pluginId: string, view: string, sessionId: string): void;
+  openPanel(pluginId: string, view: string, sessionId: string | null): void;
   /** そのプラグインの設定画面を開く（API v6。ui.openPluginSettings） */
   openSettings(pluginId: string): void;
   /** 開いているパネルを閉じる（そのプラグインの view が開いていれば） */
   closePanel(pluginId: string): void;
-  toast(text: string, kind?: 'info' | 'error'): void;
+  toast(text: string, kind?: 'info' | 'error', action?: { label: string; run(): void }): void;
+  /** 旧い保存先の値（API 19）。プラグインごとに本体が決める。取り込み済みなら null */
+  legacyData(pluginId: string): unknown;
+  /** 旧い保存先を取り込んだ印（プラグインが最初に saveData したとき） */
+  markLegacyTaken(pluginId: string): void;
   /** デバイスに保存する（lib/storage.ts） */
   storage: {
     get(key: string): string | null;

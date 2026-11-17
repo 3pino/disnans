@@ -8,7 +8,7 @@ export type Panel =
   | { kind: 'replyTree'; messageId: string }
   | { kind: 'timeline'; id: number }
   | { kind: 'files' }
-  | { kind: 'plugin'; plugin: string; view: string; sessionId: string }
+  | { kind: 'plugin'; plugin: string; view: string; sessionId: string | null }
   | null;
 
 /** 設定の中のサブページ（一覧の代わりに出す）。入力欄のキー・ホットキー・ナビゲーションバー・＋メニュー・通話 */

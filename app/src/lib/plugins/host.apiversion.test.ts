@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// ホスト API の版（18）と、プラグインの minApiVersion の関係: 17 以下の古いプラグインは今までどおり読み込み、
-// 本体より新しい版（19）を求めるものは読み込まず、アプリの更新を促す
+// ホスト API の版（19）と、プラグインの minApiVersion の関係: 17 以下の古いプラグインは今までどおり読み込み、
+// 本体より新しい版（20）を求めるものは読み込まず、アプリの更新を促す
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../call/instance.svelte', () => ({ callApi: {} }));
@@ -44,22 +44,22 @@ async function loadWith(id: string, minApiVersion: number): Promise<PluginHost> 
 }
 
 describe('ホスト API の版', () => {
-  it('本体の版は 18', () => {
-    expect(API_VERSION).toBe(18);
+  it('本体の版は 19', () => {
+    expect(API_VERSION).toBe(19);
   });
 
-  it.each([2, 9, 17, 18])('minApiVersion %i のプラグインは読み込む', async (min) => {
+  it.each([2, 9, 17, 18, 19])('minApiVersion %i のプラグインは読み込む', async (min) => {
     const host = await loadWith(`p${min}`, min);
     expect(scripts.some((t) => t.includes(`main p${min}`))).toBe(true);
     // 版の判定では止まらない（import の失敗は、このテストの偽の Blob URL のため）
     expect(host.errors[`p${min}`] ?? '').not.toContain('ホスト API');
   });
 
-  it('minApiVersion 19（本体より新しい）は読み込まず、版を示して更新を促す', async () => {
-    const host = await loadWith('p19', 19);
+  it('minApiVersion 20（本体より新しい）は読み込まず、版を示して更新を促す', async () => {
+    const host = await loadWith('p20', 20);
     expect(scripts).toEqual([]);
-    expect(host.errors['p19']).toContain('v18');
-    expect(host.errors['p19']).toContain('v19');
-    expect(host.errors['p19']).toContain('アプリを更新');
+    expect(host.errors['p20']).toContain('v19');
+    expect(host.errors['p20']).toContain('v20');
+    expect(host.errors['p20']).toContain('アプリを更新');
   });
 });
