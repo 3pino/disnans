@@ -21,7 +21,7 @@ disnans のプラグインは、 JavaScript で書かれます。
 - 設計: 仕組みと配り方は、このファイルの各章と [`API.md`](../api/rest.md)
 - 型定義: [`packages/plugin-sdk/index.d.ts`](../../packages/plugin-sdk/index.d.ts)
 - UI 部品（`disnans.ui`）とアイコン: [`PLUGIN_UI.md`](ui.md)
-- ホスト API のバージョン: **17**（`disnans.apiVersion`）。どの版で何が増えたかは [distribution.md の「API を追加した版」](distribution.md#api-を追加した版)
+- ホスト API のバージョン: **18**（`disnans.apiVersion`）。どの版で何が増えたかは [distribution.md の「API を追加した版」](distribution.md#api-を追加した版)
 - 通話・画面共有はアプリ本体の標準機能です。通話に別の操作を足す拡張は `disnans.call` で作れます（→ [通話の拡張 API](call.md#通話の拡張-apidisnanscallv8)）
 
 ## 目次

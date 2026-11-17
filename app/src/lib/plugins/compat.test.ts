@@ -21,6 +21,22 @@ describe('API_CHANGES', () => {
   });
 });
 
+describe('API v18（ui に iconButton・section・statusLine・slider・menu・modal を追加）', () => {
+  it('本体の版は 18。追加だけの版なので、削除・意味の変更の表には行を足さない', () => {
+    expect(API_VERSION).toBe(18);
+    expect(API_CHANGES.some((c) => c.version === 18)).toBe(false);
+  });
+
+  it('v17 向けのプラグインに、v18 の警告は出ない。v12 向けのものは、これまでと同じ警告だけ', () => {
+    expect(apiWarnings({ minApiVersion: 1, apiVersion: 17 }, 18)).toEqual([]);
+    expect(apiWarnings({ minApiVersion: 17 }, 18)).toEqual([]);
+    expect(apiWarnings({ minApiVersion: 12 }, 18)).toEqual([
+      expect.stringContaining('v13 でスレッドの API が削除されました。v14 でエラーの形が変わりました'),
+    ]);
+    expect(apiWarnings({ minApiVersion: 12 }, 18)[0]).not.toContain('v18');
+  });
+});
+
 describe('targetApiVersion', () => {
   it('apiVersion があればそれ、なければ minApiVersion', () => {
     expect(targetApiVersion({ minApiVersion: 12, apiVersion: 14 })).toBe(14);

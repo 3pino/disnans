@@ -20,7 +20,13 @@
   - [ui.segmented](#uisegmented)
   - [ui.navbar](#uinavbar)
   - [ui.divider](#uidivider)
+  - [ui.iconButton](#uiiconbutton)
+  - [ui.section](#uisection)
+  - [ui.statusLine](#uistatusline)
+  - [ui.slider](#uislider)
   - [ui.setting](#uisetting)
+  - [ui.menu](#uimenu)
+  - [ui.modal](#uimodal)
   - [ui.toast](#uitoast)
   - [ui.confirm](#uiconfirm)
   - [ui.onBack / ui.setImmersive](#uionback--uisetimmersive)
@@ -112,7 +118,7 @@ ui.button({ icon: 'settings', label: '設定', variant: 'ghost', onClick: () => 
 
 - `variant: 'ghost'` は枠も背景もないボタンです。ホバー・フォーカス・押している間だけ背景に色が付きます
 - `disabled` はあとから `el.disabled = true` でも変えられます
-- 枠のない小さなアイコンのボタンは、`<button class="icon-btn">` に `ui.icon(...)` を入れて作れます
+- 枠のない小さなアイコンのボタンは [`ui.iconButton`](#uiiconbutton) です
 
 ### ui.toggle
 
@@ -229,6 +235,168 @@ ui.setting(containerEl, {
 });
 ```
 
+### ui.iconButton
+
+（API v18）
+
+```ts
+ui.iconButton(opts: {
+  label: string;             // 読み上げ用の名前（必須）
+  icon?: IconName;           // アイコン
+  iconSize?: number;         // アイコンの大きさ（px）。既定は 18
+  active?: boolean;          // 押されている状態（.active）
+  disabled?: boolean;
+  class?: string;
+  children?: string | Node | (string | Node)[];   // アイコンのあとに足す中身
+  onClick?: () => void;
+}): HTMLButtonElement
+```
+
+枠のない、アイコンだけのボタン（`.icon-btn`）です。ツールバーの小さな操作に使います。`children` の文字列は文字として入ります（HTML としては読みません）。
+
+```js
+ui.iconButton({ icon: 'settings', label: '設定', onClick: () => this.openSettings() });
+```
+
+### ui.section
+
+（API v18）
+
+```ts
+ui.section(opts: { title: string; class?: string; children?: string | Node | (string | Node)[] }): HTMLElement
+```
+
+設定のセクション（`<section class="setting-section">`。区切り線 + 見出し + 中身）です。`children` に `ui.setting` の行などを入れます。前にもセクションがあるときだけ区切り線が出ます。
+
+### ui.statusLine
+
+（API v18）
+
+```ts
+ui.statusLine(opts?: {
+  kind?: 'default' | 'muted' | 'ok' | 'accent' | 'warn' | 'error';
+  icon?: IconName;
+  busy?: boolean;        // 回るアイコン（icon より優先）
+  class?: string;
+  children?: string | Node | (string | Node)[];
+}): HTMLElement
+```
+
+アイコン付きの 1 行の状態表示（`<p class="status-line">`）です。`kind` で色が変わります。
+
+```js
+ui.statusLine({ kind: 'ok', icon: 'circle-check', children: '最新です' });
+ui.statusLine({ busy: true, children: '読み込み中…' });
+```
+
+### ui.slider
+
+（API v18）
+
+```ts
+ui.slider(opts: {
+  label: string;                   // 読み上げ用の名前（必須。見える名前は ui.setting などで横に出す）
+  value?: number;                  // 既定は 0
+  min?: number;                    // 既定は 0
+  max?: number;                    // 既定は 100
+  step?: number;                   // 既定は 1
+  format?: (value: number) => string;   // 右に出す値の書き方。例: (v) => v + '%'
+  disabled?: boolean;
+  class?: string;
+  onInput?: (value: number) => void;    // 動かしている間
+  onChange?: (value: number) => void;   // 離したとき
+}): HTMLElement
+```
+
+範囲のスライダー（`.slider`。ネイティブの `<input type="range">` と、右に今の値）です。値の保存は、離したとき（`onChange`）にするとよいです。`format` が例外を投げても、数のまま出します。
+
+```js
+ui.setting(containerEl, {
+  name: '音量',
+  control: ui.slider({ label: '音量', value: 50, format: (v) => `${v}%`, onChange: (v) => this.save(v) }),
+});
+```
+
+### ui.menu
+
+（API v18）
+
+```ts
+ui.menu(opts: {
+  anchor: HTMLElement;     // メニューを出す位置の基準（このボタンの下に開く）
+  items: {
+    text: string;
+    icon?: IconName;
+    danger?: boolean;      // 赤い項目
+    disabled?: boolean;    // 押せない
+    reason?: string;       // 押せない理由（disabled のとき、項目名の下に小さく出る）
+    onClick?: () => void;
+  }[];                     // 1 つ以上
+  align?: 'start' | 'end'; // start（既定）は基準の左端、end は右端にそろえる
+  label?: string;          // 読み上げ用の名前
+  onClose?: () => void;    // 項目を選ばずに閉じたとき
+}): { close(): void; readonly closed: boolean }
+```
+
+ポップアップのメニューを `anchor` の下に開きます。
+
+```js
+const btn = ui.iconButton({ icon: 'ellipsis', label: 'その他' });
+btn.addEventListener('click', () => {
+  ui.menu({
+    anchor: btn,
+    align: 'end',
+    items: [
+      { text: 'コピー', icon: 'copy', onClick: () => this.copy() },
+      { text: '削除', icon: 'trash-2', danger: true, onClick: () => this.remove() },
+    ],
+  });
+});
+```
+
+- 項目を選ぶと、**メニューを閉じてから** `onClick` を呼びます。`onClose` は呼びません
+- 外側（透明な幕）を押す・戻る操作（Android の戻る・Alt+←）では、閉じて `onClose` を呼びます
+- 戻り値の `close()` で閉じます（`onClose` は呼ばれません。何度呼んでもかまいません）
+- 画面の下にはみ出すときは基準の上に、左右にはみ出すときは収まるようにずらして開きます
+- 文字（`text`・`reason`・`label`）は文字として入ります（HTML としては読みません）
+- プラグインを外す（無効にする・読み込み直す）と、開いたままのメニューは閉じます。ただし `disnans.ui` は本体に 1 つなので、持ち主は区別されず、その時に開いているメニュー・モーダルはすべて閉じます。自分のものだけを確実に閉じたいときは `this.register(menu.close)` も付けてください
+- 項目だけを作る関数（`menuItem`）は出していません。項目はメニューの `items` で渡します
+
+### ui.modal
+
+（API v18）
+
+```ts
+ui.modal(opts: {
+  title: string;
+  width?: number;                       // px。既定は 420（画面が狭いときは収まる）
+  children?: string | Node | (string | Node)[];   // 本文
+  actions?: ButtonOptions[];            // 下に並べるボタン（ui.button と同じオプション）
+  onClose?: () => void;                 // Esc・外側・戻る操作で閉じたあと
+}): { close(): void; readonly closed: boolean }
+```
+
+モーダルのダイアログを開きます。開いたとき最初の入力欄・ボタンにフォーカスし、閉じたら元のフォーカスに戻します。
+
+```js
+const name = ui.input({ placeholder: '名前' });
+const dlg = ui.modal({
+  title: '名前を付ける',
+  children: name,
+  actions: [
+    { text: 'キャンセル', onClick: () => dlg.close() },
+    { text: '保存', variant: 'primary', onClick: () => { this.save(name.value); dlg.close(); } },
+  ],
+});
+```
+
+- `actions` のボタンを押しても、**自動では閉じません**（処理の中で `close()` を呼びます）
+- Esc・外側（幕）の押下・戻る操作では、閉じて `onClose` を呼びます。`close()` では `onClose` は呼ばれません（何度呼んでもかまいません）
+- 文字（`title`・`children` の文字列）は文字として入ります（HTML としては読みません）
+- プラグインを外すと、開いたままのモーダルは閉じます（持ち主の区別がない点は `ui.menu` と同じ。`this.register(dlg.close)` で確実に）
+- 確認だけなら [`ui.confirm`](#uiconfirm) を使ってください
+- 全画面の見出しの行（`PanelBar`）と、入力欄の補完候補（`SuggestList`）は出していません。前者は本体のパネルの外枠が持ち、後者は入力欄の位置・キー操作を使う側が組む必要があり、プラグインの画面では使い道が少ないためです
+
 ### ui.toast
 
 ```ts
@@ -272,14 +440,18 @@ ui.setImmersive(on: boolean): Promise<boolean>
 |---|---|---|
 | `.icon` | アイコンの `<svg>` | `ui.icon` |
 | `.btn`（`.primary` / `.danger` / `.ghost` / `.btn-icon-only`） | ボタン。`.ghost` は枠のないボタン、`.btn-icon-only` はアイコンだけの正方形 | `ui.button` |
-| `.icon-btn`（`.active`） | 枠のない、アイコンだけの小さなボタン | — |
+| `.icon-btn`（`.active`） | 枠のない、アイコンだけの小さなボタン | `ui.iconButton` |
 | `.toggle` / `.toggle-thumb`（`.toggle-on`） | トグルスイッチ | `ui.toggle` |
 | `.input` | 1行の入力欄 | `ui.input` |
 | `.segmented` / `.segmented-option`（`.segmented-option-selected`） | 横に並んだ選択肢 | `ui.segmented` |
 | `.nav-bar` / `.nav-bar-item`（`.nav-bar-item-selected`） / `.nav-bar-item-icon` / `.nav-bar-item-badge` / `.nav-bar-item-label` | タブのバー | `ui.navbar` |
 | `.divider` | 横の区切り線（`<hr>`） | `ui.divider` |
 | `.setting-row` / `-icon` / `-info` / `-name` / `-description` / `-control` | 設定の1行 | `ui.setting` |
-| `.status-line`（`-muted` / `-ok` / `-accent` / `-warn` / `-error`） | アイコン付きの1行の状態表示 | — |
+| `.status-line`（`-muted` / `-ok` / `-accent` / `-warn` / `-error`） | アイコン付きの1行の状態表示 | `ui.statusLine` |
+| `.setting-section` / `-divider` / `-title` | 設定のセクション | `ui.section` |
+| `.slider` / `-input` / `-value` | 範囲のスライダー | `ui.slider` |
+| `.menu` / `.menu-item`（`.menu-item-danger`） / `.menu-backdrop` | ポップアップのメニュー | `ui.menu` |
+| `.modal` / `.modal-scrim` / `.modal-title` / `.modal-actions` | モーダルのダイアログ | `ui.modal` |
 | `.field-label` | 入力欄の上の小さな見出し | — |
 | `.muted` | 控えめな文字 | — |
 | `.badge` | 数字のバッジ | — |

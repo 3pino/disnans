@@ -21,6 +21,12 @@ describe('parseManifest の apiVersion', () => {
     expect(() => parseManifest(JSON.stringify({ ...base, minApiVersion: 0, apiVersion: -1 }))).toThrow('apiVersion');
   });
 
+  it('18（ui の追加）も、17 以下も読める', () => {
+    expect(parseManifest(JSON.stringify({ ...base, minApiVersion: 18, apiVersion: 18 })).minApiVersion).toBe(18);
+    expect(parseManifest(JSON.stringify({ ...base, minApiVersion: 17 })).minApiVersion).toBe(17);
+    expect(parseManifest(JSON.stringify({ ...base, minApiVersion: 2, apiVersion: 18 })).apiVersion).toBe(18);
+  });
+
   it('minApiVersion より小さい・整数でない値は読まない', () => {
     expect(() => parseManifest(JSON.stringify({ ...base, minApiVersion: 12, apiVersion: 11 }))).toThrow('apiVersion');
     expect(() => parseManifest(JSON.stringify({ ...base, minApiVersion: 12, apiVersion: 13.5 }))).toThrow('apiVersion');

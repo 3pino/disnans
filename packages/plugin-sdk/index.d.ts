@@ -67,7 +67,7 @@ declare global {
     // ---- グローバルの disnans ----
 
     interface Host {
-      /** ホスト API のバージョン（いまは 17） */
+      /** ホスト API のバージョン（いまは 18） */
       readonly apiVersion: number;
       /** 継承して使う */
       readonly Plugin: typeof Plugin;
@@ -740,6 +740,102 @@ declare global {
       badge?: number | string | null;
     };
 
+    /** 中身（`children`）。文字列は文字として入る（HTML としては読まない） */
+    type UiChildren = string | Node | ReadonlyArray<string | Node>;
+
+    interface IconButtonOptions {
+      /** 読み上げ用の名前（必須） */
+      label: string;
+      icon?: IconName;
+      /** アイコンの大きさ（px）。既定は 18 */
+      iconSize?: number;
+      /** 押されている状態（`.active`） */
+      active?: boolean;
+      disabled?: boolean;
+      class?: string;
+      /** アイコンのあとに足す中身 */
+      children?: UiChildren;
+      onClick?: () => void;
+    }
+
+    interface SectionOptions {
+      title: string;
+      class?: string;
+      children?: UiChildren;
+    }
+
+    interface StatusLineOptions {
+      /** 既定は `default` */
+      kind?: 'default' | 'muted' | 'ok' | 'accent' | 'warn' | 'error';
+      icon?: IconName;
+      /** 回るアイコンを出す（`icon` より優先） */
+      busy?: boolean;
+      class?: string;
+      children?: UiChildren;
+    }
+
+    interface SliderOptions {
+      /** 読み上げ用の名前（必須。見える名前は `ui.setting` などで横に出す） */
+      label: string;
+      value?: number;
+      /** 既定は 0 */
+      min?: number;
+      /** 既定は 100 */
+      max?: number;
+      step?: number;
+      /** 右に出す値の書き方。例: `(v) => v + '%'` */
+      format?: (value: number) => string;
+      disabled?: boolean;
+      class?: string;
+      /** 動かしている間 */
+      onInput?: (value: number) => void;
+      /** 離したとき */
+      onChange?: (value: number) => void;
+    }
+
+    interface MenuItemOptions {
+      text: string;
+      icon?: IconName;
+      danger?: boolean;
+      /** 押せない（グレーになる）。`reason` は項目名の下に小さく出る */
+      disabled?: boolean;
+      reason?: string;
+      /** 選んだとき（メニューは先に閉じる） */
+      onClick?: () => void;
+    }
+
+    interface MenuOptions {
+      /** メニューを出す位置の基準の要素（このボタンの下に開く） */
+      anchor: HTMLElement;
+      /** 1 つ以上 */
+      items: MenuItemOptions[];
+      /** `start`（既定）は基準の左端にそろえ、`end` は右端にそろえる。画面の端からはみ出すときは本体が収める */
+      align?: 'start' | 'end';
+      /** 読み上げ用の名前 */
+      label?: string;
+      /** 項目を選ばずに閉じたとき（外側の押下・戻る操作）。`close()` や項目の選択では呼ばれない */
+      onClose?: () => void;
+    }
+
+    interface ModalOptions {
+      title: string;
+      /** 幅（px）。既定は 420（画面が狭いときは収まる） */
+      width?: number;
+      /** 本文 */
+      children?: UiChildren;
+      /** 下に並べるボタン（`ui.button` と同じオプション）。押しても自動では閉じない（処理の中で `close()`） */
+      actions?: ButtonOptions[];
+      /** Esc・外側の押下・戻る操作で閉じたとき（閉じたあとに呼ばれる）。`close()` では呼ばれない */
+      onClose?: () => void;
+    }
+
+    /** 開いているメニュー・モーダル */
+    interface UiOverlay {
+      /** 閉じる（何度呼んでもよい。`onClose` は呼ばれない）。`this.register(overlay.close)` で、プラグインを外すときに閉じられる */
+      close(): void;
+      readonly closed: boolean;
+    }
+
     interface Ui {
       /** アイコンの <svg>（`.icon`）。Lucide の名前・`disnans-logo`・addIcon で登録した名前を使える */
       icon(name: IconName, opts?: IconOptions): SVGSVGElement;
@@ -767,6 +863,24 @@ declare global {
       }): HTMLElement;
       /** 横の区切り線（`.divider`） */
       divider(): HTMLHRElement;
+      /** 枠のない、アイコンだけのボタン（`.icon-btn`）。API v18 */
+      iconButton(opts: IconButtonOptions): HTMLButtonElement;
+      /** 設定のセクション（`.setting-section`。区切り線 + 見出し + 中身）。API v18 */
+      section(opts: SectionOptions): HTMLElement;
+      /** アイコン付きの 1 行の状態表示（`.status-line`）。API v18 */
+      statusLine(opts?: StatusLineOptions): HTMLElement;
+      /** 範囲のスライダー（`.slider`。右に今の値）。API v18 */
+      slider(opts: SliderOptions): HTMLElement;
+      /**
+       * ポップアップのメニューを `anchor` の下に開く（API v18）。項目を選ぶと閉じてから `onClick` を呼ぶ。
+       * 外側を押す・戻る操作では、閉じて `onClose` を呼ぶ。プラグインを外すと、開いたままでも閉じる
+       */
+      menu(opts: MenuOptions): UiOverlay;
+      /**
+       * モーダルのダイアログを開く（API v18）。Esc・外側（幕）の押下・戻る操作では、閉じて `onClose` を呼ぶ。
+       * ボタンの処理の中などで閉じるには、戻り値の `close()`。プラグインを外すと、開いたままでも閉じる
+       */
+      modal(opts: ModalOptions): UiOverlay;
       /** 設定の1行（アイコン・名前・説明と、右側の操作）を containerEl の末尾に足して返す（`.setting-row`） */
       setting(
         containerEl: HTMLElement,

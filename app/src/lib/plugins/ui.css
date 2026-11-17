@@ -1,0 +1,22 @@
+/* disnans.ui.menu（プラグインのメニュー）の置き場所。
+   基準の要素と同じ位置・大きさの見えない入れ物（position: fixed）を作り、メニューをその下に開く。
+   メニューの見た目は design-system の .menu。画面の端からはみ出すときの直しは ui-kit-web の menu が行う */
+.plugin-menu-anchor {
+  position: fixed;
+  z-index: var(--z-menu);
+  pointer-events: none;
+}
+.plugin-menu-anchor > .menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  pointer-events: auto;
+}
+.plugin-menu-anchor.plugin-menu-end > .menu {
+  left: auto;
+  right: 0;
+}
+/* 背景の幕は入れ物の外（画面いっぱい）を押せるようにする */
+.plugin-menu-anchor > .menu-backdrop {
+  pointer-events: auto;
+}

@@ -57,6 +57,7 @@
 - 14: `disnans.PluginError`・`session.viewers`
 - 15: 共有フォルダ `this.files`
 - 17: 追加はなし（画面のキャプチャの削除のみ。上の表）
+- 18: `ui` に `iconButton` / `section` / `statusLine` / `slider` / `menu` / `modal`（削除・意味の変更はなし）
 
 ## 注意点
 

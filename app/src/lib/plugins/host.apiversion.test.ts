@@ -1,0 +1,65 @@
+// @vitest-environment jsdom
+// ホスト API の版（18）と、プラグインの minApiVersion の関係: 17 以下の古いプラグインは今までどおり読み込み、
+// 本体より新しい版（19）を求めるものは読み込まず、アプリの更新を促す
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../call/instance.svelte', () => ({ callApi: {} }));
+
+import { PluginHost } from './host.svelte';
+import { API_VERSION } from './types';
+
+function readBlob(b: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsText(b);
+  });
+}
+
+let scripts: string[] = [];
+let reading: Promise<unknown>[] = [];
+
+beforeEach(() => {
+  scripts = [];
+  reading = [];
+  let n = 0;
+  URL.createObjectURL = vi.fn((b: Blob) => {
+    reading.push(readBlob(b).then((text) => scripts.push(text)));
+    return `blob:fake/${++n}`;
+  });
+  URL.revokeObjectURL = vi.fn();
+});
+
+async function loadWith(id: string, minApiVersion: number): Promise<PluginHost> {
+  const host = new PluginHost();
+  const wanted = {
+    sig: `server:h-${id}`,
+    manifest: { id, name: id, version: '1.0.0', description: '', author: '', minApiVersion },
+    load: async () => ({ main: `export default class {} /* main ${id} */`, styles: null, permissions: [] }),
+  };
+  await (host as unknown as { load(id: string, w: unknown): Promise<void> }).load(id, wanted);
+  await Promise.all(reading);
+  return host;
+}
+
+describe('ホスト API の版', () => {
+  it('本体の版は 18', () => {
+    expect(API_VERSION).toBe(18);
+  });
+
+  it.each([2, 9, 17, 18])('minApiVersion %i のプラグインは読み込む', async (min) => {
+    const host = await loadWith(`p${min}`, min);
+    expect(scripts.some((t) => t.includes(`main p${min}`))).toBe(true);
+    // 版の判定では止まらない（import の失敗は、このテストの偽の Blob URL のため）
+    expect(host.errors[`p${min}`] ?? '').not.toContain('ホスト API');
+  });
+
+  it('minApiVersion 19（本体より新しい）は読み込まず、版を示して更新を促す', async () => {
+    const host = await loadWith('p19', 19);
+    expect(scripts).toEqual([]);
+    expect(host.errors['p19']).toContain('v18');
+    expect(host.errors['p19']).toContain('v19');
+    expect(host.errors['p19']).toContain('アプリを更新');
+  });
+});
