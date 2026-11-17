@@ -4,7 +4,8 @@ import { prefs } from './prefs.svelte';
 import { deviceSettings } from './deviceSettings.svelte';
 import { setSettingsErrorHandler } from '../settingsModel';
 import type { User } from '../protocol/User';
-import type { LightboxGallery, LightboxItem } from '../lightbox';
+import type { LightboxItem } from '../lightbox';
+import { Shell, type ShellConfirm, type ShellToast } from '../shell/shell.svelte';
 import { forgetPanelIn, navBack, navBackDepth, navigate, normalizeNav, type NavMode, type NavState, type NavTab, type Panel, type SettingsSubpage } from '../navHistory';
 
 export type ThemePref = 'system' | 'light' | 'dark';
@@ -14,27 +15,18 @@ export type { Panel, SettingsSubpage, NavTab, NavState, NavMode } from '../navHi
 /** トーストの先頭に出す、送った人のアイコン（AuthorAvatar で描く。ボットならプラグインのアイコン） */
 export type ToastAvatar = { author: AuthorView; user?: User; id: string };
 
-export type Toast = {
-  id: number;
-  text: string;
-  kind: 'info' | 'error';
-  action?: { label: string; run: () => void };
-  avatar?: ToastAvatar;
-};
+export type Toast = ShellToast<ToastAvatar>;
 
-export type ConfirmRequest = {
-  title: string;
-  body?: string;
-  okLabel: string;
-  /** 取り消すボタンの文字（省くと「キャンセル」） */
-  ngLabel?: string;
-  danger?: boolean;
-  resolve: (ok: boolean) => void;
-};
+export type ConfirmRequest = ShellConfirm;
 
 const MOBILE_QUERY = '(max-width: 767px)';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
+/**
+ * 本体の画面の状態。土台（トースト・確認・拡大表示・戻る操作の層）は `shell`（lib/shell/）が持ち、
+ * ここには Disnans のこと（タブ・パネル・通話・設定・検索・遷移の履歴）だけを置く。
+ * 土台のメンバーは、呼び出し側の書き方を変えないよう、下で `shell` に委ねる。
+ */
 class Ui {
   /** テーマ（ユーザーごと。prefs の値） */
   get theme(): ThemePref {
@@ -52,23 +44,52 @@ class Ui {
   pluginSettings = $state<string | null>(null);
   /** 設定で開いている「操作」のサブページ。設定のタブでだけ使う */
   settingsSub = $state<SettingsSubpage | null>(null);
-  /** 拡大表示の画像（いま見ている 1 枚）。開くのは openLightbox で */
-  lightbox = $state<LightboxItem | null>(null);
-  /** 拡大表示の前後をたどる一覧（呼ぶたびに今の一覧を返す）。ないときは前後に移れない */
-  lightboxGallery = $state<LightboxGallery | null>(null);
   /** メッセージ検索中か（コマンドで入る。メインチャットの入力欄が検索モードになり、タイムラインが結果に絞り込まれる） */
   searchOpen = $state(false);
   /** 検索中にもう一度コマンドを実行したとき、検索欄にフォーカスを戻すための合図 */
   searchFocusTick = $state(0);
-  toasts = $state<Toast[]>([]);
-  confirmReq = $state<ConfirmRequest | null>(null);
   /** インライン編集中のメッセージ */
   editing = $state<string | null>(null);
   /** 一覧で名前と時刻を出しているメッセージの ID（画面全体で1つだけ。別のものを出すと前のものは消える） */
   headerMessage = $state<string | null>(null);
   /** 相対時刻の表示を更新するための現在時刻 */
   now = $state(Date.now());
-  private toastSeq = 0;
+
+  /** 土台の状態（トースト・確認・拡大表示・戻る操作の層）。チャットのことは知らない */
+  readonly shell = new Shell<ToastAvatar, LightboxItem>();
+
+  get toasts(): Toast[] {
+    return this.shell.toasts;
+  }
+  set toasts(v: Toast[]) {
+    this.shell.toasts = v;
+  }
+  get confirmReq(): ConfirmRequest | null {
+    return this.shell.confirmReq;
+  }
+  set confirmReq(v: ConfirmRequest | null) {
+    this.shell.confirmReq = v;
+  }
+  /** 拡大表示の画像（いま見ている 1 枚）。開くのは openLightbox で */
+  get lightbox(): LightboxItem | null {
+    return this.shell.lightbox;
+  }
+  set lightbox(v: LightboxItem | null) {
+    this.shell.lightbox = v;
+  }
+  /** 拡大表示の前後をたどる一覧。ないときは前後に移れない */
+  get lightboxGallery(): (() => LightboxItem[]) | null {
+    return this.shell.lightboxGallery;
+  }
+  set lightboxGallery(v: (() => LightboxItem[]) | null) {
+    this.shell.lightboxGallery = v;
+  }
+  get pluginBack(): { run: () => void }[] {
+    return this.shell.pluginBack;
+  }
+  set pluginBack(v: { run: () => void }[]) {
+    this.shell.pluginBack = v;
+  }
 
   init(): void {
     const mq = window.matchMedia(MOBILE_QUERY);
@@ -236,9 +257,8 @@ class Ui {
   }
 
   /** 拡大表示を開く。gallery を渡すと、前後の画像に移れる（一覧は移るたびに取り直す）。渡さなければ 1 枚だけ */
-  openLightbox(item: LightboxItem, gallery: LightboxGallery | null = null): void {
-    this.lightboxGallery = gallery;
-    this.lightbox = item;
+  openLightbox(item: LightboxItem, gallery: (() => LightboxItem[]) | null = null): void {
+    this.shell.openLightbox(item, gallery);
   }
 
   /**
@@ -246,70 +266,38 @@ class Ui {
    * 画像の全画面 → プラグインの層（新しい順）→ 遷移の履歴 の順に1つ戻す。戻る先がなければ false
    */
   back(): boolean {
-    if (this.lightbox) {
-      this.lightbox = null;
+    return this.shell.back(() => {
+      const r = navBack(this.navStack, this.navState());
+      if (!r) return false;
+      this.navStack = r.stack;
+      this.applyNav(r.to);
       return true;
-    }
-    const top = this.pluginBack.at(-1);
-    if (top) {
-      // 先に外す（プラグインが外し忘れても、戻る操作が空回りしないように）
-      this.pluginBack = this.pluginBack.slice(0, -1);
-      try {
-        top.run();
-      } catch (e) {
-        console.error('プラグインの戻る操作で例外', e);
-      }
-      return true;
-    }
-    const r = navBack(this.navStack, this.navState());
-    if (!r) return false;
-    this.navStack = r.stack;
-    this.applyNav(r.to);
-    return true;
+    });
   }
 
   /** 戻る操作を何回できるか（Android の履歴の深さをこれに合わせる） */
   backDepth(): number {
-    return (this.lightbox ? 1 : 0) + this.pluginBack.length + navBackDepth(this.navStack, this.navState());
+    return this.shell.backDepth(navBackDepth(this.navStack, this.navState()));
   }
 
   /**
-   * プラグインが登録した「戻る」で閉じるもの（`disnans.ui.onBack`。API v9）。古い順。
-   * 戻る操作では、遷移の履歴よりも上（先）に閉じる（back）。返り値の関数で外す
+   * プラグインが登録した「戻る」で閉じるもの（`disnans.ui.onBack`。API v9）。戻る操作では、遷移の履歴よりも上に閉じる。返り値の関数で外す
    */
-  // raw: 中身を包む（proxy にする）と、外すときの e !== entry が常に真になり外れない。いつも配列ごと入れ替える
-  pluginBack = $state.raw<{ run: () => void }[]>([]);
-
   addPluginBack(run: () => void): () => void {
-    const entry = { run };
-    this.pluginBack = [...this.pluginBack, entry];
-    return () => {
-      this.pluginBack = this.pluginBack.filter((e) => e !== entry);
-    };
+    return this.shell.addPluginBack(run);
   }
 
   /** 通知を出して、その id を返す。ms が null なら自分では消えない（dismiss するまで。進行中の通知など） */
   toast(text: string, kind: Toast['kind'] = 'info', action?: Toast['action'], ms: number | null = 5000, avatar?: ToastAvatar): number {
-    const id = ++this.toastSeq;
-    this.toasts.push({ id, text, kind, action, avatar });
-    if (ms !== null) setTimeout(() => this.dismiss(id), ms);
-    return id;
+    return this.shell.toast(text, kind, action, ms, avatar);
   }
 
   dismiss(id: number): void {
-    this.toasts = this.toasts.filter((t) => t.id !== id);
+    this.shell.dismiss(id);
   }
 
   confirm(opts: Omit<ConfirmRequest, 'resolve'>): Promise<boolean> {
-    return new Promise((resolve) => {
-      this.confirmReq = {
-        ...opts,
-        resolve: (ok) => {
-          this.confirmReq = null;
-          resolve(ok);
-        },
-      };
-    });
+    return this.shell.confirm(opts);
   }
 }
 

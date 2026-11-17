@@ -27,13 +27,19 @@
 ## エクスプローラー（共有フォルダの画面）
 
 共有フォルダを見る画面（一覧・選択・コピー／移動・ゴミ箱・名前の変更・プロパティ）と、その決まり・状態は、共有パッケージ **[@3pino/explorer-kit](https://github.com/3pino/explorer-kit)** にある。
-ファイラーのアプリ disrect と同じ部品で、Disnans は「サーバーの共有フォルダ」という置き場所を 1 つ渡して使う。
+部品は特定のアプリの言葉を持たない（ファイラーのアプリ fixplor も同じ部品を使う）。Disnans は「サーバーの共有フォルダ」という置き場所と、Disnans の言葉（共有フォルダ・添付・本文のリンクの注意）を渡して使う。
 
 - 取り込み: `app/package.json` の依存（タグ指定）。TypeScript と Svelte のソースのまま配られるので、`app/vite.config.ts` で開発サーバーの事前バンドルから外している（`optimizeDeps.exclude`）
-- Disnans の実装を渡すところ: `app/src/lib/explorer/instance.ts`（置き場所 = `sharedApi`・項目の URL・共有フォルダの決まり `SHARED_RULES`、本体から貸す機能 = 通知・確認・戻る・拡大表示・クリップボード・保存・OS からのドロップ）
+- Disnans の実装を渡すところ: `app/src/lib/explorer/instance.ts`（置き場所 = `sharedApi`・項目の URL・共有フォルダの決まり `SHARED_RULES`（`specialDir` = `attachments`・文の `texts`）、本体から貸す機能 = 通知・確認・戻る・拡大表示・クリップボード・保存・OS からのドロップ）
 - `components/FileExplorer.svelte`・`FileProperties.svelte`・`SharedEntryActions.svelte` は、部品へそれを渡すだけの薄い包み。`lib/sharedOps.ts`・`sharedTransfer.ts`・`trashFolder.ts`・`fileExplorer.ts`・`explorerDirs.ts` と `lib/stores/explorer*.svelte.ts`・`fileExplorer.svelte.ts` は、部品を Disnans の決まりで呼ぶ入口（これまでと同じ名前で使える）
-- 画面の流れの試験（`components/FileExplorer.test.ts`）は Disnans の側にあり、部品に Disnans の実装を渡して確かめる。部品を変えたら、この試験が通ることを確かめてからタグを更新する
+- 画面の流れの試験は部品の側（explorer-kit の `FileExplorer.screen.test.ts`・`FileProperties.screen.test.ts`。メモリの中の偽の置き場所で確かめる）にある。Disnans の側の試験（`components/FileExplorer.test.ts`・`FileProperties.test.ts`・`lib/sharedOps.test.ts`）は、`instance.ts` が本物の `sharedApi`・`SHARED_RULES`・本体の機能へ正しくつながっていること（同名の確認・削除と取り消し・サーバーが変わったとき・添付の決まりと言葉・ゴミ箱の URL・OS のクリップボード・メッセージ検索）だけを確かめる
 - 更新: 共有側でタグを打ち、依存のタグを更新する
+
+## 土台（shell）と本体の画面の状態
+
+`app/src/lib/shell/` は、チャット・通話・設定・サーバーを知らない土台の状態を持つ（`Shell` クラス）。トースト・確認・拡大表示・戻る操作の層（プラグインの「戻る」）と、戻る操作の順（拡大表示 → プラグインの層 → 遷移の履歴）が入る。遷移の履歴は持たず、`back(nav)` で呼び出し側から受け取る。import は持たないので、共有パッケージへそのまま出せる形にしてある。
+
+`app/src/lib/stores/ui.svelte.ts` は、本体の画面の状態（タブ・パネル・通話・設定・検索・遷移の履歴）を持ち、土台を `shell` として組み立てる。呼び出し側は `ui` だけを使い、土台のメンバー（`toast`・`confirm`・`lightbox`・`back` など）も `ui` 経由のまま変えていない。
 
 ## クライアントと共通表示データ
 
