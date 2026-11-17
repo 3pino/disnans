@@ -1,8 +1,8 @@
 <script lang="ts">
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import Button from './ui/Button.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
   import PublishButton from './PublishButton.svelte';
-  import Section from './ui/Section.svelte';
+  import Section from '@3pino/ui-kit-web/Section.svelte';
   import { pluginHost, type PluginEntry } from '../lib/plugins/host.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import type { PluginVisibility } from '../lib/protocol/PluginVisibility';

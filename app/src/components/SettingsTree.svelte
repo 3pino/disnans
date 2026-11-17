@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Settings from '@lucide/svelte/icons/settings';
-  import Section from './ui/Section.svelte';
-  import SettingRow from './ui/SettingRow.svelte';
+  import Section from '@3pino/ui-kit-web/Section.svelte';
+  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
   import SettingsField from './SettingsField.svelte';
   import { guiEnv } from '../lib/settingsBindings.svelte';
   import { guiSections, type UiPage, type UiSlot } from '../lib/uiTree';

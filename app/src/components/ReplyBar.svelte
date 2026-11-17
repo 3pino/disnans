@@ -2,7 +2,7 @@
   import CornerUpLeft from '@lucide/svelte/icons/corner-up-left';
   import X from '@lucide/svelte/icons/x';
   import AuthorAvatar from './AuthorAvatar.svelte';
-  import IconButton from './ui/IconButton.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { reply } from '../lib/stores/reply.svelte';
   import { authorOf } from '../lib/author';

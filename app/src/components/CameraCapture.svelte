@@ -2,8 +2,8 @@
   import { onMount, untrack } from 'svelte';
   import Camera from '@lucide/svelte/icons/camera';
   import SwitchCamera from '@lucide/svelte/icons/switch-camera';
-  import Modal from './ui/Modal.svelte';
-  import Button from './ui/Button.svelte';
+  import Modal from '@3pino/ui-kit-web/Modal.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
   import { captureJpeg, cameraErrorText, photoFileName } from '../lib/camera';
 
   // 写真を撮るモーダル。映像を見ながらシャッターを押すと、JPEG のファイルを onphoto に渡す（添付の流れに乗る）。

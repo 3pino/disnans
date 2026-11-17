@@ -6,10 +6,10 @@
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
-  import IconButton from './ui/IconButton.svelte';
-  import SettingRow from './ui/SettingRow.svelte';
-  import StatusLine from './ui/StatusLine.svelte';
-  import TextInput from './ui/TextInput.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
+  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
+  import StatusLine from '@3pino/ui-kit-web/StatusLine.svelte';
+  import TextInput from '@3pino/ui-kit-web/TextInput.svelte';
   import {
     addHotkey,
     commandList,

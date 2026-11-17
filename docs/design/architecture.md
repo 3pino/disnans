@@ -11,8 +11,18 @@
 - 取り込み: `app/package.json` の依存と、`app/src/app.css` の `@import '@3pino/design-system'`
 - 本体だけのスタイル（検索ヒットの強調、チャット画面）は、`app.css` と各コンポーネントの `<style>` に置く
 - 更新: 共有側でタグを打ち、依存のタグを更新する
-- 部品や DOM を変えるときは、共有側の CSS と、`components/ui/`・`lib/plugins/ui.ts`・[PLUGIN_UI.md](../plugins/ui.md) をそろえる
+- 部品や DOM を変えるときは、共有側の CSS と、UI 部品のパッケージ（下）・`lib/plugins/ui.ts`・[PLUGIN_UI.md](../plugins/ui.md) をそろえる
 - 見た目の最終確認は利用者が行う
+
+## UI 部品
+
+小さな UI 部品（ボタン・メニュー・ダイアログ・設定の行・トグル・並べ替えのリストなど）は、共有パッケージ **[@3pino/ui-kit-web](https://github.com/3pino/ui-kit-web)** にある。説明は同リポジトリの `docs/ui.md`。
+
+- Svelte の部品と、同じ DOM を作るフレームワークに依らない DOM の部品（`@3pino/ui-kit-web/dom`）の 2 通り。2 つが同じ DOM になることは、ui-kit-web の `parity.test.ts` が確かめる
+- プラグインの `disnans.ui`（`app/src/lib/plugins/ui.ts`）は、DOM の部品を呼ぶ薄い包み（引数のエラーの種類と、トースト・確認・戻る・没入モードなど本体の機能をつなぐ）
+- アプリごとに違うことは差し込み口で渡す: アプリのロゴ（`defineBuiltinIcon`。`lib/icons.svelte.ts`）、Android の振動（`setHaptics`。`lib/haptics.ts`）
+- 取り込み: `app/package.json` の依存（タグ指定）。ソースのまま配られるので、`app/vite.config.ts` で事前バンドルから外している（`optimizeDeps.exclude`）。更新は共有側でタグを打ち、依存のタグを更新する
+- エクスプローラーの部品（@3pino/explorer-kit）も、同じ UI 部品を使う（重複した写しは無い）
 
 ## エクスプローラー（共有フォルダの画面）
 

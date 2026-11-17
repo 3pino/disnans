@@ -3,9 +3,9 @@
   import Download from '@lucide/svelte/icons/download';
   import Copy from '@lucide/svelte/icons/copy';
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import Button from './ui/Button.svelte';
-  import IconButton from './ui/IconButton.svelte';
-  import SettingRow from './ui/SettingRow.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
+  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
   import { buildDiagReport, clearDiagLog, exportDiagReport } from '../lib/diagLog';
   import { copyText } from '../lib/clipboard';
   import { getServerUrl } from '../lib/config';

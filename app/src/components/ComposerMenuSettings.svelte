@@ -2,12 +2,12 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-  import Button from './ui/Button.svelte';
-  import Menu from './ui/Menu.svelte';
-  import MenuItem from './ui/MenuItem.svelte';
-  import SettingRow from './ui/SettingRow.svelte';
-  import SortableList from './ui/SortableList.svelte';
-  import Toggle from './ui/Toggle.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
+  import Menu from '@3pino/ui-kit-web/Menu.svelte';
+  import MenuItem from '@3pino/ui-kit-web/MenuItem.svelte';
+  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
+  import SortableList from '@3pino/ui-kit-web/SortableList.svelte';
+  import Toggle from '@3pino/ui-kit-web/Toggle.svelte';
   import {
     addComposerMenuCommand,
     composerMenuAvailable,

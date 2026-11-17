@@ -1,8 +1,8 @@
 <script lang="ts">
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import AppIcon from './AppIcon.svelte';
-  import Button from './ui/Button.svelte';
-  import TextInput from './ui/TextInput.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
+  import TextInput from '@3pino/ui-kit-web/TextInput.svelte';
   import { api } from '../lib/api';
   import { applyServerUrl, normalizeServerUrl } from '../lib/config';
   import { saveServerUrl } from '../lib/desktopStorage';

@@ -5,12 +5,12 @@
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import FolderSearch from '@lucide/svelte/icons/folder-search';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
-  import Button from './ui/Button.svelte';
-  import IconButton from './ui/IconButton.svelte';
-  import SettingRow from './ui/SettingRow.svelte';
-  import StatusLine from './ui/StatusLine.svelte';
-  import TextInput from './ui/TextInput.svelte';
-  import Toggle from './ui/Toggle.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
+  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
+  import StatusLine from '@3pino/ui-kit-web/StatusLine.svelte';
+  import TextInput from '@3pino/ui-kit-web/TextInput.svelte';
+  import Toggle from '@3pino/ui-kit-web/Toggle.svelte';
   import { pluginHost, type PluginEntry } from '../lib/plugins/host.svelte';
   import { devFolderSupported } from '../lib/plugins/dev';
   import { localHashes, updatePlugin } from '../lib/plugins/deliver';

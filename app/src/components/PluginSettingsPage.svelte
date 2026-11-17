@@ -1,6 +1,6 @@
 <script lang="ts">
-  import PanelBar from './ui/PanelBar.svelte';
-  import Icon from './ui/Icon.svelte';
+  import PanelBar from '@3pino/ui-kit-web/PanelBar.svelte';
+  import Icon from '@3pino/ui-kit-web/Icon.svelte';
   import PluginSettingTab from './PluginSettingTab.svelte';
   import PluginManageSection from './PluginManageSection.svelte';
   import { pluginHost } from '../lib/plugins/host.svelte';

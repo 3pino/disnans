@@ -4,10 +4,10 @@
   import Camera from '@lucide/svelte/icons/camera';
   import Image from '@lucide/svelte/icons/image';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-  import SettingRow from './ui/SettingRow.svelte';
-  import SegmentedButton from './ui/SegmentedButton.svelte';
-  import Button from './ui/Button.svelte';
-  import Section from './ui/Section.svelte';
+  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
+  import SegmentedButton from '@3pino/ui-kit-web/SegmentedButton.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
+  import Section from '@3pino/ui-kit-web/Section.svelte';
   import { FPS_OPTIONS, COLOR_MODES, formatBytes } from '../lib/call/screen/codec';
   import { encodePreview, loadSnapshotCanvas, newCanvas, type PreviewResult } from '../lib/call/screen/preview';
   import type { ScreenSettingsPort, ScreenSettingsValue, ScreenSnapshot } from '../lib/call/screen/types';

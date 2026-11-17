@@ -1,8 +1,8 @@
 <script lang="ts">
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import X from '@lucide/svelte/icons/x';
-  import IconButton from './ui/IconButton.svelte';
-  import Icon from './ui/Icon.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
+  import Icon from '@3pino/ui-kit-web/Icon.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { pluginHost } from '../lib/plugins/host.svelte';
   import type { ViewHandle, ViewHeader } from '../lib/plugins/runtime';

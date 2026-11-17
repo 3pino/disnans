@@ -1,8 +1,8 @@
 <script lang="ts">
-  import SettingRow from './ui/SettingRow.svelte';
-  import SegmentedButton from './ui/SegmentedButton.svelte';
-  import Slider from './ui/Slider.svelte';
-  import Toggle from './ui/Toggle.svelte';
+  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
+  import SegmentedButton from '@3pino/ui-kit-web/SegmentedButton.svelte';
+  import Slider from '@3pino/ui-kit-web/Slider.svelte';
+  import Toggle from '@3pino/ui-kit-web/Toggle.svelte';
   import { fieldBinding, fieldLabel } from '../lib/settingsBindings.svelte';
   import type { UiField } from '../lib/uiTree';
 

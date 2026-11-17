@@ -8,9 +8,9 @@
   import BellOff from '@lucide/svelte/icons/bell-off';
   import MessageInput from './MessageInput.svelte';
   import ReplyBar from './ReplyBar.svelte';
-  import IconButton from './ui/IconButton.svelte';
-  import Menu from './ui/Menu.svelte';
-  import MenuItem from './ui/MenuItem.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
+  import Menu from '@3pino/ui-kit-web/Menu.svelte';
+  import MenuItem from '@3pino/ui-kit-web/MenuItem.svelte';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { messageSearch } from '../lib/stores/search.svelte';
   import { client } from '../lib/stores/client.svelte';

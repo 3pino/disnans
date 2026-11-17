@@ -2,7 +2,7 @@
   import ZoomIn from '@lucide/svelte/icons/zoom-in';
   import ZoomOut from '@lucide/svelte/icons/zoom-out';
   import { tick, untrack } from 'svelte';
-  import IconButton from '../ui/IconButton.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import { PDF_DOUBLE_TAP_ZOOM, PDF_MAX_ZOOM, PDF_MIN_ZOOM, anchoredScroll, clampZoom, stepZoom } from '../../lib/pdfZoom';
   import { loadPdfjs } from '../../lib/pdfjs';
   import { attachmentActionText } from '../../lib/fileLink';

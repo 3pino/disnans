@@ -1,7 +1,8 @@
 <script lang="ts">
+  import '../lib/icons.svelte';
   import Settings from '@lucide/svelte/icons/settings';
   import Puzzle from '@lucide/svelte/icons/puzzle';
-  import UiNavBar, { type NavBarItem } from './ui/NavBar.svelte';
+  import UiNavBar, { type NavBarItem } from '@3pino/ui-kit-web/NavBar.svelte';
   import { commandList, findCommand } from '../lib/commands.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
   import { NAV_BUILTIN_IDS, NAV_CALL_ID, NAV_CHAT_ID, NAV_SETTINGS_ID, navActiveId, navItemLabel, visibleNavItems } from '../lib/navBar';

@@ -1,7 +1,7 @@
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
   import AuthorAvatar from './AuthorAvatar.svelte';
-  import IconButton from './ui/IconButton.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 </script>
 

@@ -22,7 +22,7 @@
 - [design/tui.md](design/tui.md): TUI の部品・色の対応
 - [design/ui-tree.md](design/ui-tree.md): 設定画面とナビバーの、GUI と TUI の共通の木
 - [crates/client-core/README.md](../crates/client-core/README.md): クレートの境界
-- [app/src/components/ui/README.md](../app/src/components/ui/README.md): Svelte の部品を足す規則
+- [app/src/components/ui/README.md](../app/src/components/ui/README.md): UI 部品（共有パッケージ @3pino/ui-kit-web）への案内
 
 ## API（契約）
 

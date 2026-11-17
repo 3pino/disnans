@@ -2,10 +2,10 @@
   import { onMount } from 'svelte';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import IconButton from './ui/IconButton.svelte';
-  import SettingRow from './ui/SettingRow.svelte';
-  import StatusLine from './ui/StatusLine.svelte';
-  import TextInput from './ui/TextInput.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
+  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
+  import StatusLine from '@3pino/ui-kit-web/StatusLine.svelte';
+  import TextInput from '@3pino/ui-kit-web/TextInput.svelte';
   import { deviceList } from '../lib/stores/deviceList.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import type { DeviceInfo } from '../lib/transport/device';

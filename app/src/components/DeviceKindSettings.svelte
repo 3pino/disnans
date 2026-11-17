@@ -3,8 +3,8 @@
   import Tablet from '@lucide/svelte/icons/tablet';
   import Laptop from '@lucide/svelte/icons/laptop';
   import Monitor from '@lucide/svelte/icons/monitor';
-  import IconButton from './ui/IconButton.svelte';
-  import Menu from './ui/Menu.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
+  import Menu from '@3pino/ui-kit-web/Menu.svelte';
   import { DEVICE_KIND_LABELS, DEVICE_KINDS, deviceKind, type DeviceKind } from '../lib/deviceKind.svelte';
 
   // プロフィールのカードの右に置く「このデバイスの種類」。このデバイスだけの設定（サーバーのデバイスの設定に保存）。

@@ -1,7 +1,8 @@
 # プラグインの UI 部品（disnans.ui）とアイコン
 
 `disnans.ui` は、本体と**同じ見た目**の部品を DOM 要素として作る関数の集まりです。
-見た目の正は本体のグローバルの CSS クラス（`@3pino/design-system`（`components.css`））で、本体の Svelte の部品（`app/src/components/ui/`）と
+見た目の正は本体のグローバルの CSS クラス（`@3pino/design-system`（`components.css`））で、本体の Svelte の部品と、ここで説明する DOM の部品は、
+同じクラスを付けた**同じ DOM** になります。どちらも共有パッケージ [@3pino/ui-kit-web](https://github.com/3pino/ui-kit-web) の部品です（Svelte 版と DOM 版が同じ DOM になることは、そのテストで確かめています）。
 
 作り方の全体は [プラグインの作り方](README.md)、型は `packages/plugin-sdk/index.d.ts`（`Disnans.Ui`）を参照してください。
 

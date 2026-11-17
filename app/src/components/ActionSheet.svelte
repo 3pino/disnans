@@ -1,6 +1,6 @@
 <script lang="ts">
   import SmilePlus from '@lucide/svelte/icons/smile-plus';
-  import MenuItem from './ui/MenuItem.svelte';
+  import MenuItem from '@3pino/ui-kit-web/MenuItem.svelte';
   import type { IconRef } from '../lib/icons.svelte';
 
   type Item = { id?: string; label: string; icon: IconRef; danger?: boolean; run: () => void };

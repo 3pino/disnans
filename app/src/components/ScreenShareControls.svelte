@@ -3,7 +3,7 @@
   import MonitorOff from '@lucide/svelte/icons/monitor-off';
   import Video from '@lucide/svelte/icons/video';
   import VideoOff from '@lucide/svelte/icons/video-off';
-  import IconButton from './ui/IconButton.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import type { ScreenShareView } from '../lib/call/screen/view';
 
   // 画面共有・カメラ共有の押すボタン（通話のバーと通話の画面に置く）。

@@ -2,7 +2,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import MessageItem from './MessageItem.svelte';
-  import Button from './ui/Button.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
   import type { Message } from '../lib/protocol/Message';
   import { dayLabel, sameDay } from '../lib/format';
   import { jumpToMessage } from '../lib/jump';

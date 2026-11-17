@@ -4,7 +4,7 @@
 
 部品（Menu / Choice / Dialog / Prompt）は `crates/cli/src/tui/ui/modal.rs`、色トークンは `ui/theme.rs`、設定画面とナビゲーションバーの構造は GUI と共通の木（`client-core::view::ui`。[ui-tree.md](ui-tree.md)）から作る。操作の説明は [crates/cli/README.md](../../crates/cli/README.md)。以下は部品の方針。
 
-- 当面は `tui/ui/` に部品を作り、GUI の `disnans.ui` / `components/ui/` と名前・props・イベント・値の型をそろえる。
+- 当面は `tui/ui/` に部品を作り、GUI の `disnans.ui` / 共有の UI 部品（@3pino/ui-kit-web）と名前・props・イベント・値の型をそろえる。
 - Nerd Font 前提。専用の代替文字セットは作らない。
 - キー入力・マウス入力を `Action` に変換して部品に渡す。Tab / Shift+Tab はフォーカス移動、矢印は選択・値変更、Enter は決定、Space はトグル、Esc は一段戻る。ヒントはキー設定から作る。既存の画面のキー操作は移行時に維持する。
 - モーダルはスタックの最上位だけが操作を受ける。画像がモーダルに重ならないよう配置を外す。選択モードや補完はリスト・ポップアップへのフォーカスとして扱う。

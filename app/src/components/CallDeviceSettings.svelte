@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import Mic from '@lucide/svelte/icons/mic';
   import Headphones from '@lucide/svelte/icons/headphones';
-  import SettingRow from './ui/SettingRow.svelte';
+  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
   import { call } from '../lib/call/instance.svelte';
   import { callSettings } from '../lib/call/settings.svelte';
   import { audio } from '../lib/plugins/audio';

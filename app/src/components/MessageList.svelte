@@ -3,7 +3,7 @@
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import MessageItem from './MessageItem.svelte';
-  import Button from './ui/Button.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
   import type { Message } from '../lib/protocol/Message';
   import type { Timeline } from '../lib/stores/timeline.svelte';
   import { dayLabel, sameDay } from '../lib/format';

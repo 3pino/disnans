@@ -1,8 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import Avatar from './Avatar.svelte';
-  import SuggestList from './ui/SuggestList.svelte';
-  import Icon from './ui/Icon.svelte';
+  import SuggestList from '@3pino/ui-kit-web/SuggestList.svelte';
+  import Icon from '@3pino/ui-kit-web/Icon.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { bodyToDraft, draftToBody } from '../lib/mentions';
   import { applySuggestion, findSuggestion, type SuggestItem, type SuggestProvider, type Suggestion } from '../lib/suggest';

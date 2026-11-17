@@ -16,9 +16,9 @@
   import Phone from '@lucide/svelte/icons/phone';
   import PhoneOff from '@lucide/svelte/icons/phone-off';
   import Avatar from './Avatar.svelte';
-  import PanelBar from './ui/PanelBar.svelte';
-  import Button from './ui/Button.svelte';
-  import IconButton from './ui/IconButton.svelte';
+  import PanelBar from '@3pino/ui-kit-web/PanelBar.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import ScreenShareControls from './ScreenShareControls.svelte';
   import CallStreams from './CallStreams.svelte';
   import { orderViews } from '../lib/call/screen/order';

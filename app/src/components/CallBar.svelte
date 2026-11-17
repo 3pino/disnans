@@ -15,8 +15,8 @@
   import Phone from '@lucide/svelte/icons/phone';
   import PhoneOff from '@lucide/svelte/icons/phone-off';
   import Avatar from './Avatar.svelte';
-  import Button from './ui/Button.svelte';
-  import IconButton from './ui/IconButton.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import { call } from '../lib/call/instance.svelte';
   import { longPress } from '../lib/call/longPress';
   import { normalizeDevice, statusBadges, type StatusBadge } from '../lib/call/pure';

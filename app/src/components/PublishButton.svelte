@@ -3,9 +3,9 @@
   import Users from '@lucide/svelte/icons/users';
   import Lock from '@lucide/svelte/icons/lock';
   import CloudOff from '@lucide/svelte/icons/cloud-off';
-  import Button from './ui/Button.svelte';
-  import Menu from './ui/Menu.svelte';
-  import MenuItem from './ui/MenuItem.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
+  import Menu from '@3pino/ui-kit-web/Menu.svelte';
+  import MenuItem from '@3pino/ui-kit-web/MenuItem.svelte';
   import type { PluginVisibility } from '../lib/protocol/PluginVisibility';
 
   // [配布] ボタン。押すと「みんなに配布」「自分だけに配布」を選ぶメニューを出す（プラグイン・テーマの設定で使う）。

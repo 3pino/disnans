@@ -4,7 +4,7 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import type { Snippet } from 'svelte';
-  import IconButton from './ui/IconButton.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import { VIEWERS } from './viewers';
   import type { TapMode } from '../lib/viewers';
   import { adjacentItem, type LightboxItem } from '../lib/lightbox';

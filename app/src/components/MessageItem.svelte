@@ -13,9 +13,9 @@
   import MessageInput from './MessageInput.svelte';
   import ActionSheet from './ActionSheet.svelte';
   import MessageCard from './MessageCard.svelte';
-  import Button from './ui/Button.svelte';
-  import IconButton from './ui/IconButton.svelte';
-  import Icon from './ui/Icon.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
+  import Icon from '@3pino/ui-kit-web/Icon.svelte';
   import type { Message } from '../lib/protocol/Message';
   import type { PendingMessage } from '../lib/stores/timeline.svelte';
   import { client } from '../lib/stores/client.svelte';

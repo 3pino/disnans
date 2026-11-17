@@ -4,8 +4,8 @@
   import X from '@lucide/svelte/icons/x';
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import MessageItem from './MessageItem.svelte';
-  import IconButton from './ui/IconButton.svelte';
-  import Icon from './ui/Icon.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
+  import Icon from '@3pino/ui-kit-web/Icon.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { timelinePanels } from '../lib/stores/timelinePanel.svelte';
 

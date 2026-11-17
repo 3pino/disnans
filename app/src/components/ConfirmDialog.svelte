@@ -1,6 +1,6 @@
 <script lang="ts">
-  import Modal from './ui/Modal.svelte';
-  import Button from './ui/Button.svelte';
+  import Modal from '@3pino/ui-kit-web/Modal.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
   import { ui } from '../lib/stores/ui.svelte';
 </script>
 

@@ -1,8 +1,8 @@
 <script lang="ts">
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import Button from './ui/Button.svelte';
-  import SettingRow from './ui/SettingRow.svelte';
-  import Toggle from './ui/Toggle.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
+  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
+  import Toggle from '@3pino/ui-kit-web/Toggle.svelte';
   import PublishButton from './PublishButton.svelte';
   import { pluginHost, type ThemeEntry } from '../lib/plugins/host.svelte';
   import { themeHost } from '../lib/plugins/themes.svelte';

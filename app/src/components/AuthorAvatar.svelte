@@ -1,6 +1,6 @@
 <script lang="ts">
   import Avatar from './Avatar.svelte';
-  import Icon from './ui/Icon.svelte';
+  import Icon from '@3pino/ui-kit-web/Icon.svelte';
   import type { AuthorView } from '../lib/author';
   import type { User } from '../lib/protocol/User';
   import { avatarSrc } from '../lib/config';

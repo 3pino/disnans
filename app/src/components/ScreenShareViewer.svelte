@@ -4,7 +4,7 @@
   import Minimize from '@lucide/svelte/icons/minimize';
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture';
   import SwitchCamera from '@lucide/svelte/icons/switch-camera';
-  import IconButton from './ui/IconButton.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import LightboxView from './LightboxView.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { commandHost } from '../lib/commandHost.svelte';

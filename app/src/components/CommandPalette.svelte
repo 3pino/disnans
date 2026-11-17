@@ -1,9 +1,9 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import Modal from './ui/Modal.svelte';
-  import TextInput from './ui/TextInput.svelte';
-  import SuggestList from './ui/SuggestList.svelte';
-  import Icon from './ui/Icon.svelte';
+  import Modal from '@3pino/ui-kit-web/Modal.svelte';
+  import TextInput from '@3pino/ui-kit-web/TextInput.svelte';
+  import SuggestList from '@3pino/ui-kit-web/SuggestList.svelte';
+  import Icon from '@3pino/ui-kit-web/Icon.svelte';
   import { commandList, effectiveHotkeys, filterCommands, type AppCommand } from '../lib/commands.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
   import { formatHotkey } from '../lib/plugins/hotkey';

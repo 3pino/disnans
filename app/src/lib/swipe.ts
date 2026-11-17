@@ -3,23 +3,14 @@
  * 画面の描画と指の追跡は MessageItem.svelte の側で行い、ここは数値の判定だけを持つ。
  */
 
-/** 横か縦かを決めるまでに必要な動き（px）。小さな揺れで決めないため */
-export const SWIPE_LOCK_PX = 8;
+// 横か縦かを決める判定（swipeAxis・SWIPE_LOCK_PX）は、共有の UI 部品（並べ替えの部品と同じ判定）にある
+import { SWIPE_LOCK_PX, swipeAxis, type SwipeAxis } from '@3pino/ui-kit-web/gesture';
+export { SWIPE_LOCK_PX, swipeAxis, type SwipeAxis };
+
 /** 離したときに返信が発動する、左への動き（px） */
 export const SWIPE_TRIGGER_PX = 60;
 /** 吹き出しが左へ動ける最大（px） */
 export const SWIPE_MAX_PX = 96;
-
-export type SwipeAxis = 'x' | 'y';
-
-/**
- * 指の動き（開始点からの差）から、横か縦かを決める。
- * どちらも SWIPE_LOCK_PX に届くまでは null（まだ決めない）。横の動きが縦より大きいときだけ 'x'。
- */
-export function swipeAxis(dx: number, dy: number): SwipeAxis | null {
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_LOCK_PX) return null;
-  return Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
-}
 
 /**
  * 吹き出しの横の位置（px、左へ動くほど負）。指に追従し、しきい値を超えると重くなる。

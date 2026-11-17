@@ -5,6 +5,7 @@ import { isAndroid, isTauri } from './platform';
 import { invokeNative } from './nativeInvoke';
 import { deviceSettings } from './stores/deviceSettings.svelte';
 import { onForeground } from './foreground';
+import { setHaptics } from '@3pino/ui-kit-web/haptics';
 
 /** Android のネイティブ振動のコマンド（Rust の notifier プラグイン。引数は { ms }） */
 export const VIBRATE_COMMAND = 'plugin:notifier|vibrate';
@@ -50,6 +51,9 @@ export function vibrate(ms: number): void {
     // 振動に対応しない環境（デスクトップなど）
   }
 }
+
+// 共有の UI 部品（並べ替えの長押しの合図）の振動を、この振動にする（Android ではネイティブ、設定でオフにできる）
+setHaptics(vibrate);
 
 async function nativeVibrate(ms: number): Promise<void> {
   try {

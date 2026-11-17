@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Icon from './ui/Icon.svelte';
+  import Icon from '@3pino/ui-kit-web/Icon.svelte';
   import Avatar from './Avatar.svelte';
   import type { MessageCard } from '../lib/protocol/MessageCard';
   import { pluginHost } from '../lib/plugins/host.svelte';

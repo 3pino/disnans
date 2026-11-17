@@ -5,9 +5,9 @@
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import X from '@lucide/svelte/icons/x';
-  import Button from './ui/Button.svelte';
+  import Button from '@3pino/ui-kit-web/Button.svelte';
   import RecentThumb from './RecentThumb.svelte';
-  import IconButton from './ui/IconButton.svelte';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import {
     listRecentImages,
     RECENT_IMAGE_MAX,
