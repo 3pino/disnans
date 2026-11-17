@@ -1,6 +1,6 @@
 # コアプラグイン（エクスプローラーのプラグイン化）
 
-状態: 設計案(未実装)
+状態: 設計案(未実装)。fixplor を元にした進め方は [fixplor-independence.md](fixplor-independence.md)
 
 エクスプローラー(`app/src/components/FileExplorer.svelte`、約 1200 行)のような 1 つの画面を、本体の外(プラグインの仕組み)へ切り出す案。FEEDBACKS の「ファイルエクスプローラーを別のアプリとして切り出したい。プラグインからも新しいアプリや画面を作りたい」に紐づく。
 

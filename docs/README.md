@@ -49,6 +49,7 @@
 冒頭に「状態」を書く。FEEDBACKS の項目に紐づく。
 
 - [proposals/core-plugins.md](proposals/core-plugins.md): コアプラグイン（エクスプローラーのプラグイン化）
+- [proposals/fixplor-independence.md](proposals/fixplor-independence.md): fixplor の切り離し・共有パッケージ・エクスプローラーのプラグイン化の方針
 - [proposals/tui-plugins.md](proposals/tui-plugins.md): TUI でプラグインを動かす案（JS エンジンの調査）
 - [proposals/ideas.md](proposals/ideas.md): 取り下げた・保留した検討
 
