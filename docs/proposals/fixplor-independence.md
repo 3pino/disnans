@@ -1,6 +1,6 @@
 # fixplor の切り離しと、エクスプローラーのプラグイン化
 
-状態: 方針（決定）。個々の実装は未着手・一部着手。決めたことと、まだ決めていないことは末尾。FEEDBACKS の「ファイルエクスプローラーを別のアプリとして切り出したい」に紐づく。
+状態: 方針（決定）。段 1〜3 完了・段 4 ほぼ完了・段 5〜6 未着手（段 5 の設計は `.pi` で作成中）。決めたことと、まだ決めていないことは末尾。FEEDBACKS の「ファイルエクスプローラーを別のアプリとして切り出したい」に紐づく。
 
 ## 目標と位置づけ
 
@@ -16,12 +16,14 @@
 3. 共通の画面と決まりは、**2 つの口**（置き場所 `ExplorerApi` と、本体から借りる機能 `ExplorerHost`。[architecture.md](../design/architecture.md)）を通して外とやりとりする。
 4. 見た目は `@3pino/design-system`（CSS）と `@3pino/ui-kit-web`（Svelte の部品）。部品の DOM 版は持たない（プラグインには、ホストが Svelte の部品を mount して渡す）。
 
-## いまの形（v0.2.74）
+## いまの形（v0.2.76）
 
 | パッケージ・リポジトリ | 中身 | 使う側 |
 |---|---|---|
 | `@3pino/design-system` | CSS のトークンと部品の見た目 | Disnans・ui-kit-web・explorer-kit・fixplor |
 | `@3pino/ui-kit-web` | Svelte の UI 部品（Button・Menu・Modal・NavBar・SettingRow・SortableList ほか）・アイコンの登録簿 | 同上 |
+| `@3pino/app-kit-web` | アプリの土台（platform・storage・トースト・確認・戻る・更新・OS のドロップ・設定の項目） | Disnans・fixplor |
+| `@3pino/viewer-kit-web` | 拡大表示・画像・PDF・サムネイル | Disnans・fixplor |
 | `@3pino/explorer-kit` | エクスプローラーの画面・決まり・状態（置き場所と本体の口ごしに動く） | Disnans・fixplor |
 | Disnans | 置き場所は「サーバーの共有フォルダ」。本体の機能（通知・確認・拡大表示ほか）を渡す | |
 | fixplor | 置き場所は「このデバイス」（Rust の `fs_*`）。ファイラーの外枠 | |
@@ -39,10 +41,10 @@
 
 | 段 | すること | 状態 |
 |---|---|---|
-| 1 | `explorer-kit` から Disnans の言葉・形を無くす（v0.3.0）。`attachments` は「保護されたフォルダ」のような中立の概念に、ドラッグの MIME も中立にする。動作は変えない | 進行中 |
-| 2 | 画面の流れの試験を `explorer-kit` に移す（置き場所はメモリ上の偽物）。Disnans と fixplor の側には、薄い接続の確認だけを残す | 進行中 |
-| 3 | fixplor に WebDAV の置き場所を足す（Disnans の `/dav/` と、Basic 認証の一般の WebDAV の両方。下） | 設計済み |
-| 4 | アプリの土台を共有パッケージへ出す（下）。fixplor の手書きのコピーをなくす | 段 1 完了（`ui` を土台の `Shell` と本体の状態に分けた）。段 2・3 完了: 共有パッケージ `@3pino/app-kit-web` v0.1.0（`core/`・`shell/`、ローカルの git。GitHub へは未公開）に移し、disnans は tarball で取り込み。fixplor は未変更。残り: 拡大表示・設定の枠・更新の画面・OS のドロップ・`Shell` の骨組み | 段 4 の続き（拡大表示）: 共有パッケージ `@3pino/viewer-kit-web` v0.1.0（ローカルの git の commit `8ecf817`、GitHub へは未公開）に、`LightboxView`・ビューアー（画像・PDF）・`PdfThumb`・前後の決まりを移し、disnans は tarball で取り込み。URL・保存・エラーの文・種類の見分けは props（ports）で渡す。fixplor は未変更。残り: 設定の枠・更新の画面・OS のドロップ・`Shell` の骨組み。 段 4 の続き（v0.2.0）: `@3pino/app-kit-web` に、更新の状態の機械（`updater`・仕組みは口）・設定の項目の部品（`settings/SettingsField`）・OS のドロップ（`core/dropFiles`）を移した（ローカルの commit ba4ce1c 系、GitHub へは未公開）。残り: Shell の骨（未着手。理由は下）、設定の木の描画（disnans の木と結合）、updateWatch（ui のトーストに結合）、Rust 側の共有（設計メモのみ）。Shell の骨は、チャット・通話・プラグインの枠の中身を snippet に分けてから（disnans の Shell.svelte は 213 行で、直接 import が多い）。
+| 1 | `explorer-kit` から Disnans の言葉・形を無くす（v0.3.0）。`attachments` は「保護されたフォルダ」のような中立の概念に、ドラッグの MIME も中立にする。動作は変えない | 完了（explorer-kit v0.3.0） |
+| 2 | 画面の流れの試験を `explorer-kit` に移す（置き場所はメモリ上の偽物）。Disnans と fixplor の側には、薄い接続の確認だけを残す | 完了 |
+| 3 | fixplor に WebDAV の置き場所を足す（Disnans の `/dav/` と、Basic 認証の一般の WebDAV の両方。下） | 完了（fixplor: Rust の WebDAV・Basic 認証と keyring・fixdav 中継。証明書の指紋の固定は未実装） |
+| 4 | アプリの土台を共有パッケージへ出す（下）。fixplor の手書きのコピーをなくす | ほぼ完了: `ui` 分割、`@3pino/app-kit-web` v0.2.0（core・shell・更新・OS のドロップ・設定の項目）、`@3pino/viewer-kit-web` v0.1.0（拡大表示・画像・PDF）。fixplor は app-kit-web・viewer-kit-web を使用中。残り: `Shell` の骨組み・設定の枠組み・Tauri 側の共有（設計メモのみ） |
 | 5 | プラグイン API を足し、fixplor のプラグインを作り、Disnans の組み込みのエクスプローラーと並べて、同じに動くことを確かめる | 未着手 |
 | 6 | 組み込みのエクスプローラーを標準のプラグインに置き換え、`explorer-kit` のリポジトリを fixplor に統合する | 未着手 |
 
