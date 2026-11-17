@@ -2,12 +2,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUi } from './ui';
 import { setLucideForTest } from '../icons.svelte';
+import { releaseAll } from './ui/mount';
 
 const confirm = vi.fn(async () => true);
 const ui = createUi({ toast: vi.fn(), confirm });
 
 beforeEach(() => setLucideForTest({ Puzzle: [['path', { d: 'M1 1' }]] } as never));
-afterEach(() => setLucideForTest(null));
+afterEach(() => {
+  // 作った部品を片付けてから、アイコンの差し替えを戻す（残った部品が、戻した瞬間に Lucide を読みに行かないように）
+  releaseAll();
+  setLucideForTest(null);
+});
 
 describe('disnans.ui', () => {
   it('button: 文字だけ・アイコン+文字・アイコンだけ', () => {

@@ -23,7 +23,7 @@ import { PluginBase, PluginRuntime, type ViewHandle } from './runtime';
 import { toPluginUser } from './sessions';
 import { plainPluginErrors, PluginError, VersionConflictError } from './errors';
 import { apiWarnings } from './compat';
-import { closePluginOverlays, createUi } from './ui';
+import { cleanupPluginUi, createUi } from './ui';
 import { holdBackground } from './background';
 import { audio } from './audio';
 import { setImmersive } from '../systemBars';
@@ -641,7 +641,7 @@ export class PluginHost {
     l.runtime.stop();
     l.style?.remove();
     // プラグインが開いたままのメニュー・モーダルを閉じる（disnans.ui は本体に 1 つで、持ち主を区別できないため、開いているものをすべて閉じる）
-    closePluginOverlays();
+    cleanupPluginUi();
     this.rev++;
   }
 

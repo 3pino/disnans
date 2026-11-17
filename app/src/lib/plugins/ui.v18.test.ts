@@ -4,6 +4,7 @@
 // 後始末（プラグインを外す・close）・戻る操作・エラーの種類を見る
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closePluginOverlays, createUi } from './ui';
+import { releaseAll } from './ui/mount';
 import { PluginError } from './errors';
 import { setLucideForTest } from '../icons.svelte';
 import { ui as hostUi } from '../stores/ui.svelte';
@@ -17,6 +18,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   closePluginOverlays();
+  releaseAll();
   document.body.innerHTML = '';
   setLucideForTest(null);
 });

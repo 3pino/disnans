@@ -18,8 +18,8 @@
 
 小さな UI 部品（ボタン・メニュー・ダイアログ・設定の行・トグル・並べ替えのリストなど）は、共有パッケージ **[@3pino/ui-kit-web](https://github.com/3pino/ui-kit-web)** にある。説明は同リポジトリの `docs/ui.md`。
 
-- Svelte の部品と、同じ DOM を作るフレームワークに依らない DOM の部品（`@3pino/ui-kit-web/dom`）の 2 通り。2 つが同じ DOM になることは、ui-kit-web の `parity.test.ts` が確かめる
-- プラグインの `disnans.ui`（`app/src/lib/plugins/ui.ts`）は、DOM の部品を呼ぶ薄い包み（引数のエラーの種類と、トースト・確認・戻る・没入モードなど本体の機能をつなぐ）
+- 部品は Svelte のものだけ（v0.3.0 から。DOM の作り手は持たない）。見た目の正は `@3pino/design-system` のクラス
+- プラグインの `disnans.ui`（`app/src/lib/plugins/ui.ts`）は、同じ Svelte の部品を **mount して**、できた DOM の要素を渡す。`ui/*.svelte` は、プラグインの引数（文字・要素・コールバック）を部品へ渡す薄い包み。`ui/mount.ts` が mount と後始末（画面から外れた要素の unmount、メニュー・モーダルの閉じ方。プラグインを外すときは `cleanupPluginUi`）、`ui/detachedEvents.ts` が、まだ document につながっていない要素でも押す・入力するが効くようにする（Svelte のイベントの委譲は、つながるまで受け手がいないため）。引数のエラーの種類と、トースト・確認・戻る・没入モードなど本体の機能は ui.ts がつなぐ
 - アプリごとに違うことは差し込み口で渡す: アプリのロゴ（`defineBuiltinIcon`。`lib/icons.svelte.ts`）、Android の振動（`setHaptics`。`lib/haptics.ts`）
 - 取り込み: `app/package.json` の依存（タグ指定）。ソースのまま配られるので、`app/vite.config.ts` で事前バンドルから外している（`optimizeDeps.exclude`）。更新は共有側でタグを打ち、依存のタグを更新する
 - エクスプローラーの部品（@3pino/explorer-kit）も、同じ UI 部品を使う（重複した写しは無い）
