@@ -1,6 +1,6 @@
 import type { PluginEntry } from './host.svelte';
 import type { PluginVisibility } from '../protocol/PluginVisibility';
-import { isNewer } from '../semver';
+import { isNewer } from '@3pino/app-kit-web/core/semver';
 
 // プラグインのアップデートの判定と表示（純粋な関数だけ。配布は deliver.ts）
 

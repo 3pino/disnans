@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = join(here, '..');
 const ALLOWED = join(here, 'platform.ts');
+/** Rust の注入値の名前を土台へ教える 1 行（platformGlobal.ts）。名前を書くのはここだけ */
+const NAME_ALLOWED = join(here, 'platformGlobal.ts');
 
 /** テスト用の共通の環境（src/test-support）は、テストの一部として Tauri の内部を作る。本体のソースではないので除く */
 const TEST_HELPERS = join(SRC, 'test-support');
@@ -36,6 +38,7 @@ const FORBIDDEN: Array<{ label: string; pattern: RegExp }> = [
 
 describe('デバイスの判定は platform.ts だけで読む（P4）', () => {
   const files = sourceFiles(SRC).filter((f) => f !== ALLOWED);
+  const nameFiles = files.filter((f) => f !== NAME_ALLOWED);
 
   it('ソースを見つけている（検査が空振りしていない）', () => {
     expect(files.length).toBeGreaterThan(50);
@@ -45,7 +48,7 @@ describe('デバイスの判定は platform.ts だけで読む（P4）', () => {
   for (const { label, pattern } of FORBIDDEN) {
     it(`${label} を platform.ts 以外で読まない`, () => {
       const hits: string[] = [];
-      for (const file of files) {
+      for (const file of label === 'Rust の注入値' ? nameFiles : files) {
         readFileSync(file, 'utf-8')
           .split('\n')
           .forEach((line, i) => {

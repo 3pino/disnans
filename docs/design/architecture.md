@@ -35,11 +35,16 @@
 - 画面の流れの試験は部品の側（explorer-kit の `FileExplorer.screen.test.ts`・`FileProperties.screen.test.ts`。メモリの中の偽の置き場所で確かめる）にある。Disnans の側の試験（`components/FileExplorer.test.ts`・`FileProperties.test.ts`・`lib/sharedOps.test.ts`）は、`instance.ts` が本物の `sharedApi`・`SHARED_RULES`・本体の機能へ正しくつながっていること（同名の確認・削除と取り消し・サーバーが変わったとき・添付の決まりと言葉・ゴミ箱の URL・OS のクリップボード・メッセージ検索）だけを確かめる
 - 更新: 共有側でタグを打ち、依存のタグを更新する
 
-## 土台（shell）と本体の画面の状態
+## 土台（@3pino/app-kit-web）と本体の画面の状態
 
-`app/src/lib/shell/` は、チャット・通話・設定・サーバーを知らない土台の状態を持つ（`Shell` クラス）。トースト・確認・拡大表示・戻る操作の層（プラグインの「戻る」）と、戻る操作の順（拡大表示 → プラグインの層 → 遷移の履歴）が入る。遷移の履歴は持たず、`back(nav)` で呼び出し側から受け取る。import は持たないので、共有パッケージへそのまま出せる形にしてある。
+アプリの土台は、共有パッケージ `@3pino/app-kit-web`（別のリポジトリ `~/repos/app-kit-web`、v0.1.0）から取り込む。チャット・通話・設定を知らない部分だけを置く。
 
-`app/src/lib/stores/ui.svelte.ts` は、本体の画面の状態（タブ・パネル・通話・設定・検索・遷移の履歴）を持ち、土台を `shell` として組み立てる。呼び出し側は `ui` だけを使い、土台のメンバー（`toast`・`confirm`・`lightbox`・`back` など）も `ui` 経由のまま変えていない。
+- `core/`（TypeScript）: プラットフォームの判定（Rust の注入値の名前は `app/src/lib/platformGlobal.ts` で `__DISNANS_PLATFORM__` に決める）・storage・localKeys の照合・invokeNative・戻る操作の履歴への接続・Esc の順・クリップボード・ドロップの既定動作・拡大と移動の計算など。
+- `shell/`: 画面の土台の状態 `Shell`（トースト・確認・拡大表示・戻る操作の層）と、部品 `Toasts.svelte`・`ConfirmDialog.svelte`。
+
+disnans に残るもの: `app/src/lib/platform.ts`（方針 `capabilities`）、`app/src/lib/stores/ui.svelte.ts`（タブ・パネル・通話・設定・検索・遷移の履歴。土台の `Shell` を `shell` として持ち、メンバーを委ねる）、`app/src/components/Toasts.svelte`・`ConfirmDialog.svelte`（土台の部品に ui の値と送り主のアイコンを渡すだけ）、診断ログ・システムバー・通知など、アプリごとの Tauri プラグインと結び付くもの。
+
+呼び出し側は `ui` だけを使い、土台のメンバー（`toast`・`confirm`・`lightbox`・`back` など）も `ui` 経由のまま変えていない。
 
 ## クライアントと共通表示データ
 

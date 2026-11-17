@@ -25,7 +25,7 @@
   import AttachPanel from './AttachPanel.svelte';
   import { attachPanel } from '../lib/stores/attachPanel.svelte';
   import { cameraRequest } from '../lib/stores/cameraRequest.svelte';
-  import { pasteSource } from '../lib/pasteSource';
+  import { pasteSource } from '@3pino/app-kit-web/core/pasteSource';
   import { type RecentImage } from '../lib/recentImages';
   import { prepareUpload, readImageInfo, canCropImage } from '../lib/imageCrop';
   import { uploadFile } from '../lib/api';

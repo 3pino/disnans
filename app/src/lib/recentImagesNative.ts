@@ -3,7 +3,7 @@
 // デスクトップ: recent_images（許可の概念は無い）。本体は既存のパス経路（plugin-fs の readFile）で読む。
 
 import type { RecentImage, RecentImageSource, RecentImages, RecentPermission } from './recentImages';
-import { getItem, setItem } from './storage';
+import { getItem, setItem } from '@3pino/app-kit-web/core/storage';
 
 /** 1 件の形（Rust・Kotlin が返すもの） */
 export type RecentImageInfo = {

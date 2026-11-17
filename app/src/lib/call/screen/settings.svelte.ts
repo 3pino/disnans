@@ -9,7 +9,7 @@
 import type { ScreenSettingsPort, ScreenSettingsValue } from './types';
 import { legacyScreenShare } from '../../settingsModel';
 import { DeviceSettings, deviceSettings } from '../../stores/deviceSettings.svelte';
-import { getItem } from '../../storage';
+import { getItem } from '@3pino/app-kit-web/core/storage';
 
 export const SCREEN_SETTINGS_DEFAULT: Readonly<ScreenSettingsValue> = Object.freeze({ fps: 5, quality: 'p720', color: 'full' });
 

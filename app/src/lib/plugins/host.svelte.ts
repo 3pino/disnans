@@ -1,6 +1,6 @@
 import { api } from '../api';
 import { isRetiredPlugin } from './retired';
-import { getItem, setItem } from '../storage';
+import { getItem, setItem } from '@3pino/app-kit-web/core/storage';
 import { deviceSettings } from '../stores/deviceSettings.svelte';
 import { prefs } from '../stores/prefs.svelte';
 import { registerSlashCommand } from '../slashCommands.svelte';

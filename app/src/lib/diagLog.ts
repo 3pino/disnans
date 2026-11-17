@@ -5,8 +5,8 @@
 // メッセージの本文は書かないこと（送ってもらう前提なので、ログには ID や状態だけを書く）
 
 import { isAndroid, isTauri, userAgentForLog } from './platform';
-import { invokeNative } from './nativeInvoke';
-import { getItem, setItemOrThrow } from './storage';
+import { invokeNative } from '@3pino/app-kit-web/core/nativeInvoke';
+import { getItem, setItemOrThrow } from '@3pino/app-kit-web/core/storage';
 
 const STORAGE_KEY = 'disnans.diagLog';
 const MAX_LINES = 3000;

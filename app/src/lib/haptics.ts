@@ -2,9 +2,9 @@
 // WebView の navigator.vibrate は、押している最中は user activation が無く拒否されることがあるため。
 // それ以外は navigator.vibrate（対応していない環境では何もしない）。ネイティブの呼び出しが失敗しても握りつぶす
 import { isAndroid, isTauri } from './platform';
-import { invokeNative } from './nativeInvoke';
+import { invokeNative } from '@3pino/app-kit-web/core/nativeInvoke';
 import { deviceSettings } from './stores/deviceSettings.svelte';
-import { onForeground } from './foreground';
+import { onForeground } from '@3pino/app-kit-web/core/foreground';
 import { setHaptics } from '@3pino/ui-kit-web/haptics';
 
 /** Android のネイティブ振動のコマンド（Rust の notifier プラグイン。引数は { ms }） */

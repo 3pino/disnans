@@ -4,7 +4,7 @@ import Reply from '@lucide/svelte/icons/reply';
 import SmilePlus from '@lucide/svelte/icons/smile-plus';
 import Trash2 from '@lucide/svelte/icons/trash-2';
 import { authorOf, isOwnMessage } from './author';
-import { copyText } from './clipboard';
+import { copyText } from '@3pino/app-kit-web/core/clipboard';
 import { registerMessageAction, type MessageActionContext } from './messageActions.svelte';
 import { client } from './stores/client.svelte';
 import { reply } from './stores/reply.svelte';

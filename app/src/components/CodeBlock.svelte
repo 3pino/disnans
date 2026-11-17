@@ -1,7 +1,7 @@
 <script lang="ts">
   import Copy from '@lucide/svelte/icons/copy';
   import Check from '@lucide/svelte/icons/check';
-  import { copyText } from '../lib/clipboard';
+  import { copyText } from '@3pino/app-kit-web/core/clipboard';
   import { ui } from '../lib/stores/ui.svelte';
 
   // 本文のコードブロック。右上にコピーのボタンを出す

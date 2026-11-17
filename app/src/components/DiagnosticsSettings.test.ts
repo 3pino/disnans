@@ -13,7 +13,7 @@ const h = vi.hoisted(() => ({
   toast: vi.fn(),
 }));
 vi.mock('../lib/diagLog', () => ({ buildDiagReport: h.build, exportDiagReport: h.export, clearDiagLog: h.clear }));
-vi.mock('../lib/clipboard', () => ({ copyText: h.copy }));
+vi.mock('@3pino/app-kit-web/core/clipboard', () => ({ copyText: h.copy }));
 vi.mock('../lib/config', () => ({ getServerUrl: () => 'http://test.invalid' }));
 vi.mock('../lib/platform', () => ({ isAndroid: () => h.android, capabilities: () => ({}) }));
 vi.mock('../lib/stores/client.svelte', () => ({ client: { me: null, status: 'open', linkReason: '' } }));

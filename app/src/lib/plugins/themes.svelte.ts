@@ -2,7 +2,7 @@
 // 一覧（配布済み・開発用フォルダ）は PluginHost が持ち、変わるたびに sync() を呼ぶ。
 
 import { api } from '../api';
-import { getItem, setItem } from '../storage';
+import { getItem, setItem } from '@3pino/app-kit-web/core/storage';
 import { prefs } from '../stores/prefs.svelte';
 import type { PluginInfo } from '../protocol/PluginInfo';
 import type { DevPlugin } from './host.svelte';

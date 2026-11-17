@@ -1,6 +1,6 @@
-import { pasteSource } from './pasteSource';
+import { pasteSource } from '@3pino/app-kit-web/core/pasteSource';
 import { base64ToBytes } from './recentImagesNative';
-import { invokeNative } from './nativeInvoke';
+import { invokeNative } from '@3pino/app-kit-web/core/nativeInvoke';
 
 /** Web の Clipboard API で読む画像の形式（この順で探す） */
 const WEB_IMAGE_TYPES = ['image/png', 'image/webp', 'image/jpeg', 'image/gif'];

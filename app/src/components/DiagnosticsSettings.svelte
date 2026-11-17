@@ -7,7 +7,7 @@
   import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
   import { buildDiagReport, clearDiagLog, exportDiagReport } from '../lib/diagLog';
-  import { copyText } from '../lib/clipboard';
+  import { copyText } from '@3pino/app-kit-web/core/clipboard';
   import { getServerUrl } from '../lib/config';
   import { capabilities, isAndroid } from '../lib/platform';
   import { client } from '../lib/stores/client.svelte';

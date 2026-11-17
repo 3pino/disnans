@@ -3,7 +3,7 @@
 // - WebView は、通話の参加中は裏でも動かし続ける（参加のときに伝える）。
 
 import { isAndroid, isTauri } from '../platform';
-import { invokeNative } from '../nativeInvoke';
+import { invokeNative } from '@3pino/app-kit-web/core/nativeInvoke';
 
 function nativeAvailable(): boolean {
   return isTauri() && isAndroid();

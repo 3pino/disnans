@@ -1,3 +1,4 @@
+import './lib/platformGlobal';
 import { mount } from 'svelte';
 import './app.css';
 import App from './App.svelte';

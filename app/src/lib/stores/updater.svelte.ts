@@ -1,5 +1,5 @@
 import { capabilities, isTauri } from '../platform';
-import { isNewer } from '../semver';
+import { isNewer } from '@3pino/app-kit-web/core/semver';
 
 const REPO = '3pino/disnans';
 export const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;

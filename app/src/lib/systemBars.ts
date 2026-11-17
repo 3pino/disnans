@@ -1,5 +1,5 @@
 import { isAndroid, isTauri } from './platform';
-import { invokeNative } from './nativeInvoke';
+import { invokeNative } from '@3pino/app-kit-web/core/nativeInvoke';
 
 let last: boolean | null = null;
 

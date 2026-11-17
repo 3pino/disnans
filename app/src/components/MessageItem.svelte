@@ -30,7 +30,7 @@
   import { resolveMessageActions, type MessageActionContext } from '../lib/messageActions.svelte';
   import { registerCoreMessageActions, removeMessage } from '../lib/messageActionsCore';
   import { timelinePanels } from '../lib/stores/timelinePanel.svelte';
-  import { atScrollEnd, swipeAxis, swipeOffset, swipeProgress, swipeTriggered, type SwipeAxis } from '../lib/swipe';
+  import { atScrollEnd, swipeAxis, swipeOffset, swipeProgress, swipeTriggered, type SwipeAxis } from '@3pino/app-kit-web/core/swipe';
   import { vibrate } from '../lib/haptics';
 
   let {

@@ -1,4 +1,4 @@
-import { getItem, setItem } from './storage';
+import { getItem, setItem } from '@3pino/app-kit-web/core/storage';
 import type { SaveResult, SharedStorage } from './sharedStorage';
 
 // 打ちかけの文章（下書き）。メインチャットのぶんを、ユーザーごとに localStorage へ残す。

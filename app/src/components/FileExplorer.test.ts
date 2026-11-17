@@ -44,7 +44,7 @@ const h = vi.hoisted(() => ({
   /** OS のクリップボード（差し替え）。copyText で書いたものが text に入る */
   clip: { text: null as string | null, image: null as File | null, writable: true },
 }));
-vi.mock('../lib/clipboard', () => ({
+vi.mock('@3pino/app-kit-web/core/clipboard', () => ({
   copyText: vi.fn(async (t: string) => {
     if (!h.clip.writable) return false;
     h.clip.text = t;

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { DOUBLE_TAP_ZOOM, IDENTITY_VIEW, MIN_ZOOM, clampView, pinchView, zoomAt, type Point, type ZoomView } from '../../lib/zoom';
-  import { zoomGesture, type GestureFrame } from '../../lib/zoomGesture';
+  import { DOUBLE_TAP_ZOOM, IDENTITY_VIEW, MIN_ZOOM, clampView, pinchView, zoomAt, type Point, type ZoomView } from '@3pino/app-kit-web/core/zoom';
+  import { zoomGesture, type GestureFrame } from '@3pino/app-kit-web/core/zoomGesture';
   import type { ViewerProps } from '../../lib/viewers';
 
   // 画像のビューアー（拡大表示の中）。ピンチ・ダブルタップ・Ctrl+ホイールで拡大し、拡大中は 1 本指（マウスのドラッグ）で動かす。

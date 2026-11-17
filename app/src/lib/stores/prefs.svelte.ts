@@ -1,5 +1,5 @@
 import { api } from '../api';
-import { getItem, setItem } from '../storage';
+import { getItem, setItem } from '@3pino/app-kit-web/core/storage';
 import { DEFAULT_ENTER_KEYS, type EnterAction, type EnterCombo, type EnterKeyPrefs } from '../enterKeys';
 import type { HotkeyOverrides } from '../commands.svelte';
 import { setSlashAlias, type SlashAliases } from '../slashAlias';
@@ -16,7 +16,7 @@ import {
   type ThemeChoice,
 } from '../settingsModel';
 import { client } from './client.svelte';
-import { createRefreshGate } from '../refreshGate';
+import { createRefreshGate } from '@3pino/app-kit-web/core/refreshGate';
 
 /** 起動したときにすぐ使えるように、最後に読んだもの（raw と view）をデバイスにも置いておく */
 const CACHE_KEY = 'disnans.prefs';

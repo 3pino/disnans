@@ -1,20 +1,12 @@
-// デバイスの判定（ステップ7）。
-// Tauri では Rust が `window.__DISNANS_PLATFORM__`（app/src-tauri/src/platform.rs）にデバイスの事実と方針（capabilities）を入れる。
+// デバイスの判定（ステップ7）。OS の判定の土台は @3pino/app-kit-web/core/platform（汎用）。
+// ここは disnans の方針（capabilities）だけを持つ。
+// Tauri では Rust が `window.__DISNANS_PLATFORM__`（app/src-tauri/src/platform.rs）にデバイスの事実と方針を入れる。
 // 値が正しい形で有れば、それを使う（UA 文字列を見ない）。無い・壊れている項目は、従来どおり UA などから推測する（安全側）。
-// Tauri の注入が無いとき（想定外の失敗）は、UA から推測する。
-// ここに判定を集める。呼び出し側は capabilities() か、個別の関数（isTauri など）を使う。
+// 呼び出し側は capabilities() か、個別の関数（isTauri など）を使う。
+import './platformGlobal';
+import { injectedPlatform, isAndroid, isDesktopWindowsOrLinuxTauri, isLinuxDesktop, isTauri } from '@3pino/app-kit-web/core/platform';
 
-/** Rust が入れるデバイスの事実（JSON は camelCase。platform.rs の PlatformInfo と揃える） */
-export type InjectedPlatform = {
-  /** "windows" | "linux" | "android" | "ios" | "other"（Windows・Linux・Android 以外は other） */
-  os: string;
-  /** デスクトップの Tauri か（Android 以外） */
-  desktop: boolean;
-  /** Android の Tauri か */
-  android: boolean;
-  /** 方針（形が違う項目は capabilities() が推測に戻す）。無いこともある */
-  capabilities: Record<string, unknown> | null;
-};
+export * from '@3pino/app-kit-web/core/platform';
 
 /** このデバイスでの方針（Rust の capabilities と同じ名前・同じ値。platform.rs の capabilities_for） */
 export type Capabilities = {
@@ -38,69 +30,8 @@ export type Capabilities = {
   devFolder: boolean;
 };
 
-type WithInjected = { __DISNANS_PLATFORM__?: unknown };
-
-/** Rust が入れたデバイスの事実。無い・形が違うときは null（呼び出し側は推測する） */
-export function injectedPlatform(): InjectedPlatform | null {
-  if (typeof window === 'undefined') return null;
-  const raw = (window as unknown as WithInjected).__DISNANS_PLATFORM__;
-  if (!raw || typeof raw !== 'object') return null;
-  const v = raw as Record<string, unknown>;
-  if (typeof v.os !== 'string' || typeof v.desktop !== 'boolean' || typeof v.android !== 'boolean') return null;
-  const caps = v.capabilities && typeof v.capabilities === 'object' ? (v.capabilities as Record<string, unknown>) : null;
-  return { os: v.os, desktop: v.desktop, android: v.android, capabilities: caps };
-}
-
-/** 診断ログに載せる UA の文字列（判定には使わないこと。判定はこのファイルの関数で行う） */
-export function userAgentForLog(): string {
-  return typeof navigator === 'undefined' ? '' : navigator.userAgent;
-}
-
-/** Tauri の中か（WebView の内部オブジェクトの有無） */
-/** このデバイスの OS の名前（windows・linux・android・ios・other。分からなければ空）。Rust の値が正しければそれ、無ければ UA から */
-export function osName(): string {
-  const os = injectedPlatform()?.os;
-  if (os && os !== 'other') return os;
-  if (typeof navigator === 'undefined') return '';
-  const ua = navigator.userAgent;
-  if (/android/i.test(ua)) return 'android';
-  if (/windows/i.test(ua)) return 'windows';
-  if (/linux/i.test(ua)) return 'linux';
-  return '';
-}
-
-export function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-}
-
-/** Android か。Rust の値があればそれ、無ければ UA */
-export function isAndroid(): boolean {
-  const info = injectedPlatform();
-  if (info) return info.android;
-  return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
-}
-
-/** Linux の Tauri 版（WebKitGTK）。ファイルのドロップとクリップボードの画像の扱いが他と違う */
-export function isLinuxDesktop(): boolean {
-  if (!isTauri() || isAndroid()) return false;
-  const info = injectedPlatform();
-  if (info) return info.os === 'linux';
-  return typeof navigator !== 'undefined' && /linux/i.test(navigator.userAgent);
-}
-
-/** UA と platform の文字列から、shared-file storage を使うデバイスか（Windows か Linux で、Android でない） */
-export function supportsDesktopStoragePlatform(userAgent: string, platform = ''): boolean {
-  const agent = `${userAgent} ${platform}`;
-  return /windows|linux/i.test(agent) && !/android/i.test(agent);
-}
-
 /** shared-file storage を使えるか（Windows か Linux の Tauri 版）。Rust の値を優先し、無ければ UA */
-export function isSharedStorageOs(): boolean {
-  if (!isTauri() || isAndroid()) return false;
-  const info = injectedPlatform();
-  if (info) return info.os === 'windows' || info.os === 'linux';
-  return typeof navigator !== 'undefined' && supportsDesktopStoragePlatform(navigator.userAgent, navigator.platform);
-}
+export const isSharedStorageOs = isDesktopWindowsOrLinuxTauri;
 
 /**
  * Rust が入れた方針の値（形が正しいものだけ）。無い・形が違うなら fallback を返す。

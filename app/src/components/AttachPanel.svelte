@@ -19,7 +19,7 @@
   } from '../lib/recentImages';
   import { hasAskedRecentImages, markAskedRecentImages } from '../lib/recentImagesNative';
   import { readClipboardImage } from '../lib/clipboardImage';
-  import { escapeClosesPanel, OVERLAY_SELECTOR } from '../lib/escape';
+  import { escapeClosesPanel, OVERLAY_SELECTOR } from '@3pino/app-kit-web/core/escape';
 
   // 入力欄の上に出す「ファイルを追加」パネル。ボタンは入力欄（Composer）の隠しの入力を開く。見た目は仮
   let {

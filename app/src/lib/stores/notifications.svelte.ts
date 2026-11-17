@@ -1,7 +1,7 @@
 import { api } from '../api';
 import { getServerUrl } from '../config';
 import { capabilities } from '../platform';
-import { invokeNative } from '../nativeInvoke';
+import { invokeNative } from '@3pino/app-kit-web/core/nativeInvoke';
 import { listenSystemOpen, sendSystemNote } from '../systemNotify';
 import { ui, type ToastAvatar } from './ui.svelte';
 

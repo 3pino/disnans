@@ -1,5 +1,5 @@
 import { canonicalServerUrl, normalizeServerUrl } from './config';
-import { getItem, setItem } from './storage';
+import { getItem, setItem } from '@3pino/app-kit-web/core/storage';
 
 /** Core file key: implementations must encode IDs safely rather than use them as raw paths. */
 export type SharedKey =

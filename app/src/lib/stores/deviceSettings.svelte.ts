@@ -1,11 +1,11 @@
 import { osName } from '../platform';
-import { getItem, setItem } from '../storage';
+import { getItem, setItem } from '@3pino/app-kit-web/core/storage';
 import { devUser, getServerUrl } from '../config';
 import { createDeviceApi, type DeviceApi, type DeviceView } from '../transport/device';
 import { tauriInvoke } from '../transport/tauri';
 import type { OrientationMode } from '../orientation';
 import { DEVICE_DEFAULTS, fillDeviceDefaults, legacyDeviceValues, reportSettingsError, type Raw } from '../settingsModel';
-import { createRefreshGate } from '../refreshGate';
+import { createRefreshGate } from '@3pino/app-kit-web/core/refreshGate';
 
 /** デバイスごとの設定の起動時キャッシュ（サーバーの値を受けるたびに書き直す。起動直後に使える） */
 export const DEVICE_CACHE_KEY = 'disnans.devicePrefs';

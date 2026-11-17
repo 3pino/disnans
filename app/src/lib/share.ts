@@ -1,5 +1,5 @@
 import { isAndroid, isTauri } from './platform';
-import { invokeNative } from './nativeInvoke';
+import { invokeNative } from '@3pino/app-kit-web/core/nativeInvoke';
 import { shareInbox } from './stores/shareInbox.svelte';
 import { ui } from './stores/ui.svelte';
 

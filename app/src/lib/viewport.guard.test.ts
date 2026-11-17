@@ -2,8 +2,8 @@
 // 拡大の止め（startZoomGuard）と、拡大表示の受け口（zoomGesture）が一緒に働くこと。
 // WebView2 の拡大（zoomHotkeysEnabled）を Windows で許すので、ページ全体が拡大しないことと、ビューアーの拡大が残ることを確かめる。
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { startZoomGuard } from './viewport';
-import { zoomGesture, wheelFactor } from './zoomGesture';
+import { startZoomGuard } from '@3pino/app-kit-web/core/viewport';
+import { zoomGesture, wheelFactor } from '@3pino/app-kit-web/core/zoomGesture';
 
 let stops: Array<() => void> = [];
 afterEach(() => {

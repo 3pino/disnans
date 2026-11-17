@@ -5,7 +5,7 @@ import { deviceSettings } from './deviceSettings.svelte';
 import { setSettingsErrorHandler } from '../settingsModel';
 import type { User } from '../protocol/User';
 import type { LightboxItem } from '../lightbox';
-import { Shell, type ShellConfirm, type ShellToast } from '../shell/shell.svelte';
+import { Shell, type ShellConfirm, type ShellToast } from '@3pino/app-kit-web/shell';
 import { forgetPanelIn, navBack, navBackDepth, navigate, normalizeNav, type NavMode, type NavState, type NavTab, type Panel, type SettingsSubpage } from '../navHistory';
 
 export type ThemePref = 'system' | 'light' | 'dark';

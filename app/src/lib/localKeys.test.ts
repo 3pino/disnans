@@ -1,5 +1,5 @@
 // localStorage / sessionStorage の規則を止める（本体のソースだけを読む。テストと test-support は除く）。
-// 1. 直接の localStorage / sessionStorage は、lib/storage.ts と、移行用の厳しい版（lib/desktopStorage.ts）だけ。
+// 1. 直接の localStorage / sessionStorage は、共有パッケージの土台（@3pino/app-kit-web/core/storage。この走査の外）と、移行用の厳しい版（lib/desktopStorage.ts）だけ。
 // 2. 本体が使う disnans.* のキーは、すべて lib/localKeys.ts に登録してある（動的なキーは prefix で当てる）。
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -11,7 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SRC = join(here, '..');
 const TEST_HELPERS = join(SRC, 'test-support');
 /** 直接の localStorage を読んでよいファイル（src からの相対） */
-const DIRECT_ALLOWED = new Set(['lib/storage.ts', 'lib/desktopStorage.ts']);
+const DIRECT_ALLOWED = new Set(['lib/desktopStorage.ts']);
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -37,7 +37,7 @@ const FILES = sourceFiles(SRC).map((path) => ({ rel: relative(SRC, path).split('
 describe('localStorage の直接の利用は、許された場所だけ', () => {
   it('走査は本体のソースを読めている（空振りで通らないように）', () => {
     expect(FILES.length).toBeGreaterThan(100);
-    expect(FILES.some((f) => f.rel === 'lib/storage.ts')).toBe(true);
+    expect(FILES.some((f) => f.rel === 'lib/config.ts')).toBe(true);
   });
 
   it('lib/storage.ts と lib/desktopStorage.ts 以外に、localStorage・sessionStorage のコードは無い', () => {

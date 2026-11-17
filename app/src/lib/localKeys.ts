@@ -1,3 +1,5 @@
+import { findRegisteredKey } from '@3pino/app-kit-web/core/localKeys';
+
 // localStorage / sessionStorage のキーの一覧（本体のコードが使うものすべて）。
 // 読み書きは lib/storage.ts（getItem / setItem）を通す。ここに無いキーを使うと、test（localKeys.test.ts）が止める。
 // kind:
@@ -57,7 +59,7 @@ export const LOCAL_KEYS: readonly LocalKey[] = [
   { key: 'disnans.explorer.sort', scope: 'local', owner: 'lib/explorerDirs.ts（LEGACY_EXPLORER_KEYS）', purpose: '以前の並び順（ルート）', kind: 'legacy-import' },
 ];
 
-/** キーに当たる登録（完全一致が先。無ければ、prefix で始まるもの）。登録が無ければ undefined */
+/** キーに当たる登録（完全一致が先。無ければ、prefix で始まるもの）。登録が無ければ undefined（照合は @3pino/app-kit-web/core/localKeys） */
 export function registeredKey(key: string): LocalKey | undefined {
-  return LOCAL_KEYS.find((k) => !k.prefix && k.key === key) ?? LOCAL_KEYS.find((k) => k.prefix && key.startsWith(k.key));
+  return findRegisteredKey(LOCAL_KEYS, key);
 }

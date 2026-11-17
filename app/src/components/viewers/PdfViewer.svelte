@@ -6,7 +6,7 @@
   import { PDF_DOUBLE_TAP_ZOOM, PDF_MAX_ZOOM, PDF_MIN_ZOOM, anchoredScroll, clampZoom, stepZoom } from '../../lib/pdfZoom';
   import { loadPdfjs } from '../../lib/pdfjs';
   import { attachmentActionText } from '../../lib/fileLink';
-  import { zoomGesture, type GestureFrame } from '../../lib/zoomGesture';
+  import { zoomGesture, type GestureFrame } from '@3pino/app-kit-web/core/zoomGesture';
   import type { ViewerProps } from '../../lib/viewers';
   import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
 

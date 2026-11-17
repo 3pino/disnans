@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { externalLinkHref } from './lib/externalLink';
+  import { externalLinkHref } from '@3pino/app-kit-web/core/externalLink';
   import Setup from './components/Setup.svelte';
   import Shell from './components/Shell.svelte';
   import ConfirmDialog from './components/ConfirmDialog.svelte';
@@ -10,20 +10,20 @@
   import { isAndroid, isTauri } from './lib/platform';
   import { didInitializeWithLegacyFallback, getDesktopSharedStorage, initializeDesktopStorage, isDesktopStorageSupported } from './lib/desktopStorage';
   import { flushDraftSaves } from './lib/drafts';
-  import { startViewportSync, startZoomGuard } from './lib/viewport';
+  import { startViewportSync, startZoomGuard } from '@3pino/app-kit-web/core/viewport';
   import { client } from './lib/stores/client.svelte';
   import { ui } from './lib/stores/ui.svelte';
   import { orientation } from './lib/stores/orientation.svelte';
   import { presence } from './lib/stores/presence.svelte';
   import { deviceSettings } from './lib/stores/deviceSettings.svelte';
   import { prefs } from './lib/stores/prefs.svelte';
-  import { onForeground } from './lib/foreground';
+  import { onForeground } from '@3pino/app-kit-web/core/foreground';
   import { notifications } from './lib/stores/notifications.svelte';
   import { startShareReceiver } from './lib/share';
   import { pluginHost } from './lib/plugins/host.svelte';
-  import { isBackKey, startBackNav } from './lib/backNav';
-  import { startDropGuard } from './lib/dropGuard';
-  import { startContextMenuGuard } from './lib/contextMenu';
+  import { isBackKey, startBackNav } from '@3pino/app-kit-web/core/backNav';
+  import { startDropGuard } from '@3pino/app-kit-web/core/dropGuard';
+  import { startContextMenuGuard } from '@3pino/app-kit-web/core/contextMenu';
   import { startUpdateWatch } from './lib/updateWatch';
   import { startHapticsPreferences } from './lib/haptics';
 
@@ -189,7 +189,7 @@
   // チャットのトップで何も開いていなければ、履歴が尽きてアプリが裏に回る。モバイルの表示か Android のときだけ使う
   $effect(() => {
     if (!ui.isMobile && !isAndroid()) return;
-    const nav = startBackNav({ depth: () => ui.backDepth(), back: () => ui.back() });
+    const nav = startBackNav({ depth: () => ui.backDepth(), back: () => ui.back() }, history, window, { depthKey: 'disnansDepth' });
     $effect(() => {
       void ui.backDepth();
       untrack(() => nav.sync());

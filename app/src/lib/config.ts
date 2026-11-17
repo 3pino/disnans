@@ -1,4 +1,4 @@
-import { getItem, setItem } from './storage';
+import { getItem, setItem } from '@3pino/app-kit-web/core/storage';
 import { isTauri } from './platform';
 import { sharedPath } from './sharedPath';
 

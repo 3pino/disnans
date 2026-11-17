@@ -2,7 +2,7 @@
 // notifier のコマンド名は native_call_*（snake case）。開始の引数は平らな項目（封筒なし）。イベントは 'call_native'。
 
 import type { NativeCallPort, NativeEvent, NativeSnapshot } from './native';
-import { invokeNative } from '../nativeInvoke';
+import { invokeNative } from '@3pino/app-kit-web/core/nativeInvoke';
 
 const PLUGIN = 'notifier';
 const EVENT = 'call_native';

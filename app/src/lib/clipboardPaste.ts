@@ -1,5 +1,5 @@
-import { pasteSource } from './pasteSource';
-import { invokeNative } from './nativeInvoke';
+import { pasteSource } from '@3pino/app-kit-web/core/pasteSource';
+import { invokeNative } from '@3pino/app-kit-web/core/nativeInvoke';
 
 // 共有フォルダへの貼り付けで使う、OS のクリップボードの文字と「何があるか」。画像は clipboardImage.ts の readClipboardImage。
 // - Android: notifier の clipboard_peek（説明だけ見るので「貼り付けました」の通知は出ない）・clipboard_text

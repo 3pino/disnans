@@ -7,7 +7,7 @@ import Search from '@lucide/svelte/icons/search';
 import { createExplorer, type EntryUrls, type ExplorerApi, type ExplorerHost } from '@3pino/explorer-kit';
 import PdfThumb from '../../components/PdfThumb.svelte';
 import { getServerUrl, onServerChange } from '../config';
-import { copyText } from '../clipboard';
+import { copyText } from '@3pino/app-kit-web/core/clipboard';
 import { readClipboardImage, readNativeClipboardImage } from '../clipboardImage';
 import { clipboardTextName, peekClipboard, readClipboardText } from '../clipboardPaste';
 import { diagLog } from '../diagLog';
