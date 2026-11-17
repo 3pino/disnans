@@ -44,6 +44,8 @@
 
 拡大表示の部品（写真・PDF・ライブ映像の全画面）は、共有パッケージ `@3pino/viewer-kit-web`（別のリポジトリ `~/repos/viewer-kit-web`、v0.1.0）から取り込む。`LightboxView`・ビューアー（画像・PDF）・`PdfThumb`・前後の決まりと型を持つ。URL・保存・エラーの文・種類の見分け・チャットの一覧は disnans が渡す（`components/Lightbox.svelte` が `ondownload`（Tauri の直接保存）と `errorText` を渡し、`lib/viewers.ts` が種類を決める）。共有の全画面（`ScreenShareViewer`）は同じ `LightboxView` を props で使う。
 
+共有パッケージ `@3pino/app-kit-web` v0.2.0 は、アップデートの状態の機械（`updater`。仕組みへの口 `UpdateBackend` は `lib/updateBackend.ts` が Tauri へつなぐ）、設定の項目の部品（`settings/SettingsField`。木の描画 `SettingsTree` と読み書きは disnans に残る）、OS のドロップの部品（`core/dropFiles`）を持つ。Rust 側（apk-updater・system-bars・os-drop）の共有は設計メモ（app-kit-web の `docs/tauri-kit-design.md`）のみで、コードは未移動。
+
 disnans に残るもの: `app/src/lib/platform.ts`（方針 `capabilities`）、`app/src/lib/stores/ui.svelte.ts`（タブ・パネル・通話・設定・検索・遷移の履歴。土台の `Shell` を `shell` として持ち、メンバーを委ねる）、`app/src/components/Toasts.svelte`・`ConfirmDialog.svelte`（土台の部品に ui の値と送り主のアイコンを渡すだけ）、診断ログ・システムバー・通知など、アプリごとの Tauri プラグインと結び付くもの。
 
 呼び出し側は `ui` だけを使い、土台のメンバー（`toast`・`confirm`・`lightbox`・`back` など）も `ui` 経由のまま変えていない。

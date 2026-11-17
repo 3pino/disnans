@@ -13,7 +13,9 @@ vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.0' }));
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: mocks.check }));
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: mocks.relaunch }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke, Channel: class { onmessage = null; } }));
-const { Updater } = await import('./updater.svelte');
+const { Updater } = await import('@3pino/app-kit-web/updater');
+const { tauriUpdateBackend } = await import('../updateBackend');
+// 旧い呼び方（引数なし）の代わり: Tauri の仕組みをつないだ Updater。supported は、この試験の isTauri の値
 
 function desktop(version: string) {
   return { version, body: null, close: vi.fn(async () => {}), downloadAndInstall: vi.fn(async () => {}) };
@@ -44,7 +46,7 @@ describe('最新版を確認し直してから更新する', () => {
     const old = desktop('0.2.1');
     const latest = desktop('0.2.2');
     mocks.check.mockResolvedValueOnce(old).mockResolvedValueOnce(latest);
-    const u = new Updater();
+    const u = new Updater(tauriUpdateBackend(), mocks.tauri);
     await u.check();
     expect(u.state).toMatchObject({ kind: 'available', version: '0.2.1' });
     expect(old.close).toHaveBeenCalledOnce();
@@ -58,7 +60,7 @@ describe('最新版を確認し直してから更新する', () => {
   it('配信が消えた場合は古い版を取得しない', async () => {
     const old = desktop('0.2.1');
     mocks.check.mockResolvedValueOnce(old).mockResolvedValueOnce(null);
-    const u = new Updater();
+    const u = new Updater(tauriUpdateBackend(), mocks.tauri);
     await u.check();
     await u.install();
     expect(u.state).toEqual({ kind: 'latest' });
@@ -68,7 +70,7 @@ describe('最新版を確認し直してから更新する', () => {
   it('再確認が失敗したらエラーを出し、古い URL にフォールバックしない', async () => {
     const old = desktop('0.2.1');
     mocks.check.mockResolvedValueOnce(old).mockRejectedValueOnce(new Error('offline'));
-    const u = new Updater();
+    const u = new Updater(tauriUpdateBackend(), mocks.tauri);
     await u.check();
     await u.install();
     expect(u.state).toEqual({ kind: 'error', message: 'offline' });
@@ -79,7 +81,7 @@ describe('最新版を確認し直してから更新する', () => {
     const update = desktop('0.2.2');
     update.downloadAndInstall.mockRejectedValueOnce(new Error('404'));
     mocks.check.mockResolvedValue(update);
-    const u = new Updater();
+    const u = new Updater(tauriUpdateBackend(), mocks.tauri);
     u.state = { kind: 'available', version: '0.2.1', notes: null };
     await u.install();
     expect(u.state).toEqual({ kind: 'error', message: '404' });
@@ -95,7 +97,7 @@ describe('最新版を確認し直してから更新する', () => {
     vi.stubGlobal('fetch', fetcher);
     let allowed = false;
     mocks.invoke.mockImplementation(async (cmd: string) => cmd.endsWith('can_install') ? { granted: allowed } : undefined);
-    const u = new Updater();
+    const u = new Updater(tauriUpdateBackend(), mocks.tauri);
     await u.check();
     expect(u.state).toMatchObject({ kind: 'available', version: '0.2.1' });
     await u.install();
@@ -115,7 +117,7 @@ describe('最新版を確認し直してから更新する', () => {
     const latest = desktop('0.2.2');
     let resolve!: (value: typeof latest) => void;
     mocks.check.mockResolvedValueOnce(old).mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
-    const u = new Updater();
+    const u = new Updater(tauriUpdateBackend(), mocks.tauri);
     await u.check();
     const installing = u.install();
     await vi.waitFor(() => expect(mocks.check).toHaveBeenCalledTimes(2));
@@ -131,7 +133,7 @@ describe('最新版を確認し直してから更新する', () => {
 describe('Tauri の外（想定外の環境）では、確認も更新もしない', () => {
   it('supported は false。確認しても Tauri の更新の API を呼ばない', async () => {
     mocks.tauri = false;
-    const u = new Updater();
+    const u = new Updater(tauriUpdateBackend(), mocks.tauri);
     expect(u.supported).toBe(false);
     await u.check();
     await u.install();
@@ -141,6 +143,6 @@ describe('Tauri の外（想定外の環境）では、確認も更新もしな�
   });
 
   it('Tauri では supported は true', () => {
-    expect(new Updater().supported).toBe(true);
+    expect(new Updater(tauriUpdateBackend(), mocks.tauri).supported).toBe(true);
   });
 });
