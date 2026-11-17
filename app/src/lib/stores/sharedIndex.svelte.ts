@@ -56,7 +56,9 @@ export class SharedIndex extends DirIndex {
     if (st.kind === 'missing') return { kind: 'missing' };
     if (st.kind === 'error') return { kind: 'error', message: st.message };
     const name = baseName(path);
-    const entry = st.entries.get(name) ?? findCaseless(st.entries, name);
+    // 一覧の項目は sharedApi が作った SharedEntry（共有の部品の Entry は、置き場所の持つ欄を省ける形）
+    const entries = st.entries as Map<string, SharedEntry>;
+    const entry = entries.get(name) ?? findCaseless(entries, name);
     if (entry) return { kind: 'found', entry };
     // 投稿前の自分の添付は、一覧にまだ無いのが普通（投稿の反映を待つ）
     return this.unposted.has(path.toLowerCase()) ? { kind: 'loading' } : { kind: 'missing' };

@@ -37,16 +37,8 @@ function open(entry: SharedEntry): string {
   return document.body.textContent ?? '';
 }
 
-describe('プロパティ（読むだけ）', () => {
-  it('名前・パス・種類（MIME）・サイズ・更新日時を出す。作成日時は出さない（サーバーが持たない）', () => {
-    const text = open(base);
-    expect(text).toContain('docs/a.txt');
-    expect(text).toContain('TXT');
-    expect(text).toContain('text/plain');
-    expect(text).toContain('2.0 KB');
-    expect(text).not.toContain('作成日時');
-  });
-
+// 画面の流れは共有の部品（@3pino/explorer-kit の FileProperties.screen.test.ts）が試験する。ここは、Disnans の置き場所（sharedApi）・本体の機能（メッセージ検索）へつながっていることだけ
+describe('プロパティ（Disnans の置き場所・本体へのつながり）', () => {
   it('フォルダは計算中になり、サイズ取得後は件数を出す', async () => {
     open({ ...base, name: 'docs', path: 'docs', kind: 'dir', size: 0, mime: null, modified: 0 });
     // 最初は計算中
@@ -54,29 +46,6 @@ describe('プロパティ（読むだけ）', () => {
     // size が返ったあとはバイト数と件数を出す
     await vi.waitFor(() => expect(document.body.textContent).toContain('12,345'));
     expect(document.body.textContent).toContain('3 ファイル');
-  });
-
-  it('添付の ID・投稿されたメッセージは出さない', () => {
-    const text = open({ ...base, path: 'attachments/a.txt', file_id: 'F1', message_id: 'M1' });
-    expect(text).not.toContain('F1');
-    expect(text).not.toContain('M1');
-    expect(text).not.toContain('添付の ID');
-  });
-
-  it('名前・パスを押すとコピーする（サイズ・更新日時は押せない）', async () => {
-    const writeText = vi.fn(async () => {});
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    open(base);
-    const buttons = [...document.querySelectorAll<HTMLButtonElement>('.file-properties-copy')];
-    expect(buttons.map((b) => b.textContent)).toEqual(['a.txt', 'docs/a.txt']);
-    buttons[1].click();
-    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('docs/a.txt'));
-  });
-
-  it('見出し（名前・パスなど）は選べない', async () => {
-    const { readFileSync } = await import('node:fs');
-    const src = readFileSync('node_modules/@3pino/explorer-kit/src/FileProperties.svelte', 'utf8');
-    expect(src).toMatch(/\.file-properties dt \{[^}]*user-select: none/);
   });
 
   it('「メッセージを検索」で、ファイルの名前で検索を始める（フォルダには出さない）', async () => {
@@ -99,86 +68,5 @@ describe('プロパティ（読むだけ）', () => {
   it('フォルダには「メッセージを検索」を出さない', () => {
     const text = open({ ...base, name: 'docs', path: 'docs', kind: 'dir', size: 0, mime: null });
     expect(text).not.toContain('メッセージを検索');
-  });
-});
-
-describe('フォルダサイズのstaleガード', () => {
-  afterEach(() => { mockSize.mockReset(); });
-
-  it('A→B→A の完了順逆転で最初の A のレスポンスを無視し、最後の A のレスポンスを表示する', async () => {
-    // サイズ API の呼び出し順: A1(pending)→B(resolved immediately)→A2(pending)
-    // 完了順: B → A1(stale) → A2(accepted)
-    let resolveA1!: (v: { size: number; files: number; dirs: number }) => void;
-    let resolveA2!: (v: { size: number; files: number; dirs: number }) => void;
-
-    mockSize
-      .mockImplementationOnce(() => new Promise((r) => { resolveA1 = r; }))
-      .mockResolvedValueOnce({ size: 999, files: 1, dirs: 0 })
-      .mockImplementationOnce(() => new Promise((r) => { resolveA2 = r; }));
-
-    const dirA: SharedEntry = { ...base, name: 'docs', path: 'docs', kind: 'dir', size: 0, mime: null, modified: 0 };
-    const dirB: SharedEntry = { ...base, name: 'sub', path: 'sub', kind: 'dir', size: 0, mime: null, modified: 0 };
-
-    // A を開く → size 1回目 pending
-    target = document.createElement('div');
-    document.body.appendChild(target);
-    instance = mount(FileProperties, { target, props: { entry: dirA, onclose: () => {} } });
-    flushSync();
-    expect(document.body.textContent).toContain('計算中');
-
-    // B に切り替え（コンポーネントを入れ替えて A1 を stale にする）
-    await unmount(instance);
-    instance = mount(FileProperties, { target, props: { entry: dirB, onclose: () => {} } });
-    flushSync();
-    // B のレスポンスが届く
-    await vi.waitFor(() => expect(document.body.textContent).toContain('999'));
-
-    // A に戻る（A2 pending）
-    await unmount(instance);
-    instance = mount(FileProperties, { target, props: { entry: dirA, onclose: () => {} } });
-    flushSync();
-
-    // A1 のレスポンスを今届ける（stale: コンポーネントが unmount されたので sizeGen が進んでいる）
-    resolveA1({ size: 1111, files: 5, dirs: 2 });
-    await Promise.resolve();
-    // 1111 は出ない（stale）、計算中のはず
-    expect(document.body.textContent).not.toContain('1111');
-
-    // A2 のレスポンス（採用）
-    resolveA2({ size: 2222, files: 7, dirs: 3 });
-    // 7 ファイルというテキストが出るのを待つ（2222 は toLocaleString で '2,222' になる）
-    await vi.waitFor(() => expect(document.body.textContent).toContain('7 ファイル'));
-    expect(document.body.textContent).not.toContain('1111');
-    expect(document.body.textContent).not.toContain('5 ファイル'); // A1 の stale 結果が出ていない
-  });
-});
-
-describe('ゴミ箱の項目（直下）は、元の名前と元の場所で出す', () => {
-  const ID = '01HZX0000000000000000000AB';
-  const trashed: SharedEntry = {
-    name: `${ID}--report.pdf`,
-    path: `.trash/${ID}--report.pdf`,
-    kind: 'file',
-    size: 2048,
-    modified: 1_700_000_000_000,
-    mime: 'application/pdf',
-    message_id: null,
-    file_id: null,
-    trash: { kind: 'item', entry: { id: ID, original_path: 'docs/report.pdf', kind: 'file', size: 2048, deleted_at: 0 } },
-  };
-
-  it('名前は元の名前、パスは別名のまま、元の場所を別に出す', () => {
-    const text = open(trashed);
-    expect(text).toContain('report.pdf');
-    expect(text).toContain(`.trash/${ID}--report.pdf`);
-    expect(text).toContain('元の場所');
-    expect(text).toContain('docs/report.pdf');
-    // 名前の欄（最初の値）は元の名前だけ
-    expect(document.querySelector('.file-properties-copy')?.textContent?.trim()).toBe('report.pdf');
-  });
-
-  it('ふつうの項目には「元の場所」を出さない', () => {
-    const text = open(base);
-    expect(text).not.toContain('元の場所');
   });
 });

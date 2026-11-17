@@ -458,43 +458,43 @@ for (const [label, text, after] of MAIN_ITEMS) {
 
 // 項目の「…」メニュー（行の 1 つ）
 await closeToasts();
-const rowBtn = await evalJs(`(()=>{const x=[...document.querySelectorAll('.shared-entry-menu-button')].find(b=>b.getAttribute('aria-label').startsWith('a.txt')); if(!x) return null; const r=x.getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
+const rowBtn = await evalJs(`(()=>{const x=[...document.querySelectorAll('.explorer-entry-menu-button')].find(b=>b.getAttribute('aria-label').startsWith('a.txt')); if(!x) return null; const r=x.getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
 if (!rowBtn) {
   expect('行の「…」が見える', false);
 } else {
   await tap(rowBtn[0], rowBtn[1]);
   await sleep(120);
-  expect('行の「…」→「プロパティ」が押せる', (await hitIsInside('.shared-entry-menu-item', 'プロパティ')) === 'ok');
-  expect('行の「…」はプロパティだけ', (await evalJs(`[...document.querySelectorAll('.shared-entry-menu-item')].map(b=>b.textContent.trim()).join(',')`)) === 'プロパティ');
+  expect('行の「…」→「プロパティ」が押せる', (await hitIsInside('.explorer-entry-menu-item', 'プロパティ')) === 'ok');
+  expect('行の「…」はプロパティだけ', (await evalJs(`[...document.querySelectorAll('.explorer-entry-menu-item')].map(b=>b.textContent.trim()).join(',')`)) === 'プロパティ');
   await evalJs(`document.querySelector('.menu-backdrop')?.click(), 1`);
   await sleep(120);
 }
 
 // 詳細の「…」は右端に固定（sticky）していて行ごとに層を作るので、先頭の行のメニューが下の行の「…」に覆われないか（右端まで）
 {
-  const first = await evalJs(`(()=>{const r=document.querySelector('.shared-entry-menu-button').getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
+  const first = await evalJs(`(()=>{const r=document.querySelector('.explorer-entry-menu-button').getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
   await tap(first[0], first[1]);
   await sleep(150);
-  expect('先頭の行の「…」のメニューが、下の行の「…」に覆われない', (await evalJs(`(()=>{const m=document.querySelector('.shared-entry-menu-item'); if(!m) return false; const r=m.getBoundingClientRect(); return [r.x+6, r.x+r.width/2, r.right-6].every(x=>m.contains(document.elementFromPoint(x, r.y+r.height/2)))})()`)) === true);
+  expect('先頭の行の「…」のメニューが、下の行の「…」に覆われない', (await evalJs(`(()=>{const m=document.querySelector('.explorer-entry-menu-item'); if(!m) return false; const r=m.getBoundingClientRect(); return [r.x+6, r.x+r.width/2, r.right-6].every(x=>m.contains(document.elementFromPoint(x, r.y+r.height/2)))})()`)) === true);
   await evalJs(`document.querySelector('.menu-backdrop')?.click(), 1`);
   await sleep(120);
 }
 
 // 詳細: 狭い画面では横にはみ出し（スワイプで見る）、「…」はどの行も画面の中に見える
 expect('詳細は横にはみ出してスクロールできる（390px）', (await evalJs(`(()=>{const b=document.querySelector('.file-explorer-body'); return b.scrollWidth > b.clientWidth})()`)) === true);
-expect('詳細の「…」は、どの行も画面の中（右端に固定）', (await evalJs(`[...document.querySelectorAll('.shared-entry-menu-button')].every(x=>{const r=x.getBoundingClientRect(); return r.right <= innerWidth && document.elementFromPoint(r.x+r.width/2, r.y+r.height/2)?.closest('.shared-entry-menu-button')===x})`)) === true);
+expect('詳細の「…」は、どの行も画面の中（右端に固定）', (await evalJs(`[...document.querySelectorAll('.explorer-entry-menu-button')].every(x=>{const r=x.getBoundingClientRect(); return r.right <= innerWidth && document.elementFromPoint(r.x+r.width/2, r.y+r.height/2)?.closest('.explorer-entry-menu-button')===x})`)) === true);
 await evalJs(`(()=>{const b=document.querySelector('.file-explorer-body'); b.scrollLeft = b.scrollWidth; return 1})()`);
 await sleep(100);
-expect('横にスクロールしても「…」は画面の中', (await evalJs(`[...document.querySelectorAll('.shared-entry-menu-button')].every(x=>{const r=x.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth})`)) === true);
+expect('横にスクロールしても「…」は画面の中', (await evalJs(`[...document.querySelectorAll('.explorer-entry-menu-button')].every(x=>{const r=x.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth})`)) === true);
 await evalJs(`document.querySelector('.file-explorer-body').scrollLeft = 0, 1`);
 
 // アイコン表示: 左の列の「…」のメニューが、画面の左にはみ出さない
 await openMainMenu();
 await pressItem('表示: アイコン', 'アイコン');
-const leftBtn = await evalJs(`(()=>{const xs=[...document.querySelectorAll('.shared-entry-menu-button')].map(b=>b.getBoundingClientRect()).sort((a,b)=>a.left-b.left); const r=xs[0]; return [r.x+r.width/2, r.y+r.height/2]})()`);
+const leftBtn = await evalJs(`(()=>{const xs=[...document.querySelectorAll('.explorer-entry-menu-button')].map(b=>b.getBoundingClientRect()).sort((a,b)=>a.left-b.left); const r=xs[0]; return [r.x+r.width/2, r.y+r.height/2]})()`);
 await tap(leftBtn[0], leftBtn[1]);
 await sleep(150);
-expect('アイコン表示の左端の「…」のメニューが画面に収まる', (await evalJs(`(()=>{const m=document.querySelector('.shared-entry-menu'); if(!m) return false; const r=m.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth})()`)) === true);
+expect('アイコン表示の左端の「…」のメニューが画面に収まる', (await evalJs(`(()=>{const m=document.querySelector('.explorer-entry-menu'); if(!m) return false; const r=m.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth})()`)) === true);
 await evalJs(`document.querySelector('.menu-backdrop')?.click(), 1`);
 await sleep(120);
 expect('アイコン表示の下に、項目 1 つ分くらいの空きがある', (await evalJs(`(()=>{const l=document.querySelector('.file-explorer-list'); const li=l.querySelector('.file-explorer-item'); return parseFloat(getComputedStyle(l).paddingBottom) >= li.getBoundingClientRect().height * 0.8})()`)) === true);
@@ -805,11 +805,11 @@ const confirmOk = async (text) => {
 // ---- フォルダのサイズ（プロパティ） ----
 {
   const openProps = async (name) => {
-    const b = await evalJs(`(()=>{const x=window.__tc.row(${JSON.stringify(name)}).querySelector('.shared-entry-menu-button'); if(!x) return null; const r=x.getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
+    const b = await evalJs(`(()=>{const x=window.__tc.row(${JSON.stringify(name)}).querySelector('.explorer-entry-menu-button'); if(!x) return null; const r=x.getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
     if (!b) return false;
     await tap(b[0], b[1]);
     await sleep(150);
-    const p = await centerOf('.shared-entry-menu-item', 'プロパティ');
+    const p = await centerOf('.explorer-entry-menu-item', 'プロパティ');
     if (!p) return false;
     await tap(p[0], p[1]);
     await sleep(200);

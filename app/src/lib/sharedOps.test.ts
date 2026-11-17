@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SharedEntry } from './protocol/SharedEntry';
-import { canOperate, inAttachments, nameError, overwriteConfirm, planUpload, renameTarget } from './sharedOps';
+import * as kit from '@3pino/explorer-kit';
+import { SHARED_RULES, canOperate, inAttachments, nameError, overwriteConfirm, planUpload, renameTarget, renameAllowed, trashManyConfirm } from './sharedOps';
 
 const file = (name: string, path = name): SharedEntry => ({
   name,
@@ -90,5 +91,36 @@ describe('アップロードの同名の扱い', () => {
 
   it('名前が使えなければ止める（送る前に）', () => {
     expect(planUpload('', 'a:b.txt', ok())).toMatchObject({ kind: 'blocked' });
+  });
+});
+
+describe('SHARED_RULES は、Disnans の言葉・決まりを共有の部品へ渡す（部品は一般の文しか持たない）', () => {
+  it('特別なフォルダは attachments。動かせない理由・内外の移動・フォルダの作成は、添付の言葉', () => {
+    expect(SHARED_RULES.specialDir).toBe('attachments');
+    expect(renameAllowed('attachments')).toEqual({ ok: false, message: '添付のフォルダは動かせません' });
+    const f = (path: string): kit.TransferItem => ({ path, kind: 'file' } as kit.TransferItem);
+    expect(kit.checkTransfer(SHARED_RULES, 'move', f('a.txt'), 'attachments')).toEqual({ ok: false, message: '共有フォルダと添付の間は移動できません（コピーしてください）' });
+    expect(kit.ruleTexts(SHARED_RULES).noSubfolder).toBe('添付フォルダ内にフォルダは作れません');
+    expect(kit.ruleTexts(SHARED_RULES).cutSkipped).toBe('添付・ゴミ箱のフォルダは動かせないので除きました');
+  });
+
+  it('ゴミ箱の項目は、元の場所（共有フォルダの直下）へだけ戻せる、と書く', () => {
+    const item = {
+      path: '.trash/ID--a.txt',
+      kind: 'file',
+      trash: { where: 'item', restoreTo: 'a.txt' },
+    } as unknown as kit.TransferItem;
+    expect(kit.checkTransfer(SHARED_RULES, 'move', item, 'docs')).toEqual({ ok: false, message: 'ゴミ箱の項目は、元の場所（共有フォルダの直下）へだけ戻せます' });
+  });
+
+  it('ゴミ箱へ移す確認・上書きの確認は、添付の中なら本文のリンクの注意を足す', () => {
+    expect(trashManyConfirm([{ path: 'attachments/a.png', kind: 'file' }]).body).toBe('添付のものは、本文のリンクが「削除されたファイル」になります。ゴミ箱から元に戻せます');
+    expect(trashManyConfirm([{ path: 'docs/a.png', kind: 'file' }]).body).toBe('ゴミ箱から元に戻せます');
+    expect(overwriteConfirm('attachments/a.png').body).toBe('同じ添付の中身が入れ替わります。本文の表示も新しい中身になります。元に戻せません');
+    expect(overwriteConfirm('docs/a.png').body).toContain('今のファイルは消えて');
+  });
+
+  it('ドラッグの印は、チャット側（ChatView の取り込みの除外）と共有の部品で同じ値を使う', () => {
+    expect(kit.EXPLORER_DRAG_TYPE).toBe('application/x-explorer-kit-items');
   });
 });

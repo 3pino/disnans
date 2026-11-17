@@ -37,7 +37,7 @@ it.each([original, retained])('項目メニューは元の名前で読み上げ�
   expect(button).not.toBeNull();
   button!.click();
   flushSync();
-  expect([...target.querySelectorAll('.shared-entry-menu-item')].map((e) => e.textContent?.trim()))
+  expect([...target.querySelectorAll('.explorer-entry-menu-item')].map((e) => e.textContent?.trim()))
     .toEqual(['プロパティ']);
   expect(entry).toEqual(snapshot);
 });

@@ -64,7 +64,7 @@ describe('添付の別枠', () => {
 
   it('本文の中でも、別枠でも、添付に「…」（名前の変更・削除）は付けない。操作はエクスプローラーで行う', () => {
     const el = render([att('1', 'a.png', 'image/png'), att('2', 'doc.pdf', 'application/pdf')], '');
-    expect(el.querySelector('.shared-entry-menu-button')).toBeNull();
+    expect(el.querySelector('.explorer-entry-menu-button')).toBeNull();
     expect(el.querySelectorAll('button').length).toBe(1);
   });
 });

@@ -8,7 +8,7 @@ import type { Rules } from '@3pino/explorer-kit';
 import type { SharedEntry } from './protocol/SharedEntry';
 import { attachmentNameError } from './fileLink';
 
-export { childPath, renameTarget, RESERVED_REASON } from '@3pino/explorer-kit';
+export { childPath, renameTarget } from '@3pino/explorer-kit';
 export type { Allowed, UploadPlan } from '@3pino/explorer-kit';
 
 export const ATTACHMENTS_DIR = 'attachments';
@@ -40,7 +40,20 @@ export function nameError(dir: string, name: string): string | null {
 }
 
 /** Disnans の共有フォルダの決まり（エクスプローラーの部品へ渡す） */
-export const SHARED_RULES: Rules = { attachmentsDir: ATTACHMENTS_DIR, nameError };
+export const SHARED_RULES: Rules = {
+  specialDir: ATTACHMENTS_DIR,
+  nameError,
+  // 共有の部品は一般の文しか持たないので、Disnans の言葉（共有フォルダ・添付・本文のリンク）はここで渡す
+  texts: {
+    root: '共有フォルダ',
+    reserved: '添付のフォルダは動かせません',
+    crossMove: '共有フォルダと添付の間は移動できません（コピーしてください）',
+    noSubfolder: '添付フォルダ内にフォルダは作れません',
+    cutSkipped: '添付・ゴミ箱のフォルダは動かせないので除きました',
+    trashNote: '添付のものは、本文のリンクが「削除されたファイル」になります',
+    overwriteBody: '同じ添付の中身が入れ替わります。本文の表示も新しい中身になります。元に戻せません',
+  },
+};
 
 /** 項目の操作（名前の変更・削除）を出すか。attachments/ そのもの（仮想のフォルダ）は動かさない */
 export function canOperate(path: string): boolean {
@@ -64,7 +77,7 @@ export function overwriteConfirm(path: string): { title: string; body: string; o
 
 /** 一覧の中の、同じ名前の項目。attachments/ は大文字・小文字を区別しない（添付の別名の決まり） */
 export function sameNameEntry(entries: ReadonlyMap<string, SharedEntry>, dir: string, name: string): SharedEntry | undefined {
-  return kit.sameNameEntry(SHARED_RULES, entries, dir, name);
+  return kit.sameNameEntry(SHARED_RULES, entries, dir, name) as SharedEntry | undefined;
 }
 
 /**

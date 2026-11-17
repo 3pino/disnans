@@ -23,6 +23,7 @@ import { sharedIndex } from '../stores/sharedIndex.svelte';
 import { ui } from '../stores/ui.svelte';
 import { sharedApi, uploadShared } from '../transport/shared';
 import { viewerKind } from '../viewers';
+import type { SharedEntry } from '../protocol/SharedEntry';
 import { href, pdfSource, readUrl, thumbUrl } from './urls';
 
 // 引数は、渡されたとおりに送る（省いた引数を undefined で足さない）
@@ -39,11 +40,12 @@ const api: ExplorerApi = {
   upload: (...a) => uploadShared(...a),
 };
 
+// 共有の部品の項目（Entry）は、置き場所の持つ欄（message_id・file_id）を省ける形。ここへ来る項目は sharedApi が作った SharedEntry
 const urls: EntryUrls = {
-  href: (e) => href(e),
-  readUrl: (e, thumb) => readUrl(e, thumb),
-  thumbUrl: (e) => thumbUrl(e),
-  pdfSource: (e) => pdfSource(e),
+  href: (e) => href(e as SharedEntry),
+  readUrl: (e, thumb) => readUrl(e as SharedEntry, thumb),
+  thumbUrl: (e) => thumbUrl(e as SharedEntry),
+  pdfSource: (e) => pdfSource(e as SharedEntry),
 };
 
 const host: ExplorerHost = {
@@ -96,7 +98,7 @@ export const explorer = createExplorer({
   api,
   urls,
   rules: SHARED_RULES,
-  labels: { root: '共有フォルダ', upload: 'アップロード' },
+  labels: { root: '共有フォルダ', upload: 'アップロード', scope: 'サーバー' },
   host,
   // 一覧の写しは、本文のファイルリンクと共有する（接続先が変わったときに捨てるのは sharedIndex 自身）
   index: sharedIndex,

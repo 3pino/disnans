@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Paperclip from '@lucide/svelte/icons/paperclip';
+  import { EXPLORER_DRAG_TYPE } from '@3pino/explorer-kit';
   import MessageList from './MessageList.svelte';
   import SearchResults from './SearchResults.svelte';
   import Composer from './Composer.svelte';
@@ -83,7 +84,7 @@
   /** Files が含まれ、かつエクスプローラーの内部 DnD でない（内部 DnD は Files 型を持たないが念のため） */
   function hasFiles(e: DragEvent) {
     const types = [...(e.dataTransfer?.types ?? [])];
-    return types.includes('Files') && !types.includes('application/x-disnans-explorer');
+    return types.includes('Files') && !types.includes(EXPLORER_DRAG_TYPE);
   }
 </script>
 

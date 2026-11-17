@@ -85,16 +85,16 @@ try {
       await sleep(300);
     }
     // 左端の項目（一覧の最初）の「…」を押す
-    const first = await centerOf('.file-explorer-item .shared-entry-menu-button');
+    const first = await centerOf('.file-explorer-item .explorer-entry-menu-button');
     assert(first, 'entry menu button missing');
     await click(...first);
-    assert(await evaluate(`!!document.querySelector('.shared-entry-menu')`), 'entry menu did not open');
+    assert(await evaluate(`!!document.querySelector('.explorer-entry-menu')`), 'entry menu did not open');
   }
 
   /** メニューと周りの矩形を測る */
   const measure = () => evaluate(`(()=>{
     const r = (e) => { if (!e) return null; const b = e.getBoundingClientRect(); return { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; };
-    const menu = document.querySelector('.shared-entry-menu');
+    const menu = document.querySelector('.explorer-entry-menu');
     const item = menu?.querySelector('.menu-item');
     const ib = item?.getBoundingClientRect();
     const hit = ib ? document.elementFromPoint(ib.x + ib.width / 2, ib.y + ib.height / 2) : null;
@@ -111,7 +111,7 @@ try {
       assert(m.menu.left >= m.shell.left - 0.5 && m.menu.right <= m.shell.right + 0.5 && m.menu.top >= m.shell.top - 0.5 && m.menu.bottom <= m.shell.bottom + 0.5, `menu is outside the shell ${tag}`);
       assert(m.itemHit, `プロパティ item is covered by something else ${tag}`);
       // プロパティを開く: ダイアログの本体はシェルの中にあり、ナビバーと交わらない（スクリムは画面全体のまま）
-      await click(...(await centerOf('.shared-entry-menu .menu-item', 'プロパティ')));
+      await click(...(await centerOf('.explorer-entry-menu .menu-item', 'プロパティ')));
       assert(await evaluate(`!!document.querySelector('.modal')`), `properties dialog did not open ${tag}`);
       const d = await rectOf('.modal');
       assert(d.left >= m.nav.right - 0.5 && d.right <= m.shell.right + 0.5 && d.top >= m.shell.top - 0.5 && d.bottom <= m.shell.bottom + 0.5, `dialog is not inside the shell content area ${tag} dialog=${JSON.stringify(d)}`);
