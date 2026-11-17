@@ -50,7 +50,7 @@
 
 - 実装は Rust（`reqwest`）。WebView の `fetch` では `/dav/` に CORS がなく使えない。
 - `ExplorerApi` の list・write・mkdir・move・copy・upload・size は、PROPFIND・PUT・MKCOL・MOVE・COPY に対応させる。失敗の種類は、`FsError.code` の組（`exists`・`parent_missing` など）に写す。黙って上書きしない（ETag と `If-Match`、`Overwrite` の明示）。ETag をサーバーが出すかは、実装の最初に確かめる。
-- **削除**: WebDAV に「ゴミ箱」はなく、Disnans の `/dav/` でも `DELETE` は完全な削除。fixplor は「完全な削除を一切しない」という方針を**取りやめ**、**完全に削除する前には、必ずポップアップで確認する**ことにする。ゴミ箱のある置き場所（この端末）はこれまでどおりゴミ箱へ送り、ない置き場所では、置き場所の能力（`caps.trash`）を偽にして、確認の文を「完全に削除します。元に戻せません」に変える。Disnans のゴミ箱（REST）を使うのは、Disnans 固有のコードになるので、fixplor には入れない（プラグインの仕事）。
+- **削除**: WebDAV に「ゴミ箱」はなく、Disnans の `/dav/` でも `DELETE` は完全な削除。fixplor は「完全な削除を一切しない」という方針を**取りやめ**、**完全に削除する前には、必ずポップアップで確認する**ことにする。ゴミ箱のある置き場所（このデバイス）はこれまでどおりゴミ箱へ送り、ない置き場所では、置き場所の能力（`caps.trash`）を偽にして、確認の文を「完全に削除します。元に戻せません」に変える。Disnans のゴミ箱（REST）を使うのは、Disnans 固有のコードになるので、fixplor には入れない（プラグインの仕事）。
 - **認証**: Disnans の `/dav/` は Tailscale の識別だけで、Basic はない。一般の WebDAV 用に、Basic 認証と資格情報の保管（OS のキーチェーン。`keyring` の依存）を**段 3 に入れる**。新しい依存（`reqwest`・`rustls`・`keyring`・試験用の `wiremock`）は、段 3 の実装の前に、最終の一覧を見せて承認を取る。
 - **サムネイル**: `<img>` に認証を付けられないので、認証が要る置き場所では、Rust がブロブにして渡す。
 - 試験は、実際の `disnans-server`（一時のデータフォルダ）に対する結合試験と、モックの両方で行う。本番には触れない。
