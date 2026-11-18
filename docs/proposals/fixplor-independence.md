@@ -1,6 +1,6 @@
 # fixplor の切り離しと、エクスプローラーのプラグイン化
 
-状態: 方針（決定）。段 1〜3 完了・段 4 ほぼ完了・段 5〜6 未着手（段 5 の設計は `.pi` で作成中）。決めたことと、まだ決めていないことは末尾。FEEDBACKS の「ファイルエクスプローラーを別のアプリとして切り出したい」に紐づく。
+状態: 方針（決定）。段 1〜5 完了・段 4 の一部（`Shell` の骨組み・設定の枠組み・Tauri 側の共有）と段 6 の後半（内蔵のコードの削除・`explorer-kit` の統合）が残り。v0.2.77 から、Disnans の「ファイル」は同梱の fixplor プラグインで動く（v0.2.79 時点）。決めたことと、まだ決めていないことは末尾。FEEDBACKS の「ファイルエクスプローラーを別のアプリとして切り出したい」に紐づく。
 
 ## 目標と位置づけ
 
@@ -16,7 +16,7 @@
 3. 共通の画面と決まりは、**2 つの口**（置き場所 `ExplorerApi` と、本体から借りる機能 `ExplorerHost`。[architecture.md](../design/architecture.md)）を通して外とやりとりする。
 4. 見た目は `@3pino/design-system`（CSS）と `@3pino/ui-kit-web`（Svelte の部品）。部品の DOM 版は持たない（プラグインには、ホストが Svelte の部品を mount して渡す）。
 
-## いまの形（v0.2.76）
+## いまの形（v0.2.79）
 
 | パッケージ・リポジトリ | 中身 | 使う側 |
 |---|---|---|
@@ -25,7 +25,8 @@
 | `@3pino/app-kit-web` | アプリの土台（platform・storage・トースト・確認・戻る・更新・OS のドロップ・設定の項目） | Disnans・fixplor |
 | `@3pino/viewer-kit-web` | 拡大表示・画像・PDF・サムネイル | Disnans・fixplor |
 | `@3pino/explorer-kit` | エクスプローラーの画面・決まり・状態（置き場所と本体の口ごしに動く） | Disnans・fixplor |
-| Disnans | 置き場所は「サーバーの共有フォルダ」。本体の機能（通知・確認・拡大表示ほか）を渡す | |
+| fixplor プラグイン（`plugins/fixplor`、タグ `plugin-fixplor-vX.Y.Z`） | 上の部品を束ねた Disnans のプラグイン（置き場所は `this.files`）。Svelte ごと 1 つの `main.js` に同梱（約 50KB gz） | Disnans（同梱） |
+| Disnans | 置き場所は「サーバーの共有フォルダ」。本体の機能（通知・確認・拡大表示ほか）をプラグイン API 19 で渡す。fixplor プラグインを `app/core-plugins.lock.json` で固定して同梱 | |
 | fixplor | 置き場所は「このデバイス」（Rust の `fs_*`）。ファイラーの外枠 | |
 
 ## 最終の形
@@ -45,8 +46,8 @@
 | 2 | 画面の流れの試験を `explorer-kit` に移す（置き場所はメモリ上の偽物）。Disnans と fixplor の側には、薄い接続の確認だけを残す | 完了 |
 | 3 | fixplor に WebDAV の置き場所を足す（Disnans の `/dav/` と、Basic 認証の一般の WebDAV の両方。下） | 完了（fixplor: Rust の WebDAV・Basic 認証と keyring・fixdav 中継。証明書の指紋の固定は未実装） |
 | 4 | アプリの土台を共有パッケージへ出す（下）。fixplor の手書きのコピーをなくす | ほぼ完了: `ui` 分割、`@3pino/app-kit-web` v0.2.0（core・shell・更新・OS のドロップ・設定の項目）、`@3pino/viewer-kit-web` v0.1.0（拡大表示・画像・PDF）。fixplor は app-kit-web・viewer-kit-web を使用中。残り: `Shell` の骨組み・設定の枠組み・Tauri 側の共有（設計メモのみ） |
-| 5 | プラグイン API を足し、fixplor のプラグインを作り、Disnans の組み込みのエクスプローラーと並べて、同じに動くことを確かめる | 完了（API 19。fixplor 0.1.0 を `plugin-fixplor-v0.1.0` で配布。実ホストの検査は fixplor の `check:host`（xvfb）） |
-| 6 | 組み込みのエクスプローラーを標準のプラグインに置き換え、`explorer-kit` のリポジトリを fixplor に統合する | 切り替えは完了（同梱の fixplor が読めれば、「ファイル」は fixplor の画面。内蔵は残し、フォールバックとして動く）。内蔵のコードの削除と `explorer-kit` の統合は次の版（[core-plugins.md](core-plugins.md)） |
+| 5 | プラグイン API を足し、fixplor のプラグインを作り、Disnans の組み込みのエクスプローラーと並べて、同じに動くことを確かめる | 完了（API 19。fixplor 0.1.0 を `plugin-fixplor-v0.1.0` で配布。実ホストの検査は fixplor の `check:host`（xvfb）と、Disnans の `nav-bar-check`。実機の確認は FEEDBACKS） |
+| 6 | 組み込みのエクスプローラーを標準のプラグインに置き換え、`explorer-kit` のリポジトリを fixplor に統合する | 切り替えは完了（v0.2.77。同梱の fixplor が読めれば、「ファイル」は fixplor の画面。読めなければ内蔵が自動で動く）。残り: 実機で問題が出ないことを見たうえで、内蔵のコードの削除と `explorer-kit` の統合（[core-plugins.md](core-plugins.md)） |
 
 ## WebDAV の置き場所（段 3）
 
@@ -74,7 +75,9 @@
 2. 土台の基盤（TS）→ トースト・確認 → ビューア → 設定の枠 → 更新の画面 → OS のドロップ → `Shell` の骨組み（最後）。
 3. 先に、`ui-kit-web` の触覚と NavBar、`explorer-kit` の種類の判定と `fileLink` の重複をなくす。
 
-## プラグイン化に足りないこと（段 5）
+## プラグイン化に足りないこと（段 5。API 19 で入れた）
+
+（以下は設計時の整理。実装の結果は `docs/plugins/*` と SDK の `index.d.ts`。「ファイルの選択」「リンクの開き」は口を入れた。ナビバーへの入り方は、設計を変えて、コマンドとして登録し、利用者がナビバーの設定で足す方式にした。「ファイル」の入口は `app:open-files` で、プラグイン版は組み込みと同じ `files` パネルの種類で開く。）
 
 `this.files` は、`list`・`stat`・`read`・`write`・`mkdir`・`remove`・`move`・`copy`・`onChange` を持っていて、`ExplorerApi` の大部分を賄える。足りないのは次のようなもの。
 
@@ -89,9 +92,9 @@
 - **完全な削除を一切しないという方針は取りやめる。** 完全に削除する前には、ポップアップで確認を取る（上の「削除」）。fixplor の `docs/design.md` の「消すのはゴミ箱だけ」は、これに合わせて書き換える。
 - **Disnans の画面からエクスプローラーを指す入口と、メインのナビゲーションへの入り方は、fixplor プラグインの機能として入れる。** 本体には、そのための口だけを足す（段 5）。
 
-## 標準のプラグインの配り方（案。まだ決めていない）
+## 標準のプラグインの配り方（決定。v0.2.77 で実装）
 
-アプリの更新のたびに、**そのとき最新の fixplor プラグインを同梱する**案が、いまのところ有力。
+アプリの更新のたびに、**そのとき決めた fixplor プラグインのタグを同梱する**（実装済み。固定は `app/core-plugins.lock.json`、取り込みは `app/scripts/fetch-core-plugins.mjs`（ビルド・開発の前に自動で動き、sha256 と `minApiVersion` を検査））。
 
 - fixplor のリポジトリが、タグごとにプラグイン（`manifest.json`・`main.js`・`styles.css`・`icon.svg`）を成果物として公開する。Disnans のリリースは、**どのタグを同梱するか**を 1 か所のファイルに固定して、ビルドの時に取り込む（`explorer-kit` のタグ指定と同じ考え方）。
 - 同梱するので、オフラインでも使え、ホストの API の版と常に合う（Disnans のビルドで、プラグインの `minApiVersion` が本体の `API_VERSION` 以下であることを検査する）。
@@ -100,8 +103,9 @@
 
 ## まだ決めていないこと
 
-1. 標準のプラグインの配り方（上の案でよいか）と、ホストの API の版の合わせ方。
-2. 段 5 で足すホストの API の、具体的な形（開く先を引き受ける口・ナビへの入り方・ファイルの選択・拡大表示・ダウンロード）。
+1. fixplor プラグインだけを新しくしたいとき、アプリのリリースなしで配る道（レジストリから、より新しい版を配る）を足すか。
+2. 内蔵のエクスプローラーのコードを消す時期（実機で問題がないことを見てから）。
+3. `explorer-kit` を fixplor に統合する時の形（npm workspace）。
 
 ## リスク
 
