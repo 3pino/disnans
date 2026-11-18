@@ -9,6 +9,9 @@
   import { navBar } from '../lib/stores/navBar.svelte';
   import { pluginNav, type PluginNavEntry } from '../lib/pluginNav.svelte';
   import { pluginHost } from '../lib/plugins/host.svelte';
+  import { coreFiles } from '../lib/coreFiles.svelte';
+  import { CORE_FILES_NAV_ID } from '../lib/plugins/core';
+  import { NAV_FILES_ID } from '../lib/navBar';
   import { unread } from '../lib/stores/unread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { updater } from '../lib/stores/updater.svelte';
@@ -26,11 +29,13 @@
       const hit = pluginNav.forView(ui.panel.plugin, ui.panel.view);
       if (hit) return hit.id;
     }
+    if (ui.panel?.kind === 'files' && coreFiles.active) return CORE_FILES_NAV_ID;
     return navActiveId({ tab: ui.tab, panel: ui.panel?.kind ?? null });
   });
 
   /** 登録されている（出せる）コマンドの ID */
-  const available = $derived(new Set(commandList().map((c) => c.id)));
+  // コアの「ファイル」が出ているときは、内蔵の「ファイル」の項目は出さない（ナビの項目はプラグインのものになる）
+  const available = $derived(new Set(commandList().filter((c) => !(c.id === NAV_FILES_ID && coreFiles.active)).map((c) => c.id)));
   const ids = $derived.by(() => {
     const shown = visibleNavItems(navBar.items, available);
     return [...shown, ...pluginNav.entries.map((e) => e.id).filter((id) => !shown.includes(id))];

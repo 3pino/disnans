@@ -125,7 +125,11 @@
               <Upload size={16} />
             </IconButton>
           {/if}
-          <Toggle checked={e.enabled} label="{nameOf(e)} を有効にする" onchange={(on) => pluginHost.setEnabled(e.id, on)} />
+          {#if e.core}
+            <span class="plugin-settings-core muted">本体に同梱</span>
+          {:else}
+            <Toggle checked={e.enabled} label="{nameOf(e)} を有効にする" onchange={(on) => pluginHost.setEnabled(e.id, on)} />
+          {/if}
           {#if e.hasSettings || e.dev || e.server}
             <Button
               variant="ghost"

@@ -1,0 +1,25 @@
+{
+  "fixplor": {
+    "repo": "3pino/fixplor",
+    "tag": "plugin-fixplor-v0.1.0",
+    "minApiVersion": 19,
+    "manifest": {
+      "id": "fixplor",
+      "name": "ファイル",
+      "version": "0.1.0",
+      "description": "共有フォルダのファイルエクスプローラー（fixplor と同じ部品）",
+      "author": "3pino",
+      "minApiVersion": 19,
+      "icon": "folder",
+      "permissions": [
+        "files"
+      ]
+    },
+    "files": {
+      "manifest.json": "a22aa68feca0b6edc887564b85b2bc3ab84dc3e278ac57c6679d81fb4628e664",
+      "main.js": "1ce8832a35b9208a8ccf60ee7d09b1e8316fd9e3e92b89f35707c8f8d5499173",
+      "styles.css": "8ec5ab37cb56bbab6c2477200342509c95b4f4840ee99f169e0ad7aa023ee820",
+      "icon.svg": "ebad806be50b5497909c680d892b973f1f1d1dc1062c6b3115a03243a68c2131"
+    }
+  }
+}

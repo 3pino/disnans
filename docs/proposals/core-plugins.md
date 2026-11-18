@@ -1,6 +1,20 @@
 # コアプラグイン（エクスプローラーのプラグイン化）
 
-状態: 設計案(未実装)。fixplor を元にした進め方は [fixplor-independence.md](fixplor-independence.md)
+状態: **段 1（供給・ビルドの取得・切り替え）を実装。** 同梱の「ファイル」（fixplor）は `core-plugins.lock.json` の版を取って同梱し、読めれば内蔵のエクスプローラーの代わりに使う（内蔵のコードは次の版で外す）。fixplor を元にした進め方は [fixplor-independence.md](fixplor-independence.md)
+
+## 実装の状態（段 1）
+
+| 項目 | 状態 |
+|---|---|
+| 供給元（`Wanted`）: 同梱の `public/core-plugins/<id>/` から読む。sig は main.js の sha256 | 実装（`app/src/lib/plugins/core.ts`・`host.svelte.ts`） |
+| 同じ ID のサーバー配布・開発用のものは読まない（コアが勝つ）。オフにできない。設定の一覧には「本体に同梱」と出す | 実装・試験（`core.host.test.ts`） |
+| 版の固定: `app/core-plugins.lock.json`（repo・tag・minApiVersion・manifest・4 ファイルの sha256） | 実装。現在は `plugin-fixplor-v0.1.0` |
+| 取得: `app/scripts/fetch-core-plugins.mjs`。GitHub のリリースから取り、sha256・SHA256SUMS・manifest を lock と照合。違えば失敗（何も置かない・キャッシュに書かない）。キャッシュ（`app/.cache/core-plugins`）がそろって一致すれば取りに行かない | 実装・試験 10 件（`npm run test:scripts`） |
+| `predev` / `prebuild` で取る（`npm run build`・`npm run dev`・Tauri の `beforeBuildCommand` / `beforeDevCommand` の経路） | 実装 |
+| 切り替え: fixplor が読めて view を登録できたら、ナビの「ファイル」（内蔵）を出さず、「ファイル」の画面を fixplor の view にする。読めなければ内蔵のまま（設定はない） | 実装・試験（フォールバック・切り替え・外れたとき） |
+| 本体の import を禁止する検査（ビルド後の main.js の import の許可リスト） | 未（段 1 の残り。fixplor の `check:plugin` が境界を見ている） |
+
+切り替えの対象（本体の「ファイル」の入口）: ナビの項目と、パレットの「共有フォルダを開く」（`app:open-files`）は、内蔵が出ているときだけ出す。`Shell` は `files` の表示を、読めていれば fixplor の view で出す。本文のファイルリンクの開き方は、プラグインの `registerLinkOpener` が引き受ける。Composer の添付には、ファイルの画面を開く入口はない（対象なし）。
 
 エクスプローラー(`app/src/components/FileExplorer.svelte`、約 1200 行)のような 1 つの画面を、本体の外(プラグインの仕組み)へ切り出す案。FEEDBACKS の「ファイルエクスプローラーを別のアプリとして切り出したい。プラグインからも新しいアプリや画面を作りたい」に紐づく。
 

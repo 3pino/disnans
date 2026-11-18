@@ -22,6 +22,7 @@ import {
 } from './commands.svelte';
 import { isAndroid } from './platform';
 import { NAV_FILES_ID } from './navBar';
+import { coreFiles } from './coreFiles.svelte';
 import { prefs } from './stores/prefs.svelte';
 import { cameraRequest } from './stores/cameraRequest.svelte';
 import { attachPanel } from './stores/attachPanel.svelte';
@@ -129,6 +130,8 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       name: '共有フォルダを開く',
       icon: FolderOpen,
       description: '共有フォルダの中身を見る',
+      // コアの「ファイル」が出ているあいだは、そちらの項目に任せる（内蔵は出さない）
+      when: () => !coreFiles.active,
       run: () => ui.openFiles(),
     },
     {

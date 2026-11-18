@@ -45,8 +45,8 @@
 | 2 | 画面の流れの試験を `explorer-kit` に移す（置き場所はメモリ上の偽物）。Disnans と fixplor の側には、薄い接続の確認だけを残す | 完了 |
 | 3 | fixplor に WebDAV の置き場所を足す（Disnans の `/dav/` と、Basic 認証の一般の WebDAV の両方。下） | 完了（fixplor: Rust の WebDAV・Basic 認証と keyring・fixdav 中継。証明書の指紋の固定は未実装） |
 | 4 | アプリの土台を共有パッケージへ出す（下）。fixplor の手書きのコピーをなくす | ほぼ完了: `ui` 分割、`@3pino/app-kit-web` v0.2.0（core・shell・更新・OS のドロップ・設定の項目）、`@3pino/viewer-kit-web` v0.1.0（拡大表示・画像・PDF）。fixplor は app-kit-web・viewer-kit-web を使用中。残り: `Shell` の骨組み・設定の枠組み・Tauri 側の共有（設計メモのみ） |
-| 5 | プラグイン API を足し、fixplor のプラグインを作り、Disnans の組み込みのエクスプローラーと並べて、同じに動くことを確かめる | 未着手 |
-| 6 | 組み込みのエクスプローラーを標準のプラグインに置き換え、`explorer-kit` のリポジトリを fixplor に統合する | 未着手 |
+| 5 | プラグイン API を足し、fixplor のプラグインを作り、Disnans の組み込みのエクスプローラーと並べて、同じに動くことを確かめる | 完了（API 19。fixplor 0.1.0 を `plugin-fixplor-v0.1.0` で配布。実ホストの検査は fixplor の `check:host`（xvfb）） |
+| 6 | 組み込みのエクスプローラーを標準のプラグインに置き換え、`explorer-kit` のリポジトリを fixplor に統合する | 切り替えは完了（同梱の fixplor が読めれば、「ファイル」は fixplor の画面。内蔵は残し、フォールバックとして動く）。内蔵のコードの削除と `explorer-kit` の統合は次の版（[core-plugins.md](core-plugins.md)） |
 
 ## WebDAV の置き場所（段 3）
 

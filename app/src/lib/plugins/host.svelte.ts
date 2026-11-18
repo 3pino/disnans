@@ -46,6 +46,8 @@ import { listenNativeDrop, listenOsDrop, osDropEntries, osDropRelease, dropRoots
 import { pickSharedFiles } from './sharedPicker';
 import { legacyExplorerDirs } from '../explorerDirs';
 import type { UiDeps } from './ui';
+import { CORE_FILES_PLUGIN, CORE_FILES_VIEW, CORE_PLUGIN_IDS, coreManifest, coreSig, fetchCoreText, isCorePlugin } from './core';
+import { coreFiles } from '../coreFiles.svelte';
 
 const DEV_POLL_MS = 1000;
 const DARK_QUERY = '(prefers-color-scheme: dark)';
@@ -94,6 +96,8 @@ export type DevPlugin = {
 
 /** 設定の一覧に出す1件 */
 export type PluginEntry = {
+  /** コアプラグイン（同梱。オン・オフはできない） */
+  core: boolean;
   /** プラグイン ID（manifest が読めない開発中のものはフォルダ名） */
   id: string;
   manifest: Manifest | null;
@@ -171,8 +175,8 @@ export function hostPlatform(): { tauri: boolean; os: string; linuxDesktop: bool
   return { tauri: isTauri(), os: osName(), linuxDesktop: isLinuxDesktop() };
 }
 
-/** 組み込みのエクスプローラーのプラグイン ID（旧い保存先の取り込みの対象） */
-export const EXPLORER_PLUGIN_ID = 'disnans-explorer';
+/** 旧い保存先（explorerDirs）の取り込みの対象。コアの「ファイル」（fixplor）だけ */
+export const EXPLORER_PLUGIN_ID = CORE_FILES_PLUGIN;
 /** 旧い保存先を、そのプラグインが取り込んだ印（デバイスごと） */
 export function legacyTakenKey(pluginId: string): string {
   return `disnans.plugin.${pluginId}.legacyTaken`;
@@ -494,6 +498,7 @@ export class PluginHost {
           server: null,
           dev: null,
           enabled: !this.disabled.includes(id),
+          core: false,
           loaded: !!l,
           error: this.errors[id] ?? (l && l.runtime.errors.length > 0 ? l.runtime.errors.join('\n') : null),
           warnings: [],
@@ -504,14 +509,21 @@ export class PluginHost {
       }
       return e;
     };
+    // コアは同梱のもの（オン・オフはできない）。同じ ID の配布・開発用のものは、一覧にも出さない
+    for (const id of CORE_PLUGIN_IDS) {
+      const e = get(id);
+      e.core = true;
+      e.enabled = true;
+      e.manifest = coreManifest(id);
+    }
     for (const p of this.server) {
-      if (p.type !== 'plugin' || isRetiredPlugin(p.id)) continue;
+      if (p.type !== 'plugin' || isRetiredPlugin(p.id) || isCorePlugin(p.id)) continue;
       const e = get(p.id);
       e.server = p;
       e.manifest = manifestOf(p);
     }
     for (const d of this.dev) {
-      if (d.kind !== 'plugin' || (d.manifest && isRetiredPlugin(d.manifest.id))) continue;
+      if (d.kind !== 'plugin' || (d.manifest && (isRetiredPlugin(d.manifest.id) || isCorePlugin(d.manifest.id)))) continue;
       const e = get(d.manifest?.id ?? d.folder);
       e.dev = d;
       if (d.manifest) e.manifest = d.manifest;
@@ -632,6 +644,8 @@ export class PluginHost {
   setEnabled(id: string, on: boolean): void {
     // 旧いプラグインは、オンにもできない（本体の機能は、このプラグインの設定に関係なく使える）
     if (isRetiredPlugin(id)) return;
+    // コアは、利用者の設定では切り替えない（一覧にも切り替えは出さない）
+    if (isCorePlugin(id)) return;
     const disabled = on ? this.disabled.filter((x) => x !== id) : [...new Set([...this.disabled, id])];
     deviceSettings.set('pluginsDisabled', disabled);
     // オンにし直したら、前に失敗したものも読み直す
@@ -652,8 +666,22 @@ export class PluginHost {
 
   private wanted(): Map<string, Wanted> {
     const out = new Map<string, Wanted>();
+    // コアは同梱のもの。オフにできず、同じ ID のサーバー配布・開発用のものより優先する（それらは読まない）
+    for (const id of CORE_PLUGIN_IDS) {
+      const m = coreManifest(id);
+      if (!m) continue;
+      out.set(id, {
+        sig: coreSig(id),
+        manifest: m,
+        load: async () => ({
+          main: await fetchCoreText(id, 'main.js'),
+          styles: await fetchCoreText(id, 'styles.css'),
+          permissions: m.permissions ?? [],
+        }),
+      });
+    }
     for (const p of this.server) {
-      if (p.type !== 'plugin' || this.disabled.includes(p.id) || isRetiredPlugin(p.id)) continue;
+      if (p.type !== 'plugin' || this.disabled.includes(p.id) || isRetiredPlugin(p.id) || isCorePlugin(p.id)) continue;
       out.set(p.id, {
         sig: `server:${p.hash}`,
         manifest: manifestOf(p),
@@ -668,7 +696,7 @@ export class PluginHost {
     // 同じ ID なら開発中のものを優先する
     for (const d of this.dev) {
       const m = d.manifest;
-      if (!m || d.kind !== 'plugin' || d.error || d.main === null || this.disabled.includes(m.id) || isRetiredPlugin(m.id)) continue;
+      if (!m || d.kind !== 'plugin' || d.error || d.main === null || this.disabled.includes(m.id) || isRetiredPlugin(m.id) || isCorePlugin(m.id)) continue;
       const main = d.main;
       out.set(m.id, { sig: `dev:${d.folder}:${d.stamp}`, manifest: m, load: async () => ({ main, styles: d.styles, permissions: m.permissions ?? [] }) });
     }
@@ -757,6 +785,8 @@ export class PluginHost {
       this.fail(id, w.sig, `読み込みでエラー: ${errorMessage(e)}`);
       return;
     }
+    // 「ファイル」の切り替え（view が登録できたときだけ。読めなければ内蔵のまま）
+    if (id === CORE_FILES_PLUGIN) coreFiles.active = runtime.views.has(CORE_FILES_VIEW);
     this.rev++;
     if (panel && runtime.views.has(panel.view) && !ui.panel) ui.openPluginView(panel.plugin, panel.view, panel.sessionId);
   }
@@ -767,6 +797,7 @@ export class PluginHost {
     this.loaded.delete(id);
     l.runtime.stop();
     l.style?.remove();
+    if (id === CORE_FILES_PLUGIN) coreFiles.active = false;
     // プラグインが開いたままのメニュー・モーダルを閉じる（disnans.ui は本体に 1 つで、持ち主を区別できないため、開いているものをすべて閉じる）
     cleanupPluginUi();
     this.rev++;

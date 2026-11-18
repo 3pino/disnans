@@ -14,6 +14,8 @@
   import ScreenShareOverlay from './ScreenShareOverlay.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
+  import { coreFiles } from '../lib/coreFiles.svelte';
+  import { CORE_FILES_PLUGIN, CORE_FILES_VIEW } from '../lib/plugins/core';
 
   const panelOpen = $derived(ui.panel !== null);
   // チャットは Chat タブのときだけ。設定・通話はその場所を使う（どの幅でも同じ）
@@ -24,7 +26,8 @@
   // ファイルエクスプローラーは、通話・設定と同じく、チャットや他の画面の代わりに全部の表示の場所を使う（どの幅でも）。
   // 狭い画面では、ナビゲーションバーの上に収めてナビバーを出し続ける（重ならない）。
   // 通話・設定・チャットは外さず、高さを 0 にして（広い画面では隠して）マウントしたままにする
-  const filesFull = $derived(ui.panel?.kind === 'files');
+  // 「ファイル」（内蔵の画面、またはコアプラグインの view。どちらも同じ全画面の扱い）
+  const filesFull = $derived(ui.panel?.kind === 'files' || (ui.panel?.kind === 'plugin' && ui.panel.plugin === CORE_FILES_PLUGIN && ui.panel.view === CORE_FILES_VIEW));
   // モバイルではパネルがチャットを覆う（エクスプローラーのときは、チャットは開いていても出さない）
   const chatVisible = $derived(showChat && !(ui.isMobile && panelOpen) && !filesFull);
 </script>
@@ -75,9 +78,13 @@
       {/key}
     </div>
   {:else if ui.panel?.kind === 'files'}
-    <!-- 共有フォルダの閲覧（通話・設定と同じく、ほかの表示の代わりに出す） -->
+    <!-- 共有フォルダの閲覧（通話・設定と同じく、ほかの表示の代わりに出す）。コアプラグインの「ファイル」が読めていれば、その view を出す -->
     <div class="shell-panel shell-panel-files">
-      <FileExplorer />
+      {#if coreFiles.active}
+        <PluginPanel plugin={CORE_FILES_PLUGIN} view={CORE_FILES_VIEW} sessionId={null} />
+      {:else}
+        <FileExplorer />
+      {/if}
     </div>
   {:else if ui.panel?.kind === 'plugin'}
     <!-- プラグインの view。枠は同じ -->

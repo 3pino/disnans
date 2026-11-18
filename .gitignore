@@ -1,6 +1,9 @@
 /target
 node_modules/
 /app/dist
+# コアプラグイン（scripts/fetch-core-plugins.mjs が置く。lock の版を取ったもの）と、その取得のキャッシュ
+/app/public/core-plugins/
+/app/.cache/
 /app/src-tauri/target
 /app/src-tauri/gen/schemas
 # scripts/prepare-cli.mjs が置く CLI（本物またはプレースホルダ）。commit しない

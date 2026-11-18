@@ -12,10 +12,11 @@ const legacyOf = (host: PluginHost, id: string) => (host as unknown as { legacyD
 beforeEach(() => localStorage.clear());
 
 describe('旧い保存先の取り込み', () => {
-  it('組み込みのエクスプローラーには、以前の一覧の表示を返す。ほかのプラグインには返さない', () => {
+  it('コアの「ファイル」（fixplor）には、以前の一覧の表示を返す。ほかのプラグインには返さない', () => {
     localStorage.setItem(LEGACY_EXPLORER_KEYS.view, 'grid');
     const host = new PluginHost();
-    expect(legacyOf(host, EXPLORER_PLUGIN_ID)).toEqual({ '': expect.objectContaining({ view: 'grid' }) });
+    expect(EXPLORER_PLUGIN_ID).toBe('fixplor');
+    expect(legacyOf(host, 'fixplor')).toEqual({ '': expect.objectContaining({ view: 'grid' }) });
     expect(legacyOf(host, 'dice')).toBeNull();
   });
 

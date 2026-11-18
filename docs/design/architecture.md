@@ -24,6 +24,13 @@
 - 取り込み: `app/package.json` の依存（タグ指定）。ソースのまま配られるので、`app/vite.config.ts` で事前バンドルから外している（`optimizeDeps.exclude`）。更新は共有側でタグを打ち、依存のタグを更新する
 - エクスプローラーの部品（@3pino/explorer-kit）も、同じ UI 部品を使う（重複した写しは無い）
 
+## コアプラグイン（同梱のプラグイン）
+
+- `app/core-plugins.lock.json` が、同梱するプラグインの版（リポジトリ・タグ・manifest・4 ファイルの sha256）を決める。`app/scripts/fetch-core-plugins.mjs`（`predev`・`prebuild` で動く）が GitHub のリリースから取り、sha256 と manifest を照合して `app/public/core-plugins/<id>/` に置く（取得のキャッシュは `app/.cache/`。どちらも Git には入れない）。
+- 読み込みは `lib/plugins/host.svelte.ts` の `wanted()`。コアは利用者の設定でオフにできず、同じ ID の配布・開発用のものより優先する。
+- 「ファイル」は、コアの fixplor が読めれば、その view を使う（`lib/coreFiles.svelte.ts`）。読めなければ内蔵の `FileExplorer` のまま。
+- 詳しくは [proposals/core-plugins.md](../proposals/core-plugins.md)。
+
 ## エクスプローラー（共有フォルダの画面）
 
 共有フォルダを見る画面（一覧・選択・コピー／移動・ゴミ箱・名前の変更・プロパティ）と、その決まり・状態は、共有パッケージ **[@3pino/explorer-kit](https://github.com/3pino/explorer-kit)** にある。
