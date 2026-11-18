@@ -88,7 +88,7 @@
     </div>
   {:else if ui.panel?.kind === 'plugin'}
     <!-- プラグインの view。枠は同じ -->
-    <div class="shell-panel">
+    <div class="shell-panel" class:shell-panel-files={filesFull}>
       <PluginPanel plugin={ui.panel.plugin} view={ui.panel.view} sessionId={ui.panel.sessionId} />
     </div>
   {/if}
