@@ -4,7 +4,7 @@ import type { SharedTrashEntry } from '../protocol/SharedTrashEntry';
 import type { SharedApi } from '../transport/shared';
 import { PluginError, toPluginError } from './errors';
 import { parentOf } from '../sharedPath';
-import { readUrl } from '../explorer/urls';
+import { readUrl } from '../sharedUrls';
 
 /** manifest.json の permissions に入れると使える、共有フォルダの権限（disnans.Plugin の files） */
 export const PERMISSION_FILES = 'files';

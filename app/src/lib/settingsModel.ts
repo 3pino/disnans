@@ -14,7 +14,7 @@ import { DEFAULT_CALL_SETTINGS, JOIN_MODES, type JoinMode } from './call/pure';
 import { DEFAULT_ENTER_KEYS } from './enterKeys';
 import { DEFAULT_COMPOSER_MENU } from './composerMenu';
 import type { ScreenSettingsValue } from './call/screen/types';
-import { legacyExplorerDirs } from './explorerDirs';
+import { legacyExplorerDirs } from './legacyExplorer';
 
 export type Raw = Record<string, unknown>;
 

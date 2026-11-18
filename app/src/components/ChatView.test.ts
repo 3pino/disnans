@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
-import { EXPLORER_DRAG_TYPE } from '@3pino/explorer-kit';
+import { SHARED_DRAG_TYPE } from '../lib/sharedDrag';
 import ChatView from './ChatView.svelte';
 
 // Linux のネイティブのドロップ（パス）を、チャットの中で一番手前にあるものへ落としたときだけ添付する。
@@ -122,8 +122,8 @@ describe('HTML5 のドラッグ: エクスプローラーの内部のドラッ�
     return ev;
   };
 
-  it('OS のファイル（Files）は受ける。共有の部品のドラッグの印（EXPLORER_DRAG_TYPE）が付いていれば受けない', () => {
+  it('OS のファイル（Files）は受ける。共有の部品のドラッグの印（SHARED_DRAG_TYPE）が付いていれば受けない', () => {
     expect(dragOver(['Files']).defaultPrevented).toBe(true);
-    expect(dragOver(['Files', EXPLORER_DRAG_TYPE]).defaultPrevented).toBe(false);
+    expect(dragOver(['Files', SHARED_DRAG_TYPE]).defaultPrevented).toBe(false);
   });
 });

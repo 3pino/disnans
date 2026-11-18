@@ -5,6 +5,7 @@ disnans のプラグインを書くための型定義（ホスト API バージ�
 - `index.d.ts`: ホスト API の型。グローバルの `disnans` と、名前空間 `Disnans`（`Disnans.Session` など）を宣言する
 - 実行時のコードは入っていない。ホスト API の実体は disnans 本体がグローバルの `disnans` として用意する
 - v12 では `disnans.call.addButton({ ..., location: 'view' })` を使うと、ボタンを通話画面だけに表示できる（省略時は従来どおり通話バーと通話画面の両方）
+- v20 で `registerView(type, factory, { layout: 'full' })`（全画面の view）が加わりました。`ui.navItem` は、ナビへ自動では出なくなりました（コマンド。利用者がナビバーの設定で追加します）。内蔵の「ファイル」（`app:open-files`・`ui.openFiles`）は削除されました。
 - v19 で共有フォルダに `url`（同期・項目から）/ `upload`（進みと中止）/ `size` / `caps` / ゴミ箱を、`ui` に `navItem`（コマンドとして登録。ナビへは利用者が追加する）/ `openLightbox` / `renderPdfThumb` / `openSearch` / `clipboard` / `saveBlob` / `pickSharedFiles` / `osDrop` を、`toast` に操作（action）を、`disnans.chat.registerLinkOpener` と `session.onServerChange` を、セッションのない `registerView` / `openView(type)` を、`legacyData` を足した（削除・意味の変更はない）。`saveBlob` の Tauri は未対応（サーバーの URL は `download` を使う）。`app.platform`（読み取り）と、`clipboard` の `peek` / `textName` を足した
 - v18 で `ui` に `iconButton` / `section` / `statusLine` / `slider` / `menu` / `modal` を追加した（削除・意味の変更はない）。
 - v17 で画面のキャプチャ（`disnans.screenCapture`）とピクチャーインピクチャー（`disnans.pip`）を削除した。画面共有は本体の標準機能になった（→ [`docs/design/call-screen.md`](../../docs/design/call-screen.md)）。v16 の `callRelay` も同時に削除

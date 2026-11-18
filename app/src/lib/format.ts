@@ -1,10 +1,48 @@
-// 時刻・大きさ・名前の書き方。時刻と大きさ（formatTime・formatFull・formatStamp・formatSize）は、
-// エクスプローラーと同じものを使う（共有の部品 @3pino/explorer-kit の format）。
-import { startOfDay } from '@3pino/explorer-kit';
-
-export { formatTime, formatFull, formatStamp, formatSize } from '@3pino/explorer-kit';
+// 時刻・大きさ・名前の書き方。
+// 時刻と大きさ（formatTime・formatFull・formatStamp・formatSize）は、もとは共有の部品（@3pino/explorer-kit）から取っていた。
+// 内蔵のエクスプローラーを外したあとは、この端末の中で持つ（同じ書き方）。
 
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+const pad = (n: number): string => String(n).padStart(2, '0');
+
+/** その日の 0 時（この端末の時刻帯） */
+export function startOfDay(ts: number): number {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+export function formatTime(ts: number): string {
+  const d = new Date(ts);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function formatFull(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日(${WEEK[d.getDay()]}) ${formatTime(ts)}`;
+}
+
+/** 短い時刻（今日は時刻だけ、昨日は「昨日」、ほかは月/日。年が違えば年も） */
+export function formatStamp(ts: number, now: number): string {
+  const diff = Math.round((startOfDay(now) - startOfDay(ts)) / 86_400_000);
+  if (diff === 0) return formatTime(ts);
+  if (diff === 1) return `昨日 ${formatTime(ts)}`;
+  const d = new Date(ts);
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return `${sameYear ? '' : d.getFullYear() + '/'}${d.getMonth() + 1}/${d.getDate()} ${formatTime(ts)}`;
+}
+
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let v = bytes / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+}
 
 export function sameDay(a: number, b: number): boolean {
   return startOfDay(a) === startOfDay(b);

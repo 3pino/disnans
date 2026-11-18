@@ -1,8 +1,8 @@
 // 共有フォルダの項目の URL（一覧・拡大表示・サムネイルの共通）。見た目は持たない。
-import { fileUrl, sharedFileUrl } from '../config';
-import { isImage, isPdf } from '../fileLink';
+import { fileUrl, sharedFileUrl } from './config';
+import { isImage, isPdf } from './fileLink';
 import { PDF_THUMB_MAX_BYTES } from '@3pino/viewer-kit-web/viewers/pdfThumb';
-import type { SharedEntry } from '../protocol/SharedEntry';
+import type { SharedEntry } from './protocol/SharedEntry';
 
 export function href(e: SharedEntry): string {
   return sharedFileUrl(e.path);

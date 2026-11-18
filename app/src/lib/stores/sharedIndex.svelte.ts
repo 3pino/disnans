@@ -1,5 +1,5 @@
 import { SvelteSet } from 'svelte/reactivity';
-import { DirIndex, affects, type DirState } from '@3pino/explorer-kit';
+import { DirIndex, affects, type DirState } from './dirIndex.svelte';
 import type { SharedEntry } from '../protocol/SharedEntry';
 import { sharedApi } from '../transport/shared';
 import { HttpError } from '../transport/httpError';

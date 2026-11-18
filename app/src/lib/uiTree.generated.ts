@@ -754,11 +754,5 @@ export const NAV_ITEMS: readonly UiNavItem[] = [
     "label": "Search",
     "name": "メッセージを検索",
     "tui": true
-  },
-  {
-    "id": "app:open-files",
-    "label": null,
-    "name": "共有フォルダを開く",
-    "tui": false
   }
 ];

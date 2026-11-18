@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // API 19 の disnans.ui の口: 口が無い環境では unsupported、あれば本体へ渡す（値の確かめも）
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EXPLORER_DRAG_TYPE } from '@3pino/explorer-kit';
+import { SHARED_DRAG_TYPE } from '../sharedDrag';
 import { createUi, type UiDeps } from './ui';
 import { releaseAll } from './ui/mount';
 
@@ -24,7 +24,7 @@ describe('ui（API 19）: 口が無い環境', () => {
   });
 
   it('dragType は本体の探す型と同じ（後方互換）', () => {
-    expect(base().dragType).toBe(EXPLORER_DRAG_TYPE);
+    expect(base().dragType).toBe(SHARED_DRAG_TYPE);
   });
 });
 

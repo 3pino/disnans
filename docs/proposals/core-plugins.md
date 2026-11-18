@@ -1,6 +1,6 @@
 # コアプラグイン（エクスプローラーのプラグイン化）
 
-状態: **段 1（供給・ビルドの取得・切り替え）を実装。** 同梱の「ファイル」（fixplor）は `core-plugins.lock.json` の版を取って同梱し、読めれば内蔵のエクスプローラーの代わりに使う（内蔵のコードは次の版で外す）。fixplor を元にした進め方は [fixplor-independence.md](fixplor-independence.md)
+状態: **段 1（供給・ビルドの取得・切り替え）と、段 6（内蔵の削除）を実装。** 同梱の「ファイル」（fixplor）は `core-plugins.lock.json` の版を取って同梱する。内蔵のエクスプローラーは削除した（API 20）。fixplor が読めなければ「ファイル」の項目は出ない（フォールバックはない）。fixplor を元にした進め方は [fixplor-independence.md](fixplor-independence.md)
 
 ## 実装の状態（段 1）
 
@@ -11,7 +11,7 @@
 | 版の固定: `app/core-plugins.lock.json`（repo・tag・minApiVersion・manifest・4 ファイルの sha256） | 実装。現在は `plugin-fixplor-v0.1.0` |
 | 取得: `app/scripts/fetch-core-plugins.mjs`。GitHub のリリースから取り、sha256・SHA256SUMS・manifest を lock と照合。違えば失敗（何も置かない・キャッシュに書かない）。キャッシュ（`app/.cache/core-plugins`）がそろって一致すれば取りに行かない | 実装・試験 10 件（`npm run test:scripts`） |
 | `predev` / `prebuild` で取る（`npm run build`・`npm run dev`・Tauri の `beforeBuildCommand` / `beforeDevCommand` の経路） | 実装 |
-| 切り替え: fixplor が読めて view を登録できたら、ナビの「ファイル」（内蔵）を出さず、「ファイル」の画面を fixplor の view にする。読めなければ内蔵のまま（設定はない） | 実装・試験（フォールバック・切り替え・外れたとき） |
+| 切り替え: 内蔵の削除（API 20）。「ファイル」は fixplor の navItem（コマンド）と、全画面の view（`layout: 'full'`）だけ。読めなければ項目は出ない | 実装・試験（ナビの項目・全画面の view・旧い並びの読み替え） |
 | 本体の import を禁止する検査（ビルド後の main.js の import の許可リスト） | 未（段 1 の残り。fixplor の `check:plugin` が境界を見ている） |
 
 切り替えの対象（本体の「ファイル」の入口）: ナビの項目と、パレットの「共有フォルダを開く」（`app:open-files`）は、内蔵が出ているときだけ出す。`Shell` は `files` の表示を、読めていれば fixplor の view で出す。本文のファイルリンクの開き方は、プラグインの `registerLinkOpener` が引き受ける。Composer の添付には、ファイルの画面を開く入口はない（対象なし）。

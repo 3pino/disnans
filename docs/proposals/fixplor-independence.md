@@ -1,6 +1,6 @@
 # fixplor の切り離しと、エクスプローラーのプラグイン化
 
-状態: 方針（決定）。段 1〜5 完了・段 4 の一部（`Shell` の骨組み・設定の枠組み・Tauri 側の共有）と段 6 の後半（内蔵のコードの削除・`explorer-kit` の統合）が残り。v0.2.77 から、Disnans の「ファイル」は同梱の fixplor プラグインで動く（v0.2.79 時点）。決めたことと、まだ決めていないことは末尾。FEEDBACKS の「ファイルエクスプローラーを別のアプリとして切り出したい」に紐づく。
+状態: 方針（決定）。段 1〜6 完了（API 20 で内蔵のエクスプローラーを削除し、Disnans から `explorer-kit` の依存を外した）。段 4 の一部（`Shell` の骨組み・設定の枠組み・Tauri 側の共有）が残り。Disnans の「ファイル」は同梱の fixplor プラグインで動く。fixplor 側の全画面の対応（`layout: 'full'`）は fixplor 0.1.1 で入る。決めたことと、まだ決めていないことは末尾。FEEDBACKS の「ファイルエクスプローラーを別のアプリとして切り出したい」に紐づく。
 
 ## 目標と位置づけ
 
@@ -47,7 +47,7 @@
 | 3 | fixplor に WebDAV の置き場所を足す（Disnans の `/dav/` と、Basic 認証の一般の WebDAV の両方。下） | 完了（fixplor: Rust の WebDAV・Basic 認証と keyring・fixdav 中継。証明書の指紋の固定は未実装） |
 | 4 | アプリの土台を共有パッケージへ出す（下）。fixplor の手書きのコピーをなくす | ほぼ完了: `ui` 分割、`@3pino/app-kit-web` v0.2.0（core・shell・更新・OS のドロップ・設定の項目）、`@3pino/viewer-kit-web` v0.1.0（拡大表示・画像・PDF）。fixplor は app-kit-web・viewer-kit-web を使用中。残り: `Shell` の骨組み・設定の枠組み・Tauri 側の共有（設計メモのみ） |
 | 5 | プラグイン API を足し、fixplor のプラグインを作り、Disnans の組み込みのエクスプローラーと並べて、同じに動くことを確かめる | 完了（API 19。fixplor 0.1.0 を `plugin-fixplor-v0.1.0` で配布。実ホストの検査は fixplor の `check:host`（xvfb）と、Disnans の `nav-bar-check`。実機の確認は FEEDBACKS） |
-| 6 | 組み込みのエクスプローラーを標準のプラグインに置き換え、`explorer-kit` のリポジトリを fixplor に統合する | 切り替えは完了（v0.2.77。同梱の fixplor が読めれば、「ファイル」は fixplor の画面。読めなければ内蔵が自動で動く）。残り: 実機で問題が出ないことを見たうえで、内蔵のコードの削除と `explorer-kit` の統合（[core-plugins.md](core-plugins.md)） |
+| 6 | 組み込みのエクスプローラーを標準のプラグインに置き換え、`explorer-kit` のリポジトリを fixplor に統合する | 内蔵の削除は完了（API 20。「ファイル」は fixplor だけ。Disnans から `explorer-kit` の依存を外した）。残り: `explorer-kit` のリポジトリを fixplor に統合する（fixplor 側の作業）。実機の確認（[core-plugins.md](core-plugins.md)） |
 
 ## WebDAV の置き場所（段 3）
 
@@ -77,7 +77,7 @@
 
 ## プラグイン化に足りないこと（段 5。API 19 で入れた）
 
-（以下は設計時の整理。実装の結果は `docs/plugins/*` と SDK の `index.d.ts`。「ファイルの選択」「リンクの開き」は口を入れた。ナビバーへの入り方は、設計を変えて、コマンドとして登録し、利用者がナビバーの設定で足す方式にした。「ファイル」の入口は `app:open-files` で、プラグイン版は組み込みと同じ `files` パネルの種類で開く。）
+（以下は設計時の整理。実装の結果は `docs/plugins/*` と SDK の `index.d.ts`。「ファイルの選択」「リンクの開き」は口を入れた。ナビバーへの入り方は、設計を変えて、コマンドとして登録し、利用者がナビバーの設定で足す方式にした。「ファイル」の入口は、プラグインのナビの項目（コマンド）で、全画面の view（`layout: 'full'`、API 20）として開く。）
 
 `this.files` は、`list`・`stat`・`read`・`write`・`mkdir`・`remove`・`move`・`copy`・`onChange` を持っていて、`ExplorerApi` の大部分を賄える。足りないのは次のようなもの。
 
@@ -104,8 +104,7 @@
 ## まだ決めていないこと
 
 1. fixplor プラグインだけを新しくしたいとき、アプリのリリースなしで配る道（レジストリから、より新しい版を配る）を足すか。
-2. 内蔵のエクスプローラーのコードを消す時期（実機で問題がないことを見てから）。
-3. `explorer-kit` を fixplor に統合する時の形（npm workspace）。
+2. `explorer-kit` を fixplor に統合する時の形（npm workspace）。（内蔵のコードの削除は API 20 で済んだ）
 
 ## リスク
 

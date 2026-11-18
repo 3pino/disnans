@@ -269,7 +269,7 @@ await S('Page.navigate', { url: APP + '/' });
 await sleep(2500);
 if (process.env.TOUCH_DEBUG) console.log('ipc:', await evalJs('JSON.stringify([...new Set(window.__ipcLog)])'), 'unknown IPC:', await evalJs('JSON.stringify(window.__ipcUnknown)'), (await evalJs('document.body.innerText')).slice(0, 200));
 
-// 共有フォルダを開く。デスクトップはコマンドパレット（F2）から、Android はナビバーの項目から
+// 「ファイル」（コアプラグインの項目）を開く。デスクトップはコマンドパレット（F2）から、Android はナビバーの項目から
 if (IS_ANDROID) {
   for (let i = 0; i < 40 && !(await evalJs(`document.querySelectorAll('.nav-bar-item').length >= 3`)); i++) await sleep(250);
   const nav = await evalJs(`(()=>{const b=[...document.querySelectorAll('.app-nav-bar button, nav button')].find(x=>/共有フォルダ|Files|ファイル/i.test(x.textContent+x.getAttribute('aria-label'))); if(!b) return null; const r=b.getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`);
@@ -279,13 +279,13 @@ if (IS_ANDROID) {
   await S('Input.dispatchKeyEvent', { type: 'keyDown', key: 'F2', code: 'F2', windowsVirtualKeyCode: 113 });
   await S('Input.dispatchKeyEvent', { type: 'keyUp', key: 'F2', code: 'F2', windowsVirtualKeyCode: 113 });
   await sleep(400);
-  await S('Input.insertText', { text: '共有フォルダを開く' });
+  await S('Input.insertText', { text: 'ファイル' });
   await sleep(300);
   await S('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   await S('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   await sleep(900);
 }
-if (!(await evalJs(`!!document.querySelector('.shell-panel-files')`))) {
+if (!(await evalJs(`!!document.querySelector('.shell-panel-full')`))) {
   console.error('共有フォルダの画面が開けませんでした');
   process.exit(1);
 }
@@ -509,7 +509,7 @@ expect('名前を押すと、その行の名前が入力欄になる', (await ev
 await S('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
 await S('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
 await sleep(150);
-expect('Esc で入力欄が元の名前に戻る', (await evalJs(`!document.querySelector('.file-explorer-rename') && !!document.querySelector('.shell-panel-files')`)) === true);
+expect('Esc で入力欄が元の名前に戻る', (await evalJs(`!document.querySelector('.file-explorer-rename') && !!document.querySelector('.shell-panel-full')`)) === true);
 
 // トーストが出ている間も、≡ が押せる（トーストは上端に出る。本体は押せず、中のボタンだけ押せる）
 // 本物の通知を出す: 選択にフォルダを混ぜてコピーすると「フォルダはコピーできないので…」が出る

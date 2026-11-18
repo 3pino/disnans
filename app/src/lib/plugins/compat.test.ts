@@ -22,9 +22,15 @@ describe('API_CHANGES', () => {
 });
 
 describe('API v19（files.url・upload・size・ゴミ箱・ui.navItem・openLightbox など。追加だけ）', () => {
-  it('本体の版は 19。追加だけの版なので、削除・意味の変更の表には行を足さない', () => {
-    expect(API_VERSION).toBe(19);
+  it('本体の版は 20。v19 の表には行を足さない（追加の版は 20 の行で書く）', () => {
+    expect(API_VERSION).toBe(20);
     expect(API_CHANGES.some((c) => c.version === 19)).toBe(false);
+  });
+
+  it('20 は、ナビの項目の自動追加の廃止と layout: full（削除・意味の変更は表に書く）', () => {
+    const text = API_CHANGES.find((c) => c.version === 20)?.text ?? '';
+    expect(text).toContain('ui.navItem');
+    expect(text).toContain('layout: "full"');
   });
 
   it('v18 向けのプラグインに、v19 の警告は出ない', () => {

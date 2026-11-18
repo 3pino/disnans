@@ -6,8 +6,7 @@ import { setSettingsErrorHandler } from '../settingsModel';
 import type { User } from '../protocol/User';
 import type { LightboxItem } from '@3pino/viewer-kit-web/viewers/types';
 import { Shell, type ShellConfirm, type ShellToast } from '@3pino/app-kit-web/shell';
-import { forgetPanelIn, navBack, navBackDepth, navigate, normalizeNav, type NavMode, type NavState, type NavTab, type Panel, type SettingsSubpage } from '../navHistory';
-import { CORE_FILES_PLUGIN, CORE_FILES_VIEW } from '../plugins/core';
+import { forgetPanelIn, isFullPanel, navBack, navBackDepth, navigate, normalizeNav, type NavMode, type NavState, type NavTab, type Panel, type SettingsSubpage } from '../navHistory';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
@@ -168,19 +167,9 @@ class Ui {
     this.openPanel({ kind: 'timeline', id });
   }
 
-  /** 共有フォルダの中身を見るパネルを開く */
-  openFiles(): void {
-    this.openPanel({ kind: 'files' });
-  }
-
-  /** プラグインの view でセッションを開く */
-  openPluginView(plugin: string, view: string, sessionId: string | null): void {
-    // コアの「ファイル」は、本体の「ファイル」の画面（panel files）として開く（設定・通話などの規則を共有する）
-    if (plugin === CORE_FILES_PLUGIN && view === CORE_FILES_VIEW) {
-      this.openFiles();
-      return;
-    }
-    this.openPanel({ kind: 'plugin', plugin, view, sessionId });
+  /** プラグインの view でセッションを開く。full: 主の場所をぜんぶ使う（registerView の layout: 'full'） */
+  openPluginView(plugin: string, view: string, sessionId: string | null, full = false): void {
+    this.openPanel({ kind: 'plugin', plugin, view, sessionId, ...(full ? { full: true } : {}) });
   }
 
   /** メッセージ検索を始める（メインチャットを見せる。モバイルでパネルが開いていれば閉じる） */
@@ -218,12 +207,12 @@ class Ui {
    * タブが通話のままでも、エクスプローラーを開いていれば通話の画面は隠れる（Shell の shell-away）
    */
   get callScreenShown(): boolean {
-    return this.tab === 'call' && this.panel?.kind !== 'files';
+    return this.tab === 'call' && !isFullPanel(this.panel);
   }
 
   /** タブを開くとき、いまのパネルを閉じるか。広い画面のほかのパネルは残す。エクスプローラーは通話・設定と場所を取り合うので閉じる */
   private closesPanelOnTab(): boolean {
-    return !this.isMobile || this.panel?.kind === 'files';
+    return !this.isMobile || isFullPanel(this.panel);
   }
 
   /**
@@ -231,7 +220,7 @@ class Ui {
    * 通話のバーなどから開いたときは、戻ると元の画面へ（push）。ナビゲーションバーのタブから開いたときは reset
    */
   openCall(mode: NavMode = 'push'): void {
-    this.navigate({ tab: 'call', ...(this.isMobile || this.panel?.kind === 'files' ? { panel: null } : {}) }, mode);
+    this.navigate({ tab: 'call', ...(this.isMobile || isFullPanel(this.panel) ? { panel: null } : {}) }, mode);
   }
 
   /** 設定の中で、プラグインの設定画面を開く */

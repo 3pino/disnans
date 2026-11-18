@@ -84,10 +84,10 @@ export class PluginBase implements Disnans.Plugin {
   addIcon(name: string, svg: string): void {
     rt(this).addIcon(name, svg);
   }
-  registerView<S = unknown>(type: string, factory: (session: Disnans.Session<S>) => Disnans.View): void;
-  registerView(type: string, factory: (session: Disnans.Session<any> | null) => Disnans.View): void;
-  registerView(type: string, factory: (session: any) => Disnans.View): void {
-    rt(this).registerView(type, factory as ViewFactory);
+  registerView<S = unknown>(type: string, factory: (session: Disnans.Session<S>) => Disnans.View, options?: Disnans.ViewOptions): void;
+  registerView(type: string, factory: (session: Disnans.Session<any> | null) => Disnans.View, options?: Disnans.ViewOptions): void;
+  registerView(type: string, factory: (session: any) => Disnans.View, options?: Disnans.ViewOptions): void {
+    rt(this).registerView(type, factory as ViewFactory, options);
   }
   openView(type: string): void;
   openView<S = unknown>(type: string, session: Disnans.Session<S>): void;
@@ -148,6 +148,8 @@ export class PluginRuntime {
   readonly sessions: SessionsImpl;
   readonly files: PluginFiles;
   readonly views = new Map<string, ViewFactory>();
+  /** layout: 'full' の view の種類（API 20）。パネルを主の場所いっぱいに開く */
+  readonly fullViews = new Set<string>();
   cardRenderer: Disnans.CardRenderer | null = null;
   readonly settingTabs: Disnans.SettingTab[] = [];
   stopped = false;
@@ -488,13 +490,24 @@ export class PluginRuntime {
     this.register(off);
   }
 
-  registerView(type: string, factory: ViewFactory): void {
+  registerView(type: string, factory: ViewFactory, options?: Disnans.ViewOptions): void {
     if (this.stopped) return;
+    const layout = options?.layout;
+    if (layout !== undefined && layout !== 'full') throw new PluginError('invalid_argument', `registerView の layout は 'full' だけ指定できます`);
     this.views.set(type, factory);
+    if (layout === 'full') this.fullViews.add(type);
     this.register(() => {
-      if (this.views.get(type) === factory) this.views.delete(type);
+      if (this.views.get(type) === factory) {
+        this.views.delete(type);
+        this.fullViews.delete(type);
+      }
     });
     this.services.changed();
+  }
+
+  /** この view の種類が、全画面（layout: 'full'）として登録されているか */
+  isFullView(type: string): boolean {
+    return this.fullViews.has(type);
   }
 
   registerCardRenderer(render: Disnans.CardRenderer): void {

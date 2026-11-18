@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../call/instance.svelte', () => ({ callApi: {} }));
 
 import { EXPLORER_PLUGIN_ID, legacyTakenKey, PluginHost } from './host.svelte';
-import { LEGACY_EXPLORER_KEYS } from '../explorerDirs';
+import { LEGACY_EXPLORER_KEYS } from '../legacyExplorer';
 
 const legacyOf = (host: PluginHost, id: string) => (host as unknown as { legacyDataFor(id: string): unknown }).legacyDataFor(id);
 

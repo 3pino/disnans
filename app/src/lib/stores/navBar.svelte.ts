@@ -1,5 +1,6 @@
 import { prefs } from './prefs.svelte';
 import { DEFAULT_NAV_ITEMS, setNavLabel } from '../navBar';
+import { migrateLegacyNavItems, migrateLegacyNavLabels } from '../legacyNavIds';
 
 // ナビゲーションバーの項目と表示名（ユーザーごと。prefs に入れ、同じアカウントのデバイスで共有する）
 // 読むときはリアクティブ（prefs の値）。変えるときは prefs に保存する
@@ -7,12 +8,12 @@ import { DEFAULT_NAV_ITEMS, setNavLabel } from '../navBar';
 class NavBarStore {
   /** 並べている項目の ID（出さないものも含む。リアクティブ） */
   get items(): string[] {
-    return prefs.navBarItems;
+    return migrateLegacyNavItems(prefs.navBarItems);
   }
 
   /** 項目ごとの表示名（設定したものだけ。リアクティブ） */
   get labels(): Record<string, string> {
-    return prefs.navBarLabels;
+    return migrateLegacyNavLabels(prefs.navBarLabels);
   }
 
   /** 並びを変える */

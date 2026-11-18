@@ -9,7 +9,6 @@ import Search from '@lucide/svelte/icons/search';
 import SunMoon from '@lucide/svelte/icons/sun-moon';
 import ChevronsDown from '@lucide/svelte/icons/chevrons-down';
 import BookmarkCheck from '@lucide/svelte/icons/bookmark-check';
-import FolderOpen from '@lucide/svelte/icons/folder-open';
 import {
   APP_COMMAND_PREFIX,
   commandForKey,
@@ -21,7 +20,6 @@ import {
   type CommandVia,
 } from './commands.svelte';
 import { isAndroid } from './platform';
-import { NAV_FILES_ID } from './navBar';
 import { prefs } from './stores/prefs.svelte';
 import { cameraRequest } from './stores/cameraRequest.svelte';
 import { attachPanel } from './stores/attachPanel.svelte';
@@ -31,14 +29,9 @@ import { ui } from './stores/ui.svelte';
 import { callCommands } from './call/commands';
 import { startCall } from './call/instance.svelte';
 import { jumpToFirstUnread, jumpToNextUnread } from './unreadNav';
-import { explorerSelection } from './stores/explorerSelection.svelte';
-import SquareX from '@lucide/svelte/icons/square-x';
 
 /** コマンドパレットを開くコマンド（設定の説明にも使う） */
 export const PALETTE_COMMAND_ID = `${APP_COMMAND_PREFIX}command-palette`;
-
-/** 共有フォルダの選択モードを解除するコマンド（既定は Esc） */
-export const EXPLORER_CLEAR_SELECTION_ID = `${APP_COMMAND_PREFIX}explorer-clear-selection`;
 
 /** コマンドパレット・ホットキーの記録の状態 */
 class CommandHost {
@@ -114,22 +107,6 @@ function builtinCommands(host: CommandHost): AppCommand[] {
       run: () => {
         host.paletteOpen = !host.paletteOpen;
       },
-    },
-    {
-      id: EXPLORER_CLEAR_SELECTION_ID,
-      name: '共有フォルダの選択モードを解除',
-      icon: SquareX,
-      defaultHotkey: 'Escape',
-      // 選択モードの間だけ。拡大表示・ダイアログ・メニューが開いていれば、そちらの Esc（閉じる）に任せる
-      when: () => explorerSelection.showing && !ui.lightbox && !ui.confirmReq && !document.querySelector('[aria-modal="true"], [role="menu"]'),
-      run: () => explorerSelection.clear(),
-    },
-    {
-      id: NAV_FILES_ID,
-      name: '共有フォルダを開く',
-      icon: FolderOpen,
-      description: '共有フォルダの中身を見る',
-      run: () => ui.openFiles(),
     },
     {
       id: id('take-photo'),

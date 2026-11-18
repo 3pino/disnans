@@ -10,16 +10,13 @@ export const NAV_SETTINGS_ID = 'app:open-settings';
 export const NAV_CALL_ID = 'app:call-open';
 /** 検索（コマンドとして登録される。既定の表示名は Search） */
 export const NAV_SEARCH_ID = 'app:search';
-/** 共有フォルダを開く（コマンド。開いている間はこの項目が選ばれる） */
-export const NAV_FILES_ID = 'app:open-files';
-
 /**
- * ナビバーで選んでいる項目（いま全部の場所を使っている画面に合わせる）。
- * 共有フォルダのパネルが開いているときはその項目、そのほかはタブ（チャット・設定・通話）の項目。
- * プラグインの項目は画面を持たないので、選ばれない（押すと、そのコマンドを実行するだけ）
+ * ナビバーで選んでいる項目。
+ * 開いている view を、その view を開くコマンド（ui.navItem で登録したもの）が持っていれば、その項目が選ばれる（viewCommand）。
+ * そのほかはタブ（チャット・設定・通話）の項目
  */
-export function navActiveId(state: { tab: string; panel: string | null }): string {
-  if (state.panel === 'files') return NAV_FILES_ID;
+export function navActiveId(state: { tab: string; viewCommand?: string | null }): string {
+  if (state.viewCommand) return state.viewCommand;
   if (state.tab === 'settings') return NAV_SETTINGS_ID;
   if (state.tab === 'call') return NAV_CALL_ID;
   return NAV_CHAT_ID;

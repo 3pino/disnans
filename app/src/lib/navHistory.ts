@@ -3,13 +3,20 @@
 // 履歴が尽きたら、いまの状態から1段ずつ閉じる（検索 → パネル → 設定のサブページ → チャット以外のタブ）。
 // チャットのトップで何も開いていなければ、戻る先はない（Android ではアプリが裏に回る）
 
-/** 右側のパネル（モバイルでは全画面）。返信のツリー、メッセージの集合（timeline。lib/stores/timelinePanel.svelte.ts）、プラグインの view */
+/**
+ * 右側のパネル（モバイルでは全画面）。返信のツリー、メッセージの集合（timeline。lib/stores/timelinePanel.svelte.ts）、プラグインの view。
+ * プラグインの view の full は、registerView の layout: 'full'（API 20）。チャット・設定・通話の代わりに、主の場所をぜんぶ使う（ナビバーは残す）
+ */
 export type Panel =
   | { kind: 'replyTree'; messageId: string }
   | { kind: 'timeline'; id: number }
-  | { kind: 'files' }
-  | { kind: 'plugin'; plugin: string; view: string; sessionId: string | null }
+  | { kind: 'plugin'; plugin: string; view: string; sessionId: string | null; full?: boolean }
   | null;
+
+/** 主の場所をぜんぶ使うパネルか（全画面の plugin view）。チャット・設定・通話は隠れ、ナビバーは出し続ける */
+export function isFullPanel(p: Panel): boolean {
+  return p?.kind === 'plugin' && p.full === true;
+}
 
 /** 設定の中のサブページ（一覧の代わりに出す）。入力欄のキー・ホットキー・ナビゲーションバー・＋メニュー・通話 */
 export type SettingsSubpage = 'enterKeys' | 'hotkeys' | 'navBar' | 'composerMenu' | 'call' | 'devices';
@@ -56,8 +63,6 @@ export function samePanel(a: Panel, b: Panel): boolean {
       return a.messageId === (b as typeof a).messageId;
     case 'timeline':
       return a.id === (b as typeof a).id;
-    case 'files':
-      return true;
     case 'plugin': {
       const o = b as typeof a;
       return a.plugin === o.plugin && a.view === o.view && a.sessionId === o.sessionId;

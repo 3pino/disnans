@@ -58,7 +58,8 @@
 - 15: 共有フォルダ `this.files`
 - 17: 追加はなし（画面のキャプチャの削除のみ。上の表）
 - 18: `ui` に `iconButton` / `section` / `statusLine` / `slider` / `menu` / `modal`（削除・意味の変更はなし）
-- 19: 共有フォルダの `url`（同期・項目から）/ `upload` / `size` / `caps` / ゴミ箱（`trashList` / `trash` / `restore` / `purge`）、`ui` の `navItem`（ナビへ自動で出る）/ `openLightbox` / `renderPdfThumb` / `openSearch` / `clipboard` / `saveBlob`（ブラウザーのみ）/ `download` / `interceptDownload` / `clipboard` の `peek`・`textName`、`pickSharedFiles` / `osDrop` / `toast` の操作、`disnans.app.platform`（読み取り）、`disnans.chat.registerLinkOpener`、セッションのない `registerView` と `openView(type)`、`legacyData`、`disnans.session.onServerChange`（削除・意味の変更はなし）
+- 20: `registerView(type, factory, { layout: 'full' })`（全画面の view）。`ui.navItem` は、ナビへ自動で出なくなった（コマンド。利用者がナビバーの設定で追加する）。内蔵の「ファイル」の画面と `app:open-files` は削除（共有フォルダの画面はプラグインの仕事）。`minApiVersion` 20 のプラグインは、この版の本体で読めます
+- 19: 共有フォルダの `url`（同期・項目から）/ `upload` / `size` / `caps` / ゴミ箱（`trashList` / `trash` / `restore` / `purge`）、`ui` の `navItem`（コマンドとして登録。ナビへは利用者が追加する。20 で自動追加をやめた）/ `openLightbox` / `renderPdfThumb` / `openSearch` / `clipboard` / `saveBlob`（ブラウザーのみ）/ `download` / `interceptDownload` / `clipboard` の `peek`・`textName`、`pickSharedFiles` / `osDrop` / `toast` の操作、`disnans.app.platform`（読み取り）、`disnans.chat.registerLinkOpener`、セッションのない `registerView` と `openView(type)`、`legacyData`、`disnans.session.onServerChange`（削除・意味の変更はなし）
 
 ## 注意点
 

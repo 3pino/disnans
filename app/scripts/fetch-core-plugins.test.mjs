@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { apiVersionOf, fetchCorePlugins, FILE_NAMES, parseSums, sha256, validateLock } from './fetch-core-plugins.mjs';
+import { apiVersionOf, fetchCorePlugins, FILE_NAMES, localDirsFromEnv, parseSums, sha256, validateLock } from './fetch-core-plugins.mjs';
 
 const REPO = 'x/fixplor';
 const TAG = 'plugin-fixplor-v0.1.0';
@@ -212,4 +212,46 @@ test('API_VERSION は本体の定義を文字で読む / SHA256SUMS の行を読
   const s = parseSums(`${'a'.repeat(64)}  main.js\n${'b'.repeat(64)} *icon.svg\n`);
   assert.equal(s['main.js'], 'a'.repeat(64));
   assert.equal(s['icon.svg'], 'b'.repeat(64));
+});
+
+test('開発用の上書き: フォルダの 4 ファイルを使い、lock の sha256・manifest は確かめない・キャッシュにも書かない', async () => {
+  const rel = release();
+  const gh = await fakeGithub(rel);
+  const d = dirs();
+  const local = join(d.root, 'local');
+  mkdirSync(local, { recursive: true });
+  // lock と違う中身（sha が合わない）でも、上書きならそのまま使う
+  for (const n of FILE_NAMES) writeFileSync(join(local, n), n === 'main.js' ? 'export default class { /* local */ }' : rel[n]);
+  const logs = [];
+  try {
+    const ids = await fetchCorePlugins({
+      lock: lockOf(rel),
+      apiVersion: 19,
+      outDir: d.out,
+      cacheDir: d.cache,
+      baseUrl: gh.base,
+      fetchImpl: fetch,
+      localDirs: { fixplor: local },
+      log: (t) => logs.push(t),
+    });
+    assert.deepEqual(ids, ['fixplor']);
+    assert.equal(readFileSync(join(d.out, 'fixplor', 'main.js')).toString(), 'export default class { /* local */ }');
+    assert.equal(gh.hits.n, 0, '上書きのときは取りに行かない');
+    assert.equal(existsSync(join(d.cache, 'fixplor')), false, 'キャッシュに書かない');
+    assert.ok(logs.some((t) => t.startsWith('!!') && t.includes('開発用の上書き')));
+  } finally {
+    await gh.close();
+    rmSync(d.root, { recursive: true, force: true });
+  }
+});
+
+test('開発用の上書きの環境変数: id ごとのフォルダを読む。lock に無い id・CI での使用は失敗', () => {
+  const lock = lockOf(release());
+  assert.deepEqual(localDirsFromEnv({ DISNANS_CORE_PLUGIN_DIR_fixplor: '/x/y', PATH: '/bin' }, lock), { fixplor: '/x/y' });
+  assert.deepEqual(localDirsFromEnv({ DISNANS_CORE_PLUGIN_DIR_fixplor: '' }, lock), {}, '空は無し扱い');
+  assert.deepEqual(localDirsFromEnv({}, lock), {});
+  assert.throws(() => localDirsFromEnv({ DISNANS_CORE_PLUGIN_DIR_nope: '/x' }, lock), /に無い id/);
+  assert.throws(() => localDirsFromEnv({ DISNANS_CORE_PLUGIN_DIR_fixplor: '/x', CI: 'true' }, lock), /CI では使えません/);
+  // CI でも、上書きを使わないなら普通に動く
+  assert.deepEqual(localDirsFromEnv({ CI: 'true' }, lock), {});
 });

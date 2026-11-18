@@ -10,6 +10,7 @@ export const API_CHANGES: readonly { version: number; text: string }[] = [
   { version: 13, text: 'スレッドの API が削除されました' },
   { version: 14, text: 'エラーの形が変わりました（disnans.PluginError と code）' },
   { version: 17, text: '画面のキャプチャ（disnans.screenCapture）とピクチャーインピクチャー（disnans.pip）が削除されました（画面共有は本体の機能です）' },
+  { version: 20, text: 'ui.navItem の項目は、ナビに自動では出なくなりました（コマンドとして登録され、利用者がナビバーの設定で追加します）。registerView に layout: "full"（全画面の view）が加わりました' },
 ];
 
 /** プラグインの対象の版（apiVersion があればそれ、なければ minApiVersion） */

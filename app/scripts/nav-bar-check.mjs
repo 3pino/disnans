@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // 回帰の検査（モバイル・DOM だけで）: コアの「ファイル」（fixplor の view）を開いても、ナビバー（#nav-bar）は画面の下に出たままで、
 // パネルはその上に収まること。ページの中へストアを import しない（画面の見えるものだけを読む）。
-// 「共有フォルダを開く」は、利用者がナビバーに追加した状態で試す（既定の並びには入らない）。
+// 「ファイル」（コアプラグインの navItem コマンド）は、利用者がナビバーに追加した状態で試す（既定の並びには入らない）。
+// 保存された並びには旧い ID（app:open-files）を入れておく（一度きりの読み替えも通す）。
 // 使い方（先に npm run dev）: CHROME_BIN=<chromium> DISNANS_URL=http://127.0.0.1:5173 node scripts/nav-bar-check.mjs
 // 起動したプロセス（Chromium と仮のサーバー）だけを止める。終了コードは 0（全部通った）か 1。
 import assert from 'node:assert/strict';
@@ -105,7 +106,7 @@ try {
   // 起動（チャットの画面が出て、ナビバーがある）
   await waitFor(`document.querySelector('#nav-bar')`, 15000, 'ナビバー');
   // コアの「ファイル」の項目（ナビの「共有フォルダを開く」の一つ。内蔵は隠れる）が出るまで
-  await waitFor(`[...document.querySelectorAll('#nav-bar button')].some((b) => b.textContent.includes('共有フォルダ'))`, 20000, 'ナビの「共有フォルダを開く」');
+  await waitFor(`[...document.querySelectorAll('#nav-bar button')].some((b) => b.textContent.includes('ファイル'))`, 20000, 'ナビの「ファイル」');
   await sleep(300);
 
   // 画面の幾何（DOM だけ）
@@ -158,17 +159,17 @@ try {
 
   await check('起動直後（チャット）: ナビバーが画面の下にあり、覆われていない', async () => navAtBottom(await geo(), 'チャット'));
 
-  await check('ナビの「共有フォルダを開く」を実際に押す: ナビは下、ファイルの枠、ヘッダー（戻る・閉じる）は出ない、先頭の行は本体の .top-bar', async () => {
-    await tapEl(navBtn('共有フォルダ'), 'ナビの「共有フォルダを開く」');
-    await waitFor(`document.querySelector('.shell-panel.shell-panel-files')`, 8000, 'コアの「ファイル」の枠');
-    await waitFor(`document.querySelector('.shell-panel-files .file-explorer, .shell-panel-files .top-bar')`, 8000, 'ファイルの中身');
+  await check('ナビの「ファイル」を実際に押す: ナビは下、ファイルの枠、ヘッダー（戻る・閉じる）は出ない、先頭の行は本体の .top-bar', async () => {
+    await tapEl(navBtn('ファイル'), 'ナビの「ファイル」');
+    await waitFor(`document.querySelector('.shell-panel.shell-panel-full')`, 8000, 'コアの「ファイル」の枠');
+    await waitFor(`document.querySelector('.shell-panel-full .top-bar')`, 8000, 'ファイルの中身');
     await sleep(300);
     const g = await geo();
     navAtBottom(g, 'ファイル');
     panelAboveNav(g, 'ファイル');
     assert.equal(await evaluate(`!!document.querySelector('.plugin-panel-header')`), false, 'プラグインのヘッダー（戻る・閉じる）が出ている');
-    assert.equal(await evaluate(`!!document.querySelector('.shell-panel-files .plugin-panel-back, .shell-panel-files .plugin-panel-close')`), false);
-    const top = await evaluate(`(() => { const p = document.querySelector('.shell-panel-files'); const t = p.querySelector('.top-bar'); if (!t) return null; return t.getBoundingClientRect().top - p.getBoundingClientRect().top; })()`);
+    assert.equal(await evaluate(`!!document.querySelector('.shell-panel-full .plugin-panel-back, .shell-panel-full .plugin-panel-close')`), false);
+    const top = await evaluate(`(() => { const p = document.querySelector('.shell-panel-full'); const t = p.querySelector('.top-bar'); if (!t) return null; return t.getBoundingClientRect().top - p.getBoundingClientRect().top; })()`);
     assert.ok(top !== null, '.top-bar がない');
     assert.ok(Math.abs(top) < 2, `先頭の行が .top-bar でない（パネルの上端から ${top}px）`);
     // 安全域は .top-bar だけが取る（パネルの上端と .top-bar の上端が一致＝二重に取らない・空白を先に置かない）
@@ -176,27 +177,27 @@ try {
     if (inset > 0) {
       assert.ok(top >= 0 && top < 2, `ノッチの分（${inset}px）が二重か、先頭に空白がある`);
       // 安全域は .top-bar の中（上の余白）が取る。内容は安全域の下から始まる
-      const padTop = await evaluate(`parseFloat(getComputedStyle(document.querySelector('.shell-panel-files .top-bar')).paddingTop) || 0`);
+      const padTop = await evaluate(`parseFloat(getComputedStyle(document.querySelector('.shell-panel-full .top-bar')).paddingTop) || 0`);
       assert.ok(padTop >= inset - 1, `.top-bar が安全域を取っていない（padding-top ${padTop}px < ${inset}px）`);
     }
     console.log(`    （安全域 env(safe-area-inset-top) = ${inset}px${inset > 0 ? '' : '。この Chromium では模せない。構造だけを検査'}）`);
-    assert.ok(g.selected.some((t) => t.includes('共有フォルダ')), `選ばれている項目が共有フォルダではない: ${g.selected.join(' / ')}`);
+    assert.ok(g.selected.some((t) => t.includes('ファイル')), `選ばれている項目がファイルではない: ${g.selected.join(' / ')}`);
   });
 
   await check('ファイルを開いたまま「Settings」を押す: 設定が出て、ナビは下のまま', async () => {
     await tapEl(navBtn('Settings'), 'ナビの Settings');
-    await waitFor(`!document.querySelector('.shell-panel.shell-panel-files')`, 8000, 'ファイルの枠が閉じる');
+    await waitFor(`!document.querySelector('.shell-panel.shell-panel-full')`, 8000, 'ファイルの枠が閉じる');
     await waitFor(`document.querySelector('.shell-settings') && document.querySelector('.shell-settings').getBoundingClientRect().height > 0`, 8000, '設定の画面');
     navAtBottom(await geo(), '設定');
     assert.ok((await selectedNav()).some((t) => t.includes('Settings')), `設定が選ばれていない: ${(await selectedNav()).join(' / ')}`);
   });
 
   await check('設定から「ファイル」を押し直す → 開き、「Chat」でチャットへ戻る → 毎回ナビは下', async () => {
-    await tapEl(navBtn('共有フォルダ'), 'ナビの「共有フォルダを開く」（再）');
-    await waitFor(`document.querySelector('.shell-panel.shell-panel-files')`, 8000, '再度の「ファイル」');
+    await tapEl(navBtn('ファイル'), 'ナビの「ファイル」（再）');
+    await waitFor(`document.querySelector('.shell-panel.shell-panel-full')`, 8000, '再度の「ファイル」');
     navAtBottom(await geo(), 'ファイル（再）');
     await tapEl(navBtn('Chat'), 'ナビの Chat');
-    await waitFor(`!document.querySelector('.shell-panel.shell-panel-files')`, 8000, 'チャットへ戻る');
+    await waitFor(`!document.querySelector('.shell-panel.shell-panel-full')`, 8000, 'チャットへ戻る');
     navAtBottom(await geo(), 'チャットへ戻った後');
   });
 
@@ -204,8 +205,8 @@ try {
     await S('Emulation.setDeviceMetricsOverride', { width: 1100, height: 800, deviceScaleFactor: 1, mobile: false });
     await S('Emulation.setTouchEmulationEnabled', { enabled: false });
     await sleep(400);
-    await evaluate(`(() => { const b = [...document.querySelectorAll('.nav-bar-side button')].find((x) => x.textContent.includes('共有フォルダ')); b?.click(); return !!b; })()`);
-    await waitFor(`document.querySelector('.shell-panel.shell-panel-files')`, 8000, 'デスクトップの「ファイル」');
+    await evaluate(`(() => { const b = [...document.querySelectorAll('.nav-bar-side button')].find((x) => x.textContent.includes('ファイル')); b?.click(); return !!b; })()`);
+    await waitFor(`document.querySelector('.shell-panel.shell-panel-full')`, 8000, 'デスクトップの「ファイル」');
     await sleep(300);
     const g = await geo();
     assert.ok(g.nav.left < 4, `ナビバーが左にない（left ${g.nav.left}）`);

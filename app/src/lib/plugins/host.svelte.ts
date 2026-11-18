@@ -43,11 +43,10 @@ import { mountPdfThumb } from './ui/pdfThumb';
 import { setLinkOpener } from '../linkOpener.svelte';
 import { listenNativeDrop, listenOsDrop, osDropEntries, osDropRelease, dropRootsOf, entriesFromDropRoots } from '../dropFiles';
 import { pickSharedFiles } from './sharedPicker';
-import { legacyExplorerDirs } from '../explorerDirs';
+import { legacyExplorerDirs } from '../legacyExplorer';
 import type { UiDeps } from './ui';
-import { CORE_FILES_PLUGIN, CORE_FILES_VIEW, CORE_PLUGIN_IDS, coreManifest, coreSig, fetchCoreText, isCorePlugin } from './core';
+import { CORE_PLUGIN_IDS, coreManifest, coreSig, fetchCoreText, isCorePlugin } from './core';
 import { registerNavItemCommand } from './navItemCommand';
-import { coreFiles } from '../coreFiles.svelte';
 
 const DEV_POLL_MS = 1000;
 const DARK_QUERY = '(prefers-color-scheme: dark)';
@@ -176,7 +175,7 @@ export function hostPlatform(): { tauri: boolean; os: string; linuxDesktop: bool
 }
 
 /** 旧い保存先（explorerDirs）の取り込みの対象。コアの「ファイル」（fixplor）だけ */
-export const EXPLORER_PLUGIN_ID = CORE_FILES_PLUGIN;
+export const EXPLORER_PLUGIN_ID = 'fixplor';
 /** 旧い保存先を、そのプラグインが取り込んだ印（デバイスごと） */
 export function legacyTakenKey(pluginId: string): string {
   return `disnans.plugin.${pluginId}.legacyTaken`;
@@ -253,7 +252,7 @@ export class PluginHost {
     registerMessageAction,
     findMessage: (id) => client.findMessage(id),
     openTimeline: (spec) => timelinePanels.open(spec),
-    openPanel: (plugin, view, sessionId) => ui.openPluginView(plugin, view, sessionId),
+    openPanel: (plugin, view, sessionId) => ui.openPluginView(plugin, view, sessionId, this.runtime(plugin)?.isFullView(view) ?? false),
     openSettings: (plugin) => ui.openPluginSettings(plugin),
     // プラグインが閉じた view は、遷移の履歴からも外す（戻る操作で開き直さない）
     closePanel: (plugin) => ui.forgetPanel((p) => p.kind === 'plugin' && p.plugin === plugin),
@@ -294,7 +293,7 @@ export class PluginHost {
   openViewByType(type: string): boolean {
     for (const l of this.loaded.values()) {
       if (l.runtime.views.has(type)) {
-        ui.openPluginView(l.runtime.id, type, null);
+        ui.openPluginView(l.runtime.id, type, null, l.runtime.isFullView(type));
         return true;
       }
     }
@@ -771,10 +770,8 @@ export class PluginHost {
       this.fail(id, w.sig, `読み込みでエラー: ${errorMessage(e)}`);
       return;
     }
-    // 「ファイル」の切り替え（view が登録できたときだけ。読めなければ内蔵のまま）
-    if (id === CORE_FILES_PLUGIN) coreFiles.active = runtime.views.has(CORE_FILES_VIEW);
     this.rev++;
-    if (panel && runtime.views.has(panel.view) && !ui.panel) ui.openPluginView(panel.plugin, panel.view, panel.sessionId);
+    if (panel && runtime.views.has(panel.view) && !ui.panel) ui.openPluginView(panel.plugin, panel.view, panel.sessionId, runtime.isFullView(panel.view));
   }
 
   private unload(id: string): void {
@@ -783,7 +780,6 @@ export class PluginHost {
     this.loaded.delete(id);
     l.runtime.stop();
     l.style?.remove();
-    if (id === CORE_FILES_PLUGIN) coreFiles.active = false;
     // プラグインが開いたままのメニュー・モーダルを閉じる（disnans.ui は本体に 1 つで、持ち主を区別できないため、開いているものをすべて閉じる）
     cleanupPluginUi();
     this.rev++;
@@ -809,7 +805,7 @@ export class PluginHost {
   openCard(card: MessageCard): boolean {
     const view = this.cardView(card.plugin);
     if (!view) return false;
-    ui.openPluginView(card.plugin, view, card.session_id);
+    ui.openPluginView(card.plugin, view, card.session_id, this.runtime(card.plugin)?.isFullView(view) ?? false);
     return true;
   }
 

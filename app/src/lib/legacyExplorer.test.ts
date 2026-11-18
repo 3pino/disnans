@@ -1,17 +1,6 @@
-// フォルダごとの表示（explorerDirs）の純粋な部品のテスト。上限・並び・継承・旧い保存の読み替え。
+// 以前の内蔵のエクスプローラーの保存の読み替え（legacyExplorer）のテスト。上限・並び・旧い保存の読み替え。
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_DIR_VIEW,
-  EXPLORER_DIRS_MAX,
-  EXPLORER_DIRS_MAX_BYTES,
-  inheritedDirView,
-  legacyExplorerDirs,
-  parseDirViewMap,
-  withDirView,
-  type DirView,
-  type DirViewMap,
-} from './explorerDirs';
-import { parentOf } from './sharedPath';
+import { DEFAULT_DIR_VIEW, EXPLORER_DIRS_MAX, EXPLORER_DIRS_MAX_BYTES, legacyExplorerDirs, parseDirViewMap, type DirView, type DirViewMap } from './legacyExplorer';
 
 const GRID: DirView = { view: 'grid', sortKey: 'modified', sortOrder: 'desc' };
 
@@ -47,47 +36,6 @@ describe('parseDirViewMap（保存された値を読む）', () => {
   });
 });
 
-describe('withDirView（変えたものを最後に置き、上限に収める）', () => {
-  it('同じフォルダを変えると、そのフォルダが末尾に来る（元の map は変えない）', () => {
-    const base: DirViewMap = { a: DEFAULT_DIR_VIEW, b: DEFAULT_DIR_VIEW };
-    const next = withDirView(base, 'a', GRID);
-    expect(Object.keys(next)).toEqual(['b', 'a']);
-    expect(next.a).toEqual(GRID);
-    expect(base.a).toEqual(DEFAULT_DIR_VIEW);
-  });
-
-  it('件数の上限（200）を超えたら、いちばん古く変えたものを捨てる', () => {
-    let map: DirViewMap = {};
-    for (let i = 0; i < EXPLORER_DIRS_MAX; i++) map = withDirView(map, `d${i}`, DEFAULT_DIR_VIEW);
-    expect(Object.keys(map)).toHaveLength(EXPLORER_DIRS_MAX);
-    map = withDirView(map, 'new', GRID);
-    expect(Object.keys(map)).toHaveLength(EXPLORER_DIRS_MAX);
-    expect(map).not.toHaveProperty('d0');
-    expect(map).toHaveProperty('d1');
-    expect(map.new).toEqual(GRID);
-  });
-
-  it('大きさの上限（24 KiB）を超えたら、古いものから捨てて上限の内に収める', () => {
-    const long = 'x'.repeat(400);
-    let map: DirViewMap = {};
-    for (let i = 0; i < 150; i++) map = withDirView(map, `${long}${i}`, DEFAULT_DIR_VIEW);
-    expect(new TextEncoder().encode(JSON.stringify(map)).length).toBeLessThanOrEqual(EXPLORER_DIRS_MAX_BYTES);
-    expect(map).toHaveProperty(`${long}149`);
-    expect(map).not.toHaveProperty(`${long}0`);
-  });
-});
-
-describe('inheritedDirView（決めていないフォルダは、上のフォルダに従う）', () => {
-  it('いちばん近い上の設定。どこにも無ければ既定', () => {
-    const map: DirViewMap = { docs: GRID, '': { view: 'details', sortKey: 'size', sortOrder: 'asc' } };
-    expect(inheritedDirView(map, 'docs/a/b', parentOf)).toEqual(GRID);
-    expect(inheritedDirView(map, 'other', parentOf)).toEqual({ view: 'details', sortKey: 'size', sortOrder: 'asc' });
-    expect(inheritedDirView({}, 'x/y', parentOf)).toEqual(DEFAULT_DIR_VIEW);
-    // 名前が前方一致するだけのフォルダには効かない
-    expect(inheritedDirView({ docs: GRID }, 'docsx', parentOf)).toEqual(DEFAULT_DIR_VIEW);
-  });
-});
-
 describe('legacyExplorerDirs（以前の localStorage の読み替え）', () => {
   it('旧い一覧（disnans.explorer.dirs）が読めれば、それを使う', () => {
     const read = reader({ 'disnans.explorer.dirs': JSON.stringify({ a: GRID }) });
@@ -111,7 +59,7 @@ describe('大きさの予算（UTF-8 のバイト・長いパス・日本語の�
     const name = 'あ'.repeat(120); // 1 文字 3 バイト → 1 件 360 バイト超
     let map: DirViewMap = {};
     for (let i = 0; i < 200; i++) {
-      map = withDirView(map, `${name}${i}`, GRID);
+      map = parseDirViewMap({ ...map, [`${name}${i}`]: GRID });
       const bytes = new TextEncoder().encode(JSON.stringify(map)).length;
       expect(bytes).toBeLessThanOrEqual(EXPLORER_DIRS_MAX_BYTES);
       expect(Object.keys(map).length).toBeLessThanOrEqual(EXPLORER_DIRS_MAX);
@@ -123,7 +71,7 @@ describe('大きさの予算（UTF-8 のバイト・長いパス・日本語の�
 
   it('1 件だけでも大きさの上限を超えるものは覚えない（サーバーに送れない値を作らない）', () => {
     const huge = 'x'.repeat(EXPLORER_DIRS_MAX_BYTES * 2);
-    const map = withDirView({}, huge, DEFAULT_DIR_VIEW);
+    const map = parseDirViewMap({ [huge]: DEFAULT_DIR_VIEW });
     expect(map).toEqual({});
   });
 });

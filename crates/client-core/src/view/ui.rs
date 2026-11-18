@@ -580,7 +580,6 @@ pub const NAV_CHAT_ID: &str = "app:open-chat";
 pub const NAV_SETTINGS_ID: &str = "app:open-settings";
 pub const NAV_SEARCH_ID: &str = "app:search";
 pub const NAV_CALL_ID: &str = "app:call-open";
-pub const NAV_FILES_ID: &str = "app:open-files";
 
 pub const NAV_ITEMS: &[NavItem] = &[
     NavItem {
@@ -606,12 +605,6 @@ pub const NAV_ITEMS: &[NavItem] = &[
         label: Some("Search"),
         name: "メッセージを検索",
         tui: true,
-    },
-    NavItem {
-        id: NAV_FILES_ID,
-        label: None,
-        name: "共有フォルダを開く",
-        tui: false,
     },
 ];
 
@@ -783,7 +776,6 @@ mod tests {
         assert_eq!(nav_label(NAV_CHAT_ID, None, &labels), "会話");
         assert_eq!(nav_label(NAV_SETTINGS_ID, None, &labels), "設定を開く");
         assert_eq!(nav_label(NAV_SEARCH_ID, None, &labels), "Search");
-        assert_eq!(nav_label(NAV_FILES_ID, None, &labels), "共有フォルダを開く");
         assert_eq!(nav_label("dice:roll", Some("振る"), &labels), "振る");
         assert_eq!(nav_label("dice:roll", None, &labels), "dice:roll");
     }

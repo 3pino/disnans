@@ -237,7 +237,14 @@ await this.files.purge(trash[0].id);                                // 完全に
 - `session.onServerChange(cb)`（`disnans.session`）: 接続先のサーバーが変わったとき。サーバーの URL は見えません。旧サーバーの写しを捨てるために使います。解除関数を返します
 - `disnans.app.platform`: このデバイスの環境（読み取りのみ）。`{ tauri: boolean, os: 'windows' | 'linux' | 'android' | …（分からなければ空）, linuxDesktop: boolean }`
 - `disnans.chat.registerLinkOpener((path, alias) => …)`: 本文のファイルリンクの「開く」を、プラグインに任せます。1 つだけ（後から登録したものが勝ちます）。登録が無ければ、本体の既定（保存・拡大表示）のままです。解除関数を返します。プラグインを外すときに `this.register` で登録すると自動で外れます
-- 旧い保存先（`this.legacyData`）: 組み込みのエクスプローラーの以前の一覧の表示（`explorerDirs`）を、一度だけ引き継ぐための値です。プラグインが**最初に `saveData` するまで**入り、そのあとは `null` です。対象のプラグイン以外は常に `null` です
+- 旧い保存先（`this.legacyData`）: 以前の内蔵のエクスプローラーの一覧の表示（`explorerDirs`）を、一度だけ引き継ぐための値です（移行のための部品。次の版で外します）。プラグインが**最初に `saveData` するまで**入り、そのあとは `null` です。対象のプラグイン以外は常に `null` です
+
+### API 20 の追加
+
+- `registerView(type, factory, { layout: 'full' })`: 全画面の view（チャット・設定・通話の代わりに主の場所いっぱい。ナビバーは残る。見出しは出ない。上端の安全域は view が取る）。詳しくは [views.md](views.md#view)
+- `ui.navItem({ id, label, icon, view?, onOpen? })` は、ナビへ自動で出なくなりました。**コマンド**として登録され、パレットに出て、利用者がナビバーの設定で追加します。`view` を渡した項目は、その view を開いている間ナビで選ばれます。`badge` と `setBadge` は未対応です（出しません）
+- 内蔵の「ファイル」（`app:open-files`・`ui.openFiles`）は削除されました。「ファイル」は、同梱・配布のプラグインの仕事です（既定では、ナビに出ません。利用者が追加します）
+- `minApiVersion: 20` にすると、この版の本体が必要だと分かります（古い本体は読み込みません）
 
 ### セッションのない view
 

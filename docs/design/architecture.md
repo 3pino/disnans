@@ -22,25 +22,25 @@
 - プラグインの `disnans.ui`（`app/src/lib/plugins/ui.ts`）は、同じ Svelte の部品を **mount して**、できた DOM の要素を渡す。`ui/*.svelte` は、プラグインの引数（文字・要素・コールバック）を部品へ渡す薄い包み。`ui/mount.ts` が mount と後始末（画面から外れた要素の unmount、メニュー・モーダルの閉じ方。プラグインを外すときは `cleanupPluginUi`）、`ui/detachedEvents.ts` が、まだ document につながっていない要素でも押す・入力するが効くようにする（Svelte のイベントの委譲は、つながるまで受け手がいないため）。引数のエラーの種類と、トースト・確認・戻る・没入モードなど本体の機能は ui.ts がつなぐ
 - アプリごとに違うことは差し込み口で渡す: アプリのロゴ（`defineBuiltinIcon`。`lib/icons.svelte.ts`）、Android の振動（`setHaptics`。`lib/haptics.ts`）
 - 取り込み: `app/package.json` の依存（タグ指定）。ソースのまま配られるので、`app/vite.config.ts` で事前バンドルから外している（`optimizeDeps.exclude`）。更新は共有側でタグを打ち、依存のタグを更新する
-- エクスプローラーの部品（@3pino/explorer-kit）も、同じ UI 部品を使う（重複した写しは無い）
 
 ## コアプラグイン（同梱のプラグイン）
 
 - `app/core-plugins.lock.json` が、同梱するプラグインの版（リポジトリ・タグ・manifest・4 ファイルの sha256）を決める。`app/scripts/fetch-core-plugins.mjs`（`predev`・`prebuild` で動く）が GitHub のリリースから取り、sha256 と manifest を照合して `app/public/core-plugins/<id>/` に置く（取得のキャッシュは `app/.cache/`。どちらも Git には入れない）。
 - 読み込みは `lib/plugins/host.svelte.ts` の `wanted()`。コアは利用者の設定でオフにできず、同じ ID の配布・開発用のものより優先する。
-- 「ファイル」は、コアの fixplor が読めれば、その view を使う（`lib/coreFiles.svelte.ts`）。読めなければ内蔵の `FileExplorer` のまま。
+- 開発用の上書き: 環境変数 `DISNANS_CORE_PLUGIN_DIR_fixplor=<フォルダ>` を付けて `npm run dev` / `node scripts/fetch-core-plugins.mjs` すると、そのフォルダの 4 ファイルを同梱に使う（lock の sha256 は確かめない・キャッシュに書かない・警告を出す・CI では失敗する）。ローカルのプラグインの試験用。
+- 「ファイル」は、コアプラグインの fixplor（ナビの項目・全画面の view）。本体は fixplor を知らない（同じ口を使うほかのプラグインと同じ扱い）。
 - 詳しくは [proposals/core-plugins.md](../proposals/core-plugins.md)。
 
-## エクスプローラー（共有フォルダの画面）
+## 共有フォルダ（本体に残るもの）
 
-共有フォルダを見る画面（一覧・選択・コピー／移動・ゴミ箱・名前の変更・プロパティ）と、その決まり・状態は、共有パッケージ **[@3pino/explorer-kit](https://github.com/3pino/explorer-kit)** にある。
-部品は特定のアプリの言葉を持たない（ファイラーのアプリ fixplor も同じ部品を使う）。Disnans は「サーバーの共有フォルダ」という置き場所と、Disnans の言葉（共有フォルダ・添付・本文のリンクの注意）を渡して使う。
+共有フォルダを見る画面（一覧・選択・コピー／移動・ゴミ箱・プロパティ）は、**内蔵の画面を削除しました**（API 20）。今は同梱のプラグイン（fixplor）が、`this.files` の口で作ります。本体に残るのは、共有フォルダの機能を使う部分だけです。
 
-- 取り込み: `app/package.json` の依存（タグ指定）。TypeScript と Svelte のソースのまま配られるので、`app/vite.config.ts` で開発サーバーの事前バンドルから外している（`optimizeDeps.exclude`）
-- Disnans の実装を渡すところ: `app/src/lib/explorer/instance.ts`（置き場所 = `sharedApi`・項目の URL・共有フォルダの決まり `SHARED_RULES`（`specialDir` = `attachments`・文の `texts`）、本体から貸す機能 = 通知・確認・戻る・拡大表示・クリップボード・保存・OS からのドロップ）
-- `components/FileExplorer.svelte`・`FileProperties.svelte`・`SharedEntryActions.svelte` は、部品へそれを渡すだけの薄い包み。`lib/sharedOps.ts`・`sharedTransfer.ts`・`trashFolder.ts`・`fileExplorer.ts`・`explorerDirs.ts` と `lib/stores/explorer*.svelte.ts`・`fileExplorer.svelte.ts` は、部品を Disnans の決まりで呼ぶ入口（これまでと同じ名前で使える）
-- 画面の流れの試験は部品の側（explorer-kit の `FileExplorer.screen.test.ts`・`FileProperties.screen.test.ts`。メモリの中の偽の置き場所で確かめる）にある。Disnans の側の試験（`components/FileExplorer.test.ts`・`FileProperties.test.ts`・`lib/sharedOps.test.ts`）は、`instance.ts` が本物の `sharedApi`・`SHARED_RULES`・本体の機能へ正しくつながっていること（同名の確認・削除と取り消し・サーバーが変わったとき・添付の決まりと言葉・ゴミ箱の URL・OS のクリップボード・メッセージ検索）だけを確かめる
-- 更新: 共有側でタグを打ち、依存のタグを更新する
+- 置き場所と通信: `lib/transport/shared.ts`（`/api/shared`・`/api/shared-trash`・`/api/shared-size`）、`lib/sharedPath.ts`（パスの URL・親・名前）、`lib/sharedUrls.ts`（項目の読む URL。プラグインの `files.url` も使う）
+- 本文のファイルリンク・添付の一覧の写し: `lib/stores/sharedIndex.svelte.ts`（`lib/stores/dirIndex.svelte.ts` の `DirIndex` を使う）
+- プラグインへの口: `lib/plugins/files.ts`（`this.files`）、`lib/plugins/sharedPicker.ts` と `components/SharedPicker.svelte`（ファイルの選択）、`lib/linkOpener.svelte.ts`（本文のリンクを開く口）、`lib/dropFiles.ts`（OS からのドロップ）、`lib/sharedDrag.ts`（ドラッグの印の値）
+- 旧い保存（以前の内蔵の一覧の表示）の読み替え: `lib/legacyExplorer.ts`（移行の部品。削除してよいと書いてある。次の版で外す）
+- 共有の部品（`@3pino/explorer-kit`）の依存は、Disnans から消えました（`app/package.json` ・`vite.config.ts`）。fixplor の側は、fixplor の repo が持つ
+- 移行: 保存された並び（`app:open-files`）は、`lib/legacyNavIds.ts` が一度だけ `plugin-nav:fixplor:files` に読み替えます（削除してよい）
 
 ## 土台（@3pino/app-kit-web）と本体の画面の状態
 

@@ -78,6 +78,9 @@ export function fixtureScript({ server, ignored = Object.keys(IGNORED_IPC), plat
     'plugin:system-bars|set_style': () => null,
     'plugin:notifier|diag_log': () => null,
     'plugin:notifier|list_audio_outputs': () => ({ outputs: [], current: null }),
+    // 画面の取得（src/lib/media/nativeScreen.ts の addPluginListener）。イベントの購読だけを受ける（取得の開始・停止は呼ばれない）
+    'plugin:screen|register_listener': () => null,
+    'plugin:screen|remove_listener': () => null,
     'plugin:notifier|register_listener': ({ event, handler }) => { notifierListeners.set(handler.id, { event, handler }); return null; },
     'plugin:notifier|remove_listener': ({ channelId }) => { notifierListeners.delete(channelId); return null; },
     'plugin:notifier|native_call_snapshot': nativeSnapshot,

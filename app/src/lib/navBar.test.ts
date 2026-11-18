@@ -5,7 +5,6 @@ import {
   DEFAULT_NAV_LABELS,
   NAV_CALL_ID,
   NAV_CHAT_ID,
-  NAV_FILES_ID,
   navActiveId,
   NAV_REQUIRED_IDS,
   NAV_SEARCH_ID,
@@ -108,22 +107,19 @@ describe('navItemRemovable（削除モードの × で外せるか）', () => {
 });
 
 describe('navActiveId（ナビバーで選ぶ項目）', () => {
-  it('共有フォルダのパネルが開いているときは、その項目（タブに関係なく）', () => {
+  it('開いている view を開くコマンド（ui.navItem の view）があれば、その項目が選ばれる（タブに関係なく）', () => {
     for (const tab of ['chat', 'settings', 'call']) {
-      expect(navActiveId({ tab, panel: 'files' })).toBe(NAV_FILES_ID);
+      expect(navActiveId({ tab, viewCommand: 'plugin-nav:dice:roll' })).toBe('plugin-nav:dice:roll');
     }
   });
   it('パネルが無いときは、タブの項目（チャット・設定・通話）', () => {
-    expect(navActiveId({ tab: 'chat', panel: null })).toBe(NAV_CHAT_ID);
-    expect(navActiveId({ tab: 'settings', panel: null })).toBe(NAV_SETTINGS_ID);
-    expect(navActiveId({ tab: 'call', panel: null })).toBe(NAV_CALL_ID);
+    expect(navActiveId({ tab: 'chat' })).toBe(NAV_CHAT_ID);
+    expect(navActiveId({ tab: 'settings', viewCommand: null })).toBe(NAV_SETTINGS_ID);
+    expect(navActiveId({ tab: 'call' })).toBe(NAV_CALL_ID);
   });
-  it('ほかのパネル（タイムライン・プラグインの view）は選びは変えない（タブのまま）', () => {
-    expect(navActiveId({ tab: 'chat', panel: 'timeline' })).toBe(NAV_CHAT_ID);
-    expect(navActiveId({ tab: 'settings', panel: 'plugin' })).toBe(NAV_SETTINGS_ID);
-  });
-  it('共有フォルダのコマンドの ID は、ナビバーの項目の ID と同じ', () => {
-    expect(NAV_FILES_ID).toBe('app:open-files');
+  it('view を開くコマンドが無い view（タイムライン・ほかのプラグインの view）は選びは変えない（タブのまま）', () => {
+    expect(navActiveId({ tab: 'chat', viewCommand: null })).toBe(NAV_CHAT_ID);
+    expect(navActiveId({ tab: 'settings', viewCommand: undefined })).toBe(NAV_SETTINGS_ID);
   });
 });
 
@@ -134,10 +130,5 @@ describe('ui.navItem の項目（コマンド）は、自動では出ず、利�
   it('利用者が並びに追加すると出る', () => {
     const list = addNavItem([NAV_CHAT_ID, NAV_SETTINGS_ID], 'plugin-nav:dice:roll');
     expect(visibleNavItems(list, new Set(['plugin-nav:dice:roll']))).toContain('plugin-nav:dice:roll');
-  });
-  it('「共有フォルダを開く」（app:open-files）は、コマンドとして設定の対象になる（一つの入口）', () => {
-    const list = addNavItem([NAV_CHAT_ID, NAV_SETTINGS_ID], NAV_FILES_ID);
-    expect(visibleNavItems(list, new Set([NAV_FILES_ID]))).toContain(NAV_FILES_ID);
-    expect(navActiveId({ tab: 'chat', panel: 'files' })).toBe(NAV_FILES_ID);
   });
 });

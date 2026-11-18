@@ -40,12 +40,12 @@ afterEach(async () => {
 const callBarShown = () => document.querySelector('.top-slot .call-bar') !== null;
 const pluginBarShown = () => document.querySelector('.top-slot .plugin-status-stub') !== null;
 
-/** 画面の状態（タブとパネル）。エクスプローラーは、開いたときのタブを残す（ui.openFiles と同じ） */
-type Screen = 'chat' | 'settings' | 'call' | 'files-over-chat' | 'files-over-call';
-const SCREENS: Screen[] = ['chat', 'settings', 'call', 'files-over-chat', 'files-over-call'];
+/** 画面の状態（タブとパネル）。全画面の view（layout: full）は、開いたときのタブを残す */
+type Screen = 'chat' | 'settings' | 'call' | 'full-over-chat' | 'full-over-call';
+const SCREENS: Screen[] = ['chat', 'settings', 'call', 'full-over-chat', 'full-over-call'];
 function show(s: Screen): void {
-  ui.tab = s === 'settings' ? 'settings' : s === 'call' || s === 'files-over-call' ? 'call' : 'chat';
-  ui.panel = s.startsWith('files') ? { kind: 'files' } : null;
+  ui.tab = s === 'settings' ? 'settings' : s === 'call' || s === 'full-over-call' ? 'call' : 'chat';
+  ui.panel = s.startsWith('full') ? { kind: 'plugin', plugin: 'files', view: 'browse', sessionId: null, full: true } : null;
   flushSync();
 }
 
@@ -73,10 +73,10 @@ describe('上部の枠（通話のバー）は、画面が変わっても一貫�
     }
   });
 
-  it('通話のタブからエクスプローラーを開くと、通話のバーが出る（通話の画面は隠れている）', () => {
+  it('通話のタブから全画面の view を開くと、通話のバーが出る（通話の画面は隠れている）', () => {
     show('call');
     expect(callBarShown()).toBe(false);
-    ui.openFiles();
+    ui.openPluginView('files', 'browse', null, true);
     flushSync();
     expect(ui.tab).toBe('call');
     expect(callBarShown()).toBe(true);
@@ -91,10 +91,10 @@ describe('プラグインのステータス欄も、通話の画面が見えて�
     }
   });
 
-  it('通話のタブからエクスプローラーを開くと、通話の画面は隠れるので出す', () => {
+  it('通話のタブから全画面の view を開くと、通話の画面は隠れるので出す', () => {
     show('call');
     expect(pluginBarShown()).toBe(false);
-    ui.openFiles();
+    ui.openPluginView('files', 'browse', null, true);
     flushSync();
     expect(pluginBarShown()).toBe(true);
   });

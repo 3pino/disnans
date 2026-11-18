@@ -37,10 +37,4 @@ export async function fetchCoreText(id: string, name: string): Promise<string> {
   return res.text();
 }
 
-/** 本体の「ファイル」の代わりに使うコアプラグイン（読み込めたら、本体の内蔵の画面は出さない） */
-export const CORE_FILES_PLUGIN = 'fixplor';
-export const CORE_FILES_VIEW = 'fixplor';
-/**
- * コアが ui.navItem で登録しても、ナビの項目（コマンド）にしない ID。「ファイル」の入口は本体のコマンド「共有フォルダを開く」（app:open-files）だけ。
- */
-export const CORE_REPLACED_NAV_IDS: readonly string[] = [`${CORE_FILES_PLUGIN}:files`];
+

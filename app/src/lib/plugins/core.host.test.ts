@@ -31,8 +31,10 @@ vi.mock('./runtime', () => ({
 }));
 
 import { PluginHost } from './host.svelte';
-import { coreFiles } from '../coreFiles.svelte';
-import { CORE_FILES_PLUGIN, CORE_FILES_VIEW, CORE_PLUGIN_IDS, coreSig } from './core';
+import { CORE_PLUGIN_IDS, coreSig } from './core';
+
+/** 同梱の「ファイル」（fixplor）の ID（コアの一覧の検査に使う） */
+const CORE_FILES_PLUGIN = 'fixplor';
 
 const MAIN = 'export default class {}';
 const realFetch = globalThis.fetch;
@@ -42,14 +44,13 @@ const originalURL = URL.createObjectURL;
 
 beforeEach(() => {
   mocks.views.clear();
-  mocks.views.set(CORE_FILES_VIEW, () => ({}));
+  mocks.views.set(CORE_FILES_PLUGIN, () => ({}));
   mocks.start.mockClear();
   mocks.manifests.length = 0;
   mocks.stop.mockClear();
   mocks.startFails = false;
   mainOk = true;
   urls.length = 0;
-  coreFiles.active = false;
   localStorage.clear();
   // 同梱のファイルの取得（アプリの配信元から）
   globalThis.fetch = vi.fn(async (u: string | URL) => {
@@ -100,7 +101,6 @@ describe('コアプラグイン（同梱）', () => {
     const host = await reconcileWith();
     expect(internal(host).loaded.has(CORE_FILES_PLUGIN)).toBe(true);
     expect(urls.some((u) => u.endsWith(`/core-plugins/${CORE_FILES_PLUGIN}/main.js`))).toBe(true);
-    expect(coreFiles.active).toBe(true);
   });
 
   it('同じ ID のサーバー配布・開発用のものは読まない（コアが勝つ）', async () => {
@@ -133,20 +133,17 @@ describe('「ファイル」の切り替え（フォールバック）', () => {
     const host = await reconcileWith();
     expect(internal(host).loaded.has(CORE_FILES_PLUGIN)).toBe(false);
     expect(internal(host).errors[CORE_FILES_PLUGIN]).toMatch(/main\.js を読み込めません/);
-    expect(coreFiles.active).toBe(false);
   });
 
   it('読み込みでエラーになれば、内蔵のまま', async () => {
     mocks.startFails = true;
     const host = await reconcileWith();
     expect(internal(host).loaded.has(CORE_FILES_PLUGIN)).toBe(false);
-    expect(coreFiles.active).toBe(false);
   });
 
   it('view を登録しなければ、切り替えない（内蔵のまま）', async () => {
     mocks.views.clear();
     await reconcileWith();
-    expect(coreFiles.active).toBe(false);
   });
 
   it('権限は manifest のとおり（同梱は確認なしで付く）', async () => {
@@ -157,9 +154,7 @@ describe('「ファイル」の切り替え（フォールバック）', () => {
 
   it('外れたら（読み込みが止まったら）、切り替えも止まる', async () => {
     const host = await reconcileWith();
-    expect(coreFiles.active).toBe(true);
     internal(host).unload(CORE_FILES_PLUGIN);
-    expect(coreFiles.active).toBe(false);
     expect(mocks.stop).toHaveBeenCalled();
   });
 });

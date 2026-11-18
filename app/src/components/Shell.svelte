@@ -5,7 +5,6 @@
   import TimelinePanel from './TimelinePanel.svelte';
   import SettingsView from './SettingsView.svelte';
   import CallView from './CallView.svelte';
-  import FileExplorer from './FileExplorer.svelte';
   import PluginSettingsPage from './PluginSettingsPage.svelte';
   import ConnectionBanner from './ConnectionBanner.svelte';
   import NavBar from './NavBar.svelte';
@@ -14,8 +13,7 @@
   import ScreenShareOverlay from './ScreenShareOverlay.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
-  import { coreFiles } from '../lib/coreFiles.svelte';
-  import { CORE_FILES_PLUGIN, CORE_FILES_VIEW } from '../lib/plugins/core';
+  import { isFullPanel } from '../lib/navHistory';
 
   const panelOpen = $derived(ui.panel !== null);
   // チャットは Chat タブのときだけ。設定・通話はその場所を使う（どの幅でも同じ）
@@ -23,13 +21,12 @@
 
   // 設定（ホットキーなど）の読み込み・本体のコマンドの登録・ホットキーの受け付けを始める
   onMount(() => commandHost.start());
-  // ファイルエクスプローラーは、通話・設定と同じく、チャットや他の画面の代わりに全部の表示の場所を使う（どの幅でも）。
+  // 全画面の plugin view（registerView の layout: 'full'）は、通話・設定と同じく、チャットや他の画面の代わりに主の場所をぜんぶ使う（どの幅でも）。
   // 狭い画面では、ナビゲーションバーの上に収めてナビバーを出し続ける（重ならない）。
-  // 通話・設定・チャットは外さず、高さを 0 にして（広い画面では隠して）マウントしたままにする
-  // 「ファイル」（内蔵の画面、またはコアプラグインの view。コアは panel kind files で開く）
-  const filesFull = $derived(ui.panel?.kind === 'files');
-  // モバイルではパネルがチャットを覆う（エクスプローラーのときは、チャットは開いていても出さない）
-  const chatVisible = $derived(showChat && !(ui.isMobile && panelOpen) && !filesFull);
+  // チャット・設定・通話は外さず、高さを 0 にして（広い画面では隠して）マウントしたままにする
+  const fullView = $derived(isFullPanel(ui.panel));
+  // モバイルではパネルがチャットを覆う（全画面の view のときは、チャットは開いていても出さない）
+  const chatVisible = $derived(showChat && !(ui.isMobile && panelOpen) && !fullView);
 </script>
 
 {#snippet mainEmpty()}
@@ -42,15 +39,15 @@
 <div class="shell-root">
 <!-- 画面上部の共通の枠（通話のバー・プラグインのステータス欄）。どのタブでも一番上に出る -->
 <TopBarSlot />
-<div class="shell" class:shell-mobile={ui.isMobile} class:shell-with-panel={panelOpen && !filesFull} data-tab={ui.tab}>
-  <main id="main-chat" class="shell-main-chat" class:shell-main-chat-hidden={!showChat} class:shell-away={filesFull}>
+<div class="shell" class:shell-mobile={ui.isMobile} class:shell-with-panel={panelOpen && !fullView} data-tab={ui.tab}>
+  <main id="main-chat" class="shell-main-chat" class:shell-main-chat-hidden={!showChat} class:shell-away={fullView}>
     <header class="top-bar"></header>
     <ConnectionBanner />
     <ChatView placeholder="メッセージを送信" empty={mainEmpty} active={chatVisible} />
   </main>
 
   {#if ui.tab === 'settings'}
-    <div class="shell-settings" class:shell-away={filesFull}>
+    <div class="shell-settings" class:shell-away={fullView}>
       <!-- プラグインの設定画面は一覧の代わりに出す。一覧は隠すだけにして、戻ったときに元の位置へ戻せるようにする -->
       {#if ui.pluginSettings}
         <PluginSettingsPage id={ui.pluginSettings} />
@@ -60,7 +57,7 @@
   {/if}
 
   {#if ui.tab === 'call'}
-    <div class="shell-call" class:shell-away={filesFull}><CallView /></div>
+    <div class="shell-call" class:shell-away={fullView}><CallView /></div>
   {/if}
 
   {#if ui.panel?.kind === 'timeline'}
@@ -77,25 +74,22 @@
         <TimelinePanel tree={{ messageId: ui.panel.messageId }} />
       {/key}
     </div>
-  {:else if ui.panel?.kind === 'files'}
-    <!-- 共有フォルダの閲覧（通話・設定と同じく、ほかの表示の代わりに出す）。コアプラグインの「ファイル」が読めていれば、その view を出す -->
-    <div class="shell-panel shell-panel-files">
-      {#if coreFiles.active}
-        <!-- ヘッダーなし（上端の安全域は中の .top-bar が取る） -->
-        <PluginPanel plugin={CORE_FILES_PLUGIN} view={CORE_FILES_VIEW} sessionId={null} bare />
-      {:else}
-        <FileExplorer />
-      {/if}
-    </div>
   {:else if ui.panel?.kind === 'plugin'}
-    <!-- プラグインの view。枠は同じ -->
-    <div class="shell-panel">
-      <PluginPanel plugin={ui.panel.plugin} view={ui.panel.view} sessionId={ui.panel.sessionId} />
-    </div>
+    {#if fullView}
+      <!-- 全画面の view（layout: 'full'）。ヘッダーなし（上端の安全域は view の .top-bar が取る） -->
+      <div class="shell-panel shell-panel-full">
+        <PluginPanel plugin={ui.panel.plugin} view={ui.panel.view} sessionId={ui.panel.sessionId} bare />
+      </div>
+    {:else}
+      <!-- プラグインの view。枠は同じ -->
+      <div class="shell-panel">
+        <PluginPanel plugin={ui.panel.plugin} view={ui.panel.view} sessionId={ui.panel.sessionId} />
+      </div>
+    {/if}
   {/if}
 
   <!-- 狭い画面ではパネルが開いている間は出さない（下の横並びが覆われるため）。広い画面では左に縦に出し続ける -->
-  {#if !ui.isMobile || !panelOpen || filesFull}
+  {#if !ui.isMobile || !panelOpen || fullView}
     <NavBar />
   {/if}
 </div>
@@ -189,9 +183,9 @@
   .shell:not(.shell-mobile) .shell-away {
     display: none;
   }
-  /* エクスプローラーは、残りの場所（ナビバーの上、または広い画面の右側ぜんぶ）を使う。
+  /* 全画面の view は、残りの場所（ナビバーの上、または広い画面の右側ぜんぶ）を使う。
      チャットの上の枠（通話のバーなど）の下に出るので、上の安全域は中の上端の行（.top-bar）だけが取る（二重に取らない） */
-  .shell .shell-panel.shell-panel-files {
+  .shell .shell-panel.shell-panel-full {
     position: relative;
     inset: auto;
     z-index: auto;
@@ -199,7 +193,7 @@
     min-height: 0;
     animation: none;
   }
-  .shell-mobile .shell-panel.shell-panel-files {
+  .shell-mobile .shell-panel.shell-panel-full {
     padding-top: 0;
   }
   .shell-mobile .shell-panel {

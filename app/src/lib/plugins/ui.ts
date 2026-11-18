@@ -6,7 +6,7 @@
 import Divider from '@3pino/ui-kit-web/Divider.svelte';
 import Icon from '@3pino/ui-kit-web/Icon.svelte';
 import { PluginError } from './errors';
-import { EXPLORER_DRAG_TYPE } from '@3pino/explorer-kit';
+import { SHARED_DRAG_TYPE } from '../sharedDrag';
 import { mountElement, mountOverlay, releaseDetached } from './ui/mount';
 import PButton from './ui/PButton.svelte';
 import PIconButton from './ui/PIconButton.svelte';
@@ -559,6 +559,6 @@ export function createUi(deps: UiDeps): Disnans.Ui {
 
     osDrop: deps.osDrop ?? unsupportedOsDrop(),
 
-    dragType: EXPLORER_DRAG_TYPE,
+    dragType: SHARED_DRAG_TYPE,
   };
 }

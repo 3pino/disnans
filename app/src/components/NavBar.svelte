@@ -6,6 +6,7 @@
   import { commandList, findCommand } from '../lib/commands.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
   import { NAV_BUILTIN_IDS, NAV_CALL_ID, NAV_CHAT_ID, NAV_SETTINGS_ID, navActiveId, navItemLabel, visibleNavItems } from '../lib/navBar';
+  import { viewCommandOf } from '../lib/plugins/navItemCommand';
   import { navBar } from '../lib/stores/navBar.svelte';
   import { unread } from '../lib/stores/unread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -17,8 +18,8 @@
   // ほかのコマンド（プラグインなど）は押すとそのコマンドを実行する。
   // 選んでいる項目は、いま見せている画面（タブ）に合わせる
 
-  // 選んでいる項目（共有フォルダ・チャット・設定・通話のどれか。規則は lib/navBar.ts の navActiveId）
-  const current = $derived(navActiveId({ tab: ui.tab, panel: ui.panel?.kind ?? null }));
+  // 選んでいる項目（開いている view を開くコマンド、またはチャット・設定・通話のどれか。規則は lib/navBar.ts の navActiveId）
+  const current = $derived(navActiveId({ tab: ui.tab, viewCommand: ui.panel?.kind === 'plugin' ? viewCommandOf(ui.panel.view) : null }));
 
   /** 登録されている（出せる）コマンドの ID */
   const available = $derived(new Set(commandList().map((c) => c.id)));

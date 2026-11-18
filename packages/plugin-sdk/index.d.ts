@@ -308,12 +308,12 @@ declare global {
        * view の種類を登録する。type にプラグイン ID と同じ名前を使うと、カードをタップしたときにその view で開く。
        * 型引数 S でセッションの state の型を指定できる。
        */
-      registerView<S = unknown>(type: string, factory: (session: Session<S>) => View): void;
+      registerView<S = unknown>(type: string, factory: (session: Session<S>) => View, options?: ViewOptions): void;
       /**
        * セッションのない view（API 19）。factory には session が null で渡る。ファイルの一覧など、カードを作らない画面に使う。
        * 同じ registerView でも、openView を session なしで呼んだときは null になる。
        */
-      registerView(type: string, factory: (session: Session<any> | null) => View): void;
+      registerView(type: string, factory: (session: Session<any> | null) => View, options?: ViewOptions): void;
       /** パネル（モバイルでは全画面）に view を開く */
       openView<S = unknown>(type: string, session: Session<S>): void;
       /** セッションのない view をパネルに開く（API 19。registerView で factory が受けた view を開く） */
@@ -713,6 +713,12 @@ declare global {
      * `view` を渡すと、選んだときにその view をパネルに開く。`onOpen` は選んだときに呼ぶ（view と両方でもよい）。
      * badge は未対応（出さない）。
      */
+    /**
+     * view の登録の任意の設定（API 20）。layout: 'full' は、view を主の場所いっぱいに開く（チャット・設定・通話の代わり。ナビバーは残る。
+     * 見出し（戻る・閉じる）は出ない。上端の安全域は view の一番上の行が取る）。省略すると従来どおり（パネル）
+     */
+    type ViewOptions = { layout?: 'full' };
+
     type NavItemOptions = { id: string; label: string; icon: IconName; view?: string; onOpen?(): void; badge?: number | string | null };
 
     /** ナビバーの項目の操作（API 19） */
