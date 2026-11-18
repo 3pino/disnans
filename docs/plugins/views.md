@@ -14,7 +14,7 @@ this.registerView('dice', (session) => new DiceView(this, session));
 this.openView('dice', session);
 ```
 
-**全画面の view（API 20）**: `registerView(type, factory, { layout: 'full' })` で登録すると、view はチャット・設定・通話の代わりに主の場所いっぱいに開きます。ナビバーは残ります（狭い画面では下に出たまま）。見出し（戻る・閉じる）は出ません。上端の安全域（ノッチ）は、view の一番上の行が取ってください。`layout` を省くと、従来どおりパネルに開きます。
+**全画面の view（API 20）**: `registerView(type, factory, { layout: 'full' })` で登録すると、view はチャット・設定・通話の代わりに主の場所いっぱいに開きます。ナビバーは残ります（狭い画面では下に出たまま）。見出し（戻る・閉じる）は出ません。上端の安全域（ステータスバー・ノッチ）は**本体が 1 回だけ空けます**。view は安全域を足さないでください（view の中の `.top-bar` は余白 `space-2` だけになります）。`layout` を省くと、従来どおりパネルに開きます。
 
 ```js
 /** @implements {Disnans.View} */

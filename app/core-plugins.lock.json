@@ -1,12 +1,12 @@
 {
   "fixplor": {
     "repo": "3pino/fixplor",
-    "tag": "plugin-fixplor-v0.1.1",
+    "tag": "plugin-fixplor-v0.1.2",
     "minApiVersion": 20,
     "manifest": {
       "id": "fixplor",
       "name": "ファイル",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "共有フォルダのファイルエクスプローラー（fixplor と同じ部品）",
       "author": "3pino",
       "minApiVersion": 20,
@@ -16,9 +16,9 @@
       ]
     },
     "files": {
-      "manifest.json": "9f1d619d4380e713dc1ee7f5bf412d98025d480d387167e543f190b6737d321a",
-      "main.js": "fa2ffd10a39425f56888897beeaa33afaea9a3f345e51a04221d049fc4c1bbf3",
-      "styles.css": "8ec5ab37cb56bbab6c2477200342509c95b4f4840ee99f169e0ad7aa023ee820",
+      "manifest.json": "52e1dc7ef20872054dfbc6b470a85213a4b5f40ea09bed985749390cf1777b01",
+      "main.js": "99266689a9330ba96b34f37da1807eeb88b0e6ff85170e7fdc586391b9ef330c",
+      "styles.css": "70f2eb362a6b3d69904313e9576eea1b8c957027946d656584be2df1b25dd2f5",
       "icon.svg": "ebad806be50b5497909c680d892b973f1f1d1dc1062c6b3115a03243a68c2131"
     }
   }

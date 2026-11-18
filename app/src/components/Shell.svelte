@@ -76,7 +76,7 @@
     </div>
   {:else if ui.panel?.kind === 'plugin'}
     {#if fullView}
-      <!-- 全画面の view（layout: 'full'）。ヘッダーなし（上端の安全域は view の .top-bar が取る） -->
+      <!-- 全画面の view（layout: 'full'）。ヘッダーなし（上端の安全域は、この枠が取る） -->
       <div class="shell-panel shell-panel-full">
         <PluginPanel plugin={ui.panel.plugin} view={ui.panel.view} sessionId={ui.panel.sessionId} bare />
       </div>
@@ -184,7 +184,8 @@
     display: none;
   }
   /* 全画面の view は、残りの場所（ナビバーの上、または広い画面の右側ぜんぶ）を使う。
-     チャットの上の枠（通話のバーなど）の下に出るので、上の安全域は中の上端の行（.top-bar）だけが取る（二重に取らない） */
+     上の安全域（ステータスバー・ノッチ）は、ここ（本体）が 1 回だけ空ける。view の中の .top-bar（見出しの行）は、安全域を足さない（view は安全域を知らなくてよい）。
+     上の枠（通話のバーなど）が出ているときは、その枠が安全域を取っているので、ここでは空けない */
   .shell .shell-panel.shell-panel-full {
     position: relative;
     inset: auto;
@@ -193,8 +194,15 @@
     min-height: 0;
     animation: none;
   }
-  .shell-mobile .shell-panel.shell-panel-full {
+  .shell .shell-panel.shell-panel-full {
+    padding-top: env(safe-area-inset-top);
+    box-sizing: border-box;
+  }
+  .shell-root:has(:global(.call-bar, .plugin-status-item > :not(:empty))) .shell .shell-panel.shell-panel-full {
     padding-top: 0;
+  }
+  .shell .shell-panel.shell-panel-full :global(.top-bar) {
+    padding-top: var(--space-2);
   }
   .shell-mobile .shell-panel {
     position: fixed;

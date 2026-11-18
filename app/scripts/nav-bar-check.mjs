@@ -169,18 +169,25 @@ try {
     panelAboveNav(g, 'ファイル');
     assert.equal(await evaluate(`!!document.querySelector('.plugin-panel-header')`), false, 'プラグインのヘッダー（戻る・閉じる）が出ている');
     assert.equal(await evaluate(`!!document.querySelector('.shell-panel-full .plugin-panel-back, .shell-panel-full .plugin-panel-close')`), false);
-    const top = await evaluate(`(() => { const p = document.querySelector('.shell-panel-full'); const t = p.querySelector('.top-bar'); if (!t) return null; return t.getBoundingClientRect().top - p.getBoundingClientRect().top; })()`);
-    assert.ok(top !== null, '.top-bar がない');
-    assert.ok(Math.abs(top) < 2, `先頭の行が .top-bar でない（パネルの上端から ${top}px）`);
-    // 安全域は .top-bar だけが取る（パネルの上端と .top-bar の上端が一致＝二重に取らない・空白を先に置かない）
+    assert.ok(await evaluate(`!!document.querySelector('.shell-panel-full .top-bar')`), '.top-bar がない');
     const inset = await evaluate(`(() => { const d = document.createElement('div'); d.style.paddingTop = 'env(safe-area-inset-top)'; document.body.append(d); const v = parseFloat(getComputedStyle(d).paddingTop) || 0; d.remove(); return v; })()`);
+    // 安全域は本体（.shell-panel-full）が 1 回だけ取る。view の .top-bar は安全域を足さない（余白は space-2 だけ）
+    const geo2 = await evaluate(`(() => {
+      const p = document.querySelector('.shell-panel-full');
+      const pad = (el) => parseFloat(getComputedStyle(el).paddingTop) || 0;
+      const bars = [...p.querySelectorAll('.top-bar')].map(pad);
+      const first = p.querySelector('.top-bar');
+      const row = first ? first.getBoundingClientRect().top - p.getBoundingClientRect().top : null;
+      return { panel: pad(p), bars, row };
+    })()`);
+    console.log(`    （安全域 ${inset}px / パネルの上 ${geo2.panel}px / .top-bar の上 ${JSON.stringify(geo2.bars)} / 先頭の行 ${geo2.row}px）`);
     if (inset > 0) {
-      assert.ok(top >= 0 && top < 2, `ノッチの分（${inset}px）が二重か、先頭に空白がある`);
-      // 安全域は .top-bar の中（上の余白）が取る。内容は安全域の下から始まる
-      const padTop = await evaluate(`parseFloat(getComputedStyle(document.querySelector('.shell-panel-full .top-bar')).paddingTop) || 0`);
-      assert.ok(padTop >= inset - 1, `.top-bar が安全域を取っていない（padding-top ${padTop}px < ${inset}px）`);
+      assert.ok(Math.abs(geo2.panel - inset) < 2, `パネルが安全域を取っていない（padding-top ${geo2.panel}px ≠ ${inset}px）`);
+      assert.ok(geo2.bars.every((v) => v < inset), `.top-bar が安全域をもう一度取っている（${JSON.stringify(geo2.bars)}）`);
+      assert.ok(geo2.row !== null && geo2.row < inset + 16, `先頭の行が安全域の下から始まっていない（${geo2.row}px）`);
+    } else {
+      console.log('    （この Chromium では安全域を模せない。構造だけを検査）');
     }
-    console.log(`    （安全域 env(safe-area-inset-top) = ${inset}px${inset > 0 ? '' : '。この Chromium では模せない。構造だけを検査'}）`);
     assert.ok(g.selected.some((t) => t.includes('ファイル')), `選ばれている項目がファイルではない: ${g.selected.join(' / ')}`);
   });
 
