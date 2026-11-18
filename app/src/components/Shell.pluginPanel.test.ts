@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
-// 回帰: コアの「ファイル」（fixplor の view）を開いたとき、パネルは全画面の .shell-panel にならず、
-// ナビバーは覆われず出たまま（狭い画面）。ほかのプラグインの view は、従来どおり全画面の枠（ナビバーは隠れる）。
-// 古い Shell（class:shell-panel-files の付け方がない）では、最初の検査が落ちる。
+// コアの「ファイル」は、本体の「ファイル」（panel kind files）として開く。ナビバーは覆われず出たまま（狭い画面）、
+// 設定・通話の項目も効く。ほかのプラグインの view は従来どおり全画面の枠（狭い画面ではナビバーは隠れる）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 
@@ -14,6 +13,7 @@ vi.mock('./PluginSettingsPage.svelte', async () => ({ default: (await import('..
 vi.mock('./ConnectionBanner.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
 vi.mock('./TopBarSlot.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
 vi.mock('./CommandPalette.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
+vi.mock('./CallView.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
 vi.mock('./ScreenShareOverlay.svelte', async () => ({ default: (await import('../test-support/ChatChildStub.svelte')).default }));
 // ナビバーは印の要素で置く（描画の中身ではなく、出ているかどうかを見る）
 vi.mock('./NavBar.svelte', async () => ({ default: (await import('../test-support/NavBarMarker.svelte')).default }));
@@ -51,24 +51,45 @@ afterEach(async () => {
 const wrapper = () => target.querySelector<HTMLElement>('.shell-panel');
 const navShown = () => target.querySelector('[data-nav-marker]') !== null;
 
-describe('コアの「ファイル」（plugin view）は、全画面の枠にならない', () => {
-  it('狭い画面: コアの view は shell-panel-files を付け、ナビバーは出たまま', () => {
-    ui.panel = { kind: 'plugin', plugin: CORE_FILES_PLUGIN, view: CORE_FILES_VIEW, sessionId: null };
+describe('コアの「ファイル」は、本体の files パネルとして開く', () => {
+  it('狭い画面: コアの view を開くと、files の枠（shell-panel-files）になり、ナビバーは出たまま', () => {
+    ui.openPluginView(CORE_FILES_PLUGIN, CORE_FILES_VIEW, null);
     flushSync();
-    expect(wrapper()).not.toBeNull();
+    expect(ui.panel?.kind).toBe('files');
     expect(wrapper()!.classList.contains('shell-panel-files')).toBe(true);
     expect(navShown()).toBe(true);
   });
 
-  it('広い画面（デスクトップ）でも、コアの view は shell-panel-files を付ける（ナビバーは左に残る）', () => {
+  it('広い画面（デスクトップ）でも同じ（ナビバーは左に残る）', () => {
     ui.isMobile = false;
-    ui.panel = { kind: 'plugin', plugin: CORE_FILES_PLUGIN, view: CORE_FILES_VIEW, sessionId: null };
+    ui.openPluginView(CORE_FILES_PLUGIN, CORE_FILES_VIEW, null);
     flushSync();
     expect(wrapper()!.classList.contains('shell-panel-files')).toBe(true);
     expect(navShown()).toBe(true);
   });
 
-  it('ほかのプラグインの view は、従来どおり全画面の枠（shell-panel のみ）で、狭い画面ではナビバーを出さない', () => {
+  it('開いている間に設定を押すと、設定に移る（ファイルのパネルは閉じる）', () => {
+    ui.openPluginView(CORE_FILES_PLUGIN, CORE_FILES_VIEW, null);
+    flushSync();
+    ui.openSettings();
+    flushSync();
+    expect(ui.tab).toBe('settings');
+    expect(ui.panel).toBeNull();
+    expect(wrapper()).toBeNull();
+  });
+
+  it('開いている間に通話を押すと、通話に移る（ファイルのパネルは閉じる）', () => {
+    ui.openPluginView(CORE_FILES_PLUGIN, CORE_FILES_VIEW, null);
+    flushSync();
+    ui.openCall('reset');
+    flushSync();
+    expect(ui.tab).toBe('call');
+    expect(ui.panel).toBeNull();
+  });
+});
+
+describe('ほかのプラグインの view は、従来どおり', () => {
+  it('全画面の枠（shell-panel のみ）で、狭い画面ではナビバーを出さない', () => {
     ui.panel = { kind: 'plugin', plugin: 'dice', view: 'roll', sessionId: null };
     flushSync();
     expect(wrapper()).not.toBeNull();
@@ -76,17 +97,20 @@ describe('コアの「ファイル」（plugin view）は、全画面の枠に�
     expect(navShown()).toBe(false);
   });
 
-  it('コアの「ファイル」の view でも、同じ名前のほかのプラグインは全画面のまま（ID で判定）', () => {
+  it('同じ view 名でも別のプラグインは全画面のまま（判定はプラグインの ID）', () => {
     ui.panel = { kind: 'plugin', plugin: 'other', view: CORE_FILES_VIEW, sessionId: null };
     flushSync();
     expect(wrapper()!.classList.contains('shell-panel-files')).toBe(false);
     expect(navShown()).toBe(false);
   });
+});
 
-  it('コアが読めていない（フォールバック）でも、内蔵の「ファイル」は従来どおり出る', () => {
+describe('フォールバック', () => {
+  it('コアが読めていなければ、内蔵の「ファイル」（従来どおり）', () => {
     coreFiles.active = false;
-    ui.panel = { kind: 'files' };
+    ui.openPluginView(CORE_FILES_PLUGIN, CORE_FILES_VIEW, null);
     flushSync();
+    expect(ui.panel?.kind).toBe('files');
     expect(target.querySelector('.shell-panel-files')).not.toBeNull();
     expect(navShown()).toBe(true);
   });

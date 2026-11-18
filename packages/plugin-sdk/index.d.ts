@@ -709,8 +709,9 @@ declare global {
 
     /** ナビバーの項目（API 19）。項目は、利用者が設定で並べる（コマンドと同じ扱い）。選ぶと onOpen を呼ぶ */
     /**
-     * ナビバーの項目（API 19）。`view` を渡すと、その view をパネルに開く（onOpen は不要）。`onOpen` は選んだときに呼ぶ（view と両方でもよい）。
-     * 項目は既定でナビに出る（利用者の並べ替えには入らない）。選んでいる間は、その view を開いているときに選ばれる。
+     * ナビバーの項目（API 19）。コマンドとして登録される（パレットに出て、利用者がナビバーの設定で追加できる。自動では出ない）。
+     * `view` を渡すと、選んだときにその view をパネルに開く。`onOpen` は選んだときに呼ぶ（view と両方でもよい）。
+     * badge は未対応（出さない）。
      */
     type NavItemOptions = { id: string; label: string; icon: IconName; view?: string; onOpen?(): void; badge?: number | string | null };
 
@@ -1044,9 +1045,9 @@ declare global {
 
       // ---- API 19 ----
       /**
-       * ナビバーの項目を登録する（API 19）。登録すると、ナビの末尾に自動で出る（利用者の並べ替えには入らない）。
-       * view を渡すと選んだときにその view をパネルに開き、選んでいる間はその項目が選ばれる。badge で右上の数字を出せる。
-       * id は本体の中で一意（`<プラグインID>:<名前>` の形を推奨）。戻り値の setBadge・close で変える・外す。プラグインを外すときは this.register で外すと安全
+       * ナビバーの項目を登録する（API 19）。コマンドとして登録される（パレットに出て、利用者がナビバーの設定で追加する。自動では出ない）。
+       * view を渡すと選んだときにその view をパネルに開く。badge と setBadge は未対応。
+       * id は本体の中で一意（`<プラグインID>:<名前>` の形を推奨）。戻り値の close で外す。プラグインを外すときは this.register で外すと安全
        */
       navItem(opts: NavItemOptions): NavItemHandle;
       /** 拡大表示を開く（画像・PDF）。gallery を渡すと前後をたどれる（呼ぶたびに今の一覧を返す） */

@@ -40,13 +40,13 @@ import { copyText } from '@3pino/app-kit-web/core/clipboard';
 import { clipboardTextName, peekClipboard, readClipboardText } from '../clipboardPaste';
 import { readClipboardImage, readNativeClipboardImage } from '../clipboardImage';
 import { mountPdfThumb } from './ui/pdfThumb';
-import { pluginNav } from '../pluginNav.svelte';
 import { setLinkOpener } from '../linkOpener.svelte';
 import { listenNativeDrop, listenOsDrop, osDropEntries, osDropRelease, dropRootsOf, entriesFromDropRoots } from '../dropFiles';
 import { pickSharedFiles } from './sharedPicker';
 import { legacyExplorerDirs } from '../explorerDirs';
 import type { UiDeps } from './ui';
 import { CORE_FILES_PLUGIN, CORE_FILES_VIEW, CORE_PLUGIN_IDS, coreManifest, coreSig, fetchCoreText, isCorePlugin } from './core';
+import { registerNavItemCommand } from './navItemCommand';
 import { coreFiles } from '../coreFiles.svelte';
 
 const DEV_POLL_MS = 1000;
@@ -304,22 +304,8 @@ export class PluginHost {
   /** API 19 の ui の口（createUi に渡す。ナビの項目・拡大表示・検索・クリップボード・保存） */
   private apiV19Ui(): Pick<UiDeps, 'navItem' | 'openLightbox' | 'renderPdfThumb' | 'openSearch' | 'clipboard' | 'saveBlob' | 'pickSharedFiles' | 'download' | 'interceptDownload'> {
     return {
-      navItem: ({ id, label, icon, view, onOpen, badge }) => {
-        const nid = `ui-nav:${id}`;
-        const off = pluginNav.add({
-          id: nid,
-          label,
-          icon,
-          badge: badge ?? null,
-          view: view ?? null,
-          onOpen: onOpen ?? null,
-        });
-        if (!off) throw new PluginError('invalid_argument', `ナビの項目「${id}」は、もう登録されています`);
-        return {
-          setBadge: (b) => pluginNav.setBadge(nid, b ?? null),
-          close: () => off(),
-        };
-      },
+      // ナビの項目はコマンドとして登録する（lib/plugins/navItemCommand.ts）。自動では出さない
+      navItem: (spec) => registerNavItemCommand(spec, (view) => this.openViewByType(view)),
       pickSharedFiles: (opts) => pickSharedFiles(opts),
       openLightbox: (item, gallery) => {
         const toItem = (o: Disnans.LightboxItemOptions) => ({

@@ -466,7 +466,7 @@ ui.setImmersive(on: boolean): Promise<boolean>
 
 ## API 19 の部品と口
 
-- `ui.navItem({ id, label, icon, view?, onOpen?, badge? })`: ナビバーの項目。**登録すると、ナビの末尾に自動で出ます**（利用者の並べ替えには入りません。コマンドではないので、パレットには出ません）。`view` を渡すと選んだときにその view をパネルに開き、`onOpen` は選んだときに呼ばれます（両方でもかまいません）。選んでいる間は、その view を開いているときにその項目が選ばれます。戻り値は `{ setBadge(n), close() }`。`badge` は右上の数字（0・空・null は出ません）。`id` は本体の中で一意です。`<プラグインID>:<名前>` の形を使ってください（プラグインごとの名前空間はまだありません）。プラグインを外すときは `this.register(h.close)` で外すと安全です
+- `ui.navItem({ id, label, icon, view?, onOpen? })`: ナビバーの項目は**コマンドとして登録されます**。パレットに出て、利用者がナビバーの設定で追加・並べ替えできます（**自動では出ません**）。`view` を渡すと選んだときにその view をパネルに開き、`onOpen` は選んだときに呼ばれます（両方でもかまいません）。選んでいる間の表示は、その view を開いているときに選ばれます。戻り値は `{ setBadge(n), close() }`。**`badge` と `setBadge` は未対応**（出しません。何もしません）。`id` は本体の中で一意です（同じ ID の二重登録は `invalid_argument`）。`<プラグインID>:<名前>` の形を使ってください。プラグインを外すときは `this.register(h.close)` で外すと安全です。コアの「ファイル」（fixplor:files）は、本体の「共有フォルダを開く」が入口のため、コマンドは作りません
 - `ui.openLightbox(item, gallery?)`: 拡大表示（画像・PDF）。`item` は `{ src, alt, downloadUrl?, kind? }`（`kind` は `'image'`（既定）か `'pdf'`）。`gallery` は呼ぶたびに今の一覧を返す関数（前後で移動できる）
 - `ui.renderPdfThumb(el, source, { key? })`: PDF の 1 ページ目のサムネイルを `el` の中に描きます（本体の部品）。戻り値の関数で外します。`source` は URL（`this.files.url` など）
 - `ui.openSearch(query?)`: チャットの検索を開きます。`query` を渡すと、その語で検索します

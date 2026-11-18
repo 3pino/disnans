@@ -9,7 +9,8 @@
 
   // プラグインの view を出すパネル（枠は返信のツリーと同じ）。view は containerEl に自分で描く。
   // 上部の題名・アイコンは view が決める（View.title / View.icon、setTitle / setIcon）。省くとプラグイン名・プラグインのアイコン、空文字列なら出さない
-  let { plugin, view, sessionId }: { plugin: string; view: string; sessionId: string | null } = $props();
+  // bare: 題名・戻る・閉じるの行を出さない（view が上端の行を自分で持つ画面。上端の安全域も view 側が取る）
+  let { plugin, view, sessionId, bare = false }: { plugin: string; view: string; sessionId: string | null; bare?: boolean } = $props();
 
   const runtime = $derived(pluginHost.runtime(plugin));
   let containerEl: HTMLDivElement | undefined = $state();
@@ -64,6 +65,7 @@
 </script>
 
 <div id="plugin-panel" class="plugin-panel" data-plugin={plugin}>
+  {#if !bare}
   <header class="plugin-panel-header">
     {#if ui.isMobile}
       <!-- モバイルは戻るボタンと題名 -->
@@ -77,6 +79,7 @@
       <IconButton class="plugin-panel-close" label="閉じる" onclick={() => ui.closePanel()}><X size={18} /></IconButton>
     {/if}
   </header>
+  {/if}
 
   {#if error}
     <div class="plugin-panel-status muted">{error}</div>

@@ -40,5 +40,7 @@ export async function fetchCoreText(id: string, name: string): Promise<string> {
 /** 本体の「ファイル」の代わりに使うコアプラグイン（読み込めたら、本体の内蔵の画面は出さない） */
 export const CORE_FILES_PLUGIN = 'fixplor';
 export const CORE_FILES_VIEW = 'fixplor';
-/** そのナビの項目の ID（プラグインが ui.navItem({ id: 'fixplor:files' }) で登録する。本体の中では ui-nav: の接頭辞が付く） */
-export const CORE_FILES_NAV_ID = 'ui-nav:fixplor:files';
+/**
+ * コアが ui.navItem で登録しても、ナビの項目（コマンド）にしない ID。「ファイル」の入口は本体のコマンド「共有フォルダを開く」（app:open-files）だけ。
+ */
+export const CORE_REPLACED_NAV_IDS: readonly string[] = [`${CORE_FILES_PLUGIN}:files`];

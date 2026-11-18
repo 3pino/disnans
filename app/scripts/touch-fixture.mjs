@@ -13,7 +13,7 @@ export const IGNORED_IPC = {};
  * platform: 'linux'（デスクトップ。既定）か 'android'。同じ実機の状態だけを作る（linux で desktop:false のような、ありえない状態は作らない）。
  * 'android' の IPC は、確認で呼ばれるものを具体的な戻り値で足す（未知の IPC は無視しない）。
  */
-export function fixtureScript({ server, ignored = Object.keys(IGNORED_IPC), platform = 'linux' }) {
+export function fixtureScript({ server, ignored = Object.keys(IGNORED_IPC), platform = 'linux', navBarItems = null }) {
   const me = { id: 'u1', name: 'touch-check', login_name: 'touch-check', avatar_url: null };
   return `(() => {
   const IGNORED = ${JSON.stringify(ignored)};
@@ -29,7 +29,8 @@ export function fixtureScript({ server, ignored = Object.keys(IGNORED_IPC), plat
   };
   window.__ipcUnknown = [];
   const store = { server: SERVER };
-  const PREFS = () => (PLATFORM === 'android' ? { raw: {}, view: { navBarItems: ['app:open-chat', 'app:open-files', 'app:open-settings'] } } : { raw: {}, view: {} });
+  const NAV = ${JSON.stringify(navBarItems)};
+  const PREFS = () => (PLATFORM === 'android' ? { raw: {}, view: { navBarItems: ['app:open-chat', 'app:open-files', 'app:open-settings'] } } : { raw: {}, view: NAV ? { navBarItems: NAV } : {} });
   // 通話は native の IPC だけを模倣。start は受け付けるだけで、勝手に joined にはしない。
   const notifierListeners = new Map();
   let nativeCall = {

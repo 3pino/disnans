@@ -7,6 +7,7 @@ import type { User } from '../protocol/User';
 import type { LightboxItem } from '@3pino/viewer-kit-web/viewers/types';
 import { Shell, type ShellConfirm, type ShellToast } from '@3pino/app-kit-web/shell';
 import { forgetPanelIn, navBack, navBackDepth, navigate, normalizeNav, type NavMode, type NavState, type NavTab, type Panel, type SettingsSubpage } from '../navHistory';
+import { CORE_FILES_PLUGIN, CORE_FILES_VIEW } from '../plugins/core';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
@@ -174,6 +175,11 @@ class Ui {
 
   /** プラグインの view でセッションを開く */
   openPluginView(plugin: string, view: string, sessionId: string | null): void {
+    // コアの「ファイル」は、本体の「ファイル」の画面（panel files）として開く（設定・通話などの規則を共有する）
+    if (plugin === CORE_FILES_PLUGIN && view === CORE_FILES_VIEW) {
+      this.openFiles();
+      return;
+    }
     this.openPanel({ kind: 'plugin', plugin, view, sessionId });
   }
 

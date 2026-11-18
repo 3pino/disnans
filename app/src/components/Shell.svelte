@@ -26,8 +26,8 @@
   // ファイルエクスプローラーは、通話・設定と同じく、チャットや他の画面の代わりに全部の表示の場所を使う（どの幅でも）。
   // 狭い画面では、ナビゲーションバーの上に収めてナビバーを出し続ける（重ならない）。
   // 通話・設定・チャットは外さず、高さを 0 にして（広い画面では隠して）マウントしたままにする
-  // 「ファイル」（内蔵の画面、またはコアプラグインの view。どちらも同じ全画面の扱い）
-  const filesFull = $derived(ui.panel?.kind === 'files' || (ui.panel?.kind === 'plugin' && ui.panel.plugin === CORE_FILES_PLUGIN && ui.panel.view === CORE_FILES_VIEW));
+  // 「ファイル」（内蔵の画面、またはコアプラグインの view。コアは panel kind files で開く）
+  const filesFull = $derived(ui.panel?.kind === 'files');
   // モバイルではパネルがチャットを覆う（エクスプローラーのときは、チャットは開いていても出さない）
   const chatVisible = $derived(showChat && !(ui.isMobile && panelOpen) && !filesFull);
 </script>
@@ -81,14 +81,15 @@
     <!-- 共有フォルダの閲覧（通話・設定と同じく、ほかの表示の代わりに出す）。コアプラグインの「ファイル」が読めていれば、その view を出す -->
     <div class="shell-panel shell-panel-files">
       {#if coreFiles.active}
-        <PluginPanel plugin={CORE_FILES_PLUGIN} view={CORE_FILES_VIEW} sessionId={null} />
+        <!-- ヘッダーなし（上端の安全域は中の .top-bar が取る） -->
+        <PluginPanel plugin={CORE_FILES_PLUGIN} view={CORE_FILES_VIEW} sessionId={null} bare />
       {:else}
         <FileExplorer />
       {/if}
     </div>
   {:else if ui.panel?.kind === 'plugin'}
     <!-- プラグインの view。枠は同じ -->
-    <div class="shell-panel" class:shell-panel-files={filesFull}>
+    <div class="shell-panel">
       <PluginPanel plugin={ui.panel.plugin} view={ui.panel.view} sessionId={ui.panel.sessionId} />
     </div>
   {/if}

@@ -126,3 +126,18 @@ describe('navActiveId（ナビバーで選ぶ項目）', () => {
     expect(NAV_FILES_ID).toBe('app:open-files');
   });
 });
+
+describe('ui.navItem の項目（コマンド）は、自動では出ず、利用者が追加したものだけ出る', () => {
+  it('登録されていても、並びに入っていなければ出ない', () => {
+    expect(visibleNavItems([NAV_CHAT_ID, NAV_SETTINGS_ID], new Set([NAV_CHAT_ID, NAV_SETTINGS_ID, 'plugin-nav:dice:roll']))).not.toContain('plugin-nav:dice:roll');
+  });
+  it('利用者が並びに追加すると出る', () => {
+    const list = addNavItem([NAV_CHAT_ID, NAV_SETTINGS_ID], 'plugin-nav:dice:roll');
+    expect(visibleNavItems(list, new Set(['plugin-nav:dice:roll']))).toContain('plugin-nav:dice:roll');
+  });
+  it('「共有フォルダを開く」（app:open-files）は、コマンドとして設定の対象になる（一つの入口）', () => {
+    const list = addNavItem([NAV_CHAT_ID, NAV_SETTINGS_ID], NAV_FILES_ID);
+    expect(visibleNavItems(list, new Set([NAV_FILES_ID]))).toContain(NAV_FILES_ID);
+    expect(navActiveId({ tab: 'chat', panel: 'files' })).toBe(NAV_FILES_ID);
+  });
+});

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // 回帰の検査（モバイル・DOM だけで）: コアの「ファイル」（fixplor の view）を開いても、ナビバー（#nav-bar）は画面の下に出たままで、
 // パネルはその上に収まること。ページの中へストアを import しない（画面の見えるものだけを読む）。
+// 「共有フォルダを開く」は、利用者がナビバーに追加した状態で試す（既定の並びには入らない）。
 // 使い方（先に npm run dev）: CHROME_BIN=<chromium> DISNANS_URL=http://127.0.0.1:5173 node scripts/nav-bar-check.mjs
 // 起動したプロセス（Chromium と仮のサーバー）だけを止める。終了コードは 0（全部通った）か 1。
 import assert from 'node:assert/strict';
@@ -95,14 +96,16 @@ try {
 
   await S('Page.enable');
   await S('Runtime.enable');
-  await S('Page.addScriptToEvaluateOnNewDocument', { source: fixtureScript({ server: FAKE, platform: 'linux' }) });
+  await S('Page.addScriptToEvaluateOnNewDocument', { source: fixtureScript({ server: FAKE, platform: 'linux', navBarItems: ['app:open-chat', 'app:open-settings', 'app:open-files'] }) });
   await S('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  // ノッチ（上の安全域）を模す。対応していない Chromium では無視される（その場合は下の確認の結果を見る）
+  await S('Emulation.setSafeAreaInsetsOverride', { insets: { top: 47, bottom: 0, left: 0, right: 0 } }).catch(() => {});
   await S('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   await S('Page.navigate', { url: APP + '/' });
   // 起動（チャットの画面が出て、ナビバーがある）
   await waitFor(`document.querySelector('#nav-bar')`, 15000, 'ナビバー');
-  // コアの「ファイル」の項目（ナビの「ファイル」の一つ。内蔵は隠れる）が出るまで
-  await waitFor(`[...document.querySelectorAll('#nav-bar button')].some((b) => b.textContent.includes('ファイル'))`, 20000, 'ナビの「ファイル」');
+  // コアの「ファイル」の項目（ナビの「共有フォルダを開く」の一つ。内蔵は隠れる）が出るまで
+  await waitFor(`[...document.querySelectorAll('#nav-bar button')].some((b) => b.textContent.includes('共有フォルダ'))`, 20000, 'ナビの「共有フォルダを開く」');
   await sleep(300);
 
   // 画面の幾何（DOM だけ）
@@ -142,37 +145,71 @@ try {
     assert.ok(g.panel.bottom <= g.nav.top + 1, `${where}: パネルがナビバーに重なる（panel.bottom ${g.panel.bottom} > nav.top ${g.nav.top}）`);
   };
 
+  // 実際のタッチ（CDP の Input）で、要素の中心を押す
+  const tapEl = async (expr, label) => {
+    const c = await evaluate(`(() => { const el = ${expr}; if (!el) return null; el.scrollIntoView?.({ block: 'nearest' }); const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+    assert.ok(c, `${label}: 要素がない`);
+    await S('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: c.x, y: c.y, id: 1 }] });
+    await S('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(400);
+  };
+  const navBtn = (word) => `[...document.querySelectorAll('#nav-bar button')].find((b) => b.textContent.trim().includes(${JSON.stringify(word)}))`;
+  const selectedNav = () => evaluate(`[...document.querySelectorAll('#nav-bar button[aria-current="page"]')].map((b) => b.textContent.trim())`);
+
   await check('起動直後（チャット）: ナビバーが画面の下にあり、覆われていない', async () => navAtBottom(await geo(), 'チャット'));
 
-  await check('コアの「ファイル」を開く（ナビの項目を押す）: ナビは下のまま、パネルはナビの上に収まる', async () => {
-    await evaluate(`(() => { const b = [...document.querySelectorAll('#nav-bar button')].find((x) => x.textContent.includes('ファイル')); b.click(); return true; })()`);
+  await check('ナビの「共有フォルダを開く」を実際に押す: ナビは下、ファイルの枠、ヘッダー（戻る・閉じる）は出ない、先頭の行は本体の .top-bar', async () => {
+    await tapEl(navBtn('共有フォルダ'), 'ナビの「共有フォルダを開く」');
     await waitFor(`document.querySelector('.shell-panel.shell-panel-files')`, 8000, 'コアの「ファイル」の枠');
-    await sleep(400);
+    await waitFor(`document.querySelector('.shell-panel-files .file-explorer, .shell-panel-files .top-bar')`, 8000, 'ファイルの中身');
+    await sleep(300);
     const g = await geo();
     navAtBottom(g, 'ファイル');
     panelAboveNav(g, 'ファイル');
-    assert.ok(g.selected.some((t) => t.includes('ファイル')), `選ばれている項目がファイルではない: ${g.selected.join(' / ')}`);
+    assert.equal(await evaluate(`!!document.querySelector('.plugin-panel-header')`), false, 'プラグインのヘッダー（戻る・閉じる）が出ている');
+    assert.equal(await evaluate(`!!document.querySelector('.shell-panel-files .plugin-panel-back, .shell-panel-files .plugin-panel-close')`), false);
+    const top = await evaluate(`(() => { const p = document.querySelector('.shell-panel-files'); const t = p.querySelector('.top-bar'); if (!t) return null; return t.getBoundingClientRect().top - p.getBoundingClientRect().top; })()`);
+    assert.ok(top !== null, '.top-bar がない');
+    assert.ok(Math.abs(top) < 2, `先頭の行が .top-bar でない（パネルの上端から ${top}px）`);
+    // 安全域は .top-bar だけが取る（パネルの上端と .top-bar の上端が一致＝二重に取らない・空白を先に置かない）
+    const inset = await evaluate(`(() => { const d = document.createElement('div'); d.style.paddingTop = 'env(safe-area-inset-top)'; document.body.append(d); const v = parseFloat(getComputedStyle(d).paddingTop) || 0; d.remove(); return v; })()`);
+    if (inset > 0) {
+      assert.ok(top >= 0 && top < 2, `ノッチの分（${inset}px）が二重か、先頭に空白がある`);
+      // 安全域は .top-bar の中（上の余白）が取る。内容は安全域の下から始まる
+      const padTop = await evaluate(`parseFloat(getComputedStyle(document.querySelector('.shell-panel-files .top-bar')).paddingTop) || 0`);
+      assert.ok(padTop >= inset - 1, `.top-bar が安全域を取っていない（padding-top ${padTop}px < ${inset}px）`);
+    }
+    console.log(`    （安全域 env(safe-area-inset-top) = ${inset}px${inset > 0 ? '' : '。この Chromium では模せない。構造だけを検査'}）`);
+    assert.ok(g.selected.some((t) => t.includes('共有フォルダ')), `選ばれている項目が共有フォルダではない: ${g.selected.join(' / ')}`);
   });
 
-  await check('開いたまま戻る（ナビの「チャット」）→ もう一度「ファイル」: 毎回ナビは下', async () => {
-    await evaluate(`(() => { const b = [...document.querySelectorAll('#nav-bar button')].find((x) => x.textContent.includes('チャット')); b?.click(); return !!b; })()`);
-    await sleep(400);
+  await check('ファイルを開いたまま「Settings」を押す: 設定が出て、ナビは下のまま', async () => {
+    await tapEl(navBtn('Settings'), 'ナビの Settings');
+    await waitFor(`!document.querySelector('.shell-panel.shell-panel-files')`, 8000, 'ファイルの枠が閉じる');
+    await waitFor(`document.querySelector('.shell-settings') && document.querySelector('.shell-settings').getBoundingClientRect().height > 0`, 8000, '設定の画面');
+    navAtBottom(await geo(), '設定');
+    assert.ok((await selectedNav()).some((t) => t.includes('Settings')), `設定が選ばれていない: ${(await selectedNav()).join(' / ')}`);
+  });
+
+  await check('設定から「ファイル」を押し直す → 開き、「Chat」でチャットへ戻る → 毎回ナビは下', async () => {
+    await tapEl(navBtn('共有フォルダ'), 'ナビの「共有フォルダを開く」（再）');
+    await waitFor(`document.querySelector('.shell-panel.shell-panel-files')`, 8000, '再度の「ファイル」');
+    navAtBottom(await geo(), 'ファイル（再）');
+    await tapEl(navBtn('Chat'), 'ナビの Chat');
+    await waitFor(`!document.querySelector('.shell-panel.shell-panel-files')`, 8000, 'チャットへ戻る');
     navAtBottom(await geo(), 'チャットへ戻った後');
-    await evaluate(`(() => { const b = [...document.querySelectorAll('#nav-bar button')].find((x) => x.textContent.includes('ファイル')); b.click(); return true; })()`);
-    await waitFor(`document.querySelector('.shell-panel.shell-panel-files')`, 8000, '開き直し');
-    await sleep(300);
-    const g = await geo();
-    navAtBottom(g, '開き直し');
-    panelAboveNav(g, '開き直し');
   });
 
   await check('広い画面（デスクトップ）: ナビは左に残り、「ファイル」の枠は右側で重ならない', async () => {
     await S('Emulation.setDeviceMetricsOverride', { width: 1100, height: 800, deviceScaleFactor: 1, mobile: false });
     await S('Emulation.setTouchEmulationEnabled', { enabled: false });
-    await sleep(500);
+    await sleep(400);
+    await evaluate(`(() => { const b = [...document.querySelectorAll('.nav-bar-side button')].find((x) => x.textContent.includes('共有フォルダ')); b?.click(); return !!b; })()`);
+    await waitFor(`document.querySelector('.shell-panel.shell-panel-files')`, 8000, 'デスクトップの「ファイル」');
+    await sleep(300);
     const g = await geo();
     assert.ok(g.nav.left < 4, `ナビバーが左にない（left ${g.nav.left}）`);
-    if (g.panel) assert.ok(g.nav.right <= g.panel.left + 1, `ナビバーとパネルが重なる（nav.right ${g.nav.right} > panel.left ${g.panel.left}）`);
+    assert.ok(g.panel && g.nav.right <= g.panel.left + 1, `ナビバーとパネルが重なる（nav.right ${g.nav.right} > panel.left ${g.panel?.left}）`);
   });
 
   console.log(failed === 0 ? '全部通りました' : `${failed} 件が失敗しました`);
