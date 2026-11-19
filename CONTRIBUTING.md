@@ -73,3 +73,13 @@ node scripts/prepare-cli.mjs          # 本物の CLI を release で作って�
 3. `git tag v<version> && git push origin v<version>`
 
 GitHub Actions が Android / Windows / Linux 版とサーバーをビルドし、Releases に公開します。Windows と Linux の成果物は、公開の前に同梱の CLI（PATH への追加と削除、`.deb` の `/usr/bin/disnans`）を確かめてから公開されます。GUI と CLI/TUI は同じ版で配布します。署名の鍵は GitHub の Secrets と管理者の `~/.config/disnans-keys/` にあります（**鍵はなくさないこと**。Android の鍵をなくすと、全員がアンインストールして入れ直す必要があります）。
+
+### 同梱のコアプラグイン（fixplor）の版上げ
+
+同梱の「ファイル」（fixplor）は `app/core-plugins.lock.json` の版で固定しています（sha256 で確かめて取るため）。新しい版に上げるには:
+
+1. `cd app && npm run core:bump`: fixplor の、本体の API で動く最新のリリースを探して、lock を書き換える（確認だけは `npm run core:check`。新しい版があれば終了コード 1）。
+2. `npm run check` と `npx vitest run` と `npm run build` を通す。
+3. 差分（版・manifest・sha256）を見て、通常の手順（上の手順 2）でリリースする。
+
+

@@ -29,6 +29,11 @@
 3. TUI と共有することは条件にしない(宣言的な木への全面移行は取り下げた。[ideas.md](ideas.md))。
 4. apk 単位の分割は、最終目標ではなく副次的な可能性。エクスプローラーを土台にして、他のコミュニティプラグインでもついでに可能になるようにする、という位置づけ。
 
+## 版上げの道具（段 1 の追加）
+
+- lock は固定のまま（再現できる・sha256 で確かめる・CI で試せる）。版は手で書かず、`app/scripts/bump-core-plugins.mjs`（`npm run core:bump`／確認だけは `core:check`）が決める: 同じタグの接頭の、下書き・プレリリースでないリリースのうち、`manifest.minApiVersion` が本体の API 以下で一番高い semver。SHA256SUMS と照合してから書く。
+- 試験は `scripts/bump-core-plugins.test.mjs`（仮の API と仮の配布。互換・飛ばし・下書き・照合の失敗・ページ送り）。
+
 ## 用語
 
 | 呼び方 | 何か | 更新 | オン・オフ | 権限 |

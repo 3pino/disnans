@@ -61,6 +61,10 @@
 - 20: `registerView(type, factory, { layout: 'full' })`（全画面の view）。`ui.navItem` は、ナビへ自動で出なくなった（コマンド。利用者がナビバーの設定で追加する）。内蔵の「ファイル」の画面と `app:open-files` は削除（共有フォルダの画面はプラグインの仕事）。`minApiVersion` 20 のプラグインは、この版の本体で読めます
 - 19: 共有フォルダの `url`（同期・項目から）/ `upload` / `size` / `caps` / ゴミ箱（`trashList` / `trash` / `restore` / `purge`）、`ui` の `navItem`（コマンドとして登録。ナビへは利用者が追加する。20 で自動追加をやめた）/ `openLightbox` / `renderPdfThumb` / `openSearch` / `clipboard` / `saveBlob`（ブラウザーのみ）/ `download` / `interceptDownload` / `clipboard` の `peek`・`textName`、`pickSharedFiles` / `osDrop` / `toast` の操作、`disnans.app.platform`（読み取り）、`disnans.chat.registerLinkOpener`、セッションのない `registerView` と `openView(type)`、`legacyData`、`disnans.session.onServerChange`（削除・意味の変更はなし）
 
+## 同梱の fixplor を上げる
+
+同梱の「ファイル」（fixplor）は、`app/core-plugins.lock.json` の版です。新しい版に上げるには、`cd app && npm run core:bump`（本体の API 以下で互換な最新のリリースを探して、lock を書き換える。新しすぎる版は飛ばして、その旨を出す。確認だけは `npm run core:check`）。そのあと、本体の check・vitest・build を通して、人がリリースします（[CONTRIBUTING.md](../../CONTRIBUTING.md#同梱のコアプラグインfixplorの版上げ)）。
+
 ## 注意点
 
 ### 後始末は register* で
