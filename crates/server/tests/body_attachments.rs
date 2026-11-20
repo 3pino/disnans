@@ -316,23 +316,21 @@ async fn a_deleted_attachment_stays_as_a_mark_until_the_link_is_removed() {
 }
 
 #[tokio::test]
-async fn a_bare_name_that_is_also_a_shared_file_is_ambiguous() {
+async fn a_bare_name_is_the_attachment_even_when_a_shared_file_has_the_same_name() {
     let server = TestServer::start().await;
     put_library(&server, "same.txt").await;
     std::fs::create_dir_all(server.dir.path().join("shared")).unwrap();
     std::fs::write(server.dir.path().join("shared").join("same.txt"), b"shared").unwrap();
 
-    assert_eq!(
-        send_error(&server, "[[same.txt]]", &[]).await,
-        "ambiguous_link"
-    );
-    // 書けば解決する
-    let m = send(&server, "[[attachments/same.txt]]", &[]).await;
+    // 同じ名前の共有ファイルがあっても、添付（ここでは既定の書き方）が勝つ
+    let m = send(&server, "[[same.txt]]", &[]).await;
     assert_eq!(m.attachments.len(), 1);
-    // 添付に無い名前は、ただの文字として残る（共有のパス）
-    let plain = send(&server, "[[other.txt]]", &[]).await;
-    assert_eq!(plain.body, "[[other.txt]]");
-    assert!(plain.attachments.is_empty());
+    assert_eq!(m.attachments[0].file_name, "same.txt");
+    // 旧い書き方も同じ
+    let old = send(&server, "![[attachments/same.txt]]", &[]).await;
+    assert_eq!(old.attachments.len(), 1);
+    // 添付に無い名前は、送れない（共有のパスとしても残らない）
+    assert_eq!(send_error(&server, "[[other.txt]]", &[]).await, "invalid_link");
 }
 
 #[tokio::test]

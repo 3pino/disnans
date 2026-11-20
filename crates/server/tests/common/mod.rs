@@ -247,3 +247,14 @@ pub fn send(body: &str) -> ClientEvent {
         silent: false,
     }
 }
+
+/// テスト用: 共有フォルダの直下にファイルを直接置く。直下のファイルは PUT では作れない（fs_rules.rs で固定）ので、
+/// 直下に置く必要がある他の試験の準備に使う。ディスクに直接書くので、変更の知らせ（files.changed）は流れない。
+pub fn seed_root_file(server: &TestServer, name: &str, data: &[u8]) {
+    let dir = server.dir.path().join("shared");
+    std::fs::create_dir_all(&dir).unwrap();
+    // 一時ファイルから差し替える（サーバーと同じく、中身は新しい実体になる。バックアップのハードリンクを守るため）
+    let tmp = dir.join(format!(".disnans-tmp-seed-{name}"));
+    std::fs::write(&tmp, data).unwrap();
+    std::fs::rename(&tmp, dir.join(name)).unwrap();
+}

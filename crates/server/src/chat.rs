@@ -43,7 +43,6 @@ pub async fn send_message(state: &AppState, actor: &Actor<'_>, req: SendMessage)
     validate_body(&req.body, !attachment_ids.is_empty())?;
     let stored = crate::links::to_stored(
         &state.pool,
-        &state.config.shared_dir(),
         &actor.user.id,
         &req.body,
     )
@@ -123,7 +122,7 @@ pub async fn post_bot_message(
 ) -> AppResult<Message> {
     validate_body(&req.body, false)?;
     let body =
-        crate::links::to_stored(&state.pool, &state.config.shared_dir(), &user.id, &req.body)
+        crate::links::to_stored(&state.pool, &user.id, &req.body)
             .await?;
     let name = match req.name.as_deref().map(str::trim) {
         None | Some("") => plugin.name.clone(),
@@ -175,7 +174,6 @@ pub async fn edit_message(
     validate_body(&body, false)?;
     let stored = crate::links::to_stored(
         &state.pool,
-        &state.config.shared_dir(),
         &actor.user.id,
         &body,
     )

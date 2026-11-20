@@ -44,6 +44,35 @@ pub fn valid_name(name: &str) -> bool {
     !RESERVED.contains(&stem.as_str())
 }
 
+/// ルート直下に作れない予約名（大文字小文字を区別しない）。`attachments` は添付の仮想フォルダ、`.trash` はゴミ箱。
+pub const RESERVED_ROOT: &[&str] = &["attachments", ".trash"];
+
+/// ルート直下の予約名か。
+pub fn reserved_root(name: &str) -> bool {
+    RESERVED_ROOT.iter().any(|r| r.eq_ignore_ascii_case(name))
+}
+
+pub const ROOT_FILE_REASON: &str =
+    "ルート直下にはフォルダだけ作れます。ファイルは添付として送ってください";
+pub const RESERVED_REASON: &str =
+    "attachments と .trash は、ルート直下のフォルダの名前に使えません";
+
+/// ルート直下で、新しく作ろうとするものを断る理由（作ってよければ None）。
+/// - ルート直下に新しいファイルは作れない（既存のファイルの上書き・移動・削除は別に許す）
+/// - 予約名（`attachments`・`.trash`）は、フォルダでも作れない
+pub fn root_creation_refusal(segs: &[String], is_dir: bool, exists: bool) -> Option<&'static str> {
+    if segs.len() != 1 {
+        return None;
+    }
+    if reserved_root(&segs[0]) {
+        return Some(RESERVED_REASON);
+    }
+    if !is_dir && !exists {
+        return Some(ROOT_FILE_REASON);
+    }
+    None
+}
+
 /// 一覧から隠す内部用の名前か。
 pub fn is_internal(name: &str) -> bool {
     name.starts_with(".disnans-")

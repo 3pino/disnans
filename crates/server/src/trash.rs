@@ -387,6 +387,12 @@ pub async fn restore(state: &SharedState, id: &str) -> AppResult<String> {
         return restore_attachment(state, row).await;
     }
     let segs = segments(&row.original_path);
+    // ルート直下のファイルへは戻さない（ルートにはフォルダだけ）。項目はゴミ箱に残る（fs_rules.rs）
+    if row.kind == KIND_FILE && segs.len() == 1 {
+        return Err(AppError::forbidden(
+            "ルート直下のファイルは戻せません（ゴミ箱の項目は残ります）。フォルダの中へ戻すか、名前を変えてください",
+        ));
+    }
     // 予約の名前（ルートの attachments）へは戻さない（実際のフォルダができてしまうため）
     if segs.first().is_some_and(|s| s == ATTACHMENTS_DIR) {
         return Err(conflict("exists", "この名前は添付の場所なので戻せません"));

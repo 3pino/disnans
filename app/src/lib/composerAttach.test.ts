@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { embedFor, insertAt, replaceFirst } from './composerAttach';
+import { attachmentNameProblem, embedFor, insertAt, replaceFirst } from './composerAttach';
 import { bodyToDraft, draftToBody } from './mentions';
 
 describe('入力欄の添付の埋め込み', () => {
   it('アップロードの名前を、本文の添付の書き方にする', () => {
-    expect(embedFor('photo (2).png')).toBe('![[attachments/photo (2).png]]');
+    expect(embedFor('photo (2).png')).toBe('![[photo (2).png]]');
   });
 
   it('キャレットの位置に入れ、前が文字なら空白を 1 つ足す', () => {
-    expect(insertAt('見て', 2, '![[attachments/a.png]]')).toEqual({ text: '見て ![[attachments/a.png]]', caret: 2 + 1 + 22 });
+    expect(insertAt('見て', 2, '![[a.png]]')).toEqual({ text: '見て ![[a.png]]', caret: 2 + 1 + 10 });
     expect(insertAt('見て ', 3, 'X')).toEqual({ text: '見て X', caret: 4 });
     expect(insertAt('', 0, 'X')).toEqual({ text: 'X', caret: 1 });
   });
@@ -40,5 +40,19 @@ describe('編集欄の本文の埋め込み', () => {
     expect(draft).toBe(body);
     expect(draftToBody(draft, map)).toBe(body);
     expect(draft.trim()).not.toBe('');
+  });
+});
+
+describe('添付の名前の確かめ（送る前）', () => {
+  it('[ ] | を含む名前は、書き換えずに理由を返す', () => {
+    for (const name of ['a[1].txt', 'x]y.png', 'p|q.pdf']) {
+      expect(attachmentNameProblem(name)).toContain('[ ] |');
+    }
+  });
+
+  it('ふつうの名前（括弧や空白を含む）は使える', () => {
+    for (const name of ['photo (2).png', '日本語 名前.pdf', 'a(b).txt']) {
+      expect(attachmentNameProblem(name)).toBeNull();
+    }
   });
 });

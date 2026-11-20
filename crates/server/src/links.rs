@@ -7,7 +7,6 @@
 
 use std::collections::HashMap;
 
-use std::path::Path;
 
 use sqlx::SqlitePool;
 
@@ -467,13 +466,11 @@ fn linkable(name: &str) -> bool {
 
 /// 送信・編集の本文: 添付の名前のリンクを、その添付の ID（`disnans:file/<ID>`）に置き換える。
 /// - `attachments/<名前>`（どの書き方でも）: 生きている添付（投稿済み・`library`・送信者自身の未投稿）が無ければ `invalid_link`。
-/// - `[[名前]]` / `![[名前]]`（パスに `/` を含まない）: `attachments/` にあればその添付。無ければ従来どおり（shared のパスの文字）。
-///   同じ名前が shared の直下にもあれば `ambiguous_link`（`attachments/名前` と書けば解決）。
+/// - `[[名前]]` / `![[名前]]`（パスに `/` を含まない）: `attachments/名前` と同じ。共有フォルダに同じ名前があっても添付が勝つ（ambiguous_link は無い）。添付が無ければ `invalid_link`。
 ///
 /// 本文の中の ID（クライアントが直接書いたもの）は、呼び出し側が `claim` で検査する。
 pub async fn to_stored(
     pool: &SqlitePool,
-    shared_dir: &Path,
     uploader: &str,
     body: &str,
 ) -> AppResult<String> {
@@ -511,18 +508,14 @@ pub async fn to_stored(
                 ));
             }
             (Some(id), true) => {
-                if shared_dir.join(&name).is_file() {
-                    return Err(AppError::bad_request(
-                        "ambiguous_link",
-                        format!(
-                            "同じ名前が添付と共有フォルダにあります（attachments/{name} と書いてください）"
-                        ),
-                    ));
-                }
                 ids.insert(path, id);
             }
-            // 添付に無い `[[名前]]` は、従来どおりのただの文字（共有のパスとして残る）
-            (None, true) => {}
+            (None, true) => {
+                return Err(AppError::bad_request(
+                    "invalid_link",
+                    format!("リンク先の添付が見つかりません（[[{name}]]）。添付の名前を確かめてください"),
+                ));
+            }
         }
     }
     rewrite_paths(body, |p, _| -> AppResult<String> {

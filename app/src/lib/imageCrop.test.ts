@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   anyTransparent,
   canCropImage,
@@ -12,6 +12,8 @@ import {
   outputName,
   rectToDisplay,
   resizeRect,
+  prepareUpload,
+  readImageInfo,
   sourceToDisplay,
 } from './imageCrop';
 
@@ -137,5 +139,75 @@ describe('isAnimatedImage', () => {
   it('treats other data (including GIF) as not animated here', () => {
     expect(isAnimatedImage(new Uint8Array(enc('GIF89a')))).toBe(false);
     expect(isAnimatedImage(new Uint8Array([]))).toBe(false);
+  });
+});
+
+describe('prepareUpload（切り抜いた画像そのもの）', () => {
+  // canvas は仮のもの（描いた範囲と、作る形式を記録する）。OffscreenCanvas があれば makeSurface はそれを使う
+  function fakeCanvas() {
+    const drawn: number[][] = [];
+    const ctx = {
+      drawImage: (...a: unknown[]) => drawn.push(a.slice(1) as number[]),
+      getImageData: () => ({ data: new Uint8ClampedArray(4).fill(255) }),
+      imageSmoothingEnabled: false,
+      imageSmoothingQuality: '',
+    };
+    class FakeCanvas {
+      getContext() {
+        return ctx;
+      }
+      convertToBlob(o: { type: string }) {
+        return Promise.resolve(new Blob(['cropped'], { type: o.type }));
+      }
+    }
+    vi.stubGlobal('OffscreenCanvas', FakeCanvas);
+    return drawn;
+  }
+
+  it('切り抜きの範囲だけを描き、WebP にして、元と違うファイルを返す（上げるのはこれ）', async () => {
+    vi.stubGlobal('createImageBitmap', async () => ({ width: 400, height: 300, close() {} }));
+    const drawn = fakeCanvas();
+    const f = new File(['orig'], 'p.png', { type: 'image/png' });
+    const out = await prepareUpload(f, { x: 10, y: 20, w: 100, h: 50 });
+    expect(out).not.toBe(f);
+    expect(out.name).toBe('p.webp');
+    expect(out.type).toBe('image/webp');
+    expect(await out.text()).toBe('cropped');
+    expect(drawn).toEqual([[10, 20, 100, 50, 0, 0, 100, 50]]);
+    vi.unstubAllGlobals();
+  });
+
+  it('切り抜きが無い・全体のときは、元のファイルをそのまま返す', async () => {
+    vi.stubGlobal('createImageBitmap', async () => ({ width: 400, height: 300, close() {} }));
+    const f = new File(['orig'], 'p.png', { type: 'image/png' });
+    expect(await prepareUpload(f, null)).toBe(f);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('向きの回転（EXIF）を両方で同じに読む', () => {
+  it('縦横が入れ替わった写真も、切り抜きの範囲を画像全体と誤認しない（寸法は向きを直したもの）', async () => {
+    // 横 400×縦 300 の元が、EXIF で回すと縦 300×横 400 になる。読み込みは両方とも from-image
+    const calls: unknown[] = [];
+    vi.stubGlobal('createImageBitmap', async (_f: Blob, o: unknown) => {
+      calls.push(o);
+      return { width: 300, height: 400, close() {} };
+    });
+    const drawn: number[][] = [];
+    const ctx = { drawImage: (...a: unknown[]) => drawn.push(a.slice(1) as number[]), getImageData: () => ({ data: new Uint8ClampedArray(4).fill(255) }), imageSmoothingEnabled: false, imageSmoothingQuality: '' };
+    class FakeCanvas {
+      getContext() { return ctx; }
+      convertToBlob(o: { type: string }) { return Promise.resolve(new Blob(['c'], { type: o.type })); }
+    }
+    vi.stubGlobal('OffscreenCanvas', FakeCanvas);
+    const f = new File(['orig'], 'photo.jpg', { type: 'image/jpeg' });
+    // 表示と同じ寸法（300×400）の部分を切る。全体ではないので、元のまま返してはいけない
+    const out = await prepareUpload(f, { x: 0, y: 0, w: 300, h: 200 });
+    expect(out).not.toBe(f);
+    expect(drawn).toEqual([[0, 0, 300, 200, 0, 0, 300, 200]]);
+    expect(calls.every((o) => (o as { imageOrientation?: string }).imageOrientation === 'from-image')).toBe(true);
+    const info = await readImageInfo(f);
+    expect(info).toMatchObject({ width: 300, height: 400 });
+    vi.unstubAllGlobals();
   });
 });

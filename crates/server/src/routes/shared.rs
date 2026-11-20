@@ -140,6 +140,7 @@ pub(crate) async fn put(
 ) -> AppResult<Json<SharedEntry>> {
     let fs = SharedFs::new(&state, &user.id);
     let segs = segments(&path);
+    refuse_root(&state, &segs, false)?;
     let options = OpenOptions {
         write: true,
         create: true,
@@ -189,6 +190,7 @@ pub(crate) async fn ops(
     let to = match op {
         SharedOp::Mkdir { path } => {
             let segs = segments(&path);
+            refuse_root(&state, &segs, true)?;
             fs.make_dir(&segs).await.map_err(map_err)?;
             segs
         }
@@ -198,6 +200,7 @@ pub(crate) async fn ops(
             overwrite,
         } => {
             let to = segments(&to);
+            refuse_reserved(&to)?;
             fs.rename(&segments(&from), &to, overwrite.unwrap_or(false))
                 .await
                 .map_err(map_err)?;
@@ -209,6 +212,7 @@ pub(crate) async fn ops(
             overwrite,
         } => {
             let to = segments(&to);
+            refuse_reserved(&to)?;
             fs.copy(&segments(&from), &to, overwrite.unwrap_or(false))
                 .await
                 .map_err(map_err)?;
@@ -217,6 +221,25 @@ pub(crate) async fn ops(
     };
     let found = fs.stat(&to).await.map_err(map_err)?;
     Ok(Json(entry(&rel(&to), &found)))
+}
+
+/// ルート直下に新しく作るものを、理由つきで断る（WebDAV は理由を返せないので、REST だけがこれを使う）。
+fn refuse_root(state: &SharedState, segs: &[String], is_dir: bool) -> AppResult<()> {
+    let exists = std::fs::symlink_metadata(state.config.shared_dir().join(segs.join("/"))).is_ok();
+    match crate::webdav::names::root_creation_refusal(segs, is_dir, exists) {
+        Some(reason) => Err(AppError::forbidden(reason)),
+        None => Ok(()),
+    }
+}
+
+/// 移動・コピーの先が予約名なら、理由つきで断る。
+fn refuse_reserved(to: &[String]) -> AppResult<()> {
+        match to {
+        [name] if crate::webdav::names::reserved_root(name) => {
+            Err(AppError::forbidden(crate::webdav::names::RESERVED_REASON))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// 大きさ（ルート）。仮想の `attachments/` は、DB の添付を 1 回だけ数える。

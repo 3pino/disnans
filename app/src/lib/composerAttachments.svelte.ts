@@ -13,7 +13,7 @@ export const ORPHAN_GRACE_MS = 60_000;
 
 import type { Attachment } from './protocol/Attachment';
 import type { CropRect, ImageInfo } from './imageCrop';
-import { embedFor } from './composerAttach';
+import { attachmentNameProblem, embedFor } from './composerAttach';
 
 /** 添付の 1 つ */
 export type StagedItem = {
@@ -92,6 +92,12 @@ export class ComposerAttachments {
   /** 添付に加える。すぐアップロードする */
   add(files: File[]): void {
     for (const file of files) {
+      // 名前が使えないものは上げずに、理由を出す（サーバーも同じ規則で断る）
+      const problem = attachmentNameProblem(file.name);
+      if (problem) {
+        this.deps.toast(problem);
+        continue;
+      }
       const key = ++this.seq;
       this.items.push({
         key,
@@ -168,9 +174,10 @@ export class ComposerAttachments {
   recrop(key: number, crop: CropRect | null): void {
     const s = this.find(key);
     if (!s) return;
+    const prev = s.crop;
     s.crop = crop;
     if (s.status === 'ready' && s.attachment && s.embed) {
-      this.start(key, { embed: s.embed, attachment: s.attachment });
+      this.start(key, { embed: s.embed, attachment: s.attachment, crop: prev });
     }
   }
 
@@ -243,7 +250,7 @@ export class ComposerAttachments {
   }
 
   /** アップロードを始める（できたら本文に埋め込む）。replacing があれば、その埋め込みを新しいものに入れ替える */
-  private start(key: number, replacing?: { embed: string; attachment: Attachment }): void {
+  private start(key: number, replacing?: { embed: string; attachment: Attachment; crop: CropRect | null }): void {
     const first = this.find(key);
     if (!first) return;
     const g = this.gen;
@@ -254,6 +261,14 @@ export class ComposerAttachments {
       try {
         const file = await this.deps.prepare(first.file, first.crop);
         if (g !== this.gen || !this.find(key)) return; // 取り消された・接続先が変わった
+        // 切り抜いたものは、一覧の見本も切り抜いたものにする（前の見本は捨てる）
+        if (file !== first.file) {
+          const c = this.find(key);
+          if (c) {
+            if (c.preview) this.deps.revoke(c.preview);
+            c.preview = this.deps.preview(file);
+          }
+        }
         const h = this.deps.upload(file, (r) => {
           const c = this.find(key);
           if (c) c.progress = r;
@@ -275,8 +290,18 @@ export class ComposerAttachments {
         if (replacing) placed = this.deps.replace(replacing.embed, embed);
         else placed = this.deps.insert(embed);
         if (!placed) {
-          // 入力欄が無い、または切り抜きの途中で埋め込みを消された。新しいものは入れずに取り消す
-          this.cancel(key);
+          if (replacing) {
+            // 切り抜きの入れ替えができなかった: 前の画像・前の切り抜きに戻し、そう伝える（黙って元のままにしない）
+            done.embed = replacing.embed;
+            done.attachment = replacing.attachment;
+            done.crop = replacing.crop;
+            done.status = 'ready';
+            done.progress = 1;
+            this.deps.toast('切り抜いた画像を本文に入れられませんでした。前の画像のままです');
+          } else {
+            // 入力欄が無い、または切り抜きの途中で埋め込みを消された。新しいものは入れずに取り消す
+            this.cancel(key);
+          }
           void this.deps.discard(att);
           return;
         }
@@ -296,8 +321,9 @@ export class ComposerAttachments {
         if (!c) return; // 取り消したときの中止は、失敗として扱わない
         const message = e instanceof Error ? e.message : String(e);
         if (replacing) {
-          // 切り抜きのやり直しが失敗したら、前のもの（本文の埋め込み）は残す
+          // 切り抜きのやり直しが失敗したら、前のもの（本文の埋め込み）と前の切り抜きに戻す
           c.status = 'ready';
+          c.crop = replacing.crop;
           this.deps.toast(`切り抜いた画像を送れませんでした: ${message}`);
         } else {
           c.status = 'failed';

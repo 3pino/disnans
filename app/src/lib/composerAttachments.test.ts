@@ -84,6 +84,14 @@ function fakeTimers() {
 }
 
 describe('入力欄の添付', () => {
+  it('[ ] | を含む名前は上げず、理由を出す（送る前に止める）', () => {
+    const { store, deps, net } = setup();
+    store.add([file('a[1].png')]);
+    expect(deps.toast).toHaveBeenCalledWith(expect.stringContaining('[ ] |'));
+    expect(store.items).toHaveLength(0);
+    expect(net.handles).toHaveLength(0);
+  });
+
   it('選んだら上げ、できたら本文に埋め込む（名前は返ってきたもの）', async () => {
     const { store, deps, net } = setup();
     store.add([file('a.png')]);
@@ -91,9 +99,9 @@ describe('入力欄の添付', () => {
     expect(store.uploading).toBe(true);
     net.handles[0].resolve(att('a (2).png'));
     await flush();
-    expect(deps.insert).toHaveBeenCalledWith('![[attachments/a (2).png]]');
+    expect(deps.insert).toHaveBeenCalledWith('![[a (2).png]]');
     expect(store.uploading).toBe(false);
-    expect(store.items[0]).toMatchObject({ status: 'ready', embed: '![[attachments/a (2).png]]' });
+    expect(store.items[0]).toMatchObject({ status: 'ready', embed: '![[a (2).png]]' });
   });
 
   it('失敗したら理由を出し、再試行で上げ直す', async () => {
@@ -133,7 +141,7 @@ describe('入力欄の添付', () => {
     net.handles[0].resolve(att('a.png'));
     await flush();
     store.cancel(store.items[0].key);
-    expect(deps.unembed).toHaveBeenCalledWith('![[attachments/a.png]]');
+    expect(deps.unembed).toHaveBeenCalledWith('![[a.png]]');
     expect(deps.discard).toHaveBeenCalledWith(expect.objectContaining({ file_name: 'a.png' }));
   });
 
@@ -144,7 +152,7 @@ describe('入力欄の添付', () => {
     net.handles[0].resolve(att('a.png'));
     net.handles[1].resolve(att('b.png'));
     await flush();
-    store.settle('文 ![[attachments/a.png]]');
+    store.settle('文 ![[a.png]]');
     expect(deps.discard).toHaveBeenCalledTimes(1);
     expect(deps.discard).toHaveBeenCalledWith(expect.objectContaining({ file_name: 'b.png' }));
     expect(store.items).toHaveLength(0);
@@ -157,7 +165,7 @@ describe('入力欄の添付', () => {
     net.handles[0].resolve(att('a.png'));
     net.handles[1].reject(new Error('容量が足りません'));
     await flush();
-    store.settle('文 ![[attachments/a.png]]');
+    store.settle('文 ![[a.png]]');
     expect(deps.discard).not.toHaveBeenCalled();
     expect(store.items.map((s) => s.file.name)).toEqual(['b.png']);
     expect(store.items[0].status).toBe('failed');
@@ -175,9 +183,73 @@ describe('入力欄の添付', () => {
     expect(store.items[0].status).toBe('uploading');
     net.handles[1].resolve(att('a (2).png'));
     await flush();
-    expect(deps.replace).toHaveBeenCalledWith('![[attachments/a.png]]', '![[attachments/a (2).png]]');
+    expect(deps.replace).toHaveBeenCalledWith('![[a.png]]', '![[a (2).png]]');
     expect(deps.discard).toHaveBeenCalledWith(expect.objectContaining({ file_name: 'a.png' }));
-    expect(store.items[0]).toMatchObject({ status: 'ready', embed: '![[attachments/a (2).png]]' });
+    expect(store.items[0]).toMatchObject({ status: 'ready', embed: '![[a (2).png]]' });
+  });
+
+  it('切り抜き: prepare は切り抜きの範囲を受け取り、上げるのは prepare が返した（切り抜いた）ファイル', async () => {
+    const cropped = new File(['cut'], 'a.webp', { type: 'image/webp' });
+    const prepare = vi.fn(async () => cropped);
+    const { store, net } = setup({ prepare });
+    store.add([file('a.png')]);
+    await flush();
+    net.handles[0].resolve(att('a.png'));
+    await flush();
+    const rect = { x: 1, y: 2, w: 3, h: 4 };
+    store.recrop(store.items[0].key, rect);
+    await flush();
+    expect(prepare).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'a.png' }), rect);
+    expect(net.upload).toHaveBeenLastCalledWith(cropped, expect.any(Function));
+  });
+
+  it('切り抜き: 一覧の見本は、切り抜いたファイルのものになり、前の見本は捨てる', async () => {
+    const cropped = new File(['cut'], 'a.webp', { type: 'image/webp' });
+    const preview = vi.fn((f: File) => (f === cropped ? 'blob:cut' : 'blob:orig'));
+    const revoke = vi.fn();
+    const { store, net } = setup({ prepare: async (f, crop) => (crop ? cropped : f), preview, revoke });
+    store.add([file('a.png')]);
+    await flush();
+    net.handles[0].resolve(att('a.png'));
+    await flush();
+    store.recrop(store.items[0].key, { x: 0, y: 0, w: 1, h: 1 });
+    await flush();
+    // 切り抜いたファイルを作ったら、見本はすぐ切り抜いたものになる（上げ終わるのを待たない）
+    expect(store.items[0].preview).toBe('blob:cut');
+    expect(revoke).toHaveBeenCalledWith('blob:orig');
+    net.handles[1].resolve(att('a (2).webp'));
+    await flush();
+    expect(store.items[0].preview).toBe('blob:cut');
+  });
+
+  it('切り抜きの入れ替えができなかったら、前の画像・前の切り抜きに戻し、トーストで伝える（取り消して黙って元のままにしない）', async () => {
+    const { store, deps, net } = setup({ replace: vi.fn(() => false) });
+    store.add([file('a.png')]);
+    await flush();
+    net.handles[0].resolve(att('a.png'));
+    await flush();
+    const before = store.items[0].embed;
+    store.recrop(store.items[0].key, { x: 0, y: 0, w: 5, h: 5 });
+    await flush();
+    net.handles[1].resolve(att('a (2).png'));
+    await flush();
+    expect(store.items).toHaveLength(1);
+    expect(store.items[0]).toMatchObject({ status: 'ready', embed: before, crop: null });
+    expect(store.items[0].attachment?.file_name).toBe('a.png');
+    expect(deps.discard).toHaveBeenCalledWith(expect.objectContaining({ file_name: 'a (2).png' }));
+    expect(deps.discard).not.toHaveBeenCalledWith(expect.objectContaining({ file_name: 'a.png' }));
+    expect(deps.toast).toHaveBeenCalledWith(expect.stringContaining('本文に入れられませんでした'));
+  });
+
+  it('切り抜きのやり直しが失敗したら、前の切り抜きの表示に戻す', async () => {
+    const { store, net } = setup({ prepare: vi.fn(async (f: File, crop: unknown) => { if (crop) throw new Error('canvas'); return f; }) });
+    store.add([file('a.png')]);
+    await flush();
+    net.handles[0].resolve(att('a.png'));
+    await flush();
+    store.recrop(store.items[0].key, { x: 0, y: 0, w: 5, h: 5 });
+    await flush();
+    expect(store.items[0]).toMatchObject({ status: 'ready', crop: null });
   });
 
   it('切り抜きのやり直しが失敗しても、前のもの（本文の埋め込み）は残す', async () => {
@@ -190,7 +262,7 @@ describe('入力欄の添付', () => {
     await flush();
     net.handles[1].reject(new Error('通信できません'));
     await flush();
-    expect(store.items[0]).toMatchObject({ status: 'ready', embed: '![[attachments/a.png]]' });
+    expect(store.items[0]).toMatchObject({ status: 'ready', embed: '![[a.png]]' });
     expect(deps.toast).toHaveBeenCalled();
     expect(deps.discard).not.toHaveBeenCalled();
   });
@@ -214,7 +286,7 @@ describe('入力欄の添付', () => {
     await flush();
     expect(deps.mark).toHaveBeenCalledWith(expect.objectContaining({ file_name: 'a.png' }), true);
     // 送る（a は本文に残り、b は本文に無いので消す）: a の印は残し、b の印は外す
-    store.settle('![[attachments/a.png]]');
+    store.settle('![[a.png]]');
     expect(deps.mark).not.toHaveBeenCalledWith(expect.objectContaining({ file_name: 'a.png' }), false);
     expect(deps.mark).toHaveBeenCalledWith(expect.objectContaining({ file_name: 'b.png' }), false);
     expect(store.items).toHaveLength(0);
@@ -246,7 +318,7 @@ describe('入力欄の添付', () => {
     net.handles[0].resolve(att('a.png'));
     net.handles[1].resolve(att('b.png'));
     await flush();
-    store.sync('![[attachments/b.png]]');
+    store.sync('![[b.png]]');
     store.dispose();
     expect(deps.discard).toHaveBeenCalledTimes(1);
     expect(deps.discard).toHaveBeenCalledWith(expect.objectContaining({ file_name: 'a.png' }));
@@ -261,7 +333,7 @@ describe('入力欄の添付', () => {
     net.handles[1].resolve(att('b.png'));
     await flush();
     // 利用者が a の埋め込みだけ消した（b は残っている）
-    store.sync('![[attachments/b.png]]');
+    store.sync('![[b.png]]');
     expect(deps.discard).not.toHaveBeenCalled();
     timers.advance(ORPHAN_GRACE_MS);
     expect(deps.discard).toHaveBeenCalledTimes(1);
@@ -278,7 +350,7 @@ describe('入力欄の添付', () => {
       await flush();
       net.handles[0].resolve(att('a.png'));
       await flush();
-      const embed = '![[attachments/a.png]]';
+      const embed = '![[a.png]]';
       store.sync('');
       timers.advance(ORPHAN_GRACE_MS - 1);
       store.sync(embed); // Ctrl+Z で戻した
@@ -314,7 +386,7 @@ describe('入力欄の添付', () => {
       await flush();
       net.handles[0].resolve(att('a.png'));
       await flush();
-      const embed = '![[attachments/a.png]]';
+      const embed = '![[a.png]]';
       store.sync(''); // t = 0
       timers.advance(30_000);
       store.sync(embed); // t = 30s 戻す
@@ -398,7 +470,7 @@ describe('入力欄の添付', () => {
     net.handles[1].resolve(att('a (2).png'));
     await flush();
     expect(store.items).toHaveLength(1);
-    expect(store.items[0]).toMatchObject({ status: 'ready', embed: '![[attachments/a (2).png]]' });
+    expect(store.items[0]).toMatchObject({ status: 'ready', embed: '![[a (2).png]]' });
     expect(deps.discard).toHaveBeenCalledWith(expect.objectContaining({ file_name: 'a.png' }));
   });
 

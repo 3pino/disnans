@@ -158,7 +158,7 @@ async fn overwrite_move_copy_and_recursive_delete() {
 
     let res = op(
         &server,
-        json!({"op": "copy", "from": "d/a.txt", "to": "b.txt"}),
+        json!({"op": "copy", "from": "d/a.txt", "to": "d/b.txt"}),
     )
     .await;
     assert_eq!(res.status(), 200);
@@ -286,15 +286,17 @@ async fn attachments_can_be_listed_read_written_renamed_and_copied() {
     );
 
     // 添付から共有フォルダへはコピーできる
+    // 直下へは新しいファイルにならないので、フォルダの中へコピーする（fs_rules.rs）
+    op(&server, json!({"op": "mkdir", "path": "d"})).await;
     let res = op(
         &server,
-        json!({"op": "copy", "from": "attachments/final.txt", "to": "copy.txt"}),
+        json!({"op": "copy", "from": "attachments/final.txt", "to": "d/copy.txt"}),
     )
     .await;
     assert_eq!(res.status(), 200);
     let copied: SharedEntry = res.json().await.unwrap();
-    assert_eq!(copied.path, "copy.txt");
-    assert_eq!(read(&server, "/api/shared/copy.txt").await, "changed");
+    assert_eq!(copied.path, "d/copy.txt");
+    assert_eq!(read(&server, "/api/shared/d/copy.txt").await, "changed");
 }
 #[tokio::test]
 async fn names_and_paths_are_checked() {
@@ -327,9 +329,11 @@ async fn names_and_paths_are_checked() {
 async fn changes_are_announced_on_the_websocket() {
     let server = TestServer::start().await;
     let mut ws = server.ws(ALICE).await;
-    put(&server, "/api/shared/hello.txt", "hi").await;
+    // 直下のファイルは PUT で作れない（fs_rules.rs）。フォルダの中で、変更の知らせを確かめる
+    op(&server, json!({"op": "mkdir", "path": "docs"})).await;
+    put(&server, "/api/shared/docs/hello.txt", "hi").await;
     let ev = ws
-        .recv_until(|e| matches!(e, ServerEvent::FilesChanged { path } if path == "hello.txt"))
+        .recv_until(|e| matches!(e, ServerEvent::FilesChanged { path } if path == "docs/hello.txt"))
         .await;
     assert!(matches!(ev, ServerEvent::FilesChanged { .. }));
 
@@ -337,32 +341,32 @@ async fn changes_are_announced_on_the_websocket() {
     ws.recv_until(|e| matches!(e, ServerEvent::FilesChanged { path } if path == "dir1"))
         .await;
 
-    req(&server, reqwest::Method::DELETE, "/api/shared/hello.txt")
+    req(&server, reqwest::Method::DELETE, "/api/shared/docs/hello.txt")
         .send()
         .await
         .unwrap();
-    ws.recv_until(|e| matches!(e, ServerEvent::FilesChanged { path } if path == "hello.txt"))
+    ws.recv_until(|e| matches!(e, ServerEvent::FilesChanged { path } if path == "docs/hello.txt"))
         .await;
 
     // WebDAV の書き込みも同じく流れる
     let res = server
         .http
-        .put(server.url("/dav/from-dav.txt"))
+        .put(server.url("/dav/docs/from-dav.txt"))
         .header("X-Dev-User", ALICE)
         .body("d")
         .send()
         .await
         .unwrap();
     assert!(res.status().is_success());
-    ws.recv_until(|e| matches!(e, ServerEvent::FilesChanged { path } if path == "from-dav.txt"))
+    ws.recv_until(|e| matches!(e, ServerEvent::FilesChanged { path } if path == "docs/from-dav.txt"))
         .await;
 }
 
 #[tokio::test]
 async fn copy_and_move_refuse_an_existing_destination_unless_overwrite_is_set() {
     let server = TestServer::start().await;
-    put(&server, "/api/shared/src.txt", "new").await;
-    put(&server, "/api/shared/dst.txt", "old").await;
+    common::seed_root_file(&server, "src.txt", b"new");
+    common::seed_root_file(&server, "dst.txt", b"old");
 
     // 既定（overwrite なし）は 409 exists、中身は変わらない
     let res = op(
@@ -415,7 +419,7 @@ async fn copy_and_move_refuse_an_existing_destination_unless_overwrite_is_set() 
 async fn folders_are_never_overwritten_even_with_overwrite() {
     let server = TestServer::start().await;
     op(&server, json!({"op": "mkdir", "path": "dir"})).await;
-    put(&server, "/api/shared/f.txt", "f").await;
+    common::seed_root_file(&server, "f.txt", b"f");
     let res = op(
         &server,
         json!({"op": "copy", "from": "f.txt", "to": "dir", "overwrite": true}),

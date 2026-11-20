@@ -190,7 +190,14 @@ pub fn router(state: SharedState) -> Router<SharedState> {
                         if !touches && let Some(r) = mount_relative(&dest) {
                             touches = in_active_trash(&state, r).await;
                         }
-                        if touches {
+                        // ルート直下の既存のファイルへの Overwrite: T も同じく先消しになる（新しく作るのと同じ扱いの
+                        // 拒否が後から掛かると、中身が消えたまま失敗する）。Overwrite: F にして、同名は 412 で止める
+                        let root_file_over = mount_relative(&dest).is_some_and(|rel| {
+                            rel.len() == 1
+                                && std::fs::symlink_metadata(state.config.shared_dir().join(&rel[0]))
+                                    .is_ok_and(|m| !m.is_dir())
+                        });
+                        if touches || root_file_over {
                             req.headers_mut()
                                 .insert("overwrite", axum::http::HeaderValue::from_static("F"));
                         }

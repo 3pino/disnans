@@ -20,6 +20,11 @@ fn req(server: &TestServer, user: &str, m: reqwest::Method, path: &str) -> reqwe
 }
 
 async fn put_file(server: &TestServer, path: &str, data: &[u8]) {
+    // 直下のファイルは PUT で作れないので、準備として直接置く（fs_rules.rs で PUT の拒否を固定）
+    if !path.contains('/') {
+        common::seed_root_file(server, path, data);
+        return;
+    }
     let res = req(
         server,
         ALICE,
@@ -105,15 +110,16 @@ async fn restart(server: &TestServer) -> TestServer {
 #[tokio::test]
 async fn trash_round_trip_keeps_the_bytes_and_hides_the_item() {
     let server = TestServer::start().await;
-    put_file(&server, "a.txt", b"hello").await;
-    let res = trash_op(&server, serde_json::json!({"op": "trash", "path": "a.txt"})).await;
+    mkdir(&server, "box").await;
+    put_file(&server, "box/a.txt", b"hello").await;
+    let res = trash_op(&server, serde_json::json!({"op": "trash", "path": "box/a.txt"})).await;
     assert_eq!(res.status(), 200);
     let entry: SharedTrashEntry = res.json().await.unwrap();
-    assert_eq!(entry.original_path, "a.txt");
+    assert_eq!(entry.original_path, "box/a.txt");
     assert_eq!(entry.size, 5);
 
     // 共有フォルダからは消え、ゴミ箱の一覧に出る
-    let res = req(&server, ALICE, reqwest::Method::GET, "/api/shared/a.txt")
+    let res = req(&server, ALICE, reqwest::Method::GET, "/api/shared/box/a.txt")
         .send()
         .await
         .unwrap();
@@ -128,8 +134,8 @@ async fn trash_round_trip_keeps_the_bytes_and_hides_the_item() {
     .await;
     assert_eq!(res.status(), 200);
     let restored: SharedEntry = res.json().await.unwrap();
-    assert_eq!(restored.path, "a.txt");
-    assert_eq!(read(&server, "a.txt").await, b"hello");
+    assert_eq!(restored.path, "box/a.txt");
+    assert_eq!(read(&server, "box/a.txt").await, b"hello");
     assert!(list_trash(&server).await.is_empty());
 }
 
@@ -620,22 +626,23 @@ async fn interrupted_purge_is_finished_on_restart() {
 #[tokio::test]
 async fn restore_does_not_overwrite_a_name_created_just_before() {
     let server = TestServer::start().await;
-    put_file(&server, "race.txt", b"old").await;
+    mkdir(&server, "box").await;
+    put_file(&server, "box/race.txt", b"old").await;
     let e = trash_op(
         &server,
-        serde_json::json!({"op": "trash", "path": "race.txt"}),
+        serde_json::json!({"op": "trash", "path": "box/race.txt"}),
     )
     .await
     .json::<SharedTrashEntry>()
     .await
     .unwrap();
     // 戻す直前に同じ名前が現れた（確かめのあとの PUT と同じ状況）
-    put_file(&server, "race.txt", b"new").await;
+    put_file(&server, "box/race.txt", b"new").await;
     let (status, code) =
         error_code(trash_op(&server, serde_json::json!({"op": "restore", "id": e.id})).await).await;
     assert_eq!((status, code.as_str()), (409, "exists"));
     // 両方残る: 今の項目はそのまま、ゴミ箱の中身も残る
-    assert_eq!(read(&server, "race.txt").await, b"new");
+    assert_eq!(read(&server, "box/race.txt").await, b"new");
     assert_eq!(list_trash(&server).await.len(), 1);
 }
 
@@ -665,8 +672,9 @@ async fn restore_folder_refuses_an_existing_empty_folder_and_keeps_both() {
 #[tokio::test]
 async fn restore_and_put_racing_never_lose_both() {
     let server = TestServer::start().await;
+    mkdir(&server, "box").await;
     for round in 0..10 {
-        let name = format!("r{round}.txt");
+        let name = format!("box/r{round}.txt");
         put_file(&server, &name, b"trashed").await;
         let e = trash_op(&server, serde_json::json!({"op": "trash", "path": name}))
             .await
@@ -1088,13 +1096,14 @@ async fn only_trash_row_id(server: &TestServer) -> String {
 #[tokio::test]
 async fn ready_failure_after_rename_keeps_the_item_and_listing_recovers_it() {
     let server = TestServer::start().await;
-    put_file(&server, "fail.txt", b"payload-bytes").await;
+    mkdir(&server, "box").await;
+    put_file(&server, "box/fail.txt", b"payload-bytes").await;
     inject_ready_failure(&server).await;
 
     // 移動のあと ready にできない: 応答は 500。元データは trash に残り、行は pending
     let res = trash_op(
         &server,
-        serde_json::json!({"op": "trash", "path": "fail.txt"}),
+        serde_json::json!({"op": "trash", "path": "box/fail.txt"}),
     )
     .await;
     assert_eq!(res.status(), 500);
@@ -1102,7 +1111,7 @@ async fn ready_failure_after_rename_keeps_the_item_and_listing_recovers_it() {
     assert_eq!(trash_row_state(&server, &id).await, "pending");
     let item = server.state.config.trash_dir().join(&id).join("item");
     assert_eq!(std::fs::read(&item).unwrap(), b"payload-bytes");
-    assert!(!server.state.config.shared_dir().join("fail.txt").exists());
+    assert!(!server.state.config.shared_dir().join("box/fail.txt").exists());
 
     // trigger が有効な間の一覧: 回復を試みて失敗するが、データは失わない（500。行も実体もそのまま）
     let res = server.get(ALICE, "/api/shared-trash").send().await.unwrap();
@@ -1115,14 +1124,14 @@ async fn ready_failure_after_rename_keeps_the_item_and_listing_recovers_it() {
     let list = list_trash(&server).await;
     assert!(
         list.iter()
-            .any(|e| e.id == id && e.original_path == "fail.txt" && e.size == 13)
+            .any(|e| e.id == id && e.original_path == "box/fail.txt" && e.size == 13)
     );
     assert_eq!(trash_row_state(&server, &id).await, "ready");
 
     // 戻すと、同じ中身が読める
     let res = trash_op(&server, serde_json::json!({"op": "restore", "id": id})).await;
     assert_eq!(res.status(), 200);
-    assert_eq!(read(&server, "fail.txt").await, b"payload-bytes");
+    assert_eq!(read(&server, "box/fail.txt").await, b"payload-bytes");
 }
 
 #[tokio::test]

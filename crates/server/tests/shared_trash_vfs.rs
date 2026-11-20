@@ -25,6 +25,11 @@ fn req(server: &TestServer, m: &str, path: &str) -> reqwest::RequestBuilder {
 }
 
 async fn put_file(server: &TestServer, path: &str, data: &[u8]) {
+    // 直下のファイルは PUT で作れないので、準備として直接置く（fs_rules.rs で PUT の拒否を固定）
+    if !path.contains('/') {
+        common::seed_root_file(server, path, data);
+        return;
+    }
     let res = req(server, "PUT", &format!("/api/shared/{path}"))
         .body(data.to_vec())
         .send()
@@ -322,11 +327,13 @@ async fn folders_browse_nested_and_copy_out_as_ordinary_content() {
     assert!(empty.entries.is_empty());
 
     // 中のファイルを外へコピーできる（通常のコピー。ゴミ箱の中は変わらない）
+    // 直下のファイルは新しく作れない（fs_rules.rs）ので、フォルダの中へコピーする
+    mkdir(&server, "out").await;
     assert_eq!(
-        rest_copy(&server, &format!(".trash/{alias}/sub/x.txt"), "copied.txt").await,
+        rest_copy(&server, &format!(".trash/{alias}/sub/x.txt"), "out/copied.txt").await,
         200
     );
-    assert_eq!(read_rest(&server, "copied.txt").await, b"nested");
+    assert_eq!(read_rest(&server, "out/copied.txt").await, b"nested");
     // フォルダごとコピーできる
     assert_eq!(
         rest_copy(&server, &format!(".trash/{alias}"), "box-copy").await,
@@ -592,7 +599,8 @@ async fn a_real_trash_folder_disables_the_virtual_one_and_keeps_its_contents() {
         .send()
         .await
         .unwrap();
-    assert_eq!(res.status(), 200);
+    // 予約名なので作れない（fs_rules.rs）
+    assert_eq!(res.status(), 403);
 }
 
 #[tokio::test]
@@ -675,9 +683,10 @@ async fn pending_rows_are_completed_by_listing_and_broken_rows_stay_hidden() {
 #[tokio::test]
 async fn concurrent_listing_reads_and_restore_never_lose_bytes() {
     let server = TestServer::start().await;
-    put_file(&server, "c.txt", b"steady").await;
-    let id = trash(&server, "c.txt").await.id;
-    let alias = alias_of(&id, "c.txt");
+    mkdir(&server, "box").await;
+    put_file(&server, "box/c.txt", b"steady").await;
+    let id = trash(&server, "box/c.txt").await.id;
+    let alias = alias_of(&id, "box/c.txt");
     let reads = (0..8).map(|_| {
         let http = server.http.clone();
         let url = server.url(&format!("/api/shared/.trash/{alias}"));
@@ -706,7 +715,7 @@ async fn concurrent_listing_reads_and_restore_never_lose_bytes() {
             assert_eq!(res.bytes().await.unwrap().as_ref(), b"steady");
         }
     }
-    assert_eq!(read_rest(&server, "c.txt").await, b"steady");
+    assert_eq!(read_rest(&server, "box/c.txt").await, b"steady");
 }
 
 // ---- 大きさ・通知・再起動 ----
@@ -729,13 +738,14 @@ async fn trash_size_counts_retained_content_once_and_root_excludes_it() {
 #[tokio::test]
 async fn trash_operations_and_moves_announce_the_namespace_to_other_clients() {
     let server = TestServer::start().await;
-    put_file(&server, "n.txt", b"n").await;
+    mkdir(&server, "box").await;
+    put_file(&server, "box/n.txt", b"n").await;
     let mut ws = server.ws(ALICE).await;
-    let e = trash(&server, "n.txt").await;
+    let e = trash(&server, "box/n.txt").await;
     ws.recv_until(|ev| matches!(ev, ServerEvent::FilesChanged { path } if path == ".trash"))
         .await;
     assert_eq!(
-        dav_move(&server, &format!(".trash/{}", alias_name(&e)), "n.txt").await,
+        dav_move(&server, &format!(".trash/{}", alias_name(&e)), "box/n.txt").await,
         201
     );
     ws.recv_until(|ev| matches!(ev, ServerEvent::FilesChanged { path } if path == ".trash"))
@@ -967,11 +977,17 @@ async fn normal_shared_moves_and_copies_are_unchanged() {
         dav_transfer(&server, "MOVE", "a.txt", "b.txt", None).await,
         201
     );
+    // 直下へのコピーは新しいファイルになるので断る（fs_rules.rs）。フォルダの中へは従来どおり
     assert_eq!(
-        dav_transfer(&server, "COPY", "b.txt", "c.txt", None).await,
+        dav_transfer(&server, "COPY", "b.txt", "d.txt", None).await,
+        403
+    );
+    mkdir(&server, "out").await;
+    assert_eq!(
+        dav_transfer(&server, "COPY", "b.txt", "out/c.txt", None).await,
         201
     );
-    assert_eq!(read_rest(&server, "c.txt").await, b"a");
+    assert_eq!(read_rest(&server, "out/c.txt").await, b"a");
 }
 
 #[tokio::test]
@@ -980,13 +996,14 @@ async fn a_real_trash_folder_is_ordinary_data_for_overwrite() {
     let real = server.state.config.shared_dir().join(".trash");
     std::fs::create_dir_all(&real).unwrap();
     std::fs::write(real.join("keep.txt"), b"real").unwrap();
-    put_file(&server, "dest.txt", b"old").await;
+    mkdir(&server, "box").await;
+    put_file(&server, "box/dest.txt", b"old").await;
     // 実際の `.trash` は普通の項目（仮想のゴミ箱ではない）: Overwrite:T は従来どおり置き換える
     assert_eq!(
-        dav_transfer(&server, "COPY", ".trash/keep.txt", "dest.txt", Some("T")).await,
+        dav_transfer(&server, "COPY", ".trash/keep.txt", "box/dest.txt", Some("T")).await,
         204
     );
-    assert_eq!(read_rest(&server, "dest.txt").await, b"real");
+    assert_eq!(read_rest(&server, "box/dest.txt").await, b"real");
 }
 
 /// 現状の記録（承認ではない）: 通常の共有フォルダへの Overwrite:T の移動は、従来どおり宛先を置き換える。
@@ -994,14 +1011,15 @@ async fn a_real_trash_folder_is_ordinary_data_for_overwrite() {
 #[tokio::test]
 async fn recorded_current_behaviour_shared_overwrite_t_replaces_the_destination() {
     let server = TestServer::start().await;
-    put_file(&server, "s.txt", b"new").await;
-    put_file(&server, "t.txt", b"old").await;
+    mkdir(&server, "box").await;
+    put_file(&server, "box/s.txt", b"new").await;
+    put_file(&server, "box/t.txt", b"old").await;
     assert_eq!(
-        dav_transfer(&server, "MOVE", "s.txt", "t.txt", Some("T")).await,
+        dav_transfer(&server, "MOVE", "box/s.txt", "box/t.txt", Some("T")).await,
         // 置き換えたときは 204（新しい項目は 201）
         204
     );
-    assert_eq!(read_rest(&server, "t.txt").await, b"new");
+    assert_eq!(read_rest(&server, "box/t.txt").await, b"new");
 }
 
 #[tokio::test]

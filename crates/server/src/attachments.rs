@@ -101,6 +101,14 @@ pub async fn create(
     naming: Naming,
     library: bool,
 ) -> AppResult<FileRow> {
+    // 名前に [ ] | は書けない（リンクの書き方と衝突する）。書き換えず、ここで断る
+    if !crate::attachment_names::is_clean(name) {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(AppError::bad_request(
+            "invalid_name",
+            "添付の名前には [ ] | は使えません。名前を変えてください",
+        ));
+    }
     let ulid = db::new_ulid();
     let id = ulid.to_string();
     let dest = files::file_path(&state.config, &id);
@@ -121,7 +129,7 @@ pub async fn create(
             Naming::Unique => {
                 free_name(
                     &state.pool,
-                    &crate::attachment_names::clean(&stored.file_name),
+                    &stored.file_name,
                 )
                 .await?
             }

@@ -9,18 +9,6 @@ use disnans_server::backup;
 
 const ALICE: &str = "alice@test";
 
-async fn put(server: &TestServer, path: &str, body: &str) {
-    let res = server
-        .http
-        .put(server.url(path))
-        .header("X-Dev-User", ALICE)
-        .body(body.to_owned())
-        .send()
-        .await
-        .unwrap();
-    assert!(res.status().is_success(), "{}", res.status());
-}
-
 fn set_dir(server: &TestServer, ts: &str, kind: &str) -> std::path::PathBuf {
     server
         .dir
@@ -32,7 +20,7 @@ fn set_dir(server: &TestServer, ts: &str, kind: &str) -> std::path::PathBuf {
 #[tokio::test]
 async fn a_backup_set_keeps_the_db_and_hardlinked_folders() {
     let server = TestServer::start().await;
-    put(&server, "/dav/a.txt", "old").await;
+    common::seed_root_file(&server, "a.txt", b"old");
 
     let ts = backup::run(&server.state).await.unwrap();
     let backup_dir = server.dir.path().join("backup");
@@ -48,7 +36,7 @@ async fn a_backup_set_keeps_the_db_and_hardlinked_folders() {
     );
 
     // 上書きをしても、バックアップの中身は古いまま
-    put(&server, "/dav/a.txt", "new").await;
+    common::seed_root_file(&server, "a.txt", b"new");
     assert_eq!(std::fs::read_to_string(&live).unwrap(), "new");
     assert_eq!(std::fs::read_to_string(&snap).unwrap(), "old");
 

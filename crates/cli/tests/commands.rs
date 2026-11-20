@@ -540,10 +540,10 @@ async fn files_commands_round_trip_and_guard_overwrites_and_folders() {
         .await,
     );
     let moved = assert_success_json(
-        &run(vec!["files", "mv", "docs/copy.bin", "moved.bin", "--json"]).await,
+        &run(vec!["files", "mv", "docs/copy.bin", "docs/moved.bin", "--json"]).await,
     );
-    assert_eq!(moved["path"], "moved.bin");
-    let exists = run(vec!["files", "cp", "docs/big.bin", "moved.bin"]).await;
+    assert_eq!(moved["path"], "docs/moved.bin");
+    let exists = run(vec!["files", "cp", "docs/big.bin", "docs/moved.bin"]).await;
     assert_eq!(exists.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&exists.stderr).contains("--force"));
     assert_success_json(
@@ -551,7 +551,7 @@ async fn files_commands_round_trip_and_guard_overwrites_and_folders() {
             "files",
             "cp",
             "docs/big.bin",
-            "moved.bin",
+            "docs/moved.bin",
             "--force",
             "--json",
         ])
@@ -562,12 +562,12 @@ async fn files_commands_round_trip_and_guard_overwrites_and_folders() {
         Some(2)
     );
     assert_eq!(run(vec!["files", "rm", ".."]).await.status.code(), Some(2));
-    assert_success_json(&run(vec!["files", "rm", "docs", "-r", "--json"]).await);
-    assert_success_json(&run(vec!["files", "rm", "moved.bin", "--json"]).await);
+    assert_success_json(&run(vec!["files", "rm", "docs/moved.bin", "--json"]).await);
     assert_eq!(
-        run(vec!["files", "rm", "moved.bin"]).await.status.code(),
+        run(vec!["files", "rm", "docs/moved.bin"]).await.status.code(),
         Some(1)
     );
+    assert_success_json(&run(vec!["files", "rm", "docs", "-r", "--json"]).await);
 }
 
 #[tokio::test]

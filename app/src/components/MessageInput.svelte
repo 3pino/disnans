@@ -101,6 +101,10 @@
   export function focus(): void {
     ta?.focus();
   }
+  /** フォーカスを外す（キーボードを閉じる）。本文は消さない */
+  export function blur(): void {
+    ta?.blur();
+  }
 
   /** 本文を書き換える（キャレットは指定の位置へ。フォーカスは動かさない） */
   function applyEdit(next: { text: string; caret: number }): void {

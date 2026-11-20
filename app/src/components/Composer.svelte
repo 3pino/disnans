@@ -42,6 +42,10 @@
   let { placeholder }: { placeholder: string } = $props();
 
   let input: MessageInput | undefined = $state();
+  // 添付パネルを開いたら、本文の入力欄のフォーカスを外す（キーボードが出て、パネルと nav-bar の位置が崩れるのを防ぐ）。本文は消さない（再マウントしない）
+  $effect(() => {
+    if (attachPanel.open) input?.blur();
+  });
   let fileEl: HTMLInputElement | undefined = $state();
   /** 添付（アップロードの途中・できた・失敗）。できたものは本文に埋め込まれる（lib/composerAttachments） */
   const attach = new ComposerAttachments({

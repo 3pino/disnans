@@ -33,7 +33,9 @@ use crate::db;
 use crate::state::SharedState;
 use crate::store::files as store_files;
 use crate::trash;
-use crate::webdav::names::{TMP_PREFIX, is_internal, valid_name};
+use crate::webdav::names::{
+    TMP_PREFIX, is_internal, reserved_root, root_creation_refusal, valid_name,
+};
 use crate::webdav::tree::{self, ATTACHMENTS_DIR, Entry, Item};
 
 /// 共有フォルダへのアクセス。利用者（REST では本人、WebDAV では認証された本人）ごとに作る。
@@ -529,6 +531,9 @@ impl SharedFs {
         match self.area_of(segs).await {
             Area::Root | Area::Attachments(_) | Area::Trash(_) => Err(FsError::Forbidden),
             Area::Shared(segs) => {
+                if segs.len() == 1 && reserved_root(&segs[0]) {
+                    return Err(FsError::Forbidden);
+                }
                 let (target, _parent) = self.new_target(&segs)?;
                 std::fs::create_dir(&target).map_err(|e| io_err(&e))?;
                 self.notify(&segs);
@@ -609,6 +614,10 @@ impl SharedFs {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
             Err(e) => return Err(io_err(&e)),
         };
+        // ルート直下には、新しいファイルも予約名も作れない（既存のファイルの上書きは許す）
+        if root_creation_refusal(segs, false, exists).is_some() {
+            return Err(FsError::Forbidden);
+        }
         if options.create_new && exists {
             return Err(FsError::Exists);
         }
@@ -707,6 +716,9 @@ impl SharedFs {
                     .map_err(app_err)
             }
             (Area::Shared(from), Area::Shared(to)) => {
+                if to.len() == 1 && reserved_root(&to[0]) {
+                    return Err(FsError::Forbidden);
+                }
                 let src = self.real_path(&from, true)?;
                 let src_meta = std::fs::symlink_metadata(&src).map_err(|e| io_err(&e))?;
                 let dst = if src_meta.is_dir() {
@@ -721,6 +733,10 @@ impl SharedFs {
                     // 同じ名前のフォルダは、ファイルでも置き換えない（409）
                     if std::fs::symlink_metadata(&dst).is_ok_and(|m| m.is_dir()) {
                         return Err(FsError::Exists);
+                    }
+                    // 中のファイルを、ルート直下に新しく置くことはしない（名前を変えるだけのルート直下のファイルは別）
+                    if to.len() == 1 && from.len() != 1 && std::fs::symlink_metadata(&dst).is_err() {
+                        return Err(FsError::Forbidden);
                     }
                     dst
                 };
@@ -790,6 +806,9 @@ impl SharedFs {
     pub async fn copy(&self, from: &[String], to: &[String], overwrite: bool) -> FsResult<()> {
         match self.area_of(to).await {
             Area::Shared(to) => {
+                if to.len() == 1 && reserved_root(&to[0]) {
+                    return Err(FsError::Forbidden);
+                }
                 // 元がフォルダなら、中身ごと（共有フォルダの中、またはゴミ箱の中のフォルダ）
                 let src_dir = match self.area_of(from).await {
                     Area::Shared(from_segs) => {
@@ -816,6 +835,10 @@ impl SharedFs {
                 // 同じ名前のフォルダは、ファイルでも置き換えない（409）
                 if std::fs::symlink_metadata(&dst).is_ok_and(|m| m.is_dir()) {
                     return Err(FsError::Exists);
+                }
+                // ルート直下に、ファイルを新しく作ることはしない（上書きは許す）
+                if to.len() == 1 && std::fs::symlink_metadata(&dst).is_err() {
+                    return Err(FsError::Forbidden);
                 }
                 let tmp = parent.join(format!("{TMP_PREFIX}{}", ulid::Ulid::new()));
                 if let Err(e) = tokio::fs::copy(&src, &tmp).await {
