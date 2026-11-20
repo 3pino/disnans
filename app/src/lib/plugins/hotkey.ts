@@ -1,120 +1,60 @@
-/** "Mod+Shift+D" を読んだもの */
-export type Hotkey = {
-  ctrl: boolean;
-  meta: boolean;
-  shift: boolean;
-  alt: boolean;
-  /** 小文字にしたキー（"d", "enter", "f5" など） */
-  key: string;
-};
+// ホットキーの決まり（Disnans の書き方）。文字・照合・表示は kit の `@3pino/app-kit-web/core/hotkeys` を使い、
+// ここではこのアプリの決まり（HOTKEY_OPTIONS）だけを持つ。
+//   - Ctrl は `Mod` と書く（プラグインの manifest と、保存される設定の書き方）
+//   - Meta（Windows キー）は Ctrl と別のキー
+//   - 英字・数字は押した文字でも、キーの位置でも当てる（配列が違っても、画面の文字で決めたものが効く）
+//   - `+` は `Plus` と書く
+// 保存される値（prefs の hotkeys）は、記録したそのままの書き方を保つ（kit の既定の書き方とは違う）。
 
-/**
- * "Mod+Shift+D" 形式を読む。Mod は Ctrl（manifest の互換のために "Mod" と書く）。読めなければ null。
- * "Meta" は Windows・Linux のキー（Windows キーなど）。
- */
-export function parseHotkey(text: string): Hotkey | null {
-  const parts = text
-    .split('+')
-    .map((p) => p.trim())
-    .filter((p) => p !== '');
-  if (parts.length === 0) return null;
-  const hk: Hotkey = { ctrl: false, meta: false, shift: false, alt: false, key: '' };
-  for (const [i, raw] of parts.entries()) {
-    const p = raw.toLowerCase();
-    const last = i === parts.length - 1;
-    if (p === 'mod' || p === 'ctrl' || p === 'control') hk.ctrl = true;
-    else if (p === 'meta') hk.meta = true;
-    else if (p === 'shift') hk.shift = true;
-    else if (p === 'alt') hk.alt = true;
-    else if (last) hk.key = p === 'space' ? ' ' : p === 'esc' ? 'escape' : p === 'plus' ? '+' : p;
-    else return null;
-  }
-  return hk.key ? hk : null;
+import {
+  formatHotkey as kitFormat,
+  hotkeyFromEvent as kitFromEvent,
+  hotkeyFromMouse as kitFromMouse,
+  matchesHotkey,
+  normalizeHotkey,
+  worksWhileTyping as kitWorksWhileTyping,
+  type HotkeyOptions,
+  type KeyEventLike,
+} from '@3pino/app-kit-web/core/hotkeys';
+
+/** このアプリのホットキーの決まり */
+export const HOTKEY_OPTIONS: HotkeyOptions = { meta: 'separate', ctrl: 'Mod', letters: 'key-then-code', plus: 'Plus' };
+
+/** 記録しないキーの名前（修飾キーと、変換・デッドキーなど文字にならないもの。小文字で比べる） */
+const NOT_RECORDED = new Set(['control', 'shift', 'alt', 'meta', 'os', 'altgraph', 'capslock', 'fn', 'fnlock', 'hyper', 'super', 'dead', 'process', 'unidentified']);
+
+/** 押したキーを、保存・照合の文字にする（修飾キーだけ・変換中・記録しないキーは null） */
+export function hotkeyFromEvent(e: KeyEventLike): string | null {
+  if (NOT_RECORDED.has(e.key.toLowerCase())) return null;
+  return kitFromEvent(e, HOTKEY_OPTIONS);
 }
 
-/** KeyboardEvent が hotkey に合うか */
-export function matchHotkey(hk: Hotkey, e: KeyboardEvent): boolean {
-  if (e.ctrlKey !== hk.ctrl || e.metaKey !== hk.meta || e.shiftKey !== hk.shift || e.altKey !== hk.alt) return false;
-  const key = e.key.toLowerCase();
-  if (key === hk.key) return true;
-  // Shift や Alt で文字が変わる（"D" → "d" は上で吸収。"1" → "!" など）ときは、物理キーでも見る
-  const code = e.code.toLowerCase();
-  if (hk.key.length === 1) {
-    if (/[a-z]/.test(hk.key)) return code === 'key' + hk.key;
-    if (/[0-9]/.test(hk.key)) return code === 'digit' + hk.key;
-  }
-  return false;
+/** マウスの戻る・進む（Mouse4・Mouse5）。このアプリは記録しない（設定の画面で mouse: false） */
+export function hotkeyFromMouseEvent(e: Parameters<typeof kitFromMouse>[0]): string | null {
+  return kitFromMouse(e, HOTKEY_OPTIONS);
 }
 
-/**
- * 比べるための正規化した文字列（"Mod+Shift+D" と "Shift+Ctrl+d" は同じ）。読めなければ null
- */
+/** 書かれたホットキーを読める形にそろえたもの（比べる・重なりを見るのに使う）。読めなければ null */
 export function hotkeyId(text: string): string | null {
-  const hk = parseHotkey(text);
-  if (!hk) return null;
-  return [hk.ctrl && 'ctrl', hk.meta && 'meta', hk.alt && 'alt', hk.shift && 'shift', hk.key].filter(Boolean).join('+');
+  return normalizeHotkey(text, HOTKEY_OPTIONS);
 }
 
-/** 表示用のキーの名前 */
-const KEY_LABELS: Record<string, string> = {
-  ' ': 'Space',
-  escape: 'Esc',
-  arrowup: '↑',
-  arrowdown: '↓',
-  arrowleft: '←',
-  arrowright: '→',
-  pageup: 'PageUp',
-  pagedown: 'PageDown',
-  backspace: 'Backspace',
-  delete: 'Delete',
-  '+': 'Plus',
-};
-
-function keyLabel(key: string): string {
-  if (KEY_LABELS[key]) return KEY_LABELS[key];
-  if (key.length === 1) return key.toUpperCase();
-  return key[0].toUpperCase() + key.slice(1);
+/** 読めるホットキーか（プラグインの manifest の検査に使う） */
+export function readableHotkey(text: string): boolean {
+  return hotkeyId(text) !== null;
 }
 
-/**
- * 表示用の文字列（"Ctrl+Shift+D"）。読めなければ元の文字列のまま
- */
+/** 画面に出す形（`Mod+Shift+D` → `Ctrl+Shift+D`。書き方のそろわないもの（`f5`）も、そろえてから出す。読めなければそのまま） */
 export function formatHotkey(text: string): string {
-  const hk = parseHotkey(text);
-  if (!hk) return text;
-  const key = keyLabel(hk.key);
-  return [hk.ctrl && 'Ctrl', hk.meta && 'Meta', hk.alt && 'Alt', hk.shift && 'Shift', key].filter(Boolean).join('+');
+  return kitFormat(hotkeyId(text) ?? text);
 }
 
-/** 修飾キーだけのときや、IME などで読めないキー */
-const IGNORED_KEYS = new Set(['control', 'shift', 'alt', 'meta', 'os', 'altgraph', 'capslock', 'fn', 'fnlock', 'hyper', 'super', 'dead', 'process', 'unidentified']);
-
-/**
- * 押したキーを "Mod+Shift+D" 形式にする（ホットキーの記録に使う）。修飾キーだけのときは null。
- * Ctrl は Mod にする（デバイスをまたいで使えるように）
- */
-export function hotkeyFromEvent(e: KeyboardEvent): string | null {
-  if (IGNORED_KEYS.has(e.key.toLowerCase())) return null;
-  // 文字キー・数字キーは、Shift などで変わらないように物理キーから取る
-  let key: string;
-  const letter = /^Key([A-Z])$/.exec(e.code);
-  const digit = /^Digit([0-9])$/.exec(e.code);
-  if (letter) key = letter[1];
-  else if (digit) key = digit[1];
-  else if (e.key === ' ') key = 'Space';
-  else if (e.key === '+') key = 'Plus';
-  else if (e.key.length === 1) key = e.key.toUpperCase();
-  else key = e.key;
-  const parts: string[] = [];
-  if (e.ctrlKey) parts.push('Mod');
-  if (e.metaKey) parts.push('Meta');
-  if (e.altKey) parts.push('Alt');
-  if (e.shiftKey) parts.push('Shift');
-  parts.push(key);
-  return parts.join('+');
+/** イベントが、いずれかのホットキーに当たるか */
+export function matchesHotkeyEvent(e: KeyEventLike, keys: readonly string[]): boolean {
+  return matchesHotkey(e, keys, HOTKEY_OPTIONS);
 }
 
-/** 入力欄で文字を打っている間も効かせてよいか（Ctrl・Alt・Meta のどれかを含むか、F1〜F12） */
-export function worksWhileTyping(hk: Hotkey): boolean {
-  return hk.ctrl || hk.meta || hk.alt || /^f[0-9]{1,2}$/.test(hk.key);
+/** 入力欄で文字を打っている間も働かせてよいか（Ctrl・Alt・Meta のあるもの、F1〜F24） */
+export function worksWhileTyping(text: string): boolean {
+  return kitWorksWhileTyping(text, { ...HOTKEY_OPTIONS, functionKeys: true });
 }

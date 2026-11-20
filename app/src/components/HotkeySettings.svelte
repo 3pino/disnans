@@ -1,83 +1,49 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
-  import Plus from '@lucide/svelte/icons/plus';
-  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
-  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
-  import SettingRow from '@3pino/ui-kit-web/SettingRow.svelte';
-  import StatusLine from '@3pino/ui-kit-web/StatusLine.svelte';
   import TextInput from '@3pino/ui-kit-web/TextInput.svelte';
+  import HotkeySettings, { type HotkeyItem } from '@3pino/app-kit-web/settings/HotkeySettings.svelte';
+  import { findConflicts } from '@3pino/app-kit-web/core/hotkeyBook';
   import {
     addHotkey,
     commandList,
+    defaultHotkeys,
     effectiveHotkeys,
     effectiveSlash,
     filterCommands,
-    findHotkeyConflicts,
     hotkeyOverride,
     isHotkeyCustomized,
     removeHotkey,
     type AppCommand,
   } from '../lib/commands.svelte';
   import { commandHost } from '../lib/commandHost.svelte';
-  import { formatHotkey, hotkeyFromEvent } from '../lib/plugins/hotkey';
+  import { formatHotkey, HOTKEY_OPTIONS } from '../lib/plugins/hotkey';
   import { checkSlashAlias } from '../lib/slashAlias';
   import { slashCommands } from '../lib/slashCommands.svelte';
   import { prefs } from '../lib/stores/prefs.svelte';
 
-  // 設定の「操作」→「ホットキー」（デスクトップのみ）。コマンドごとのホットキーを複数決め、
-  // スラッシュコマンドの名前（別名）も変えられる。保存はサーバーに置き（lib/stores/prefs.svelte.ts）、同じユーザーのデバイスで共有する
+  // 設定の「操作」→「ホットキー」（デスクトップのみ）。画面の部品は kit の HotkeySettings。
+  // ここでは、このアプリの操作の一覧・保存（prefs.hotkeys）・文言と、スラッシュコマンドの名前（別名）の行（rowExtra）だけを持つ。
 
   /** 本体のもの → プラグインのもの、それぞれ名前順 */
   const commands = $derived(filterCommands(commandList(), ''));
-  const conflicts = $derived(findHotkeyConflicts(commands, prefs.hotkeys));
-  /** ホットキーを記録しているコマンド */
-  let recording = $state<string | null>(null);
+  const items = $derived<HotkeyItem[]>(commands.map((c) => ({ id: c.id, name: c.name, description: c.source, icon: c.icon })));
+  const conflicts = $derived(
+    findConflicts(
+      commands.map((c) => ({ id: c.id, defaults: defaultHotkeys(c) })),
+      prefs.hotkeys,
+      HOTKEY_OPTIONS,
+    ),
+  );
 
-  function startRecording(c: AppCommand) {
-    stopSlashEdit();
-    recording = c.id;
-    commandHost.recording = true;
-  }
-
-  function stopRecording() {
-    recording = null;
-    commandHost.recording = false;
-  }
-
-  onDestroy(() => {
-    if (recording) commandHost.recording = false;
-  });
-
-  /** 記録中のキー入力。ほかの処理（ホットキー・Esc で閉じるなど）に渡さない */
-  function onRecordKey(e: KeyboardEvent) {
-    if (!recording || e.isComposing || e.keyCode === 229) return;
-    e.preventDefault();
-    e.stopPropagation();
-    // 修飾キーなしの Esc は取り消し
-    if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-      stopRecording();
-      return;
-    }
-    const text = hotkeyFromEvent(e);
-    // 修飾キーだけのときは、続けて押すキーを待つ
-    if (!text) return;
-    const c = commands.find((x) => x.id === recording);
-    // 同じキーがほかのコマンドにあっても、既存の挙動に合わせて足すだけ（行に警告を出す）
-    if (c) setHotkeys(c, addHotkey(effectiveHotkeys(c, prefs.hotkeys), text));
-    stopRecording();
-  }
+  const byId = (id: string): AppCommand | undefined => commands.find((x) => x.id === id);
 
   /** 一覧を保存する。既定と同じなら設定を消す（既定が変わったときに追従する） */
   function setHotkeys(c: AppCommand, list: string[]) {
     prefs.setHotkeys(c.id, hotkeyOverride(c, list));
-  }
-
-  function removeKey(c: AppCommand, text: string) {
-    setHotkeys(c, removeHotkey(effectiveHotkeys(c, prefs.hotkeys), text));
   }
 
   // ---- スラッシュコマンドの名前（別名） ----
@@ -88,7 +54,6 @@
   let slashError = $state<string | null>(null);
 
   function startSlashEdit(c: AppCommand) {
-    stopRecording();
     slashEditing = c.id;
     slashDraft = effectiveSlash(c, prefs.slashNames) ?? '';
     slashError = null;
@@ -118,49 +83,43 @@
   }
 </script>
 
-<svelte:window onkeydowncapture={onRecordKey} />
-
-{#each commands as c (c.id)}
-  {@const hotkeys = effectiveHotkeys(c, prefs.hotkeys)}
-  {@const same = conflicts.get(c.id)}
-  <div class="hotkey-settings-command" class:hotkey-settings-command-conflict={!!same}>
-    <SettingRow name={c.name} description={c.source} icon={c.icon} class="hotkey-settings-row">
-      {#snippet control()}
-        {#each hotkeys as hk (hk)}
-          <kbd class="kbd hotkey-settings-chip">
-            {formatHotkey(hk)}
-            <button type="button" class="hotkey-settings-chip-remove" aria-label={`${formatHotkey(hk)} を外す`} onclick={() => removeKey(c, hk)}>
-              <X size={12} />
-            </button>
-          </kbd>
-        {:else}
-          <span class="muted hotkey-settings-none">なし</span>
-        {/each}
-        {#if recording === c.id}
-          <span class="hotkey-settings-recording">キーを押してください…</span>
-        {/if}
-        <IconButton
-          class="hotkey-settings-reset"
-          label="既定に戻す"
-          title="既定に戻す"
-          icon={RotateCcw}
-          iconSize={16}
-          disabled={!isHotkeyCustomized(c, prefs.hotkeys)}
-          onclick={() => prefs.setHotkeys(c.id, null)}
-        />
-        <IconButton
-          class="hotkey-settings-add"
-          label={`${c.name} のホットキーを追加`}
-          title="ホットキーを追加"
-          icon={Plus}
-          iconSize={16}
-          active={recording === c.id}
-          onclick={() => (recording === c.id ? stopRecording() : startRecording(c))}
-          onblur={() => recording === c.id && stopRecording()}
-        />
-      {/snippet}
-    </SettingRow>
-    {#if c.slash}
+<HotkeySettings
+  commands={items}
+  keys={(id) => {
+    const c = byId(id);
+    return c ? effectiveHotkeys(c, prefs.hotkeys) : [];
+  }}
+  isCustom={(id) => {
+    const c = byId(id);
+    return c ? isHotkeyCustomized(c, prefs.hotkeys) : false;
+  }}
+  {conflicts}
+  allNames={(id) => byId(id)?.name ?? id}
+  add={(id, k) => {
+    const c = byId(id);
+    if (c) setHotkeys(c, addHotkey(effectiveHotkeys(c, prefs.hotkeys), k));
+  }}
+  remove={(id, k) => {
+    const c = byId(id);
+    if (c) setHotkeys(c, removeHotkey(effectiveHotkeys(c, prefs.hotkeys), k));
+  }}
+  reset={(id) => prefs.setHotkeys(id, null)}
+  onrecording={(on) => (commandHost.recording = on)}
+  hotkeys={HOTKEY_OPTIONS}
+  options={{
+    mouse: false,
+    escapeCancels: true,
+    labels: {
+      add: (name) => `${name} のホットキーを追加`,
+      reset: () => '既定に戻す',
+      remove: (_name, key) => `${formatHotkey(key)} を外す`,
+    },
+    conflictText: (clashes) => `「${[...new Set(clashes.flatMap((x) => x.names))].join('」「')}」と同じキーです`,
+  }}
+>
+  {#snippet rowExtra(item)}
+    {@const c = byId(item.id)}
+    {#if c?.slash}
       {@const slash = effectiveSlash(c, prefs.slashNames)}
       {#if slashEditing === c.id}
         <form
@@ -200,58 +159,10 @@
         </div>
       {/if}
     {/if}
-    {#if same}
-      <StatusLine kind="warn" icon={TriangleAlert} class="hotkey-settings-conflict">
-        「{same.map((x) => x.name).join('」「')}」と同じキーです
-      </StatusLine>
-    {/if}
-  </div>
-{/each}
+  {/snippet}
+</HotkeySettings>
 
 <style>
-  /* ほかのコマンドと同じキーになっているときの警告 */
-  .hotkey-settings-command > :global(.hotkey-settings-conflict) {
-    margin-top: var(--space-2);
-    font-size: var(--fs-sm);
-  }
-  /* 行の右にキーを並べる。各キーの中の × で外す */
-  .hotkey-settings-command :global(.hotkey-settings-row .setting-row-control) {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--space-2);
-  }
-  .hotkey-settings-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .hotkey-settings-chip-remove {
-    display: inline-grid;
-    place-items: center;
-    padding: 0;
-    border: none;
-    background: none;
-    color: inherit;
-    cursor: pointer;
-    opacity: 0.7;
-  }
-  .hotkey-settings-chip-remove:hover {
-    opacity: 1;
-  }
-  .hotkey-settings-none,
-  .hotkey-settings-recording {
-    font-size: var(--fs-sm);
-  }
-  /* 記録中は、キーを待っていることがわかるようにアクセントの色にする */
-  .hotkey-settings-recording {
-    color: var(--accent);
-  }
-  /* 押せないときは隠す（位置はそろえたまま） */
-  .hotkey-settings-command :global(.hotkey-settings-reset:disabled) {
-    visibility: hidden;
-  }
   /* スラッシュコマンドの名前（別名）の行 */
   .hotkey-settings-slash,
   .hotkey-settings-slash-form {

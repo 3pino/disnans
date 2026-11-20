@@ -1,5 +1,6 @@
 import type { IconRef } from './icons.svelte';
-import { hotkeyId, matchHotkey, parseHotkey, worksWhileTyping, type Hotkey } from './plugins/hotkey';
+import { HOTKEY_OPTIONS, hotkeyId, matchesHotkeyEvent, worksWhileTyping } from './plugins/hotkey';
+import { addKey, findConflicts, overrideOf, removeKey } from '@3pino/app-kit-web/core/hotkeyBook';
 import { registerSlashCommand, SLASH_NAME_RE, type SlashArgSuggestion } from './slashCommands.svelte';
 import type { SlashAliases } from './slashAlias';
 
@@ -134,36 +135,28 @@ export function effectiveHotkeys(cmd: AppCommand, overrides: HotkeyOverrides): s
   return Object.hasOwn(overrides, cmd.id) ? overrides[cmd.id] : defaultHotkeys(cmd);
 }
 
-/** 既定と同じ並び（同じキーの組み合わせ）か */
-function sameHotkeys(a: string[], b: string[]): boolean {
-  const ida = a.map((t) => hotkeyId(t));
-  const idb = b.map((t) => hotkeyId(t));
-  return ida.length === idb.length && ida.every((x, i) => x === idb[i]);
-}
-
 /** 既定から変えているか */
 export function isHotkeyCustomized(cmd: AppCommand, overrides: HotkeyOverrides): boolean {
-  return Object.hasOwn(overrides, cmd.id) && !sameHotkeys(overrides[cmd.id], defaultHotkeys(cmd));
+  return Object.hasOwn(overrides, cmd.id) && overrideOf(defaultHotkeys(cmd), overrides[cmd.id], HOTKEY_OPTIONS) !== null;
 }
 
 /**
  * 利用者の設定として保存する値。既定と同じなら null（設定を消す。既定が変わったときに追従する）
  */
 export function hotkeyOverride(cmd: AppCommand, list: string[]): string[] | null {
-  return sameHotkeys(list, defaultHotkeys(cmd)) ? null : list;
+  return overrideOf(defaultHotkeys(cmd), list, HOTKEY_OPTIONS);
 }
 
 /** ホットキーを足す（同じキーがもうあれば変えない） */
 export function addHotkey(list: string[], text: string): string[] {
   const id = hotkeyId(text);
   if (list.some((t) => hotkeyId(t) === id)) return list;
-  return [...list, text];
+  return addKey(list, text, HOTKEY_OPTIONS);
 }
 
 /** ホットキーを外す（同じキーのものを外す） */
 export function removeHotkey(list: string[], text: string): string[] {
-  const id = hotkeyId(text);
-  return list.filter((t) => hotkeyId(t) !== id);
+  return removeKey(list, text, HOTKEY_OPTIONS);
 }
 
 /**
@@ -171,30 +164,28 @@ export function removeHotkey(list: string[], text: string): string[] {
  * どれか1つでも同じキーがあればぶつかる。ぶつかっていないコマンドは入らない
  */
 export function findHotkeyConflicts(list: AppCommand[], overrides: HotkeyOverrides): Map<string, AppCommand[]> {
-  const byKey = new Map<string, AppCommand[]>();
-  const keysOf = new Map<AppCommand, string[]>();
-  for (const c of list) {
-    const keys = [...new Set(effectiveHotkeys(c, overrides).map((t) => hotkeyId(t)).filter((k): k is string => !!k))];
-    keysOf.set(c, keys);
-    for (const k of keys) {
-      const same = byKey.get(k);
-      if (same) same.push(c);
-      else byKey.set(k, [c]);
-    }
-  }
+  const byKey = findConflicts(
+    list.map((c) => ({ id: c.id, defaults: defaultHotkeys(c) })),
+    overrides,
+    HOTKEY_OPTIONS,
+  );
   const out = new Map<string, AppCommand[]>();
   for (const c of list) {
-    const others = new Set<AppCommand>();
-    for (const k of keysOf.get(c) ?? []) for (const x of byKey.get(k) ?? []) if (x !== c) others.add(x);
+    const others = new Set<string>();
+    for (const t of effectiveHotkeys(c, overrides)) {
+      const key = hotkeyId(t);
+      if (key === null) continue;
+      for (const id of byKey.get(key) ?? []) if (id !== c.id) others.add(id);
+    }
     // 登録順に並べる
-    if (others.size > 0) out.set(c.id, list.filter((x) => others.has(x)));
+    if (others.size > 0) out.set(c.id, list.filter((x) => others.has(x.id)));
   }
   return out;
 }
 
 /**
  * キーの入力に合うコマンド（なければ null）。typing は入力欄で打っている最中か
- * （そのときは Ctrl・Alt・Meta を含むものと F1〜F12 だけ）。ぶつかっていたら先に登録したもの
+ * （そのときは Ctrl・Alt・Meta を含むものと F1〜F24 だけ）。ぶつかっていたら先に登録したもの
  */
 export function commandForKey(
   list: AppCommand[],
@@ -204,11 +195,8 @@ export function commandForKey(
 ): AppCommand | null {
   for (const c of list) {
     if (c.when && !c.when()) continue;
-    for (const text of effectiveHotkeys(c, overrides)) {
-      const hk: Hotkey | null = parseHotkey(text);
-      if (!hk || (typing && !worksWhileTyping(hk))) continue;
-      if (matchHotkey(hk, e)) return c;
-    }
+    const keys = effectiveHotkeys(c, overrides).filter((text) => !typing || worksWhileTyping(text));
+    if (matchesHotkeyEvent(e, keys)) return c;
   }
   return null;
 }

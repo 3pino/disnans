@@ -1,4 +1,4 @@
-import { parseHotkey } from './hotkey';
+import { readableHotkey } from './hotkey';
 import { SLASH_NAME_RE } from '../slashCommands.svelte';
 import { SessionsImpl, type SessionImpl } from './sessions';
 import { PluginError } from './errors';
@@ -421,7 +421,7 @@ export class PluginRuntime {
     const services = this.services;
     const id = this.id;
     let hotkey = cmd.hotkey || undefined;
-    if (hotkey && !parseHotkey(hotkey)) {
+    if (hotkey && !readableHotkey(hotkey)) {
       // ホットキーなしで登録する（利用者が設定で付けられる）
       this.addError(`コマンド「${cmd.name}」のホットキー「${hotkey}」を読めません`);
       hotkey = undefined;

@@ -737,7 +737,10 @@ async function trashRow(name, first = true) {
   await sleep(200);
   return true;
 }
-const confirmOk = async (text) => {
+/** optional: fixplor 0.1.10 以降は、ゴミ箱に移すのに確認を出さない（「取り消す」のトーストで戻せる）。確認が出なければ、押さずに進む */
+const confirmOk = async (text, { optional = false } = {}) => {
+  const shown = await waitFor(`[...document.querySelectorAll('.modal button, .confirm-dialog-actions button')].some((b) => b.textContent.includes(${JSON.stringify(text)}))`, optional ? 1200 : 3000);
+  if (optional && !shown) return;
   expect(`確認の「${text}」が押せる（上に何も被らない）`, (await hitIsInside('.modal button, .confirm-dialog-actions button', text)) === 'ok');
   const p = await centerOf('.modal button, .confirm-dialog-actions button', text);
   if (p) await tap(p[0], p[1]);
@@ -746,7 +749,7 @@ const confirmOk = async (text) => {
 {
   const m = mark();
   expect('ゴミ箱: 削除の操作が押せる', await trashRow('pic.png'));
-  await confirmOk('ゴミ箱に移す');
+  await confirmOk('ゴミ箱に移す', { optional: true });
   expect('ゴミ箱: trash の要求が届く（pic.png）', reqSince(m).some((r) => r.path === '/api/shared-trash' && r.body?.op === 'trash' && r.body.path === 'pic.png'));
   expect('ゴミ箱: 一覧から pic.png が消える', await waitFor(`!window.__tc.names().includes('pic.png')`));
   expect('ゴミ箱: トーストの「取り消す」が押せる（上に何も被らない）', (await hitIsInside('.toast button', '取り消す')) === 'ok');
@@ -759,7 +762,7 @@ const confirmOk = async (text) => {
 // ---- .trash（ふつうのフォルダ）: 元の名前・完全削除の確認・元へ戻す ----
 {
   await trashRow('pic.png');
-  await confirmOk('ゴミ箱に移す');
+  await confirmOk('ゴミ箱に移す', { optional: true });
   await tapCloseToasts();
   expect('.trash を開ける', await openRow('.trash'));
   expect('.trash: 削除した項目が元の名前（pic.png）で並ぶ', await waitFor(`window.__tc.names().includes('pic.png')`));

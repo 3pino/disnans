@@ -205,8 +205,8 @@ describe('hotkey の記録と表示', () => {
     expect(hotkeyFromEvent(key({ key: 'Shift', code: 'ShiftLeft', shiftKey: true }))).toBeNull();
     // 記録したものは読めて、同じキーとして比べられる
     expect(hotkeyId('Mod+Shift+D')).toBe(hotkeyId('shift+ctrl+d'));
-    expect(hotkeyId('Mod+Space')).toBe('ctrl+ ');
-    expect(hotkeyId('Mod+Plus')).toBe('ctrl++');
+    expect(hotkeyId('Mod+Space')).toBe('Mod+Space');
+    expect(hotkeyId('Mod+Plus')).toBe('Mod+Plus');
   });
 
   it('表示用の文字列', () => {
@@ -245,5 +245,54 @@ describe('filterCommands', () => {
     // 空白で区切ると、すべての語を含むもの
     expect(names('チャット 開')).toEqual(['app:open-chat']);
     expect(names('zzz')).toEqual([]);
+  });
+});
+
+// ---- 移行後の決まり（保存の形・Meta と Mod・押した文字・入力中） ----
+describe('ホットキーの移行後の決まり', () => {
+  const key = (init: KeyboardEventInit) => new KeyboardEvent('keydown', init);
+  const cmd = (id: string, defaults: string | string[]): AppCommand => ({ id, name: id, defaultHotkey: defaults, run: () => {} });
+
+  it('保存する文字は、記録したそのままの書き方（Mod・Meta の並び）', () => {
+    const t = hotkeyFromEvent(key({ key: 'X', code: 'KeyX', ctrlKey: true, metaKey: true, shiftKey: true }))!;
+    expect(t).toBe('Mod+Meta+Shift+X');
+    // 読み直しても、同じ書き方で保存される（既定と違うものだけ）
+    const a = cmd('a', 'Mod+T');
+    expect(hotkeyOverride(a, [t])).toEqual([t]);
+    expect(hotkeyOverride(a, ['Mod+T'])).toBeNull();
+  });
+
+  it('Meta と Mod（Ctrl）は別のキー。Meta だけの操作は、Ctrl のものと重ならない', () => {
+    const list = [cmd('ctrl', 'Mod+T'), cmd('meta', 'Meta+T')];
+    expect(findHotkeyConflicts(list, {}).size).toBe(0);
+    expect(commandForKey(list, {}, key({ key: 't', code: 'KeyT', metaKey: true }))?.id).toBe('meta');
+    expect(commandForKey(list, {}, key({ key: 't', code: 'KeyT', ctrlKey: true }))?.id).toBe('ctrl');
+  });
+
+  it('英字は押した文字でも、キーの位置でも当たる（配列が違っても、画面の文字のキーが効く）', () => {
+    const d = cmd('d', 'Mod+D');
+    // Dvorak: 位置 KeyD の物理キーが文字 e を出す。画面の文字 D（ここでは e）を押しても、位置でも当たる
+    expect(commandForKey([d], {}, key({ key: 'e', code: 'KeyD', ctrlKey: true }))?.id).toBe('d');
+    expect(commandForKey([d], {}, key({ key: 'D', code: 'KeyD', ctrlKey: true }))?.id).toBe('d');
+    expect(commandForKey([d], {}, key({ key: 'x', code: 'KeyX', ctrlKey: true }))).toBeNull();
+  });
+
+  it('入力中は、Ctrl・Alt・Meta のものと F キーだけ働く', () => {
+    const list = [cmd('f', 'F2'), cmd('s', 'Shift+A'), cmd('c', 'Mod+B')];
+    expect(commandForKey(list, {}, key({ key: 'F2', code: 'F2' }), { typing: true })?.id).toBe('f');
+    expect(commandForKey(list, {}, key({ key: 'A', code: 'KeyA', shiftKey: true }), { typing: true })).toBeNull();
+    expect(commandForKey(list, {}, key({ key: 'b', code: 'KeyB', ctrlKey: true }), { typing: true })?.id).toBe('c');
+  });
+
+  it('デッドキー・変換などの文字にならないキーは、記録しない', () => {
+    expect(hotkeyFromEvent(key({ key: 'Dead', code: 'Quote', ctrlKey: true }))).toBeNull();
+    expect(hotkeyFromEvent(key({ key: 'Process', code: 'KeyA', ctrlKey: true }))).toBeNull();
+    expect(hotkeyFromEvent(key({ key: 'Fn', code: 'Fn' }))).toBeNull();
+  });
+
+  it('プラグインの書き方（f5・Mod+Plus）も、画面では読める形で出す', () => {
+    expect(formatHotkey('f5')).toBe('F5');
+    expect(formatHotkey('Mod+Plus')).toBe('Ctrl+Plus');
+    expect(hotkeyId('Mod+Plus')).toBe('Mod+Plus');
   });
 });

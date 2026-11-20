@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PluginBase, PluginRuntime } from './runtime';
 import { VersionConflictError } from './sessions';
-import { parseHotkey, matchHotkey } from './hotkey';
+import { hotkeyId, matchesHotkeyEvent, readableHotkey } from './hotkey';
 import { parseManifest } from './manifest';
 import type { HostCommand, HostServices, Manifest, PluginClass } from './types';
 import type { Session as SessionData } from '../protocol/Session';
@@ -513,19 +513,23 @@ describe('Session', () => {
 describe('hotkey', () => {
   const key = (init: KeyboardEventInit) => new KeyboardEvent('keydown', init);
 
-  it('Mod+Shift+D を読む（Mod は Ctrl）', () => {
-    expect(parseHotkey('Mod+Shift+D')).toEqual({ ctrl: true, meta: false, shift: true, alt: false, key: 'd' });
-    expect(parseHotkey('Shift+')).toBeNull();
-    expect(parseHotkey('Foo+D')).toBeNull();
-    // Meta は Windows・Linux のキー（Windows キーなど）
-    expect(parseHotkey('Meta+D')).toEqual({ ctrl: false, meta: true, shift: false, alt: false, key: 'd' });
+  it('Mod+Shift+D を読む（Mod は Ctrl）。読めないものは読めないとする', () => {
+    expect(readableHotkey('Mod+Shift+D')).toBe(true);
+    expect(readableHotkey('Shift+')).toBe(false);
+    expect(readableHotkey('Foo+D')).toBe(false);
+    // Meta は Windows・Linux のキー（Windows キーなど）。Mod（Ctrl）とは別に比べる
+    expect(readableHotkey('Meta+D')).toBe(true);
+    expect(hotkeyId('Meta+D')).not.toBe(hotkeyId('Mod+D'));
+    expect(hotkeyId('Mod+Shift+D')).toBe(hotkeyId('shift+ctrl+d'));
   });
 
   it('修飾キーがすべて合うときだけ一致する', () => {
-    const hk = parseHotkey('Mod+Shift+D')!;
-    expect(matchHotkey(hk, key({ key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true }))).toBe(true);
-    expect(matchHotkey(hk, key({ key: 'D', code: 'KeyD', ctrlKey: true }))).toBe(false);
-    expect(matchHotkey(hk, key({ key: 'd', code: 'KeyD', ctrlKey: true, shiftKey: true, altKey: true }))).toBe(false);
+    const keys = ['Mod+Shift+D'];
+    expect(matchesHotkeyEvent(key({ key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true }), keys)).toBe(true);
+    expect(matchesHotkeyEvent(key({ key: 'D', code: 'KeyD', ctrlKey: true }), keys)).toBe(false);
+    expect(matchesHotkeyEvent(key({ key: 'd', code: 'KeyD', ctrlKey: true, shiftKey: true, altKey: true }), keys)).toBe(false);
+    // Meta だけでは Mod のホットキーに当たらない
+    expect(matchesHotkeyEvent(key({ key: 'd', code: 'KeyD', metaKey: true, shiftKey: true }), keys)).toBe(false);
   });
 });
 
