@@ -576,9 +576,11 @@
       info={target.info!}
       value={target.crop}
       onpick={(crop) => {
+        // {@const target} は cropping から導かれるので、cropping を空にすると target も null になる。先に key を取っておく
+        const key = target.key;
         cropping = null;
         // 送れたあとの切り抜きは、切り抜いたものを上げ直して埋め込みを入れ替える
-        attach.recrop(target.key, crop);
+        attach.recrop(key, crop);
       }}
       onclose={() => (cropping = null)}
     />
