@@ -69,6 +69,13 @@ object NativeCallAudioAdapterTest {
   }
 
   fun run() {
+    // 意図を決めないまま開始しても、録音は始まらない（既定は録音しない）。ミュートでの参加で、最初の一瞬だけマイクが開かないように。
+    Harness().let { h ->
+      Check.eq(null, h.run.start(), "start without an explicit capture intent succeeds")
+      Check.eq(0, h.record.starts.get(), "no recording before an explicit capture intent")
+      Check.eq(0, h.record.reads.get(), "no reads before an explicit capture intent")
+      h.close()
+    }
     // 初期ミュートは、デバイスを録音状態にせず、後の解除だけで録音を始める。
     Harness().let { h ->
       h.run.setCapture(false)
@@ -151,6 +158,7 @@ object NativeCallAudioAdapterTest {
       h.close()
     }
     Harness().let { h ->
+      h.run.setCapture(true)
       Check.eq(null, h.run.start(), "normal start")
       h.record.queue.offer(h.record.fail)
       Check.that(h.run.awaitReleased(3000)) { "driver failure releases both devices" }

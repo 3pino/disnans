@@ -1,0 +1,12 @@
+[Desktop Entry]
+# KDE（Wayland）は、ウィンドウの app_id（実行ファイル名 disnans-app）と同じ名前の .desktop から、タイトルバーのアイコンを引く。
+# 本体の disnans.desktop（Tauri が作る）は名前が違うため、同じ中身の項目を、メニューには出さずに足す。
+Categories=Network;
+Comment=disnans client
+Exec=disnans-app
+StartupWMClass=disnans-app
+Icon=disnans-app
+Name=disnans
+NoDisplay=true
+Terminal=false
+Type=Application

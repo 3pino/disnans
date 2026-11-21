@@ -322,6 +322,8 @@
     input.clear();
     hasText = false;
     if (target) persistDraft(target, '');
+    // 送信ボタンを押すとフォーカスがボタンへ移るので、続けて書けるように入力欄へ戻す
+    input.focus();
   }
 
   /** 送信ボタンを押したまま上へなぞっている量（px）。0 なら押しているだけ */

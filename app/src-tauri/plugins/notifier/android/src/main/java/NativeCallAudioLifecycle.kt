@@ -41,7 +41,8 @@ internal class NativeCallAudioLifecycle(
   private val released = CountDownLatch(1)
   private var attempted = false
   private var initializing = false
-  private var captureIntent = true
+  // 録音の意図は、既定で「録音しない」。開始より前に setCapture で決めるまで、マイクを開かない（ミュートでの参加の初めの一瞬を防ぐ）
+  private var captureIntent = false
   private var volume = 1.0
   private var record: Lease<Recorder>? = null
   private var player: Lease<Player>? = null
