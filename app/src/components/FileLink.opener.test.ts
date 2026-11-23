@@ -8,8 +8,8 @@ import { sharedIndex } from '../lib/stores/sharedIndex.svelte';
 import { setLinkOpener } from '../lib/linkOpener.svelte';
 
 const list = vi.fn(async (dir: string): Promise<SharedEntry[]> =>
-  dir === ''
-    ? [{ name: 'a.txt', path: 'a.txt', kind: 'file', size: 3, modified: 0, mime: 'text/plain', message_id: null, file_id: null }]
+  dir === 'docs'
+    ? [{ name: 'a.txt', path: 'docs/a.txt', kind: 'file', size: 3, modified: 0, mime: 'text/plain', message_id: null, file_id: null }]
     : [],
 );
 vi.mock('../lib/transport/shared', () => ({ sharedApi: { list: (dir: string) => list(dir) } }));
@@ -29,14 +29,14 @@ afterEach(async () => {
   target = undefined;
 });
 
-const link: Inline = { type: 'fileLink', path: 'a.txt', alias: '資料', embed: false };
+const link: Inline = { type: 'fileLink', path: 'docs/a.txt', alias: '資料', embed: false };
 const tree: Block[] = [{ type: 'paragraph', lines: [[link]] }];
 
 async function render(): Promise<HTMLAnchorElement> {
   instance = mount(Markdown, { target: target!, props: { body: '', markdown: tree } });
   flushSync();
   await vi.waitFor(() => {
-    if (sharedIndex.file('a.txt').kind !== 'found') throw new Error('not loaded');
+    if (sharedIndex.file('docs/a.txt').kind !== 'found') throw new Error('not loaded');
   });
   await tick();
   flushSync();
@@ -60,7 +60,7 @@ describe('本文のファイルリンクの「開く」（プラグインの口�
     const ev = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
     a.dispatchEvent(ev);
     expect(ev.defaultPrevented).toBe(true);
-    expect(opener).toHaveBeenCalledWith('a.txt', '資料');
+    expect(opener).toHaveBeenCalledWith('docs/a.txt', '資料');
     off();
     const ev2 = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
     a.dispatchEvent(ev2);

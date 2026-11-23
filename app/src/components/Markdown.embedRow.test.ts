@@ -27,7 +27,8 @@ const entry = (path: string, mime: string | null): SharedEntry => ({
   file_id: null,
 });
 function entriesOf(dir: string): SharedEntry[] {
-  if (dir === '') return ['image1.png', 'image2.png', 'image3.png', 'image4.png', 'doc.pdf'].map((n) => entry(n, n.endsWith('.png') ? 'image/png' : 'application/pdf'));
+  // `[[名前]]`（/ なし）は添付（attachments/名前）。本文のリンクは名前だけで書き、一覧は attachments から引く
+  if (dir === 'attachments') return ['image1.png', 'image2.png', 'image3.png', 'image4.png', 'doc.pdf'].map((n) => entry(`attachments/${n}`, n.endsWith('.png') ? 'image/png' : 'application/pdf'));
   if (dir === 'later') return [entry('later/late.png', 'image/png')];
   return [];
 }
@@ -60,7 +61,7 @@ async function renderTree(tree: Block[]): Promise<void> {
   flushSync();
   await vi.waitFor(() => {
     for (const p of ['image1.png', 'image2.png', 'image3.png', 'image4.png', 'doc.pdf']) {
-      if (sharedIndex.file(p).kind !== 'found') throw new Error('not loaded yet: ' + p);
+      if (sharedIndex.file('attachments/' + p).kind !== 'found') throw new Error('not loaded yet: ' + p);
     }
   });
   await tick();
@@ -122,7 +123,7 @@ describe('本文の画像の埋め込みの横一列', () => {
     expect(rows()).toHaveLength(0);
     pending.get('later')!();
     await vi.waitFor(() => expect(sharedIndex.file('later/late.png').kind).toBe('found'));
-    await vi.waitFor(() => expect(sharedIndex.file('image1.png').kind).toBe('found'));
+    await vi.waitFor(() => expect(sharedIndex.file('attachments/image1.png').kind).toBe('found'));
     await tick();
     flushSync();
     expect(rows()).toHaveLength(1);
@@ -142,7 +143,7 @@ describe('本文の画像の埋め込みの横一列', () => {
     const tree: Block[] = [{ type: 'paragraph', lines: [[img('image1.png'), text(' '), img('image2.png')], [text('あと')]] }];
     instance = mount(Markdown, { target: target!, props: { body: '', markdown: tree, suffix: undefined } });
     flushSync();
-    await vi.waitFor(() => expect(sharedIndex.file('image2.png').kind).toBe('found'));
+    await vi.waitFor(() => expect(sharedIndex.file('attachments/image2.png').kind).toBe('found'));
     await tick();
     flushSync();
     expect(rows()).toHaveLength(1);

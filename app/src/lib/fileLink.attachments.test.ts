@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentsToText, attachmentRefs, bodyAttachmentNames } from './fileLink';
+import { attachmentsToText, attachmentRefs, bodyAttachmentNames, linkPath } from './fileLink';
 
 // 本文の添付のリンク（サーバーが名前に戻したあとの形: attachments/<今の名前>）
 describe('本文の添付のリンク', () => {
@@ -17,6 +17,18 @@ describe('本文の添付のリンク', () => {
   it('名前に括弧を含んでも（「name (2).png」）最後の対の ) まで読む', () => {
     const body = '![絵](attachments/name (2).png) と続く';
     expect([...bodyAttachmentNames(body)]).toEqual(['name (2).png']);
+  });
+
+  it('[[名前]]（/ を含まない）は attachments/名前 と同じ（送信の途中の本文）', () => {
+    const body = '![[a (2).webp]] [[b.pdf|資料]] ![[docs/c.png]] ![[attachments/d.png]]';
+    expect(attachmentRefs(body).map((r) => [r.name, r.embed, r.alias])).toEqual([
+      ['a (2).webp', true, null],
+      ['b.pdf', false, '資料'],
+      ['d.png', true, null],
+    ]);
+    expect(linkPath('a.png')).toBe('attachments/a.png');
+    expect(linkPath('attachments/a.png')).toBe('attachments/a.png');
+    expect(linkPath('docs/a.png')).toBe('docs/a.png');
   });
 
   it('名前は大文字小文字を区別せず、フォルダの外のパスは拾わない', () => {

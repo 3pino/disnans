@@ -53,6 +53,11 @@ export type FileLinkView =
   /** 埋め込みのファイル（カード） */
   | { kind: 'embedFile'; href: string; name: string; size: number };
 
+/** 本文のリンクの先の、共有フォルダのパス。`/` を含まない名前は添付（`attachments/名前`）。サーバーの `[[名前]]` の決まりと同じ */
+export function linkPath(path: string): string {
+  return path.includes('/') ? path : `attachments/${path}`;
+}
+
 /**
  * ファイルリンク 1 つの表示の決まり。
  * - 見つかった項目は、画像か・フォルダか・埋め込みかで分ける。画像は添付の ID があれば、その URL を使う
@@ -101,7 +106,8 @@ export function attachmentActionText(e: unknown): string {
 /** 本文の中の添付のリンク（`attachments/` のもの。`[[attachments/名前|別名]]`・`![別名](attachments/名前)` など） */
 export type AttachmentRef = { start: number; end: number; name: string; alias: string | null; embed: boolean };
 
-const WIKI_LINK = /(!?)\[\[attachments\/([^\]|\r\n]+)(?:\|([^\]\r\n]*))?\]\]/g;
+// `[[名前]]`（`/` を含まない）は `attachments/名前` と同じ（サーバーの決まり。送信の途中の本文は、この書き方のまま）
+const WIKI_LINK = /(!?)\[\[(?:attachments\/)?([^\]|\r\n/]+)(?:\|([^\]\r\n]*))?\]\]/g;
 const MD_LINK_HEAD = /(!?)\[([^\[\]\r\n]+)\]\(attachments\//g;
 
 /**

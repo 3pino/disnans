@@ -4,10 +4,12 @@
   import FileX from '@lucide/svelte/icons/file-x';
   import Folder from '@lucide/svelte/icons/folder';
   import Download from '@lucide/svelte/icons/download';
+  import RotateCw from '@lucide/svelte/icons/rotate-cw';
+  import IconButton from '@3pino/ui-kit-web/IconButton.svelte';
   import { client } from '../lib/stores/client.svelte';
   import { sharedIndex } from '../lib/stores/sharedIndex.svelte';
   import { ui } from '../lib/stores/ui.svelte';
-  import { deletedAttachmentNames, fileLinkView } from '../lib/fileLink';
+  import { deletedAttachmentNames, fileLinkView, linkPath } from '../lib/fileLink';
   import { formatSize } from '../lib/format';
   import { interceptDownload } from '../lib/download';
   import { parentOf } from '../lib/sharedPath';
@@ -16,7 +18,9 @@
 
   // 本文のファイルリンク（`[別名](パス)`）と埋め込み（`![…](パス)`）。どちらも共有フォルダのパスを今の一覧と突き合わせて表す。
   // 見た目は仮（利用者の確認を取る）。判断の決まりは lib/fileLink.ts
-  let { path, alias, embed }: { path: string; alias: string | null; embed: boolean } = $props();
+  let { path: rawPath, alias, embed }: { path: string; alias: string | null; embed: boolean } = $props();
+  // `/` を含まない名前は添付（`attachments/名前`）。送信の途中の本文（`![[名前]]`）もここで引ける
+  const path = $derived(linkPath(rawPath));
 
   // 一覧が手元になければ読む（files.changed で捨てられたら、ここで読み直す）
   // 読めなかった一覧は、時間が経てば読み直す（ensure が判断する。一時的な失敗が再読み込みまで続かないように）
@@ -29,6 +33,15 @@
   const deleted = $derived(deletedAttachmentNames(client.timeline().messages));
   const view = $derived(fileLinkView({ path, alias, embed }, sharedIndex.file(path), deleted));
 
+  // 一覧に無いと出たら、この項目につき 1 回だけ、一覧を読み直させる（取りこぼした files.changed で写しが古いままでも、直る。
+  // 読み直しても無ければ、本当に無い。読み続けない）
+  let rechecked = false;
+  $effect(() => {
+    if (view.kind !== 'missing' || rechecked) return;
+    rechecked = true;
+    untrack(() => sharedIndex.recheck(parentOf(path)));
+  });
+
   /** 埋め込みの画像が読めなかった（消えた・取れない） */
   let broken = $state(false);
 </script>
@@ -40,6 +53,7 @@
   <span class="file-link file-link-missing" role="note">見つからないファイル{view.kind === 'missing' ? `（${view.text}）` : ''}</span>
 {:else if view.kind === 'unreadable'}
   <span class="file-link file-link-missing" role="note">読み込めませんでした（{view.text}）</span>
+  <IconButton class="file-link-reload" label="再読み込み" onclick={() => sharedIndex.invalidate(parentOf(path))}><RotateCw size={14} /></IconButton>
 {:else if view.kind === 'deleted'}
   <span class="file-link file-link-deleted" role="note"><FileX size={14} />削除されたファイル（{view.name}）</span>
 {:else if view.kind === 'folder'}
@@ -98,6 +112,9 @@
   .file-link-deleted,
   .file-link-missing {
     font-style: italic;
+  }
+  :global(.file-link-reload) {
+    vertical-align: middle;
   }
   .file-link-button {
     padding: 0;

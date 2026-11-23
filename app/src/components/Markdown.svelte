@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte';
   import { treeOf, type Block, type Inline, type ListItem } from '../lib/markdown';
   import { embedRowSegments } from '../lib/embedRow';
-  import { fileLinkView } from '../lib/fileLink';
+  import { fileLinkView, linkPath } from '../lib/fileLink';
   import { sharedIndex } from '../lib/stores/sharedIndex.svelte';
   import InlineNodes from './InlineNodes.svelte';
   import CodeBlock from './CodeBlock.svelte';
@@ -18,7 +18,8 @@
   const NO_DELETED: ReadonlySet<string> = new Set();
   function isImageEmbed(n: Inline): boolean {
     if (n.type !== 'fileLink' || !n.embed) return false;
-    return fileLinkView({ path: n.path, alias: n.alias, embed: true }, sharedIndex.file(n.path), NO_DELETED).kind === 'embedImage';
+    const path = linkPath(n.path);
+    return fileLinkView({ path, alias: n.alias, embed: true }, sharedIndex.file(path), NO_DELETED).kind === 'embedImage';
   }
 </script>
 

@@ -149,6 +149,19 @@ describe('chat over Rust: receiving', () => {
     expect(listing).toHaveBeenCalledWith('docs');
   });
 
+  it('再接続（hello）と取りこぼし（lagged・切断）のあとは、フォルダの写しを捨てる（取りこぼした files.changed の分）', async () => {
+    const { sharedIndex } = await import('./sharedIndex.svelte');
+    const clear = vi.spyOn(sharedIndex, 'clear');
+    chat.push({ kind: 'gap', generation: 1, reason: 'disconnected' });
+    chat.push({ kind: 'connecting', attempt: 1 });
+    chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME] });
+    expect(clear).toHaveBeenCalled();
+    clear.mockClear();
+    chat.push({ kind: 'gap', generation: 2, reason: 'lagged' });
+    expect(clear).toHaveBeenCalledTimes(1);
+    clear.mockRestore();
+  });
+
   it('drops items from an older generation', () => {
     chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME] });
     const seen: string[] = [];

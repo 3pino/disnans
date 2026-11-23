@@ -49,6 +49,14 @@ export class SharedIndex extends DirIndex {
     else this.unposted.delete(path.toLowerCase());
   }
 
+  /**
+   * 「見つからない」と出た項目のフォルダを、読み直させる。files.changed を取りこぼして写しが古いままのとき（つなぎ直しの間・
+   * デバイスが眠っていた間）の、最後の手当て。呼ぶ側が、項目ごとに 1 回だけにする（本当に無いものを読み続けない）
+   */
+  recheck(dir: string): void {
+    this.invalidate(dir);
+  }
+
   /** 共有フォルダのパスの、今の状態。読んでいなければ loading（呼ぶ側で ensure する） */
   file(path: string): FileState {
     const st = this.dirs.get(parentOf(path));
