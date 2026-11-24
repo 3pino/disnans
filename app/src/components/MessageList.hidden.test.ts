@@ -112,3 +112,41 @@ describe('隠れて戻ったときのスクロール', () => {
     expect(loadOlder).toHaveBeenCalled();
   });
 });
+
+describe('キーボードなどで箱の高さが変わったとき', () => {
+  it('一番下にいて箱が縮み、そのとき出る scroll で、下から離れたと取らない。閉じても下のまま', async () => {
+    const el = setupScroller();
+    await tick();
+    scrollTo(el, 5000 - 600);
+    box.height = 300; // キーボードが出て縮んだ（scrollTop はそのまま。下からの距離は 300）
+    el.dispatchEvent(new Event('scroll'));
+    flushSync();
+    expect(box.top).toBe(5000); // 下へ張り付く
+    fire();
+    box.height = 600; // 閉じた
+    fire();
+    expect(box.top).toBe(5000);
+  });
+
+  it('上のほうを見ていて箱が縮んでも、位置は動かさず、下に着いたことにもしない', async () => {
+    const el = setupScroller();
+    await tick();
+    scrollTo(el, 1500);
+    box.height = 300;
+    el.dispatchEvent(new Event('scroll'));
+    flushSync();
+    expect(box.top).toBe(1500);
+    expect(el.parentElement!.querySelector('.message-list-jump-latest')).not.toBeNull();
+  });
+
+  it('縮んだあとの、利用者の scroll は、これまでどおり下からの距離を見る', async () => {
+    const el = setupScroller();
+    await tick();
+    scrollTo(el, 5000 - 600);
+    box.height = 300;
+    el.dispatchEvent(new Event('scroll'));
+    scrollTo(el, 3000); // 利用者が上へ
+    expect(el.parentElement!.querySelector('.message-list-jump-latest')).not.toBeNull();
+  });
+});
+

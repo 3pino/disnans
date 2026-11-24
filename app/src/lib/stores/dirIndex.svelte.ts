@@ -52,7 +52,8 @@ export class DirIndex<E extends { name: string } = { name: string }> {
 
   private load(dir: string): void {
     const g = this.gen.get(dir) ?? 0;
-    this.dirs.set(dir, { kind: 'loading' });
+    // 読み直しの間も、前の中身（ok）は見せたままにする（捨てると、見ている側が一度「読み込み中」になり、描画が縮んで位置がずれる）
+    if (this.dirs.get(dir)?.kind !== 'ok') this.dirs.set(dir, { kind: 'loading' });
     this.options.list(dir).then(
       (list) => {
         if ((this.gen.get(dir) ?? 0) !== g) return;
@@ -63,7 +64,13 @@ export class DirIndex<E extends { name: string } = { name: string }> {
       (e: unknown) => {
         if ((this.gen.get(dir) ?? 0) !== g) return;
         const missing = this.options.isMissing?.(e) ?? false;
-        this.dirs.set(dir, missing ? { kind: 'missing' } : { kind: 'error', message: e instanceof Error ? e.message : String(e), at: Date.now() });
+        if (missing) {
+          this.dirs.set(dir, { kind: 'missing' });
+          return;
+        }
+        // 一時的な失敗で、読めていた中身を消さない（次の変更・再接続で読み直す）
+        if (this.dirs.get(dir)?.kind === 'ok') return;
+        this.dirs.set(dir, { kind: 'error', message: e instanceof Error ? e.message : String(e), at: Date.now() });
       },
     );
   }
@@ -71,18 +78,29 @@ export class DirIndex<E extends { name: string } = { name: string }> {
   /** 一覧を読み終えたとき（継いだ側が、読めた中身を使う） */
   protected loaded(_dir: string, _entries: Map<string, E>): void {}
 
-  /** 手元の写しをすべて捨てる（置き場所が変わったとき）。読んでいる途中の結果も、世代を進めて捨てる */
+  /** 手元の写しをすべて捨てる（接続先が変わったとき）。読んでいる途中の結果も、世代を進めて捨てる */
   clear(): void {
     for (const dir of this.dirs.keys()) this.gen.set(dir, (this.gen.get(dir) ?? 0) + 1);
     this.dirs.clear();
   }
 
-  /** 変わった項目に関わるフォルダの写しを捨てる。見ている側は次の描画で読み直す */
+  /** 変わった項目に関わるフォルダの写しを読み直す。読めていた中身は読み終わるまで見せたままにする（捨てない） */
   invalidate(changed: string): void {
     for (const dir of [...this.dirs.keys()]) {
       if (!affects(dir, changed)) continue;
-      this.gen.set(dir, (this.gen.get(dir) ?? 0) + 1);
-      this.dirs.delete(dir);
+      this.reread(dir);
     }
+  }
+
+  /** 全部を読み直す（再接続のあと。読めていた中身は読み終わるまで見せたままにする） */
+  refresh(): void {
+    for (const dir of [...this.dirs.keys()]) this.reread(dir);
+  }
+
+  /** 読んでいる途中の結果を捨て、読めていたものは背景で読み直す。読めていないもの（読み込み中・missing・error）は次の ensure で読む */
+  private reread(dir: string): void {
+    this.gen.set(dir, (this.gen.get(dir) ?? 0) + 1);
+    if (this.dirs.get(dir)?.kind === 'ok') this.load(dir);
+    else this.dirs.delete(dir);
   }
 }

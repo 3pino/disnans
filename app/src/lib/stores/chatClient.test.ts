@@ -151,7 +151,7 @@ describe('chat over Rust: receiving', () => {
 
   it('再接続（hello）と取りこぼし（lagged・切断）のあとは、フォルダの写しを捨てる（取りこぼした files.changed の分）', async () => {
     const { sharedIndex } = await import('./sharedIndex.svelte');
-    const clear = vi.spyOn(sharedIndex, 'clear');
+    const clear = vi.spyOn(sharedIndex, 'refresh');
     chat.push({ kind: 'gap', generation: 1, reason: 'disconnected' });
     chat.push({ kind: 'connecting', attempt: 1 });
     chat.push({ kind: 'connected', generation: 2, me: ME, users: [ME] });

@@ -93,14 +93,61 @@ describe('SharedIndex', () => {
     expect(idx.file('docs/a.txt').kind).toBe('found');
   });
 
-  it('invalidate は親の一覧を捨てる（読み直しは ensure で）。ほかのフォルダは残す', async () => {
+  it('invalidate は親の一覧を背景で読み直す。読み直しの間も前の中身を見せ、ほかのフォルダは触らない', async () => {
     list.mockResolvedValue([entry('docs/a.txt')]);
     idx.ensure('docs');
     idx.ensure('attachments');
     await settle();
+    list.mockClear();
+    let resolve!: (v: SharedEntry[]) => void;
+    list.mockReturnValueOnce(new Promise((r) => (resolve = r)));
     idx.invalidate('docs/b.txt');
-    expect(idx.state('docs')).toBeUndefined();
+    // 読み直しの途中も、前の中身が見える（読み込み中に戻さない）
+    expect(idx.state('docs')?.kind).toBe('ok');
+    expect(idx.file('docs/a.txt').kind).toBe('found');
+    expect(list).toHaveBeenCalledWith('docs');
+    expect(list).not.toHaveBeenCalledWith('attachments');
+    resolve([entry('docs/b.txt')]);
+    await settle();
+    expect(idx.file('docs/b.txt').kind).toBe('found');
+    expect(idx.file('docs/a.txt').kind).toBe('missing');
     expect(idx.state('attachments')?.kind).toBe('ok');
+  });
+
+  it('読めていた一覧の読み直しが一時的に失敗しても、前の中身を消さない', async () => {
+    list.mockResolvedValue([entry('docs/a.txt')]);
+    idx.ensure('docs');
+    await settle();
+    list.mockRejectedValueOnce(new Error('ネットワーク'));
+    idx.invalidate('docs/a.txt');
+    await settle();
+    expect(idx.state('docs')?.kind).toBe('ok');
+    expect(idx.file('docs/a.txt').kind).toBe('found');
+  });
+
+  it('読めていた一覧に無いファイルは、読み直しで来るまで missing（読み直しで見つかれば found）', async () => {
+    list.mockResolvedValue([]);
+    idx.ensure('attachments');
+    await settle();
+    expect(idx.file('attachments/new.png').kind).toBe('missing');
+    list.mockResolvedValue([entry('attachments/new.png')]);
+    idx.invalidate('attachments/new.png');
+    expect(idx.file('attachments/new.png').kind).toBe('missing');
+    await settle();
+    expect(idx.file('attachments/new.png').kind).toBe('found');
+  });
+
+  it('refresh は読めていた一覧を背景で読み直し、読めていないものは捨てて次の ensure で読む', async () => {
+    list.mockResolvedValue([entry('docs/a.txt')]);
+    idx.ensure('docs');
+    await settle();
+    list.mockClear();
+    list.mockResolvedValue([entry('docs/b.txt')]);
+    idx.refresh();
+    expect(idx.state('docs')?.kind).toBe('ok');
+    await settle();
+    expect(list).toHaveBeenCalledWith('docs');
+    expect(idx.file('docs/b.txt').kind).toBe('found');
   });
 
   it('読み込みの途中で変わったら、古い結果は使わない', async () => {
@@ -158,15 +205,13 @@ describe('投稿前の自分の添付（送信の途中の本文のリンク）'
     idx.ensure('attachments');
     await settle();
     idx.setUnposted('attachments/new.png', true);
-    idx.invalidate('attachments/new.png');
     list.mockResolvedValueOnce([entry('attachments/old.png'), entry('attachments/new.png')]);
-    idx.ensure('attachments');
+    idx.invalidate('attachments/new.png');
     await settle();
     expect(idx.file('attachments/new.png').kind).toBe('found');
     // 一度外れたあとで、同じ名前が消えても、読み込み中にはならない
     list.mockResolvedValueOnce([entry('attachments/old.png')]);
     idx.invalidate('attachments/new.png');
-    idx.ensure('attachments');
     await settle();
     expect(idx.file('attachments/new.png').kind).toBe('missing');
   });

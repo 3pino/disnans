@@ -571,15 +571,15 @@ class Client {
 
   /** 取りこぼしのあとで、読み込み済みの履歴・未読を REST で読み直す（applyHello と同じ範囲） */
   private refreshAfterGap(): void {
-    // 取りこぼした files.changed の分も含めて、フォルダの写しを捨てる（捨てないと、古い一覧のまま「見つからない」が続く）
-    sharedIndex.clear();
+    // 取りこぼした files.changed の分も含めて、フォルダの写しを読み直す（古い一覧のまま「見つからない」が続かないように。読めていた分は見せたまま）
+    sharedIndex.refresh();
     if (this.main.loaded || this.main.error) void this.main.load();
     void unread.load();
   }
 
   private applyHello(me: User, list: User[]): void {
-    // つなぎ直しの間の files.changed は届かないので、フォルダの写しを捨てて読み直させる
-    sharedIndex.clear();
+    // つなぎ直しの間の files.changed は届かないので、フォルダの写しを読み直させる（読めていた分は見せたまま）
+    sharedIndex.refresh();
     this.me = me;
     const map: Record<string, User> = {};
     for (const u of list) map[u.id] = u;

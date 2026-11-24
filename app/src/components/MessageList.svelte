@@ -72,8 +72,18 @@
   /** 見えていたときの最後の scrollTop（下に張り付いていなかったときだけ使う） */
   let savedTop = 0;
 
+  /** 前に見たスクロール箱の高さ。キーボードなどで箱が縮んだときにも scroll が出るので、利用者の操作と区別する */
+  let lastHeight = 0;
+
   function onscroll() {
     if (!scroller || hidden || scroller.clientHeight === 0) return;
+    const resized = lastHeight !== 0 && scroller.clientHeight !== lastHeight;
+    lastHeight = scroller.clientHeight;
+    // 箱の高さが変わったことによる scroll は、下からの距離が変わっただけ。下に張り付いていたなら、そのまま下へ
+    if (resized) {
+      if (atBottom) scrollToBottom();
+      return;
+    }
     savedTop = scroller.scrollTop;
     updateAtBottom();
     if (scroller.scrollTop < 400) void loadOlder();
@@ -105,6 +115,7 @@
     const ro = new ResizeObserver(() => {
       if (!scroller) return;
       if (scroller.clientHeight === 0) {
+        lastHeight = 0;
         hidden = true; // 隠れた。見えている間の位置（savedTop）は、そのまま残す
         return;
       }
@@ -115,6 +126,7 @@
         else if (scroller.scrollTop === 0) scroller.scrollTop = savedTop; // 位置が失われた環境でだけ戻す（Chromium は保つ）
         return;
       }
+      lastHeight = scroller.clientHeight;
       if (atBottom) scrollToBottom();
       else if (scroller.scrollTop < 400) void loadOlder();
     });
